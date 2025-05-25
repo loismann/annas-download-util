@@ -5,8 +5,21 @@ import { map } from 'rxjs/operators';
 
 import { BookDto } from '../models/book-dto.model';
 
+/* ─────────────── existing member-download shape ──────────────── */
 export interface DownloadMemberResponse {
   downloadUrl: string;
+  accountFastInfo: {
+    downloadsLeft: number;
+    downloadsPerDay: number;
+  } | null;
+}
+
+/* ─────────────── new send-to-drive shape ─────────────────────── */
+export interface SendToDriveResponse {
+  success: boolean;
+  driveFileId?: string;
+  driveFileLink?: string;
+  message?: string;
   accountFastInfo: {
     downloadsLeft: number;
     downloadsPerDay: number;
@@ -19,9 +32,9 @@ export class AnnaArchiveApiService {
 
   constructor(private http: HttpClient) {}
 
-  /**
-   * Normalize the API response into an array of BookDto.
-   */
+  /* ══════════════════════════════════════════════════════════════
+     Search – always return an array, even when the API sent 1 obj
+     ══════════════════════════════════════════════════════════════ */
   searchBooks(name: string, exact: boolean): Observable<BookDto[]> {
     const params = new HttpParams()
       .set('name', name)
@@ -29,18 +42,28 @@ export class AnnaArchiveApiService {
 
     return this.http
       .get<BookDto | BookDto[]>(`${this.baseUrl}/book`, { params })
-      .pipe(
-        map(res => Array.isArray(res) ? res : [res])
-      );
+      .pipe(map(res => (Array.isArray(res) ? res : [res])));
   }
 
-  /**
-   * Download via member endpoint, returns both URL and updated counter.
-   */
+  /* ══════════════════════════════════════════════════════════════
+     Member download – returns fast-download URL + counter
+     ══════════════════════════════════════════════════════════════ */
   downloadMember(md5: string): Observable<DownloadMemberResponse> {
     return this.http.get<DownloadMemberResponse>(
       `${this.baseUrl}/book/${md5}/download/member`
     );
   }
-}
 
+  /* ══════════════════════════════════════════════════════════════
+     NEW  ➜  Send the file straight to Google Drive (“Boox”)
+     – passes book title so backend can name it correctly
+     ══════════════════════════════════════════════════════════════ */
+  sendToDrive(md5: string, title: string): Observable<SendToDriveResponse> {
+    const params = new HttpParams().set('title', title);
+    return this.http.post<SendToDriveResponse>(
+      `${this.baseUrl}/book/${md5}/send-to-drive`,
+      null,
+      { params }
+    );
+  }
+}

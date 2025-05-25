@@ -135,3 +135,5 @@ coverage/
 *.bak
 *.backup
 *~
+
+service-account.json

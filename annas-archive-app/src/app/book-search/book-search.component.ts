@@ -1,6 +1,6 @@
 import { Component } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { FormsModule }  from '@angular/forms';
+import { FormsModule } from '@angular/forms';
 
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule }     from '@angular/material/input';
@@ -9,8 +9,13 @@ import { MatSelectModule }    from '@angular/material/select';
 import { MatButtonModule }    from '@angular/material/button';
 import { MatCardModule }      from '@angular/material/card';
 
-import { AnnaArchiveApiService, DownloadMemberResponse } from '../services/anna-archive-api.service';
-import { BookDto }                                     from '../models/book-dto.model';
+import {
+  AnnaArchiveApiService,
+  DownloadMemberResponse,
+  SendToDriveResponse
+} from '../services/anna-archive-api.service';
+
+import { BookDto } from '../models/book-dto.model';
 
 @Component({
   selector: 'app-book-search',
@@ -29,9 +34,13 @@ import { BookDto }                                     from '../models/book-dto.
   styleUrls: ['./book-search.component.css'],
 })
 export class BookSearchComponent {
+  placeholderUrl = '/assets/placeholder.jpg';
+  
+  /* ───────── search form state ───────── */
   searchTerm = '';
   exact = false;
 
+  /* ───────── ui state ───────── */
   loading = false;
   error: string | null = null;
   searchPerformed = false;
@@ -43,6 +52,7 @@ export class BookSearchComponent {
 
   constructor(private api: AnnaArchiveApiService) {}
 
+  /* ───────── helpers for template ───────── */
   get availableFormats(): string[] {
     return Array.from(new Set(this.books.map(b => b.format))).sort();
   }
@@ -53,6 +63,7 @@ export class BookSearchComponent {
       : this.books;
   }
 
+  /* ───────── search submit ───────── */
   onSearch(): void {
     this.error = null;
     if (!this.searchTerm.trim()) {
@@ -68,6 +79,7 @@ export class BookSearchComponent {
     this.api.searchBooks(this.searchTerm.trim(), this.exact).subscribe({
       next: books => {
         this.books = books;
+        this.books.forEach(b => (b.sendState = 'idle'));   // init the new button state
         this.loading = false;
       },
       error: err => {
@@ -78,7 +90,8 @@ export class BookSearchComponent {
     });
   }
 
-  download(book: BookDto) {
+  /* ───────── download button ───────── */
+  download(book: BookDto): void {
     this.api.downloadMember(book.md5).subscribe({
       next: (resp: DownloadMemberResponse) => {
         this.downloadsLeft = resp.accountFastInfo?.downloadsLeft ?? null;
@@ -91,13 +104,39 @@ export class BookSearchComponent {
     });
   }
 
-  tryNextCover(book: BookDto, evt: Event) {
-    book.coverCandidates.shift();
-    const img = evt.target as HTMLImageElement;
-    if (book.coverCandidates.length) {
-      img.src = book.coverCandidates[0];
-    } else {
-      img.style.display = 'none';
-    }
+  /* ───────── send-to-drive button ───────── */
+  sendToDrive(book: BookDto): void {
+    if (book.sendState === 'sending') return;  // guard double-click
+    book.sendState = 'sending';
+
+    this.api.sendToDrive(book.md5, book.title).subscribe({
+      next: (resp: SendToDriveResponse) => {
+        this.downloadsLeft =
+          resp.accountFastInfo?.downloadsLeft ?? this.downloadsLeft;
+        book.sendState = resp.success ? 'success' : 'error';
+      },
+      error: err => {
+        console.error('Send-to-Drive failed', err);
+        book.sendState = 'error';
+      }
+    });
   }
+
+  onCoverError(book: BookDto, evt: Event): void {
+      const img = evt.target as HTMLImageElement;
+
+      // if we're already showing the placeholder, do nothing  
+      if (img.src.endsWith(this.placeholderUrl)) {
+        return;
+      }
+
+      // if there are more candidates, try the next  
+      if (book.coverCandidates.length > 1) {
+        book.coverCandidates.shift();
+        img.src = book.coverCandidates[0];
+      } else {
+        // no more external covers → fall back  
+        img.src = this.placeholderUrl;
+      }
+    }
 }

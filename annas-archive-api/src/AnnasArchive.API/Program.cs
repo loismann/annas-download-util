@@ -1,33 +1,42 @@
 using System;
+using System.IO;
 using System.Linq;
+using System.Net;
+using System.Net.Http;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.OpenApi.Models;
 using AnnasArchive.Core.Models;
 using AnnasArchive.Core.Services;
-using Microsoft.AspNetCore.Mvc;
+using Google.Apis.Auth.OAuth2;
+using Google.Apis.Drive.v3;
+using Google.Apis.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// ── Read the member key from config or environment
-//    e.g. set environment variable ANNA_MEMBER_KEY=your-key
-// var memberKey = builder.Configuration["ANNA_MEMBER_KEY"]
-//     ?? throw new InvalidOperationException("Missing ANNA_MEMBER_KEY.");
+// ─── configuration ───────────────────────────────────────────────────────
+builder.Configuration
+       .SetBasePath(Directory.GetCurrentDirectory())
+       .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
+       .AddJsonFile($"appsettings.{builder.Environment.EnvironmentName}.json", optional: true, reloadOnChange: true)
+       .AddEnvironmentVariables();
 
-var memberKey = "";
+var memberKey   = builder.Configuration["Anna:MemberKey"]
+               ?? throw new InvalidOperationException("Missing Anna:MemberKey.");
+var searchLimit = builder.Configuration.GetValue<int>("Anna:SearchLimit", 50);
 
-// ── Swagger ───────────────────────────────────────────────────────────────
+// ─── swagger ─────────────────────────────────────────────────────────────
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
-    c.SwaggerDoc("v1", new OpenApiInfo {
-        Title = "Anna’s Archive Proxy API",
-        Version = "v1"
-    });
+    c.SwaggerDoc("v1", new OpenApiInfo { Title = "Anna's Archive Proxy API", Version = "v1" });
 });
 
-// ── HTTP client for Anna’s Archive ────────────────────────────────────────
+// ─── Anna's Archive HTTP client ──────────────────────────────────────────
 builder.Services.AddHttpClient<AnnaArchiveService>(c =>
 {
     c.BaseAddress = new Uri("https://annas-archive.org");
@@ -39,7 +48,22 @@ builder.Services.AddHttpClient<AnnaArchiveService>(c =>
     c.DefaultRequestHeaders.Add("Accept-Language", "en-US,en;q=0.9");
 });
 
-// ── Serialization + CORS ──────────────────────────────────────────────────
+// ─── Google Drive (service-account) ──────────────────────────────────────
+builder.Services.AddSingleton(provider =>
+{
+    var cfg  = provider.GetRequiredService<IConfiguration>();
+    var key  = cfg["GoogleDrive:ServiceAccountKeyPath"];
+    var cred = GoogleCredential.FromFile(key)
+                               .CreateScoped(DriveService.ScopeConstants.DriveFile);
+
+    return new DriveService(new BaseClientService.Initializer
+    {
+        HttpClientInitializer = cred,
+        ApplicationName = "Anna-Boox-Proxy"
+    });
+});
+
+// ─── misc ────────────────────────────────────────────────────────────────
 builder.Services.ConfigureHttpJsonOptions(o =>
         o.SerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase);
 builder.Services.AddCors();
@@ -49,87 +73,145 @@ var app = builder.Build();
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
-    app.UseSwaggerUI(c =>
-        c.SwaggerEndpoint("/swagger/v1/swagger.json", "Anna’s Archive v1"));
+    app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "Anna's Archive v1"));
 }
 
 app.UseCors(p => p.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod());
-// app.UseHttpsRedirection(); // comment out during local dev if needed
 
-// ── 1) Search ─────────────────────────────────────────────────────────────
+// ─── 1) search ───────────────────────────────────────────────────────────
 app.MapGet("/api/anna/book", async (
-    [FromQuery(Name = "name")] string name,
+    [FromQuery] string name,
     AnnaArchiveService svc,
-    [FromQuery(Name = "exact")] bool exact = false
-) =>
+    [FromQuery] bool exact = false) =>
 {
     if (string.IsNullOrWhiteSpace(name))
         return Results.BadRequest(new { error = "Query parameter 'name' is required." });
 
-    var books = (await svc.SearchAsync(name, 10)).ToList();
+    var books = (await svc.SearchAsync(name, searchLimit)).ToList();
 
     if (exact)
         books = books
             .Where(b => string.Equals(b.Title?.Trim(), name.Trim(), StringComparison.OrdinalIgnoreCase))
             .ToList();
 
-    if (!books.Any())
-        return Results.NotFound(new { message = "No books found matching that name." });
-
-    return books.Count == 1 ? Results.Ok(books[0]) : Results.Ok(books);
+    return books.Any()
+        ? books.Count == 1 ? Results.Ok(books[0]) : Results.Ok(books)
+        : Results.NotFound(new { message = "No books found matching that name." });
 });
 
-// ── 2) Non-member download (unchanged) ─────────────────────────────────────
+// ─── 2) non-member download ──────────────────────────────────────────────
 app.MapGet("/api/anna/book/{md5}/download", async (
     [FromRoute] string md5,
     AnnaArchiveService svc) =>
 {
     var links = await svc.GetDownloadLinksAsync(md5);
     return links.Any()
-        ? Results.Ok(new { Id = md5, DownloadLinks = links })
+        ? Results.Ok(new { id = md5, downloadLinks = links })
         : Results.NotFound(new { message = "No download links found." });
 });
 
-// ── Member download: redirect to the real S3 URL ─────────────────────────
+// ─── 3) member download (url + counters) ─────────────────────────────────
 app.MapGet("/api/anna/book/{md5}/download/member", async (
     [FromRoute] string md5,
     AnnaArchiveService svc) =>
 {
-    // 1) fetch the raw JSON doc (with download_url + account_fast_download_info)
     var doc = await svc.GetMemberDownloadDocumentAsync(md5, memberKey);
 
-    // 2) pull out the download URL (string or first element of array)
     string? downloadUrl = null;
     if (doc.TryGetProperty("download_url", out var du))
-    {
-        if (du.ValueKind == JsonValueKind.String)
-            downloadUrl = du.GetString();
-        else if (du.ValueKind == JsonValueKind.Array)
-            downloadUrl = du.EnumerateArray()
-                            .FirstOrDefault()
-                            .GetString();
-    }
+        downloadUrl = du.ValueKind == JsonValueKind.String
+                    ? du.GetString()
+                    : du.EnumerateArray().FirstOrDefault().GetString();
 
-    // 3) pull out the account info
     AccountFastDownloadInfoDto? acctInfo = null;
     if (doc.TryGetProperty("account_fast_download_info", out var ai) &&
         ai.ValueKind == JsonValueKind.Object)
-    {
-        var left   = ai.GetProperty("downloads_left").GetInt32();
-        var perDay = ai.GetProperty("downloads_per_day").GetInt32();
-        acctInfo = new AccountFastDownloadInfoDto(left, perDay);
-    }
+        acctInfo = new AccountFastDownloadInfoDto(
+            ai.GetProperty("downloads_left").GetInt32(),
+            ai.GetProperty("downloads_per_day").GetInt32());
 
-    if (string.IsNullOrEmpty(downloadUrl))
-        return Results.NotFound(new { message = "No download URL found." });
-
-    // 4) send back both the URL and the updated counter
-    return Results.Ok(new
-    {
-        downloadUrl,
-        accountFastInfo = acctInfo
-    });
+    return string.IsNullOrEmpty(downloadUrl)
+        ? Results.NotFound(new { message = "No download URL found." })
+        : Results.Ok(new { downloadUrl, accountFastInfo = acctInfo });
 });
 
+// ─── 4) send-to-drive ────────────────────────────────────────────────────
+app.MapPost("/api/anna/book/{md5}/send-to-drive", async (
+    [FromRoute] string md5,
+    [FromQuery] string? title,
+    AnnaArchiveService anna,
+    DriveService drive,
+    IConfiguration cfg) =>
+{
+    var doc = await anna.GetMemberDownloadDocumentAsync(md5, memberKey);
+
+    string? downloadUrl = null;
+    if (doc.TryGetProperty("download_url", out var du))
+        downloadUrl = du.ValueKind == JsonValueKind.String
+                    ? du.GetString()
+                    : du.EnumerateArray().FirstOrDefault().GetString();
+
+    if (string.IsNullOrEmpty(downloadUrl))
+        return Results.Ok(new { success = false, message = "No download URL found.", accountFastInfo = (object?)null });
+
+    AccountFastDownloadInfoDto? acctInfo = null;
+    if (doc.TryGetProperty("account_fast_download_info", out var ai) &&
+        ai.ValueKind == JsonValueKind.Object)
+        acctInfo = new AccountFastDownloadInfoDto(
+            ai.GetProperty("downloads_left").GetInt32(),
+            ai.GetProperty("downloads_per_day").GetInt32());
+
+    using var resp = await anna.HttpClient.GetAsync(downloadUrl, HttpCompletionOption.ResponseHeadersRead);
+    if (!resp.IsSuccessStatusCode)
+        return Results.Ok(new { success = false, status = (int)resp.StatusCode, accountFastInfo = acctInfo });
+
+    var rawTitle  = !string.IsNullOrWhiteSpace(title) ? title : md5;
+    var safeTitle = Regex.Replace(rawTitle, $"[{Regex.Escape(new string(Path.GetInvalidFileNameChars()))}]", "_");
+
+    var ext = Path.GetExtension(new Uri(downloadUrl).AbsolutePath);
+    if (string.IsNullOrEmpty(ext))
+        ext = resp.Content.Headers.ContentType?.MediaType switch
+        {
+            "application/pdf"                 => ".pdf",
+            "application/epub+zip"            => ".epub",
+            "application/x-mobipocket-ebook"  => ".mobi",
+            _                                 => ".bin"
+        };
+
+    var fileName = $"{safeTitle}{ext}";
+
+    using var stream = await resp.Content.ReadAsStreamAsync();
+
+    var fileMeta = new Google.Apis.Drive.v3.Data.File
+    {
+        Name    = fileName,
+        Parents = new[] { cfg["GoogleDrive:UploadFolderId"] }
+    };
+
+    try
+    {
+        var upload = drive.Files.Create(fileMeta, stream, resp.Content.Headers.ContentType?.MediaType ?? "application/octet-stream");
+        upload.Fields = "id, webViewLink";
+        await upload.UploadAsync();
+
+        var driveFile = upload.ResponseBody;
+        return Results.Ok(new
+        {
+            success         = true,
+            driveFileId     = driveFile.Id,
+            driveFileLink   = driveFile.WebViewLink,
+            accountFastInfo = acctInfo
+        });
+    }
+    catch (Exception ex)
+    {
+        return Results.Ok(new
+        {
+            success         = false,
+            message         = ex.Message,
+            accountFastInfo = acctInfo
+        });
+    }
+});
 
 app.Run();

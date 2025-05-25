@@ -1,5 +1,4 @@
 #nullable enable
-
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -18,6 +17,8 @@ namespace AnnasArchive.Core.Services;
 public class AnnaArchiveService
 {
     private readonly HttpClient _http;
+    public HttpClient HttpClient => _http;               // expose for streaming
+
     public AnnaArchiveService(HttpClient http) => _http = http;
 
     private static readonly Regex IsbnRx =
@@ -26,29 +27,41 @@ public class AnnaArchiveService
     private static readonly Regex ImgRx =
         new(@"https://[^""']+/covers[0-9]*/[^""']+\.jpg", RegexOptions.IgnoreCase);
 
-    public async Task<IEnumerable<BookDto>> SearchAsync(string query, int limit = 10)
+    public async Task<IEnumerable<BookDto>> SearchAsync(string query, int limit = 50)
     {
-        var html = await _http.GetStringAsync(
-            $"/search?index=&page=1&q={Uri.EscapeDataString(query)}&display=&sort=");
+        var collected = new List<HtmlNode>();   // anchors we still need to process
+        var page = 1;
 
-        var doc = new HtmlDocument();
-        doc.LoadHtml(html);
+        /* 1️⃣  keep fetching pages until we have >= limit anchors or no more pages */
+        while (collected.Count < limit)
+        {
+            var html = await _http.GetStringAsync(
+                $"/search?index=&page={page}&q={Uri.EscapeDataString(query)}&display=&sort=");
+            page++;
 
-        var anchors = doc.DocumentNode
-            .SelectNodes("//a[contains(@href,'/md5/')]")
-            ?.Where(a => a.InnerText
-                          .IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0)
-            .Take(limit)
-            .ToList() ?? new();
+            var doc = new HtmlDocument();
+            doc.LoadHtml(html);
 
+            var anchors = doc.DocumentNode
+                .SelectNodes("//a[contains(@href,'/md5/')]")?
+                .ToList() ?? new();
+
+            if (anchors.Count == 0) break;      // ran out of pages
+            collected.AddRange(anchors);
+        }
+
+        /* 2️⃣  trim to the requested limit */
+        collected = collected.Take(limit).ToList();
+
+        /* 3️⃣  build DTOs in parallel (original logic, unchanged) */
         var sem   = new SemaphoreSlim(4);
-        var tasks = anchors.Select(async link =>
+        var tasks = collected.Select(async link =>
         {
             await sem.WaitAsync();
             try
             {
                 var md5 = Path.GetFileName(link.GetAttributeValue("href", ""))
-                               .ToLowerInvariant();
+                            .ToLowerInvariant();
 
                 var dto = BuildDtoFromAnchor(link, md5);
 
@@ -62,7 +75,6 @@ public class AnnaArchiveService
                     dto.CoverCandidates.Add(
                         $"https://covers.openlibrary.org/b/isbn/{isbn}-L.jpg?default=false");
 
-                // keep only s3-proxy covers
                 var filtered = dto.CoverCandidates
                     .Where(u => u.Contains("s3proxy.", StringComparison.OrdinalIgnoreCase))
                     .Distinct()
@@ -78,6 +90,7 @@ public class AnnaArchiveService
 
         return await Task.WhenAll(tasks);
     }
+
 
     private async Task<(string? isbn, string? cover)> GetIsbnAndCoverAsync(string md5)
     {
@@ -176,12 +189,10 @@ public class AnnaArchiveService
     {
         var url = $"/dyn/api/fast_download.json?md5={Uri.EscapeDataString(md5)}"
                 + $"&key={Uri.EscapeDataString(key)}"
-                + "&path_index=0"
-                + "&domain_index=0";
+                + "&path_index=0&domain_index=0";
 
         var doc = await _http.GetFromJsonAsync<JsonElement>(url);
-        if (doc.ValueKind != JsonValueKind.Object)
-            return new List<string>();
+        if (doc.ValueKind != JsonValueKind.Object) return new List<string>();
 
         var results = new List<string>();
         if (doc.TryGetProperty("download_url", out var token))
@@ -195,24 +206,19 @@ public class AnnaArchiveService
             else if (token.ValueKind == JsonValueKind.String)
             {
                 var s = token.GetString();
-                if (!string.IsNullOrEmpty(s))
-                    results.Add(s);
+                if (!string.IsNullOrEmpty(s)) results.Add(s);
             }
         }
 
         return results;
     }
 
-    /// <summary>
-    /// Fetches the raw fast_download document containing both download_url and account_fast_download_info.
-    /// </summary>
     public async Task<JsonElement> GetMemberDownloadDocumentAsync(string md5, string key)
     {
         var url = $"/dyn/api/fast_download.json"
                 + $"?md5={Uri.EscapeDataString(md5)}"
                 + $"&key={Uri.EscapeDataString(key)}"
-                + "&path_index=0"
-                + "&domain_index=0";
+                + "&path_index=0&domain_index=0";
 
         var doc = await _http.GetFromJsonAsync<JsonElement>(url);
         if (doc.ValueKind == JsonValueKind.Undefined)
@@ -220,5 +226,4 @@ public class AnnaArchiveService
         return doc;
     }
 }
-
 #nullable restore

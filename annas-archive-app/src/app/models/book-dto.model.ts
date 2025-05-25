@@ -1,20 +1,17 @@
 export interface BookDto {
-    title: string;
-    md5: string;
-    authors: string[];
-    language: string;
-    format: string;
-    source: string;
-    fileSize: string;
-    bookType: string;
-    publisher: string;
-    publicationYear: number | null;
-    baseScore: number | null;
-    finalScore: number | null;
-  
-    /** newly added */
-    isbn?: string;
-  
-    coverCandidates: string[];
-  }
-  
+  title: string;
+  md5: string;
+  authors: string[];
+  language: string;
+  format: string;
+  source: string;
+  fileSize: string;
+  bookType: string;
+  publisher: string;
+  year: number | null;
+  isbn: string | null;
+  coverCandidates: string[];
+
+  /* NEW – track button state in the UI */
+  sendState?: 'idle' | 'sending' | 'success' | 'error';
+}

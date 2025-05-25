@@ -1,0 +1,90 @@
+<div class="search-wrapper">
+    <!-- LEFT column: form + counter -->
+    <div class="search-form">
+      <form (ngSubmit)="onSearch()">
+        <!-- Book name field -->
+        <mat-form-field appearance="outline" class="w-100">
+          <mat-label>Book name</mat-label>
+          <input
+            matInput
+            [(ngModel)]="searchTerm"
+            name="searchTerm"
+            required
+          />
+        </mat-form-field>
+  
+        <!-- Filters row -->
+        <div class="filter-row">
+          <mat-checkbox [(ngModel)]="exact" name="exact">
+            Exact match
+          </mat-checkbox>
+  
+          <mat-form-field appearance="outline" class="format-filter">
+            <mat-label>Format</mat-label>
+            <mat-select [(ngModel)]="selectedFormat" name="format">
+              <mat-option value="">All</mat-option>
+              <mat-option *ngFor="let fmt of availableFormats" [value]="fmt">
+                {{ fmt }}
+              </mat-option>
+            </mat-select>
+          </mat-form-field>
+        </div>
+  
+        <!-- Search button -->
+        <button
+          mat-raised-button
+          color="primary"
+          type="submit"
+          [disabled]="loading"
+        >
+          Search
+        </button>
+
+        <!-- Downloads‐left counter, now directly under the name field -->
+        <div *ngIf="downloadsLeft !== null" class="download-counter">
+            Downloads left today: {{ downloadsLeft }}
+        </div>
+  
+        <!-- Feedback -->
+        <div *ngIf="error" class="error">{{ error }}</div>
+        <div *ngIf="loading" class="loading">Loading…</div>
+      </form>
+    </div>
+  
+    <!-- RIGHT column: results -->
+    <div class="search-results">
+      <div class="results-inner">
+        <ng-container *ngIf="filteredBooks.length; else maybeNoResults">
+          <mat-card *ngFor="let book of filteredBooks" class="book-card">
+            <img
+              class="cover"
+              *ngIf="book.coverCandidates.length"
+              [src]="book.coverCandidates[0]"
+              (error)="tryNextCover(book, $event)"
+              [alt]="book.title + ' cover'"
+            />
+  
+            <div class="info">
+              <mat-card-header>
+                <mat-card-title>{{ book.title }}</mat-card-title>
+                <mat-card-subtitle>{{ book.authors.join(', ') }}</mat-card-subtitle>
+              </mat-card-header>
+  
+              <mat-card-content>
+                Format: {{ book.format }} &nbsp;|&nbsp; Size: {{ book.fileSize }}
+              </mat-card-content>
+  
+              <mat-card-actions>
+                <button mat-button (click)="download(book)">Download</button>
+              </mat-card-actions>
+            </div>
+          </mat-card>
+        </ng-container>
+  
+        <ng-template #maybeNoResults>
+          <p *ngIf="searchPerformed && !loading">No results</p>
+        </ng-template>
+      </div>
+    </div>
+  </div>
+  

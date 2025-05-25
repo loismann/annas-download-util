@@ -1,0 +1,13 @@
+/* src/styles.scss */
+
+/* Import Angular Material’s Indigo-Pink theme */
+@import '@angular/material/prebuilt-themes/indigo-pink.css';
+
+/* Your global resets & typography */
+html, body {
+  height: 100%;
+  margin: 0;
+  font-family: Roboto, "Helvetica Neue", sans-serif;
+}
+
+/* …any other global styles… */

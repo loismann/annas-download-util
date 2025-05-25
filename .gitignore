@@ -1,0 +1,137 @@
+# --------------------------------------
+# OS / IDE
+# --------------------------------------
+# Windows thumbnail cache files
+Thumbs.db
+ehthumbs.db
+
+# Folder config file
+Desktop.ini
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Linux
+*~
+
+# IDEs
+.vscode/
+.idea/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# --------------------------------------
+# .NET / Visual Studio
+# --------------------------------------
+# Build results
+bin/
+obj/
+out/
+
+# Rider
+.idea/
+*.DotSettings.user
+*.sln.iml
+
+# Visual Studio cache/options
+.vs/
+*.VC.db
+*.VC.VC.opendb
+
+# NuGet
+# Packages folder can be ignored; restore with `dotnet restore`
+**/packages/*
+# If using `packages.config`, uncomment:
+# packages/
+
+# Uncomment if using the new SDK-style packages
+# .NET Core
+*.dll
+*.exe
+*.app
+*.so
+*.dylib
+*.pdb
+*.json
+*.log
+*.vsix
+*.nuspec
+*.nupkg
+*.snupkg
+
+# Microsoft Azure Web App publish settings
+PublishProfiles/
+
+# User-specific files
+*.rsuser
+*.psess
+*.vsp
+*.vspx
+*.userprefs
+
+# JetBrains Rider backup files
+*.orig
+
+# --------------------------------------
+# Node / Angular
+# --------------------------------------
+# Node modules
+node_modules/
+jspm_packages/
+
+# Build outputs
+dist/
+dist-*/
+build/
+build-*/
+wwwroot/
+
+# Angular CLI cache
+.angular/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# Environment files
+.env
+.env.*.local
+
+# TypeScript cache
+*.tsbuildinfo
+
+# Optional npm cache directory
+.npm
+
+# Optional eslint cache
+.eslintcache
+
+# Optional REPL history
+.node_repl_history
+
+# Coverage directory used by testing tools
+coverage/
+
+# Compiled files
+*.js
+*.js.map
+*.mjs
+*.cjs
+
+# --------------------------------------
+# Miscellaneous
+# --------------------------------------
+# Temporary files
+*.tmp
+*.temp
+
+# Backup files
+*.bak
+*.backup
+*~

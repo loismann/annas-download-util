@@ -89,6 +89,7 @@ dist-*/
 build/
 build-*/
 wwwroot/
+deploy/
 
 # Angular CLI cache
 .angular/
@@ -137,3 +138,4 @@ coverage/
 *~
 
 service-account.json
+

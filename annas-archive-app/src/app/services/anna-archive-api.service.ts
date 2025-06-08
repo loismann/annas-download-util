@@ -28,6 +28,8 @@ export interface SendToDriveResponse {
 
 @Injectable({ providedIn: 'root' })
 export class AnnaArchiveApiService {
+  // private readonly baseUrl = 'http://fs01pfbooks.synology.me:5050/api/anna';
+  // Use the path below for local development
   private readonly baseUrl = '/api/anna';
 
   constructor(private http: HttpClient) {}

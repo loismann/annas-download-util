@@ -29,10 +29,10 @@ public class AnnaArchiveService
 
     public async Task<IEnumerable<BookDto>> SearchAsync(string query, int limit = 50)
     {
-        var collected = new List<HtmlNode>();   // anchors we still need to process
+        var collected = new List<HtmlNode>();   // parent containers for each book
         var page = 1;
 
-        /* 1️⃣  keep fetching pages until we have >= limit anchors or no more pages */
+        /* 1️⃣  keep fetching pages until we have >= limit books or no more pages */
         while (collected.Count < limit)
         {
             var html = await _http.GetStringAsync(
@@ -42,28 +42,34 @@ public class AnnaArchiveService
             var doc = new HtmlDocument();
             doc.LoadHtml(html);
 
-            var anchors = doc.DocumentNode
-                .SelectNodes("//a[contains(@href,'/md5/')]")?
+            // Find the book containers
+            // Each book is in a div with class "flex pt-3 pb-3 border-b"
+            var bookContainers = doc.DocumentNode
+                .SelectNodes("//div[contains(@class,'flex') and contains(@class,'pt-3') and contains(@class,'pb-3') and contains(@class,'border-b')]")?
                 .ToList() ?? new();
 
-            if (anchors.Count == 0) break;      // ran out of pages
-            collected.AddRange(anchors);
+            if (bookContainers.Count == 0) break;      // ran out of pages
+            collected.AddRange(bookContainers);
         }
 
         /* 2️⃣  trim to the requested limit */
         collected = collected.Take(limit).ToList();
 
-        /* 3️⃣  build DTOs in parallel (original logic, unchanged) */
+        /* 3️⃣  build DTOs in parallel */
         var sem   = new SemaphoreSlim(4);
-        var tasks = collected.Select(async link =>
+        var tasks = collected.Select(async container =>
         {
             await sem.WaitAsync();
             try
             {
-                var md5 = Path.GetFileName(link.GetAttributeValue("href", ""))
+                // Get MD5 from the cover link (first child <a> with /md5/)
+                var coverLink = container.SelectSingleNode("./a[contains(@href,'/md5/')]");
+                if (coverLink == null) return null;
+
+                var md5 = Path.GetFileName(coverLink.GetAttributeValue("href", ""))
                             .ToLowerInvariant();
 
-                var dto = BuildDtoFromAnchor(link, md5);
+                var dto = BuildDtoFromAnchor(container, md5);
 
                 var (isbn, cover) = await GetIsbnAndCoverAsync(md5);
                 dto.Isbn = isbn;
@@ -88,7 +94,8 @@ public class AnnaArchiveService
             finally { sem.Release(); }
         });
 
-        return await Task.WhenAll(tasks);
+        var results = await Task.WhenAll(tasks);
+        return results.Where(r => r != null)!;
     }
 
 
@@ -117,39 +124,93 @@ public class AnnaArchiveService
         return (isbn, cover);
     }
 
-    private static BookDto BuildDtoFromAnchor(HtmlNode link, string md5)
+    private static BookDto BuildDtoFromAnchor(HtmlNode container, string md5)
     {
-        var lines = link.InnerText
-                        .Split('\n', StringSplitOptions.RemoveEmptyEntries)
-                        .Select(l => l.Trim())
-                        .Where(l => l.Length > 0)
-                        .ToArray();
+        // New HTML structure:
+        // <a class="line-clamp-[3] ... js-vim-focus">TITLE</a>
+        // <a class="line-clamp-[2] ... text-sm" href="/search?q=AUTHORS">AUTHORS</a>
+        // <a class="line-clamp-[2] ... text-sm" href="/search?q=PUBLISHER">PUBLISHER, SERIES, YEAR</a>
+        // <div class="text-gray-800 dark:text-slate-400 ...">LANG [code] · FORMAT · SIZE · YEAR · TYPE · SOURCES</div>
 
-        var meta      = lines[0].Split(',', StringSplitOptions.RemoveEmptyEntries)
-                                .Select(t => t.Trim()).ToArray();
-        var language  = meta.ElementAtOrDefault(0) ?? "";
-        var format    = meta.ElementAtOrDefault(1) ?? "";
-        var source    = meta.ElementAtOrDefault(2) ?? "";
-        var fileSize  = meta.ElementAtOrDefault(3) ?? "";
-        var bookType  = meta.ElementAtOrDefault(4) ?? "";
-        var title     = lines.ElementAtOrDefault(1) ?? "";
+        // Extract title
+        var titleNode = container.SelectSingleNode(".//a[contains(@class,'js-vim-focus')]");
+        var title = titleNode?.InnerText?.Trim() ?? $"Unknown Title ({md5})";
 
-        var third     = lines.ElementAtOrDefault(2) ?? "";
-        int? year     = int.TryParse(third, out var y) ? y : null;
-        var publisher = year == null ? third : "";
+        // Extract authors (has user-edit icon)
+        var authorNode = container.SelectSingleNode(".//a[contains(@class,'text-sm')]/span[contains(@class,'icon-[mdi--user-edit]')]/parent::a");
+        var authorText = authorNode?.InnerText?.Trim() ?? "";
+        var authors = string.IsNullOrEmpty(authorText)
+            ? new List<string>()
+            : authorText.Split(new[] { ';', ',' }, StringSplitOptions.RemoveEmptyEntries)
+                       .Select(a => a.Trim())
+                       .Where(a => a.Length > 0)
+                       .ToList();
 
-        var fourth    = lines.ElementAtOrDefault(3) ?? "";
-        if (year == null && int.TryParse(fourth, out y))
+        // Extract publisher/series/year (has company icon)
+        var publisherNode = container.SelectSingleNode(".//a[contains(@class,'text-sm')]/span[contains(@class,'icon-[mdi--company]')]/parent::a");
+        var publisherText = publisherNode?.InnerText?.Trim() ?? "";
+
+        // Parse publisher text: "Publisher, Series X, Year"
+        var publisherParts = publisherText.Split(',').Select(p => p.Trim()).ToArray();
+        var publisher = publisherParts.ElementAtOrDefault(0) ?? "";
+
+        int? year = null;
+        foreach (var part in publisherParts.Reverse())
         {
-            year   = y;
-            fourth = third;
+            if (int.TryParse(part, out var y) && y > 1000 && y < 3000)
+            {
+                year = y;
+                break;
+            }
         }
 
-        var authors = fourth.TrimEnd(',')
-                            .Split(',', StringSplitOptions.RemoveEmptyEntries)
-                            .Select(a => a.Trim())
-                            .Where(a => a.Length > 0)
-                            .ToList();
+        // Extract metadata line: "English [en] · MOBI · 0.3MB · 2015 · 📕 Book (fiction) · 🚀/lgli/lgrs/upload/zlib"
+        var metadataNode = container.SelectSingleNode(".//div[contains(@class,'text-gray-800') or contains(@class,'text-slate-400')]");
+        var metadataText = metadataNode?.InnerText?.Trim() ?? "";
+
+        var metaParts = metadataText.Split('·').Select(p => p.Trim()).Where(p => !string.IsNullOrWhiteSpace(p)).ToArray();
+
+        var language = "";
+        var format = "";
+        var fileSize = "";
+        var bookType = "";
+        var source = "";
+
+        foreach (var part in metaParts)
+        {
+            if (part.Contains("[") && part.Contains("]"))
+            {
+                // Language: "English [en]"
+                language = part.Split('[')[0].Trim();
+            }
+            else if (part.Contains("Book") || part.Contains("book") || part.Contains("📕") || part.Contains("magazine") || part.Contains("comic"))
+            {
+                // Book type: "📕 Book (fiction)", "Book (non-fiction)", "magazine"
+                // Check this BEFORE fileSize because "Book" might contain "B"
+                bookType = part.Replace("📕", "").Replace("🚀", "").Trim();
+            }
+            else if (part.Contains("MB") || part.Contains("KB") || part.Contains("GB"))
+            {
+                // File size: "0.3MB", "125KB", "1.2GB"
+                fileSize = part;
+            }
+            else if (part.Contains("/"))
+            {
+                // Source: "/lgli/lgrs/upload/zlib" or "🚀/lgli/lgrs/upload/zlib"
+                source = part.Replace("🚀", "").Trim();
+            }
+            else if (int.TryParse(part, out var y) && y > 1000 && y < 3000 && year == null)
+            {
+                // Year in metadata if not found in publisher
+                year = y;
+            }
+            else if (string.IsNullOrEmpty(format) && part.Length <= 10 && !part.Contains(" "))
+            {
+                // Format: "MOBI", "PDF", "EPUB", "AZW3", etc.
+                // This should be the first unmatched short token without spaces
+                format = part;
+            }
+        }
 
         var fanOut = $"{md5[..2]}/{md5.Substring(2, 2)}/{md5.Substring(4, 2)}/{md5}.jpg";
 

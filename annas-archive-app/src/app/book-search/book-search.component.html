@@ -71,8 +71,9 @@
               <!-- existing download -->
               <button mat-button (click)="download(book)">Download</button>
 
-              <!-- new send-to-drive -->
+              <!-- send-to-drive (admin only) -->
               <button
+                *ngIf="authService.isAdmin()"
                 mat-button
                 color="accent"
                 (click)="sendToDrive(book)"
@@ -83,6 +84,22 @@
                   <span *ngSwitchCase="'success'">✔ Sent!</span>
                   <span *ngSwitchCase="'error'">✖ Retry</span>
                   <span *ngSwitchDefault>Send to Boox</span>
+                </ng-container>
+              </button>
+
+              <!-- send-to-kindle (admin only) -->
+              <button
+                *ngIf="authService.isAdmin()"
+                mat-button
+                color="primary"
+                (click)="sendToKindle(book)"
+                [disabled]="book.kindleState === 'sending'"
+              >
+                <ng-container [ngSwitch]="book.kindleState">
+                  <span *ngSwitchCase="'sending'">Sending…</span>
+                  <span *ngSwitchCase="'success'">✔ Sent!</span>
+                  <span *ngSwitchCase="'error'">✖ Retry</span>
+                  <span *ngSwitchDefault>Send to Kindle</span>
                 </ng-container>
               </button>
             </mat-card-actions>

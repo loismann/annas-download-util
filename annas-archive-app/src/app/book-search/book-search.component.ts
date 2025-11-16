@@ -15,6 +15,7 @@ import {
   SendToDriveResponse
 } from '../services/anna-archive-api.service';
 
+import { AuthService } from '../services/auth.service';
 import { BookDto } from '../models/book-dto.model';
 
 @Component({
@@ -50,7 +51,10 @@ export class BookSearchComponent {
 
   downloadsLeft: number | null = null;
 
-  constructor(private api: AnnaArchiveApiService) {}
+  constructor(
+    private api: AnnaArchiveApiService,
+    public authService: AuthService
+  ) {}
 
   /* ───────── helpers for template ───────── */
   get availableFormats(): string[] {
@@ -79,7 +83,10 @@ export class BookSearchComponent {
     this.api.searchBooks(this.searchTerm.trim(), this.exact).subscribe({
       next: books => {
         this.books = books;
-        this.books.forEach(b => (b.sendState = 'idle'));   // init the new button state
+        this.books.forEach(b => {
+          b.sendState = 'idle';
+          b.kindleState = 'idle';
+        });
         this.loading = false;
       },
       error: err => {
@@ -118,6 +125,24 @@ export class BookSearchComponent {
       error: err => {
         console.error('Send-to-Drive failed', err);
         book.sendState = 'error';
+      }
+    });
+  }
+
+  /* ───────── send-to-kindle button ───────── */
+  sendToKindle(book: BookDto): void {
+    if (book.kindleState === 'sending') return;  // guard double-click
+    book.kindleState = 'sending';
+
+    this.api.sendToKindle(book.md5, book.title).subscribe({
+      next: (resp: SendToDriveResponse) => {
+        this.downloadsLeft =
+          resp.accountFastInfo?.downloadsLeft ?? this.downloadsLeft;
+        book.kindleState = resp.success ? 'success' : 'error';
+      },
+      error: err => {
+        console.error('Send-to-Kindle failed', err);
+        book.kindleState = 'error';
       }
     });
   }

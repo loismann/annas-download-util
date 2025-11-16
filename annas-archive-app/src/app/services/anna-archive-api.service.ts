@@ -28,9 +28,9 @@ export interface SendToDriveResponse {
 
 @Injectable({ providedIn: 'root' })
 export class AnnaArchiveApiService {
-  // private readonly baseUrl = 'http://fs01pfbooks.synology.me:5050/api/anna';
+  private readonly baseUrl = 'http://fs01pfbooks.synology.me:5050/api/anna';
   // Use the path below for local development
-  private readonly baseUrl = '/api/anna';
+  // private readonly baseUrl = '/api/anna';
 
   constructor(private http: HttpClient) {}
 
@@ -64,6 +64,18 @@ export class AnnaArchiveApiService {
     const params = new HttpParams().set('title', title);
     return this.http.post<SendToDriveResponse>(
       `${this.baseUrl}/book/${md5}/send-to-drive`,
+      null,
+      { params }
+    );
+  }
+
+  /* ══════════════════════════════════════════════════════════════
+     NEW  ➜  Send the file to Kindle via email
+     ══════════════════════════════════════════════════════════════ */
+  sendToKindle(md5: string, title: string): Observable<SendToDriveResponse> {
+    const params = new HttpParams().set('title', title);
+    return this.http.post<SendToDriveResponse>(
+      `${this.baseUrl}/book/${md5}/send-to-kindle`,
       null,
       { params }
     );

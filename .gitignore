@@ -139,3 +139,21 @@ coverage/
 
 service-account.json
 
+# --------------------------------------
+# Sensitive Files & Directories
+# --------------------------------------
+# OAuth credentials and tokens
+oauth-client.json
+oauth-token.json
+
+# Application secrets
+appsettings.json
+appsettings.*.json
+
+# Build/publish output with secrets
+publish/
+**/publish/
+
+# Deployment guide with examples (optional - contains example access codes)
+# DEPLOYMENT_GUIDE.md
+

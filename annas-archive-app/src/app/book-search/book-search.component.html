@@ -1,3 +1,7 @@
+<div class="version-banner">
+  Latest Version: {{ buildTime }}
+</div>
+
 <div class="search-wrapper">
   <!-- LEFT column: form + counter -->
   <div class="search-form">
@@ -71,19 +75,19 @@
               <!-- existing download -->
               <button mat-button (click)="download(book)">Download</button>
 
-              <!-- send-to-drive (admin only) -->
+              <!-- send-to-boox (admin only) -->
               <button
                 *ngIf="authService.isAdmin()"
                 mat-button
                 color="accent"
-                (click)="sendToDrive(book)"
+                (click)="sendToBoox(book)"
                 [disabled]="book.sendState === 'sending'"
               >
                 <ng-container [ngSwitch]="book.sendState">
-                  <span *ngSwitchCase="'sending'">Sending…</span>
-                  <span *ngSwitchCase="'success'">✔ Sent!</span>
+                  <span *ngSwitchCase="'sending'">Uploading…</span>
+                  <span *ngSwitchCase="'success'">✓ Uploaded!</span>
                   <span *ngSwitchCase="'error'">✖ Retry</span>
-                  <span *ngSwitchDefault>Send to Boox</span>
+                  <span *ngSwitchDefault>📤 Send to Dropbox</span>
                 </ng-container>
               </button>
 

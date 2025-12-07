@@ -12,11 +12,12 @@ import { MatCardModule }      from '@angular/material/card';
 import {
   AnnaArchiveApiService,
   DownloadMemberResponse,
-  SendToDriveResponse
+  SendToBooxResponse
 } from '../services/anna-archive-api.service';
 
 import { AuthService } from '../services/auth.service';
 import { BookDto } from '../models/book-dto.model';
+import { VERSION } from '../version';
 
 @Component({
   selector: 'app-book-search',
@@ -36,7 +37,8 @@ import { BookDto } from '../models/book-dto.model';
 })
 export class BookSearchComponent {
   placeholderUrl = '/assets/placeholder.jpg';
-  
+  buildTime = VERSION.buildTime;
+
   /* ───────── search form state ───────── */
   searchTerm = '';
   exact = false;
@@ -111,19 +113,19 @@ export class BookSearchComponent {
     });
   }
 
-  /* ───────── send-to-drive button ───────── */
-  sendToDrive(book: BookDto): void {
+  /* ───────── send-to-boox button (via Dropbox) ───────── */
+  sendToBoox(book: BookDto): void {
     if (book.sendState === 'sending') return;  // guard double-click
     book.sendState = 'sending';
 
-    this.api.sendToDrive(book.md5, book.title).subscribe({
-      next: (resp: SendToDriveResponse) => {
+    this.api.sendToBoox(book.md5, book.title).subscribe({
+      next: (resp: SendToBooxResponse) => {
         this.downloadsLeft =
           resp.accountFastInfo?.downloadsLeft ?? this.downloadsLeft;
         book.sendState = resp.success ? 'success' : 'error';
       },
       error: err => {
-        console.error('Send-to-Drive failed', err);
+        console.error('Send-to-Boox failed', err);
         book.sendState = 'error';
       }
     });
@@ -135,7 +137,7 @@ export class BookSearchComponent {
     book.kindleState = 'sending';
 
     this.api.sendToKindle(book.md5, book.title).subscribe({
-      next: (resp: SendToDriveResponse) => {
+      next: (resp: SendToBooxResponse) => {
         this.downloadsLeft =
           resp.accountFastInfo?.downloadsLeft ?? this.downloadsLeft;
         book.kindleState = resp.success ? 'success' : 'error';

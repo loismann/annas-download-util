@@ -7,19 +7,11 @@
 
   <ItemGroup>
     <PackageReference Include="BCrypt.Net-Next" Version="4.0.3" />
+    <PackageReference Include="Dropbox.Api" Version="7.0.0" />
     <PackageReference Include="MailKit" Version="4.14.0" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.0" />
     <ProjectReference Include="..\AnnasArchive.Core\AnnasArchive.Core.csproj" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.7.0" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <!-- Core Google API support -->
-    <PackageReference Include="Google.Apis" Version="1.63.0" />
-    <!-- OAuth2 credential handling -->
-    <PackageReference Include="Google.Apis.Auth" Version="1.63.0" />
-    <!-- Google Drive v3 client library -->
-    <PackageReference Include="Google.Apis.Drive.v3" Version="1.63.0.2532" />
   </ItemGroup>
 
   <ItemGroup>

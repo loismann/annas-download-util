@@ -10,4 +10,20 @@ html, body {
   font-family: Roboto, "Helvetica Neue", sans-serif;
 }
 
+/* Prevent horizontal scroll on mobile */
+body {
+  overflow-x: hidden;
+}
+
+/* Make Material form fields responsive */
+.mat-form-field {
+  width: 100%;
+}
+
+/* Ensure buttons don't overflow on mobile */
+button {
+  max-width: 100%;
+  word-wrap: break-word;
+}
+
 /* …any other global styles… */

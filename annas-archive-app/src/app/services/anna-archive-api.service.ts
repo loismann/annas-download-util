@@ -14,11 +14,11 @@ export interface DownloadMemberResponse {
   } | null;
 }
 
-/* ─────────────── new send-to-drive shape ─────────────────────── */
-export interface SendToDriveResponse {
+/* ─────────────── new send-to-boox shape (via Dropbox) ─────────────────────── */
+export interface SendToBooxResponse {
   success: boolean;
-  driveFileId?: string;
-  driveFileLink?: string;
+  dropboxPath?: string;
+  dropboxFileId?: string;
   message?: string;
   accountFastInfo: {
     downloadsLeft: number;
@@ -57,13 +57,13 @@ export class AnnaArchiveApiService {
   }
 
   /* ══════════════════════════════════════════════════════════════
-     NEW  ➜  Send the file straight to Google Drive (“Boox”)
+     NEW  ➜  Send the file to Dropbox for Boox sync
      – passes book title so backend can name it correctly
      ══════════════════════════════════════════════════════════════ */
-  sendToDrive(md5: string, title: string): Observable<SendToDriveResponse> {
+  sendToBoox(md5: string, title: string): Observable<SendToBooxResponse> {
     const params = new HttpParams().set('title', title);
-    return this.http.post<SendToDriveResponse>(
-      `${this.baseUrl}/book/${md5}/send-to-drive`,
+    return this.http.post<SendToBooxResponse>(
+      `${this.baseUrl}/book/${md5}/send-to-boox`,
       null,
       { params }
     );
@@ -72,9 +72,9 @@ export class AnnaArchiveApiService {
   /* ══════════════════════════════════════════════════════════════
      NEW  ➜  Send the file to Kindle via email
      ══════════════════════════════════════════════════════════════ */
-  sendToKindle(md5: string, title: string): Observable<SendToDriveResponse> {
+  sendToKindle(md5: string, title: string): Observable<SendToBooxResponse> {
     const params = new HttpParams().set('title', title);
-    return this.http.post<SendToDriveResponse>(
+    return this.http.post<SendToBooxResponse>(
       `${this.baseUrl}/book/${md5}/send-to-kindle`,
       null,
       { params }

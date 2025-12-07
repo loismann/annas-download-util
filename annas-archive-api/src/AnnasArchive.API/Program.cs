@@ -12,12 +12,8 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.OpenApi.Models;
 using AnnasArchive.Core.Models;
 using AnnasArchive.Core.Services;
-using Google.Apis.Auth.OAuth2;
-using Google.Apis.Auth.OAuth2.Flows;
-using Google.Apis.Auth.OAuth2.Responses;
-using Google.Apis.Drive.v3;
-using Google.Apis.Services;
-using System.Threading;
+using Dropbox.Api;
+using Dropbox.Api.Files;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
@@ -53,8 +49,10 @@ builder.Services.AddAuthentication(options =>
     {
         ValidateIssuerSigningKey = true,
         IssuerSigningKey = new SymmetricSecurityKey(jwtKey),
-        ValidateIssuer = false,
-        ValidateAudience = false,
+        ValidateIssuer = true,
+        ValidIssuer = "AnnasArchiveAPI",
+        ValidateAudience = true,
+        ValidAudience = "AnnasArchiveApp",
         ValidateLifetime = true,
         ClockSkew = TimeSpan.Zero
     };
@@ -84,68 +82,21 @@ builder.Services.AddHttpClient<AnnaArchiveService>(c =>
 // ─── Email Service ───────────────────────────────────────────────────────
 builder.Services.AddSingleton<IEmailService, EmailService>();
 
-// ─── google drive service (OAuth 2.0) - lazy initialization ──────────────
-DriveService? driveServiceInstance = null;
-object driveLock = new object();
-
-builder.Services.AddSingleton(provider =>
+// ─── dropbox client (refresh token auth) ─────────────────────────────────────
+builder.Services.AddSingleton<DropboxClient>(provider =>
 {
-    lock (driveLock)
-    {
-        if (driveServiceInstance != null)
-            return driveServiceInstance;
+    var cfg = provider.GetRequiredService<IConfiguration>();
+    var appKey       = cfg["Dropbox:AppKey"];
+    var appSecret    = cfg["Dropbox:AppSecret"];
+    var refreshToken = cfg["Dropbox:RefreshToken"];
 
-        var cfg = provider.GetRequiredService<IConfiguration>();
-        var tokenPath = cfg["GoogleDrive:TokenPath"];
+    if (string.IsNullOrWhiteSpace(appKey) ||
+        string.IsNullOrWhiteSpace(appSecret) ||
+        string.IsNullOrWhiteSpace(refreshToken))
+        throw new InvalidOperationException("Dropbox is not configured. Please set Dropbox:AppKey, Dropbox:AppSecret, and Dropbox:RefreshToken in appsettings.json");
 
-        if (File.Exists(tokenPath))
-        {
-            Console.WriteLine($"✅ Found existing OAuth token at {tokenPath}");
-            var tokenJson = File.ReadAllText(tokenPath);
-            var tokenData = JsonSerializer.Deserialize<JsonElement>(tokenJson);
-
-            var tokenResponse = new TokenResponse
-            {
-                AccessToken = tokenData.GetProperty("access_token").GetString(),
-                RefreshToken = tokenData.GetProperty("refresh_token").GetString(),
-                ExpiresInSeconds = tokenData.GetProperty("expires_in").GetInt64(),
-                Scope = tokenData.GetProperty("scope").GetString(),
-                TokenType = tokenData.GetProperty("token_type").GetString(),
-                IssuedUtc = DateTime.UtcNow.AddSeconds(-10) // Assume token was just issued
-            };
-
-            var secrets = JsonSerializer.Deserialize<JsonElement>(
-                File.ReadAllText(cfg["GoogleDrive:OAuthClientPath"]!));
-            var web = secrets.GetProperty("web");
-
-            var flow = new GoogleAuthorizationCodeFlow(new GoogleAuthorizationCodeFlow.Initializer
-            {
-                ClientSecrets = new ClientSecrets
-                {
-                    ClientId = web.GetProperty("client_id").GetString(),
-                    ClientSecret = web.GetProperty("client_secret").GetString()
-                },
-                Scopes = new[] { DriveService.ScopeConstants.DriveFile }
-            });
-
-            var credential = new UserCredential(flow, "user", tokenResponse);
-
-            driveServiceInstance = new DriveService(new BaseClientService.Initializer
-            {
-                HttpClientInitializer = credential,
-                ApplicationName = "Anna-Boox-Proxy"
-            });
-
-            Console.WriteLine("✅ Google Drive OAuth credentials loaded successfully");
-        }
-        else
-        {
-            Console.WriteLine($"⚠️  No OAuth token found. Please visit /api/auth/google to authorize.");
-            driveServiceInstance = null!;
-        }
-
-        return driveServiceInstance!;
-    }
+    Console.WriteLine("✅ Dropbox client initialized with refresh-token auth");
+    return new DropboxClient(refreshToken, appKey, appSecret);
 });
 
 // ─── misc ────────────────────────────────────────────────────────────────
@@ -161,7 +112,21 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "Anna's Archive v1"));
 }
 
-app.UseCors(p => p.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod());
+app.UseCors(p => p
+    .WithOrigins("http://fs01pfbooks.synology.me", "http://localhost:4200")
+    .AllowAnyHeader()
+    .AllowAnyMethod());
+
+// ─── security headers ────────────────────────────────────────────────
+app.Use(async (context, next) =>
+{
+    context.Response.Headers.Add("X-Content-Type-Options", "nosniff");
+    context.Response.Headers.Add("X-Frame-Options", "DENY");
+    context.Response.Headers.Add("X-XSS-Protection", "1; mode=block");
+    context.Response.Headers.Add("Content-Security-Policy", "default-src 'self'");
+    context.Response.Headers.Add("Referrer-Policy", "strict-origin-when-cross-origin");
+    await next();
+});
 
 app.UseAuthentication();
 app.UseAuthorization();
@@ -226,12 +191,12 @@ app.MapGet("/api/anna/book/{md5}/download/member", async (
 })
 .RequireAuthorization();
 
-// ─── 4) send-to-drive ────────────────────────────────────────────────────
-app.MapPost("/api/anna/book/{md5}/send-to-drive", async (
+// ─── 4) send-to-boox (via Dropbox) ──────────────────────────────────────
+app.MapPost("/api/anna/book/{md5}/send-to-boox", async (
     [FromRoute] string md5,
     [FromQuery] string? title,
     AnnaArchiveService anna,
-    DriveService drive,
+    DropboxClient dropbox,
     IConfiguration cfg) =>
 {
     var doc = await anna.GetMemberDownloadDocumentAsync(md5, memberKey);
@@ -270,67 +235,81 @@ app.MapPost("/api/anna/book/{md5}/send-to-drive", async (
         };
 
     var fileName = $"{safeTitle}{ext}";
+    var uploadPath = $"{cfg["Dropbox:UploadFolderPath"]}/{fileName}";
 
     using var stream = await resp.Content.ReadAsStreamAsync();
 
-    var fileMeta = new Google.Apis.Drive.v3.Data.File
-    {
-        Name    = fileName,
-        Parents = new[] { cfg["GoogleDrive:UploadFolderId"] }
-    };
-
     try
     {
-        Console.WriteLine($"Attempting to upload file '{fileName}' to Google Drive folder '{cfg["GoogleDrive:UploadFolderId"]}'");
-        
-        var upload = drive.Files.Create(fileMeta, stream, resp.Content.Headers.ContentType?.MediaType ?? "application/octet-stream");
-        upload.Fields = "id, webViewLink";
-        
-        Console.WriteLine("Starting Google Drive upload...");
-        var uploadResult = await upload.UploadAsync();
-        
-        Console.WriteLine($"Upload result status: {uploadResult.Status}");
-        
-        if (uploadResult.Status != Google.Apis.Upload.UploadStatus.Completed)
-        {
-            var errorMessage = uploadResult.Exception?.Message ?? $"Upload failed with status: {uploadResult.Status}";
-            Console.WriteLine($"❌ Google Drive upload failed: {errorMessage}");
-            return Results.Ok(new
-            {
-                success         = false,
-                message         = errorMessage,
-                accountFastInfo = acctInfo
-            });
-        }
+        Console.WriteLine($"Uploading '{fileName}' to Dropbox: {uploadPath}");
 
-        var driveFile = upload.ResponseBody;
-        if (driveFile == null)
-        {
-            Console.WriteLine("❌ Google Drive upload completed but response body is null");
-            return Results.Ok(new
-            {
-                success         = false,
-                message         = "Upload completed but no file information returned",
-                accountFastInfo = acctInfo
-            });
-        }
-        
-        Console.WriteLine($"✅ Google Drive upload successful! File ID: {driveFile.Id}, Link: {driveFile.WebViewLink}");
-        
+        var uploaded = await dropbox.Files.UploadAsync(
+            uploadPath,
+            WriteMode.Overwrite.Instance,
+            body: stream
+        );
+
+        Console.WriteLine($"✅ Dropbox upload successful! File: {uploaded.PathDisplay}");
+
         return Results.Ok(new
         {
             success         = true,
-            driveFileId     = driveFile.Id,
-            driveFileLink   = driveFile.WebViewLink,
+            dropboxPath     = uploaded.PathDisplay,
+            dropboxFileId   = uploaded.Id,
+            accountFastInfo = acctInfo
+        });
+    }
+    catch (ApiException<UploadError> ex)
+    {
+        var details = ex.ErrorResponse?.ToString() ?? ex.ToString();
+        Console.WriteLine($"❌ Dropbox upload failed: {ex.Message}{(string.IsNullOrWhiteSpace(details) ? "" : $" | Details: {details}")}");
+
+        return Results.Ok(new
+        {
+            success         = false,
+            message         = $"Dropbox upload failed: {ex.Message}",
+            details         = details,
+            accountFastInfo = acctInfo
+        });
+    }
+    catch (HttpException ex)
+    {
+        var details = ex.ToString();
+        Console.WriteLine($"❌ Dropbox upload failed (HTTP {ex.StatusCode}): {ex.Message} | Uri: {ex.RequestUri} | Details: {details}");
+        return Results.Ok(new
+        {
+            success         = false,
+            message         = $"Dropbox upload failed: {ex.Message}",
+            details         = $"StatusCode: {ex.StatusCode}, Uri: {ex.RequestUri}, Exception: {details}",
+            accountFastInfo = acctInfo
+        });
+    }
+    catch (DropboxException ex)
+    {
+        Console.WriteLine($"❌ Dropbox upload failed (DropboxException): {ex}");
+        return Results.Ok(new
+        {
+            success         = false,
+            message         = $"Dropbox upload failed: {ex.Message}",
+            details         = ex.ToString(),
+            accountFastInfo = acctInfo
+        });
+    }
+    catch (HttpRequestException ex)
+    {
+        Console.WriteLine($"❌ Dropbox upload failed (HTTP): {ex}");
+        return Results.Ok(new
+        {
+            success         = false,
+            message         = $"Dropbox upload failed: {ex.Message}",
+            details         = ex.ToString(),
             accountFastInfo = acctInfo
         });
     }
     catch (Exception ex)
     {
-        Console.WriteLine($"❌ Google Drive upload failed: {ex.Message}");
-        Console.WriteLine($"Exception type: {ex.GetType().Name}");
-        Console.WriteLine($"Stack trace: {ex.StackTrace}");
-        
+        Console.WriteLine($"❌ Dropbox upload failed: {ex.Message}");
+
         return Results.Ok(new
         {
             success         = false,
@@ -385,7 +364,7 @@ app.MapPost("/api/anna/book/{md5}/send-to-kindle", async (
         };
 
     var fileName = $"{safeTitle}{ext}";
-    var tempFilePath = Path.Combine(Path.GetTempPath(), fileName);
+    var tempFilePath = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid()}_{fileName}");
 
     try
     {
@@ -433,76 +412,6 @@ app.MapPost("/api/anna/book/{md5}/send-to-kindle", async (
 })
 .RequireAuthorization();
 
-// ─── 6) OAuth endpoints ──────────────────────────────────────────────────
-app.MapGet("/api/auth/google", (IConfiguration cfg) =>
-{
-    var secrets = JsonSerializer.Deserialize<JsonElement>(
-        File.ReadAllText(cfg["GoogleDrive:OAuthClientPath"]!));
-    var web = secrets.GetProperty("web");
-    var clientId = web.GetProperty("client_id").GetString();
-    var redirectUri = web.GetProperty("redirect_uris").EnumerateArray().First().GetString();
-
-    var authUrl = $"https://accounts.google.com/o/oauth2/auth?" +
-                  $"client_id={Uri.EscapeDataString(clientId!)}" +
-                  $"&redirect_uri={Uri.EscapeDataString(redirectUri!)}" +
-                  $"&response_type=code" +
-                  $"&scope={Uri.EscapeDataString(DriveService.ScopeConstants.DriveFile)}" +
-                  $"&access_type=offline" +
-                  $"&prompt=consent";
-
-    return Results.Redirect(authUrl);
-});
-
-app.MapGet("/oauth2callback", async ([FromQuery] string code, IConfiguration cfg) =>
-{
-    if (string.IsNullOrEmpty(code))
-        return Results.BadRequest(new { error = "No authorization code received" });
-
-    var secrets = JsonSerializer.Deserialize<JsonElement>(
-        File.ReadAllText(cfg["GoogleDrive:OAuthClientPath"]!));
-    var web = secrets.GetProperty("web");
-    var clientId = web.GetProperty("client_id").GetString();
-    var clientSecret = web.GetProperty("client_secret").GetString();
-    var redirectUri = web.GetProperty("redirect_uris").EnumerateArray().First().GetString();
-
-    // Exchange code for token
-    var httpClient = new HttpClient();
-    var tokenRequest = new Dictionary<string, string>
-    {
-        ["code"] = code,
-        ["client_id"] = clientId!,
-        ["client_secret"] = clientSecret!,
-        ["redirect_uri"] = redirectUri!,
-        ["grant_type"] = "authorization_code"
-    };
-
-    var tokenResponse = await httpClient.PostAsync(
-        "https://oauth2.googleapis.com/token",
-        new FormUrlEncodedContent(tokenRequest));
-
-    var tokenJson = await tokenResponse.Content.ReadAsStringAsync();
-
-    if (!tokenResponse.IsSuccessStatusCode)
-        return Results.BadRequest(new { error = "Failed to exchange code for token", details = tokenJson });
-
-    // Save token
-    var tokenPath = cfg["GoogleDrive:TokenPath"];
-    File.WriteAllText(tokenPath!, tokenJson);
-
-    // Reset the DriveService singleton so it picks up the new token
-    driveServiceInstance = null;
-
-    return Results.Content(@"
-        <html>
-        <body style='font-family: sans-serif; padding: 40px; text-align: center;'>
-            <h1>✅ Authorization Successful!</h1>
-            <p>Your Google Drive has been connected.</p>
-            <p>You can close this window and try uploading a book again.</p>
-        </body>
-        </html>
-    ", "text/html");
-});
-
 // ─── 6) Login endpoint (using invite codes) ──────────────────────────────
 app.MapPost("/api/auth/login", (CodeLoginRequest request, IConfiguration cfg) =>
 {
@@ -540,6 +449,8 @@ app.MapPost("/api/auth/login", (CodeLoginRequest request, IConfiguration cfg) =>
     {
         Subject = new ClaimsIdentity(claims),
         Expires = DateTime.UtcNow.AddDays(tokenExpirationDays),
+        Issuer = "AnnasArchiveAPI",
+        Audience = "AnnasArchiveApp",
         SigningCredentials = new SigningCredentials(
             new SymmetricSecurityKey(jwtKey),
             SecurityAlgorithms.HmacSha256Signature)
@@ -555,16 +466,6 @@ app.MapPost("/api/auth/login", (CodeLoginRequest request, IConfiguration cfg) =>
         isAdmin = validCode.IsAdmin,
         expiresAt = tokenDescriptor.Expires
     });
-});
-
-// ─── 7) Password hash generator (temporary utility endpoint) ─────────────
-app.MapGet("/api/auth/hash-password", ([FromQuery] string password) =>
-{
-    if (string.IsNullOrEmpty(password))
-        return Results.BadRequest(new { error = "Password parameter required" });
-
-    var hash = BCrypt.Net.BCrypt.HashPassword(password);
-    return Results.Ok(new { password, hash });
 });
 
 app.Run();

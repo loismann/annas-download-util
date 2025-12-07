@@ -157,3 +157,13 @@ publish/
 # Deployment guide with examples (optional - contains example access codes)
 # DEPLOYMENT_GUIDE.md
 
+# Deployment scripts (contain server-specific paths and credentials)
+deploy.sh
+
+# All markdown files (may contain sensitive documentation)
+*.md
+*.MD
+
+# Auto-generated version file
+**/version.ts
+

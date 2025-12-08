@@ -167,3 +167,4 @@ deploy.sh
 # Auto-generated version file
 **/version.ts
 
+.DS_Store

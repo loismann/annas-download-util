@@ -28,9 +28,9 @@ export interface SendToBooxResponse {
 
 @Injectable({ providedIn: 'root' })
 export class AnnaArchiveApiService {
-  private readonly baseUrl = 'http://fs01pfbooks.synology.me:5050/api/anna';
-  // Use the path below for local development
-  // private readonly baseUrl = '/api/anna';
+  private readonly baseUrl = 'https://fs01pfbooks.synology.me:5051/api/anna';
+  // Use the path below for local development (HTTP)
+  // private readonly baseUrl = 'http://localhost:5050/api/anna';
 
   constructor(private http: HttpClient) {}
 

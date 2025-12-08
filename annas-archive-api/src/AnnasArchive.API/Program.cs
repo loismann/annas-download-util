@@ -15,10 +15,13 @@ using AnnasArchive.Core.Services;
 using Dropbox.Api;
 using Dropbox.Api.Files;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using System.Threading.RateLimiting;
+using BCrypt.Net;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -58,7 +61,33 @@ builder.Services.AddAuthentication(options =>
     };
 });
 
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorization(options =>
+{
+    // Admin policy for future use
+    options.AddPolicy("AdminOnly", policy => policy.RequireRole("Admin"));
+});
+
+// ─── rate limiting ───────────────────────────────────────────────────────
+builder.Services.AddRateLimiter(options =>
+{
+    // Global API rate limit: 60 requests per minute per IP
+    options.AddFixedWindowLimiter("api", opt =>
+    {
+        opt.PermitLimit = 60;
+        opt.Window = TimeSpan.FromMinutes(1);
+        opt.QueueProcessingOrder = System.Threading.RateLimiting.QueueProcessingOrder.OldestFirst;
+        opt.QueueLimit = 0; // No queueing
+    });
+
+    // Stricter rate limit for login: 5 attempts per minute per IP
+    options.AddFixedWindowLimiter("login", opt =>
+    {
+        opt.PermitLimit = 5;
+        opt.Window = TimeSpan.FromMinutes(1);
+        opt.QueueProcessingOrder = System.Threading.RateLimiting.QueueProcessingOrder.OldestFirst;
+        opt.QueueLimit = 0;
+    });
+});
 
 // ─── swagger ─────────────────────────────────────────────────────────────
 builder.Services.AddEndpointsApiExplorer();
@@ -113,23 +142,35 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseCors(p => p
-    .WithOrigins("http://fs01pfbooks.synology.me", "http://localhost:4200")
+    .WithOrigins(
+        "https://fs01pfbooks.synology.me",      // Production HTTPS
+        "http://fs01pfbooks.synology.me",       // Production HTTP (fallback)
+        "http://localhost:4200",                // Local dev
+        "https://localhost:4200"                // Local dev HTTPS
+    )
     .AllowAnyHeader()
     .AllowAnyMethod());
 
 // ─── security headers ────────────────────────────────────────────────
 app.Use(async (context, next) =>
 {
-    context.Response.Headers.Add("X-Content-Type-Options", "nosniff");
-    context.Response.Headers.Add("X-Frame-Options", "DENY");
-    context.Response.Headers.Add("X-XSS-Protection", "1; mode=block");
-    context.Response.Headers.Add("Content-Security-Policy", "default-src 'self'");
-    context.Response.Headers.Add("Referrer-Policy", "strict-origin-when-cross-origin");
+    context.Response.Headers["X-Content-Type-Options"] = "nosniff";
+    context.Response.Headers["X-Frame-Options"] = "DENY";
+    context.Response.Headers["X-XSS-Protection"] = "1; mode=block";
+    context.Response.Headers["Content-Security-Policy"] = "default-src 'self'";
+    context.Response.Headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
     await next();
 });
 
+app.UseRateLimiter();
+
 app.UseAuthentication();
 app.UseAuthorization();
+
+// ─── validation helpers ──────────────────────────────────────────────────
+static bool IsValidMd5(string md5) =>
+    !string.IsNullOrWhiteSpace(md5) &&
+    Regex.IsMatch(md5, "^[a-f0-9]{32}$", RegexOptions.IgnoreCase);
 
 // ─── 1) search ───────────────────────────────────────────────────────────
 app.MapGet("/api/anna/book", async (
@@ -151,25 +192,33 @@ app.MapGet("/api/anna/book", async (
         ? books.Count == 1 ? Results.Ok(books[0]) : Results.Ok(books)
         : Results.NotFound(new { message = "No books found matching that name." });
 })
-.RequireAuthorization();
+.RequireAuthorization()
+.RequireRateLimiting("api");
 
 // ─── 2) non-member download ──────────────────────────────────────────────
 app.MapGet("/api/anna/book/{md5}/download", async (
     [FromRoute] string md5,
     AnnaArchiveService svc) =>
 {
+    if (!IsValidMd5(md5))
+        return Results.BadRequest(new { error = "Invalid MD5 format. Must be 32 hexadecimal characters." });
+
     var links = await svc.GetDownloadLinksAsync(md5);
     return links.Any()
         ? Results.Ok(new { id = md5, downloadLinks = links })
         : Results.NotFound(new { message = "No download links found." });
 })
-.RequireAuthorization();
+.RequireAuthorization()
+.RequireRateLimiting("api");
 
 // ─── 3) member download (url + counters) ─────────────────────────────────
 app.MapGet("/api/anna/book/{md5}/download/member", async (
     [FromRoute] string md5,
     AnnaArchiveService svc) =>
 {
+    if (!IsValidMd5(md5))
+        return Results.BadRequest(new { error = "Invalid MD5 format. Must be 32 hexadecimal characters." });
+
     var doc = await svc.GetMemberDownloadDocumentAsync(md5, memberKey);
 
     string? downloadUrl = null;
@@ -189,7 +238,8 @@ app.MapGet("/api/anna/book/{md5}/download/member", async (
         ? Results.NotFound(new { message = "No download URL found." })
         : Results.Ok(new { downloadUrl, accountFastInfo = acctInfo });
 })
-.RequireAuthorization();
+.RequireAuthorization()
+.RequireRateLimiting("api");
 
 // ─── 4) send-to-boox (via Dropbox) ──────────────────────────────────────
 app.MapPost("/api/anna/book/{md5}/send-to-boox", async (
@@ -199,6 +249,12 @@ app.MapPost("/api/anna/book/{md5}/send-to-boox", async (
     DropboxClient dropbox,
     IConfiguration cfg) =>
 {
+    if (!IsValidMd5(md5))
+        return Results.BadRequest(new { error = "Invalid MD5 format. Must be 32 hexadecimal characters." });
+
+    if (title?.Length > 500)
+        return Results.BadRequest(new { error = "Title too long. Maximum 500 characters." });
+
     var doc = await anna.GetMemberDownloadDocumentAsync(md5, memberKey);
 
     string? downloadUrl = null;
@@ -267,8 +323,7 @@ app.MapPost("/api/anna/book/{md5}/send-to-boox", async (
         return Results.Ok(new
         {
             success         = false,
-            message         = $"Dropbox upload failed: {ex.Message}",
-            details         = details,
+            message         = "Failed to upload file to Dropbox. Please try again.",
             accountFastInfo = acctInfo
         });
     }
@@ -279,8 +334,7 @@ app.MapPost("/api/anna/book/{md5}/send-to-boox", async (
         return Results.Ok(new
         {
             success         = false,
-            message         = $"Dropbox upload failed: {ex.Message}",
-            details         = $"StatusCode: {ex.StatusCode}, Uri: {ex.RequestUri}, Exception: {details}",
+            message         = "Failed to upload file to Dropbox. Please try again.",
             accountFastInfo = acctInfo
         });
     }
@@ -290,8 +344,7 @@ app.MapPost("/api/anna/book/{md5}/send-to-boox", async (
         return Results.Ok(new
         {
             success         = false,
-            message         = $"Dropbox upload failed: {ex.Message}",
-            details         = ex.ToString(),
+            message         = "Failed to upload file to Dropbox. Please try again.",
             accountFastInfo = acctInfo
         });
     }
@@ -301,8 +354,7 @@ app.MapPost("/api/anna/book/{md5}/send-to-boox", async (
         return Results.Ok(new
         {
             success         = false,
-            message         = $"Dropbox upload failed: {ex.Message}",
-            details         = ex.ToString(),
+            message         = "Failed to upload file to Dropbox. Please try again.",
             accountFastInfo = acctInfo
         });
     }
@@ -313,12 +365,13 @@ app.MapPost("/api/anna/book/{md5}/send-to-boox", async (
         return Results.Ok(new
         {
             success         = false,
-            message         = ex.Message,
+            message         = "Failed to upload file to Dropbox. Please try again.",
             accountFastInfo = acctInfo
         });
     }
 })
-.RequireAuthorization();
+.RequireAuthorization()
+.RequireRateLimiting("api");
 
 // ─── 5) send-to-kindle ───────────────────────────────────────────────────
 app.MapPost("/api/anna/book/{md5}/send-to-kindle", async (
@@ -328,6 +381,12 @@ app.MapPost("/api/anna/book/{md5}/send-to-kindle", async (
     IEmailService emailService,
     IConfiguration cfg) =>
 {
+    if (!IsValidMd5(md5))
+        return Results.BadRequest(new { error = "Invalid MD5 format. Must be 32 hexadecimal characters." });
+
+    if (title?.Length > 500)
+        return Results.BadRequest(new { error = "Title too long. Maximum 500 characters." });
+
     var doc = await anna.GetMemberDownloadDocumentAsync(md5, memberKey);
 
     string? downloadUrl = null;
@@ -396,7 +455,7 @@ app.MapPost("/api/anna/book/{md5}/send-to-kindle", async (
         return Results.Ok(new
         {
             success         = false,
-            message         = ex.Message,
+            message         = "Failed to send book to Kindle. Please try again.",
             accountFastInfo = acctInfo
         });
     }
@@ -410,7 +469,8 @@ app.MapPost("/api/anna/book/{md5}/send-to-kindle", async (
         }
     }
 })
-.RequireAuthorization();
+.RequireAuthorization()
+.RequireRateLimiting("api");
 
 // ─── 6) Login endpoint (using invite codes) ──────────────────────────────
 app.MapPost("/api/auth/login", (CodeLoginRequest request, IConfiguration cfg) =>
@@ -425,9 +485,25 @@ app.MapPost("/api/auth/login", (CodeLoginRequest request, IConfiguration cfg) =>
     if (codes == null || codes.Count == 0)
         return Results.Unauthorized();
 
-    // Find valid code
+    // Find valid code (supports both hashed and plaintext for migration)
     var validCode = codes.FirstOrDefault(c =>
-        c.Code.Equals(request.Code, StringComparison.OrdinalIgnoreCase));
+    {
+        // If the stored code starts with "$2" it's a BCrypt hash
+        if (c.Code.StartsWith("$2"))
+        {
+            try
+            {
+                return BCrypt.Net.BCrypt.Verify(request.Code, c.Code);
+            }
+            catch
+            {
+                return false; // Invalid hash format
+            }
+        }
+
+        // Fall back to plaintext comparison (DEPRECATED - migrate to BCrypt)
+        return c.Code.Equals(request.Code, StringComparison.OrdinalIgnoreCase);
+    });
 
     if (validCode == null)
         return Results.Unauthorized();
@@ -466,7 +542,27 @@ app.MapPost("/api/auth/login", (CodeLoginRequest request, IConfiguration cfg) =>
         isAdmin = validCode.IsAdmin,
         expiresAt = tokenDescriptor.Expires
     });
+})
+.RequireRateLimiting("login");
+
+// ─── 7) Development helper: Generate BCrypt hashes ───────────────────────
+#if DEBUG
+app.MapGet("/api/dev/hash", (string? code) =>
+{
+    if (string.IsNullOrEmpty(code))
+        return Results.BadRequest(new { error = "Provide ?code=yourcode in the query string" });
+
+    // Generate BCrypt hash with work factor 12 (good balance of security and performance)
+    var hash = BCrypt.Net.BCrypt.HashPassword(code, workFactor: 12);
+
+    return Results.Ok(new
+    {
+        original = code,
+        hashed = hash,
+        instructions = "Copy the 'hashed' value to appsettings.json Auth:AccessCodes:Code field"
+    });
 });
+#endif
 
 app.Run();
 

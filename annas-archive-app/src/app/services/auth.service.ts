@@ -17,20 +17,23 @@ export interface LoginResponse {
 
 @Injectable({ providedIn: 'root' })
 export class AuthService {
-  private readonly baseUrl = 'http://fs01pfbooks.synology.me:5050/api/auth';
+  private readonly baseUrl = 'https://fs01pfbooks.synology.me:5051/api/auth';
   private readonly TOKEN_KEY = 'auth_token';
   private readonly NAME_KEY = 'auth_name';
   private readonly ADMIN_KEY = 'auth_admin';
   private isBrowser: boolean;
 
-  private isAuthenticatedSubject = new BehaviorSubject<boolean>(this.hasToken());
-  public isAuthenticated$ = this.isAuthenticatedSubject.asObservable();
+  private isAuthenticatedSubject!: BehaviorSubject<boolean>;
+  public isAuthenticated$!: Observable<boolean>;
 
   constructor(
     private http: HttpClient,
     @Inject(PLATFORM_ID) platformId: Object
   ) {
     this.isBrowser = isPlatformBrowser(platformId);
+    // Initialize AFTER isBrowser is set
+    this.isAuthenticatedSubject = new BehaviorSubject<boolean>(this.hasToken());
+    this.isAuthenticated$ = this.isAuthenticatedSubject.asObservable();
   }
 
   login(code: string): Observable<LoginResponse> {

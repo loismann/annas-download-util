@@ -26,11 +26,30 @@ export interface SendToBooxResponse {
   } | null;
 }
 
+/* ─────────────── gaming PC control response ─────────────────────── */
+export interface GamingToggleResponse {
+  success: boolean;
+  action: string;
+  message: string;
+  output?: string;
+  error?: string;
+}
+
+/* ─────────────── gaming PC status response ─────────────────────── */
+export interface GamingStatusResponse {
+  isOnline: boolean;
+  ipAddress: string;
+  lastChecked: string;
+  error?: string;
+}
+
 @Injectable({ providedIn: 'root' })
 export class AnnaArchiveApiService {
   private readonly baseUrl = 'https://fs01pfbooks.synology.me:5051/api/anna';
+  private readonly gamingBaseUrl = 'https://fs01pfbooks.synology.me:5051/api/gaming';
   // Use the path below for local development (HTTP)
   // private readonly baseUrl = 'http://localhost:5050/api/anna';
+  // private readonly gamingBaseUrl = 'http://localhost:5050/api/gaming';
 
   constructor(private http: HttpClient) {}
 
@@ -72,12 +91,35 @@ export class AnnaArchiveApiService {
   /* ══════════════════════════════════════════════════════════════
      NEW  ➜  Send the file to Kindle via email
      ══════════════════════════════════════════════════════════════ */
-  sendToKindle(md5: string, title: string): Observable<SendToBooxResponse> {
-    const params = new HttpParams().set('title', title);
+  sendToKindle(md5: string, title: string, target: 'dad' | 'mom'): Observable<SendToBooxResponse> {
+    const params = new HttpParams()
+      .set('title', title)
+      .set('target', target);
     return this.http.post<SendToBooxResponse>(
       `${this.baseUrl}/book/${md5}/send-to-kindle`,
       null,
       { params }
+    );
+  }
+
+  /* ══════════════════════════════════════════════════════════════
+     NEW  ➜  Toggle gaming PC (wake/sleep)
+     ══════════════════════════════════════════════════════════════ */
+  toggleGamingPC(action: 1 | 2): Observable<GamingToggleResponse> {
+    const params = new HttpParams().set('action', action.toString());
+    return this.http.post<GamingToggleResponse>(
+      `${this.gamingBaseUrl}/toggle`,
+      null,
+      { params }
+    );
+  }
+
+  /* ══════════════════════════════════════════════════════════════
+     NEW  ➜  Check gaming PC status (online/offline)
+     ══════════════════════════════════════════════════════════════ */
+  getGamingPCStatus(): Observable<GamingStatusResponse> {
+    return this.http.get<GamingStatusResponse>(
+      `${this.gamingBaseUrl}/status`
     );
   }
 }

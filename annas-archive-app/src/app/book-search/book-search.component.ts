@@ -87,7 +87,8 @@ export class BookSearchComponent {
         this.books = books;
         this.books.forEach(b => {
           b.sendState = 'idle';
-          b.kindleState = 'idle';
+          b.dadsKindleState = 'idle';
+          b.momsKindleState = 'idle';
         });
         this.loading = false;
       },
@@ -131,20 +132,38 @@ export class BookSearchComponent {
     });
   }
 
-  /* ───────── send-to-kindle button ───────── */
-  sendToKindle(book: BookDto): void {
-    if (book.kindleState === 'sending') return;  // guard double-click
-    book.kindleState = 'sending';
+  /* ───────── send-to-dad's-kindle button ───────── */
+  sendToDadsKindle(book: BookDto): void {
+    if (book.dadsKindleState === 'sending') return;  // guard double-click
+    book.dadsKindleState = 'sending';
 
-    this.api.sendToKindle(book.md5, book.title).subscribe({
+    this.api.sendToKindle(book.md5, book.title, 'dad').subscribe({
       next: (resp: SendToBooxResponse) => {
         this.downloadsLeft =
           resp.accountFastInfo?.downloadsLeft ?? this.downloadsLeft;
-        book.kindleState = resp.success ? 'success' : 'error';
+        book.dadsKindleState = resp.success ? 'success' : 'error';
       },
       error: err => {
-        console.error('Send-to-Kindle failed', err);
-        book.kindleState = 'error';
+        console.error('Send-to-Dad\'s-Kindle failed', err);
+        book.dadsKindleState = 'error';
+      }
+    });
+  }
+
+  /* ───────── send-to-mom's-kindle button ───────── */
+  sendToMomsKindle(book: BookDto): void {
+    if (book.momsKindleState === 'sending') return;  // guard double-click
+    book.momsKindleState = 'sending';
+
+    this.api.sendToKindle(book.md5, book.title, 'mom').subscribe({
+      next: (resp: SendToBooxResponse) => {
+        this.downloadsLeft =
+          resp.accountFastInfo?.downloadsLeft ?? this.downloadsLeft;
+        book.momsKindleState = resp.success ? 'success' : 'error';
+      },
+      error: err => {
+        console.error('Send-to-Mom\'s-Kindle failed', err);
+        book.momsKindleState = 'error';
       }
     });
   }

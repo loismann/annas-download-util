@@ -91,19 +91,35 @@
                 </ng-container>
               </button>
 
-              <!-- send-to-kindle (admin only) -->
+              <!-- send-to-dad's-kindle (admin only) -->
               <button
                 *ngIf="authService.isAdmin()"
                 mat-button
                 color="primary"
-                (click)="sendToKindle(book)"
-                [disabled]="book.kindleState === 'sending'"
+                (click)="sendToDadsKindle(book)"
+                [disabled]="book.dadsKindleState === 'sending'"
               >
-                <ng-container [ngSwitch]="book.kindleState">
+                <ng-container [ngSwitch]="book.dadsKindleState">
                   <span *ngSwitchCase="'sending'">Sending…</span>
                   <span *ngSwitchCase="'success'">✔ Sent!</span>
                   <span *ngSwitchCase="'error'">✖ Retry</span>
-                  <span *ngSwitchDefault>Send to Kindle</span>
+                  <span *ngSwitchDefault>Send to Dad's Kindle</span>
+                </ng-container>
+              </button>
+
+              <!-- send-to-mom's-kindle (admin only) -->
+              <button
+                *ngIf="authService.isAdmin()"
+                mat-button
+                color="primary"
+                (click)="sendToMomsKindle(book)"
+                [disabled]="book.momsKindleState === 'sending'"
+              >
+                <ng-container [ngSwitch]="book.momsKindleState">
+                  <span *ngSwitchCase="'sending'">Sending…</span>
+                  <span *ngSwitchCase="'success'">✔ Sent!</span>
+                  <span *ngSwitchCase="'error'">✖ Retry</span>
+                  <span *ngSwitchDefault>Send to Mom's Kindle</span>
                 </ng-container>
               </button>
             </mat-card-actions>

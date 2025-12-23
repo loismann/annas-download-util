@@ -159,6 +159,7 @@ publish/
 
 # Deployment scripts (contain server-specific paths and credentials)
 deploy.sh
+deployment-logs/
 
 # All markdown files (may contain sensitive documentation)
 *.md

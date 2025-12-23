@@ -22,6 +22,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Threading.RateLimiting;
 using BCrypt.Net;
+using System.Diagnostics;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -377,6 +378,7 @@ app.MapPost("/api/anna/book/{md5}/send-to-boox", async (
 app.MapPost("/api/anna/book/{md5}/send-to-kindle", async (
     [FromRoute] string md5,
     [FromQuery] string? title,
+    [FromQuery] string target,
     AnnaArchiveService anna,
     IEmailService emailService,
     IConfiguration cfg) =>
@@ -386,6 +388,9 @@ app.MapPost("/api/anna/book/{md5}/send-to-kindle", async (
 
     if (title?.Length > 500)
         return Results.BadRequest(new { error = "Title too long. Maximum 500 characters." });
+
+    if (string.IsNullOrWhiteSpace(target) || (target != "dad" && target != "mom"))
+        return Results.BadRequest(new { error = "Invalid target. Must be 'dad' or 'mom'." });
 
     var doc = await anna.GetMemberDownloadDocumentAsync(md5, memberKey);
 
@@ -433,8 +438,11 @@ app.MapPost("/api/anna/book/{md5}/send-to-kindle", async (
             await resp.Content.CopyToAsync(fileStream);
         }
 
-        // Send email
-        var kindleEmail = cfg["Email:KindleEmail"] ?? throw new InvalidOperationException("Email:KindleEmail not configured");
+        // Send email to the appropriate Kindle
+        var kindleEmail = target.ToLower() == "dad"
+            ? cfg["Email:DadsKindleEmail"] ?? throw new InvalidOperationException("Email:DadsKindleEmail not configured")
+            : cfg["Email:MomsKindleEmail"] ?? throw new InvalidOperationException("Email:MomsKindleEmail not configured");
+
         await emailService.SendEmailWithAttachmentAsync(
             kindleEmail,
             "Book from Anna's Archive",
@@ -445,7 +453,7 @@ app.MapPost("/api/anna/book/{md5}/send-to-kindle", async (
         return Results.Ok(new
         {
             success         = true,
-            message         = "Book sent to Kindle",
+            message         = $"Book sent to {target}'s Kindle",
             accountFastInfo = acctInfo
         });
     }
@@ -563,6 +571,134 @@ app.MapGet("/api/dev/hash", (string? code) =>
     });
 });
 #endif
+
+// ─── 8) Gaming PC Control ────────────────────────────────────────────────
+
+// Check gaming PC status (online/offline)
+app.MapGet("/api/gaming/status", async (IConfiguration cfg) =>
+{
+    var pcIp = "192.168.0.80"; // Gaming PC IP
+
+    try
+    {
+        Console.WriteLine($"→ Checking gaming PC status at {pcIp}");
+
+        // Use ping to check if PC is reachable
+        var process = new Process
+        {
+            StartInfo = new ProcessStartInfo
+            {
+                FileName = "/bin/ping",
+                Arguments = $"-c 1 -W 1 {pcIp}", // 1 ping with 1 second timeout
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            }
+        };
+
+        process.Start();
+        await process.WaitForExitAsync();
+
+        var isOnline = process.ExitCode == 0;
+        Console.WriteLine($"✅ Gaming PC status: {(isOnline ? "ONLINE" : "OFFLINE")}");
+
+        return Results.Ok(new
+        {
+            isOnline = isOnline,
+            ipAddress = pcIp,
+            lastChecked = DateTime.UtcNow
+        });
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"❌ Gaming PC status check exception: {ex.Message}");
+        return Results.Ok(new
+        {
+            isOnline = false,
+            ipAddress = pcIp,
+            lastChecked = DateTime.UtcNow,
+            error = "Failed to check PC status"
+        });
+    }
+})
+.RequireAuthorization()
+.RequireRateLimiting("api");
+
+app.MapPost("/api/gaming/toggle", async (
+    [FromQuery] int action,
+    IConfiguration cfg) =>
+{
+    if (action != 1 && action != 2)
+        return Results.BadRequest(new { error = "Invalid action. Use 1 to wake PC, 2 to sleep PC." });
+
+    var synologyHost = cfg["Gaming:SynologyHost"];
+    var synologyUser = cfg["Gaming:SynologyUser"];
+    var synologyKeyPath = cfg["Gaming:SynologyKeyPath"];
+
+    if (string.IsNullOrEmpty(synologyHost) || string.IsNullOrEmpty(synologyUser))
+        return Results.Problem("Gaming PC control is not configured.");
+
+    try
+    {
+        var actionName = action == 1 ? "wake" : "sleep";
+        Console.WriteLine($"→ Gaming PC {actionName} request received");
+
+        // SSH into Synology and run the wake-steam.sh script
+        var process = new Process
+        {
+            StartInfo = new ProcessStartInfo
+            {
+                FileName = "/usr/bin/ssh",
+                Arguments = string.IsNullOrEmpty(synologyKeyPath)
+                    ? $"{synologyUser}@{synologyHost} \"/usr/local/bin/wake-steam.sh {action}\""
+                    : $"-i {synologyKeyPath} {synologyUser}@{synologyHost} \"/usr/local/bin/wake-steam.sh {action}\"",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            }
+        };
+
+        process.Start();
+        var output = await process.StandardOutput.ReadToEndAsync();
+        var error = await process.StandardError.ReadToEndAsync();
+        await process.WaitForExitAsync();
+
+        if (process.ExitCode == 0)
+        {
+            Console.WriteLine($"✅ Gaming PC {actionName} successful");
+            Console.WriteLine(output);
+            return Results.Ok(new
+            {
+                success = true,
+                action = actionName,
+                message = action == 1
+                    ? "Gaming PC is waking up and launching Steam..."
+                    : "Gaming PC is shutting down...",
+                output = output
+            });
+        }
+        else
+        {
+            Console.WriteLine($"❌ Gaming PC {actionName} failed: {error}");
+            return Results.Ok(new
+            {
+                success = false,
+                action = actionName,
+                message = "Failed to control gaming PC.",
+                error = error
+            });
+        }
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"❌ Gaming PC control exception: {ex.Message}");
+        return Results.Problem("An error occurred while controlling the gaming PC.");
+    }
+})
+.RequireAuthorization()
+.RequireRateLimiting("api");
 
 app.Run();
 

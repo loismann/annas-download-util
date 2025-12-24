@@ -37,6 +37,10 @@ import { AuthService } from './services/auth.service';
           <mat-icon>search</mat-icon>
           <span>Book Search</span>
         </button>
+        <button mat-menu-item routerLink="/reader">
+          <mat-icon>menu_book</mat-icon>
+          <span>Dropbox Reader</span>
+        </button>
         <button mat-menu-item routerLink="/gaming">
           <mat-icon>videogame_asset</mat-icon>
           <span>Gaming PC</span>

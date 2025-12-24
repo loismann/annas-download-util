@@ -5,12 +5,13 @@ import { provideAnimations } from '@angular/platform-browser/animations';
 
 import { routes } from './app.routes';
 import { authInterceptor } from './interceptors/auth.interceptor';
+import { mockDataInterceptor } from './interceptors/mock-data.interceptor';
 
 export const appConfig: ApplicationConfig = {
   providers: [
     provideZoneChangeDetection({ eventCoalescing: true }),
     provideRouter(routes, withHashLocation()),  // Add hash-based routing
-    provideHttpClient(withInterceptors([authInterceptor]), withFetch()),
+    provideHttpClient(withInterceptors([mockDataInterceptor, authInterceptor]), withFetch()),
     provideAnimations()
   ]
 };

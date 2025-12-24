@@ -146,9 +146,11 @@ service-account.json
 oauth-client.json
 oauth-token.json
 
-# Application secrets
+# Application secrets (any depth)
 appsettings.json
 appsettings.*.json
+**/appsettings.json
+**/appsettings.*.json
 
 # Build/publish output with secrets
 publish/

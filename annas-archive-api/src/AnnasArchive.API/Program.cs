@@ -570,6 +570,17 @@ app.MapPost("/api/ai/summarize", async (
     if (request is null || string.IsNullOrWhiteSpace(request.Text))
         return Results.BadRequest(new { error = "Text is required." });
 
+    // Check token limit
+    var allowance = cfg.GetValue<long?>("OpenAI:MonthlyTokenAllowance");
+    if (allowance.HasValue && OpenAiUsageTracker.IsOverLimit(allowance.Value))
+    {
+        return Results.Problem(
+            detail: "Monthly token allowance has been exceeded. The service will reset at the beginning of next month.",
+            statusCode: 429,
+            title: "Token Limit Exceeded"
+        );
+    }
+
     var apiKey = cfg["OpenAI:ApiKey"] ?? Environment.GetEnvironmentVariable("OPENAI_API_KEY");
     if (string.IsNullOrWhiteSpace(apiKey))
         return Results.Problem("OpenAI API key not configured.");
@@ -646,7 +657,7 @@ app.MapPost("/api/ai/summarize", async (
 
         var payload = new
         {
-            model = "gpt-4o-mini",
+            model = "gpt-5",
             messages = new[]
             {
                 new { role = "system", content = systemPrompt },
@@ -667,6 +678,14 @@ app.MapPost("/api/ai/summarize", async (
             .GetProperty("message")
             .GetProperty("content")
             .GetString();
+
+        // Track token usage
+        if (doc.RootElement.TryGetProperty("usage", out var usage))
+        {
+            var promptTokens = usage.GetProperty("prompt_tokens").GetInt32();
+            var completionTokens = usage.GetProperty("completion_tokens").GetInt32();
+            OpenAiUsageTracker.AddUsage(promptTokens, completionTokens);
+        }
 
         if (cacheDirForSummary != null && request.ChapterId.HasValue)
         {
@@ -698,6 +717,17 @@ app.MapPost("/api/ai/vocab/learn-more", async (
 {
     if (request is null || string.IsNullOrWhiteSpace(request.Term))
         return Results.BadRequest(new { error = "Term is required." });
+
+    // Check token limit
+    var allowance = cfg.GetValue<long?>("OpenAI:MonthlyTokenAllowance");
+    if (allowance.HasValue && OpenAiUsageTracker.IsOverLimit(allowance.Value))
+    {
+        return Results.Problem(
+            detail: "Monthly token allowance has been exceeded. The service will reset at the beginning of next month.",
+            statusCode: 429,
+            title: "Token Limit Exceeded"
+        );
+    }
 
     var apiKey = cfg["OpenAI:ApiKey"] ?? Environment.GetEnvironmentVariable("OPENAI_API_KEY");
     if (string.IsNullOrWhiteSpace(apiKey))
@@ -732,7 +762,7 @@ Relevant passage/context: {request.Context ?? "(none)"}";
 
         var payload = new
         {
-            model = "gpt-4o-mini",
+            model = "gpt-5",
             messages = new[]
             {
                 new { role = "system", content = "You are an academic explainer. Respond in rich prose, 200-300 words." },
@@ -753,6 +783,14 @@ Relevant passage/context: {request.Context ?? "(none)"}";
             .GetProperty("message")
             .GetProperty("content")
             .GetString();
+
+        // Track token usage
+        if (doc.RootElement.TryGetProperty("usage", out var usage))
+        {
+            var promptTokens = usage.GetProperty("prompt_tokens").GetInt32();
+            var completionTokens = usage.GetProperty("completion_tokens").GetInt32();
+            OpenAiUsageTracker.AddUsage(promptTokens, completionTokens);
+        }
 
         return Results.Ok(new LearnMoreResponse(detail ?? "No details returned."));
     }
@@ -784,6 +822,17 @@ app.MapPost("/api/ai/flashcards", async (
     if (request is null || string.IsNullOrWhiteSpace(request.Term) || string.IsNullOrWhiteSpace(request.DropboxPath))
         return Results.BadRequest(new { error = "Term and dropboxPath are required." });
 
+    // Check token limit
+    var allowance = cfg.GetValue<long?>("OpenAI:MonthlyTokenAllowance");
+    if (allowance.HasValue && OpenAiUsageTracker.IsOverLimit(allowance.Value))
+    {
+        return Results.Problem(
+            detail: "Monthly token allowance has been exceeded. The service will reset at the beginning of next month.",
+            statusCode: 429,
+            title: "Token Limit Exceeded"
+        );
+    }
+
     var apiKey = cfg["OpenAI:ApiKey"] ?? Environment.GetEnvironmentVariable("OPENAI_API_KEY");
     if (string.IsNullOrWhiteSpace(apiKey))
         return Results.Problem("OpenAI API key not configured.");
@@ -802,7 +851,7 @@ Relevant passage/context: {request.Context ?? "(none)"}";
 
         var payload = new
         {
-            model = "gpt-4o-mini",
+            model = "gpt-5",
             messages = new[]
             {
                 new { role = "system", content = "You are a flashcard generator. Respond ONLY with JSON, no markdown." },
@@ -823,6 +872,14 @@ Relevant passage/context: {request.Context ?? "(none)"}";
             .GetProperty("message")
             .GetProperty("content")
             .GetString() ?? "{}";
+
+        // Track token usage
+        if (doc.RootElement.TryGetProperty("usage", out var usage))
+        {
+            var promptTokens = usage.GetProperty("prompt_tokens").GetInt32();
+            var completionTokens = usage.GetProperty("completion_tokens").GetInt32();
+            OpenAiUsageTracker.AddUsage(promptTokens, completionTokens);
+        }
 
         FlashcardItem card;
         try
@@ -1152,6 +1209,17 @@ app.MapPost("/api/ai/summarize/chapter", async (
     if (request.ChapterId < 0)
         return Results.BadRequest(new { error = "chapterId must be zero or positive." });
 
+    // Check token limit
+    var allowance = cfg.GetValue<long?>("OpenAI:MonthlyTokenAllowance");
+    if (allowance.HasValue && OpenAiUsageTracker.IsOverLimit(allowance.Value))
+    {
+        return Results.Problem(
+            detail: "Monthly token allowance has been exceeded. The service will reset at the beginning of next month.",
+            statusCode: 429,
+            title: "Token Limit Exceeded"
+        );
+    }
+
     var apiKey = cfg["OpenAI:ApiKey"] ?? Environment.GetEnvironmentVariable("OPENAI_API_KEY");
     if (string.IsNullOrWhiteSpace(apiKey))
         return Results.Problem("OpenAI API key not configured.");
@@ -1183,7 +1251,7 @@ app.MapPost("/api/ai/summarize/chapter", async (
         {
             var payload = new
             {
-                model = "gpt-4o-mini",
+                model = "gpt-5",
                 messages = new[]
                 {
                     new { role = "system", content = "You are a literary study guide assistant. Summarize this passage concisely, focusing on plot, key ideas, themes, and tone. Keep it under 200 words." },
@@ -1226,7 +1294,7 @@ app.MapPost("/api/ai/summarize/chapter", async (
 
         var finalPrompt = new
         {
-            model = "gpt-4o-mini",
+            model = "gpt-5",
             messages = new[]
             {
                 new { role = "system", content = "You are a literary study guide assistant. Using the provided chunk summaries, write a cohesive, comprehensive summary of the entire chapter (max ~350 words). Highlight plot beats, themes, tone, and notable stylistic elements. Avoid hallucinating content not in the summaries." },
@@ -1256,13 +1324,13 @@ app.MapPost("/api/ai/summarize/chapter", async (
 
         OpenAiUsageTracker.AddUsage(promptTokensTotal, completionTokensTotal);
         var totals = OpenAiUsageTracker.GetTotals();
-        var allowance = cfg.GetValue<long?>("OpenAI:MonthlyTokenAllowance");
+        var monthlyAllowance = cfg.GetValue<long?>("OpenAI:MonthlyTokenAllowance");
         double? percent = null;
         long? remaining = null;
-        if (allowance.HasValue && allowance.Value > 0)
+        if (monthlyAllowance.HasValue && monthlyAllowance.Value > 0)
         {
-            percent = Math.Round((double)totals.Total / allowance.Value * 100, 2);
-            remaining = allowance.Value - totals.Total;
+            percent = Math.Round((double)totals.Total / monthlyAllowance.Value * 100, 2);
+            remaining = monthlyAllowance.Value - totals.Total;
         }
 
         var resp = new FullChapterSummaryResponse(
@@ -1271,7 +1339,8 @@ app.MapPost("/api/ai/summarize/chapter", async (
             completionTokensTotal,
             promptTokensTotal + completionTokensTotal,
             percent,
-            remaining);
+            remaining,
+            DateTime.UtcNow);
 
         return Results.Ok(resp);
     }
@@ -1325,6 +1394,16 @@ app.MapGet("/api/ai/usage", (IConfiguration cfg) =>
         remaining,
         reset);
     return Results.Ok(resp);
+})
+.RequireAuthorization()
+.RequireRateLimiting("api");
+
+// Reset token usage counter
+app.MapPost("/api/ai/usage/reset", () =>
+{
+    OpenAiUsageTracker.Reset();
+    Console.WriteLine("✅ Token usage counter has been reset");
+    return Results.Ok(new { success = true, message = "Token usage counter has been reset" });
 })
 .RequireAuthorization()
 .RequireRateLimiting("api");
@@ -1681,8 +1760,6 @@ record FullChapterSummaryRequest(string DropboxPath, int ChapterId, string? Book
 record FullChapterSummaryResponse(string Summary, int PromptTokens, int CompletionTokens, int TotalTokens, double? AllowanceUsedPercent, long? TokensRemaining, DateTime CachedAt);
 record ChapterSummaryCacheResponse(string Summary, int PromptTokens, int CompletionTokens, int TotalTokens, DateTime CachedAt);
 record TokenUsageResponse(long PromptTokens, long CompletionTokens, long TotalTokens, long? Allowance, double? AllowanceUsedPercent, long? TokensRemaining, DateTime? ResetsAtUtc);
-record FullChapterSummaryRequest(string DropboxPath, int ChapterId, string? BookTitle, string? Author, int? Year, string? Premise);
-record FullChapterSummaryResponse(string Summary, int PromptTokens, int CompletionTokens, int TotalTokens, double? AllowanceUsedPercent, long? TokensRemaining);
 
 // ─── Helper class for Dropbox EPUB caching ──────────────────────────────
 static class DropboxEpubCache
@@ -2011,42 +2088,133 @@ static class DropboxEpubCache
     public static string ComputeHashPublic(string value) => ComputeHash(value);
 }
 
-// ─── Helper for tracking OpenAI token usage within this process ─────────
+// ─── Helper for tracking OpenAI token usage with persistent file storage ─────────
 static class OpenAiUsageTracker
 {
-    private static long _promptTokens = 0;
-    private static long _completionTokens = 0;
+    private static readonly string UsageFilePath = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+        ".annas-archive",
+        "openai-usage.json"
+    );
+    private static readonly object FileLock = new object();
+
+    private class UsageData
+    {
+        public long PromptTokens { get; set; }
+        public long CompletionTokens { get; set; }
+        public DateTime LastResetDate { get; set; }
+    }
+
+    private static UsageData LoadUsage()
+    {
+        lock (FileLock)
+        {
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(UsageFilePath)!);
+
+                if (!File.Exists(UsageFilePath))
+                {
+                    return new UsageData
+                    {
+                        PromptTokens = 0,
+                        CompletionTokens = 0,
+                        LastResetDate = DateTime.UtcNow
+                    };
+                }
+
+                var json = File.ReadAllText(UsageFilePath);
+                return JsonSerializer.Deserialize<UsageData>(json) ?? new UsageData
+                {
+                    PromptTokens = 0,
+                    CompletionTokens = 0,
+                    LastResetDate = DateTime.UtcNow
+                };
+            }
+            catch
+            {
+                return new UsageData
+                {
+                    PromptTokens = 0,
+                    CompletionTokens = 0,
+                    LastResetDate = DateTime.UtcNow
+                };
+            }
+        }
+    }
+
+    private static void SaveUsage(UsageData data)
+    {
+        lock (FileLock)
+        {
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(UsageFilePath)!);
+                var json = JsonSerializer.Serialize(data, new JsonSerializerOptions
+                {
+                    WriteIndented = true
+                });
+                File.WriteAllText(UsageFilePath, json);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"⚠️ Failed to save token usage: {ex.Message}");
+            }
+        }
+    }
 
     public static void AddUsage(int prompt, int completion)
     {
-        Interlocked.Add(ref _promptTokens, prompt);
-        Interlocked.Add(ref _completionTokens, completion);
+        var data = LoadUsage();
+        data.PromptTokens += prompt;
+        data.CompletionTokens += completion;
+        SaveUsage(data);
     }
 
-    public static (long Prompt, long Completion, long Total) GetTotals() =>
-        (_promptTokens, _completionTokens, _promptTokens + _completionTokens);
-}
-        OpenAiUsageTracker.AddUsage(promptTokensTotal, completionTokensTotal);
-        var totals = OpenAiUsageTracker.GetTotals();
-        var allowance = cfg.GetValue<long?>("OpenAI:MonthlyTokenAllowance");
-        double? percent = null;
-        long? remaining = null;
-        if (allowance.HasValue && allowance.Value > 0)
+    public static (long Prompt, long Completion, long Total) GetTotals()
+    {
+        var data = LoadUsage();
+        CheckAndAutoReset(ref data);
+        return (data.PromptTokens, data.CompletionTokens, data.PromptTokens + data.CompletionTokens);
+    }
+
+    public static bool IsOverLimit(long allowance)
+    {
+        var data = LoadUsage();
+        CheckAndAutoReset(ref data);
+        var total = data.PromptTokens + data.CompletionTokens;
+        return total >= allowance;
+    }
+
+    public static void Reset()
+    {
+        var data = new UsageData
         {
-            percent = Math.Round((double)totals.Total / allowance.Value * 100, 2);
-            remaining = allowance.Value - totals.Total;
-        }
-
-        var resp = new FullChapterSummaryResponse(
-            finalSummary,
-            promptTokensTotal,
-            completionTokensTotal,
-            promptTokensTotal + completionTokensTotal,
-            percent,
-            remaining,
-            DateTime.UtcNow);
-
-        await SaveChapterSummaryAsync(request.DropboxPath, request.ChapterId, resp);
-
-        return Results.Ok(resp);
+            PromptTokens = 0,
+            CompletionTokens = 0,
+            LastResetDate = DateTime.UtcNow
+        };
+        SaveUsage(data);
     }
+
+    private static void CheckAndAutoReset(ref UsageData data)
+    {
+        // Check if we've passed into a new month since last reset
+        var now = DateTime.UtcNow;
+        var lastReset = data.LastResetDate;
+
+        // Reset if we're in a different month OR if it's been more than 30 days
+        var shouldReset = (now.Year > lastReset.Year && now.Month >= lastReset.Month) ||
+                         (now.Year == lastReset.Year && now.Month > lastReset.Month) ||
+                         (now - lastReset).TotalDays >= 30;
+
+        if (shouldReset)
+        {
+            Console.WriteLine($"📅 Auto-resetting token usage counter (last reset: {lastReset:yyyy-MM-dd}, now: {now:yyyy-MM-dd})");
+            data.PromptTokens = 0;
+            data.CompletionTokens = 0;
+            data.LastResetDate = now;
+            SaveUsage(data);
+        }
+    }
+}

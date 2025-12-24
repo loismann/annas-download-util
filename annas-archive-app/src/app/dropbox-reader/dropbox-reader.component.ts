@@ -262,7 +262,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
   markWordAsUnknown(word: VocabularyWord): void {
     this.vocabularyService.markAsUnknown(word.term, word.definition, this.selectedBookPath ?? undefined);
     this.removeVocabularyWord(word.term);
-    this.prefetchLearnMore(word.term, word.definition);
+    // Deep dive analysis will only be fetched when user explicitly views the word from study list
   }
 
   private formatAnalysis(text: string): string {
@@ -448,7 +448,6 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
   summarize(): void {
     if (!this.chapterContent) return;
     this.loadingSummary = true;
-    this.fullChapterSummary = null;
     const text = this.visibleText || this.chapterContent.content;
 
     const allKnownWords = this.vocabularyService.getKnownWordsForPrompt();
@@ -800,18 +799,6 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
       return decodeURIComponent(match[1]);
     }
     return '';
-  }
-
-  private prefetchLearnMore(term: string, definition: string): void {
-    if (this.vocabularyService.getCachedLearnMore(term)) return;
-    const payload = {
-      term,
-      definition,
-      dropboxPath: this.selectedBookPath ?? undefined,
-      bookTitle: this.selectedBook?.name ?? undefined,
-      context: this.analysisText ?? undefined
-    };
-    this.fetchLearnMoreAndImages(payload, true);
   }
 
   loadFlashcards(): void {

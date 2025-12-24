@@ -51,6 +51,23 @@
       <div>Updated: {{ selectedBook.serverModified | date:'short' }}</div>
     </div>
 
+    <div class="token-usage-block" *ngIf="tokenUsage"
+         [class.warning]="(tokenUsage.allowanceUsedPercent || 0) >= 70 && (tokenUsage.allowanceUsedPercent || 0) < 90"
+         [class.danger]="(tokenUsage.allowanceUsedPercent || 0) >= 90">
+      <div class="token-usage-header">
+        <span class="token-label">AI Usage</span>
+        <span class="token-percent">{{ tokenUsage.allowanceUsedPercent | number:'1.0-1' }}%</span>
+      </div>
+      <mat-progress-bar
+        mode="determinate"
+        [value]="tokenUsage.allowanceUsedPercent || 0"
+        [color]="(tokenUsage.allowanceUsedPercent || 0) >= 90 ? 'warn' : (tokenUsage.allowanceUsedPercent || 0) >= 70 ? 'accent' : 'primary'">
+      </mat-progress-bar>
+      <div class="token-reset" *ngIf="tokenUsage.resetsAtUtc">
+        Resets {{ tokenUsage.resetsAtUtc | date:'MMM d' }}
+      </div>
+    </div>
+
     <div class="status-block" *ngIf="status">
       <div class="status-row">
         <span>Indexing: {{ status.percent }}%</span>
@@ -179,15 +196,6 @@
                 <mat-icon>summarize</mat-icon>
                 {{ loadingSummary ? 'Working...' : 'Summarize page' }}
               </button>
-            </div>
-          </div>
-          <div class="analysis-actions">
-            <div class="token-chip" *ngIf="tokenUsage">
-              <span>{{ tokenUsage.totalTokens | number }} tokens</span>
-              <span *ngIf="tokenUsage.allowanceUsedPercent !== null && tokenUsage.allowanceUsedPercent !== undefined">
-                • {{ tokenUsage.allowanceUsedPercent | number:'1.0-2' }}% used
-              </span>
-              <span *ngIf="tokenUsage.resetsAtUtc">• Resets {{ tokenUsage.resetsAtUtc | date:'short' }}</span>
             </div>
           </div>
         </div>

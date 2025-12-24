@@ -1017,6 +1017,21 @@ static string BuildAnalysisPrompt(string contextBlock, string? previousAnalyses,
     return prompt.ToString();
 }
 
+static List<string> SplitIntoChunks(string text, int maxWords)
+{
+    if (string.IsNullOrWhiteSpace(text) || maxWords <= 0)
+        return new List<string>();
+
+    var words = Regex.Split(text, @"\s+").Where(w => !string.IsNullOrWhiteSpace(w)).ToArray();
+    var chunks = new List<string>();
+    for (var i = 0; i < words.Length; i += maxWords)
+    {
+        var slice = words.Skip(i).Take(maxWords);
+        chunks.Add(string.Join(" ", slice));
+    }
+    return chunks;
+}
+
 static (string cacheDir, string filePath) GetFlashcardPath(string dropboxPath)
 {
     var cacheDir = Path.Combine(DropboxEpubCache.GetCacheRoot(), DropboxEpubCache.ComputeHashPublic(dropboxPath));
@@ -1052,6 +1067,52 @@ static void SaveFlashcards(string dropboxPath, List<FlashcardItem> cards)
     System.IO.File.WriteAllText(filePath, json);
 }
 
+static string GetChapterSummaryPath(string dropboxPath, int chapterId, out string cacheDir)
+{
+    cacheDir = Path.Combine(DropboxEpubCache.GetCacheRoot(), DropboxEpubCache.ComputeHashPublic(dropboxPath));
+    Directory.CreateDirectory(cacheDir);
+    return Path.Combine(cacheDir, $"chapter-summary-{chapterId}.json");
+}
+
+static async Task SaveChapterSummaryAsync(string dropboxPath, int chapterId, FullChapterSummaryResponse resp)
+{
+    var path = GetChapterSummaryPath(dropboxPath, chapterId, out _);
+    var json = JsonSerializer.Serialize(resp, new JsonSerializerOptions
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        WriteIndented = false
+    });
+    await File.WriteAllTextAsync(path, json);
+}
+
+static async Task<FullChapterSummaryResponse?> LoadChapterSummaryAsync(string dropboxPath, int chapterId)
+{
+    var path = GetChapterSummaryPath(dropboxPath, chapterId, out _);
+    if (!File.Exists(path)) return null;
+    try
+    {
+        var json = await File.ReadAllTextAsync(path);
+        return JsonSerializer.Deserialize<FullChapterSummaryResponse>(json, new JsonSerializerOptions
+        {
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+        });
+    }
+    catch
+    {
+        return null;
+    }
+}
+
+static DateTime? ComputeResetDateUtc(IConfiguration cfg)
+{
+    var resetDay = cfg.GetValue<int?>("OpenAI:AllowanceResetDay") ?? 1;
+    if (resetDay < 1 || resetDay > 28) resetDay = 1;
+    var now = DateTime.UtcNow;
+    var thisMonth = new DateTime(now.Year, now.Month, resetDay, 0, 0, 0, DateTimeKind.Utc);
+    var nextReset = now <= thisMonth ? thisMonth : thisMonth.AddMonths(1);
+    return nextReset;
+}
+
 app.MapGet("/api/anna/dropbox/epub/search", async (
     [FromQuery] string path,
     [FromQuery] string query,
@@ -1076,6 +1137,194 @@ app.MapGet("/api/anna/dropbox/epub/search", async (
         Console.WriteLine($"❌ Failed to search EPUB cache: {ex.Message}");
         return Results.Problem("Unable to search this book right now.");
     }
+})
+.RequireAuthorization()
+.RequireRateLimiting("api");
+
+// ─── 5h) Full-chapter summary (chunked) ────────────────────────────────
+app.MapPost("/api/ai/summarize/chapter", async (
+    [FromBody] FullChapterSummaryRequest request,
+    DropboxClient dropbox,
+    IConfiguration cfg) =>
+{
+    if (request is null || string.IsNullOrWhiteSpace(request.DropboxPath))
+        return Results.BadRequest(new { error = "dropboxPath is required." });
+    if (request.ChapterId < 0)
+        return Results.BadRequest(new { error = "chapterId must be zero or positive." });
+
+    var apiKey = cfg["OpenAI:ApiKey"] ?? Environment.GetEnvironmentVariable("OPENAI_API_KEY");
+    if (string.IsNullOrWhiteSpace(apiKey))
+        return Results.Problem("OpenAI API key not configured.");
+
+    try
+    {
+        var (index, cacheDir) = await DropboxEpubCache.GetOrBuildChapterIndexAsync(dropbox, request.DropboxPath);
+        var chapter = index.Chapters.FirstOrDefault(c => c.Id == request.ChapterId);
+        if (chapter is null || string.IsNullOrWhiteSpace(chapter.FileName))
+            return Results.NotFound(new { message = "Chapter not found." });
+
+        var chapterPath = Path.Combine(cacheDir, chapter.FileName);
+        if (!File.Exists(chapterPath))
+            await DropboxEpubCache.EnsureCacheBuildAsync(dropbox, request.DropboxPath, cacheDir);
+
+        var content = await File.ReadAllTextAsync(chapterPath);
+        if (string.IsNullOrWhiteSpace(content))
+            return Results.BadRequest(new { error = "Chapter content is empty." });
+
+        var chunks = SplitIntoChunks(content, 1400); // approx words per chunk
+        var summaries = new List<string>();
+        var promptTokensTotal = 0;
+        var completionTokensTotal = 0;
+
+        using var http = new HttpClient();
+        http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+
+        foreach (var chunk in chunks)
+        {
+            var payload = new
+            {
+                model = "gpt-4o-mini",
+                messages = new[]
+                {
+                    new { role = "system", content = "You are a literary study guide assistant. Summarize this passage concisely, focusing on plot, key ideas, themes, and tone. Keep it under 200 words." },
+                    new { role = "user", content = chunk }
+                },
+                max_tokens = 400,
+                temperature = 0.25
+            };
+
+            var response = await http.PostAsJsonAsync("https://api.openai.com/v1/chat/completions", payload);
+            if (!response.IsSuccessStatusCode)
+                return Results.Problem($"OpenAI request failed while chunking: {(int)response.StatusCode}");
+
+            using var stream = await response.Content.ReadAsStreamAsync();
+            using var doc = await JsonDocument.ParseAsync(stream);
+            var chunkSummary = doc.RootElement
+                .GetProperty("choices")[0]
+                .GetProperty("message")
+                .GetProperty("content")
+                .GetString() ?? string.Empty;
+
+            summaries.Add(chunkSummary);
+
+            if (doc.RootElement.TryGetProperty("usage", out var usage))
+            {
+                promptTokensTotal += usage.GetProperty("prompt_tokens").GetInt32();
+                completionTokensTotal += usage.GetProperty("completion_tokens").GetInt32();
+            }
+        }
+
+        var contextParts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(request.BookTitle))
+            contextParts.Add($"Title: {request.BookTitle}");
+        if (!string.IsNullOrWhiteSpace(request.Author))
+            contextParts.Add($"Author: {request.Author}");
+        if (request.Year.HasValue)
+            contextParts.Add($"Year: {request.Year.Value}");
+        if (!string.IsNullOrWhiteSpace(request.Premise))
+            contextParts.Add($"Premise: {request.Premise}");
+
+        var finalPrompt = new
+        {
+            model = "gpt-4o-mini",
+            messages = new[]
+            {
+                new { role = "system", content = "You are a literary study guide assistant. Using the provided chunk summaries, write a cohesive, comprehensive summary of the entire chapter (max ~350 words). Highlight plot beats, themes, tone, and notable stylistic elements. Avoid hallucinating content not in the summaries." },
+                new { role = "user", content = $"Book context: {string.Join(" | ", contextParts)}\n\nChunk summaries:\n{string.Join("\n\n---\n\n", summaries)}" }
+            },
+            max_tokens = 650,
+            temperature = 0.35
+        };
+
+        var finalResponse = await http.PostAsJsonAsync("https://api.openai.com/v1/chat/completions", finalPrompt);
+        if (!finalResponse.IsSuccessStatusCode)
+            return Results.Problem($"OpenAI request failed for final summary: {(int)finalResponse.StatusCode}");
+
+        using var finalStream = await finalResponse.Content.ReadAsStreamAsync();
+        using var finalDoc = await JsonDocument.ParseAsync(finalStream);
+        var finalSummary = finalDoc.RootElement
+            .GetProperty("choices")[0]
+            .GetProperty("message")
+            .GetProperty("content")
+            .GetString() ?? "No summary returned.";
+
+        if (finalDoc.RootElement.TryGetProperty("usage", out var finalUsage))
+        {
+            promptTokensTotal += finalUsage.GetProperty("prompt_tokens").GetInt32();
+            completionTokensTotal += finalUsage.GetProperty("completion_tokens").GetInt32();
+        }
+
+        OpenAiUsageTracker.AddUsage(promptTokensTotal, completionTokensTotal);
+        var totals = OpenAiUsageTracker.GetTotals();
+        var allowance = cfg.GetValue<long?>("OpenAI:MonthlyTokenAllowance");
+        double? percent = null;
+        long? remaining = null;
+        if (allowance.HasValue && allowance.Value > 0)
+        {
+            percent = Math.Round((double)totals.Total / allowance.Value * 100, 2);
+            remaining = allowance.Value - totals.Total;
+        }
+
+        var resp = new FullChapterSummaryResponse(
+            finalSummary,
+            promptTokensTotal,
+            completionTokensTotal,
+            promptTokensTotal + completionTokensTotal,
+            percent,
+            remaining);
+
+        return Results.Ok(resp);
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"❌ Full-chapter summary failed: {ex.Message}");
+        return Results.Problem("Failed to summarize chapter.");
+    }
+})
+.RequireAuthorization()
+.RequireRateLimiting("api");
+
+// Retrieve cached full-chapter summary (if any)
+app.MapGet("/api/ai/summarize/chapter", async (
+    [FromQuery] string dropboxPath,
+    [FromQuery] int chapterId) =>
+{
+    if (string.IsNullOrWhiteSpace(dropboxPath) || chapterId < 0)
+        return Results.BadRequest(new { error = "dropboxPath and valid chapterId are required." });
+
+    var cached = await LoadChapterSummaryAsync(dropboxPath, chapterId);
+    if (cached == null)
+        return Results.NotFound(new { message = "No summary cached for this chapter." });
+
+    return Results.Ok(cached);
+})
+.RequireAuthorization()
+.RequireRateLimiting("api");
+
+// Token usage status
+app.MapGet("/api/ai/usage", (IConfiguration cfg) =>
+{
+    var totals = OpenAiUsageTracker.GetTotals();
+    var allowance = cfg.GetValue<long?>("OpenAI:MonthlyTokenAllowance");
+    double? percent = null;
+    long? remaining = null;
+    if (allowance.HasValue && allowance.Value > 0)
+    {
+        percent = Math.Round((double)totals.Total / allowance.Value * 100, 2);
+        remaining = allowance.Value - totals.Total;
+    }
+
+    var reset = ComputeResetDateUtc(cfg);
+
+    var resp = new TokenUsageResponse(
+        totals.Prompt,
+        totals.Completion,
+        totals.Total,
+        allowance,
+        percent,
+        remaining,
+        reset);
+    return Results.Ok(resp);
 })
 .RequireAuthorization()
 .RequireRateLimiting("api");
@@ -1428,6 +1677,12 @@ record FlashcardRequest(string Term, string? Definition, string? DropboxPath, st
 record FlashcardItem(string Term, string Definition, string Etymology, List<string> UsageExamples, string? Notes);
 record WikiImagesResponse(List<string> Images);
 record SummarizeResponse(string Summary);
+record FullChapterSummaryRequest(string DropboxPath, int ChapterId, string? BookTitle, string? Author, int? Year, string? Premise);
+record FullChapterSummaryResponse(string Summary, int PromptTokens, int CompletionTokens, int TotalTokens, double? AllowanceUsedPercent, long? TokensRemaining, DateTime CachedAt);
+record ChapterSummaryCacheResponse(string Summary, int PromptTokens, int CompletionTokens, int TotalTokens, DateTime CachedAt);
+record TokenUsageResponse(long PromptTokens, long CompletionTokens, long TotalTokens, long? Allowance, double? AllowanceUsedPercent, long? TokensRemaining, DateTime? ResetsAtUtc);
+record FullChapterSummaryRequest(string DropboxPath, int ChapterId, string? BookTitle, string? Author, int? Year, string? Premise);
+record FullChapterSummaryResponse(string Summary, int PromptTokens, int CompletionTokens, int TotalTokens, double? AllowanceUsedPercent, long? TokensRemaining);
 
 // ─── Helper class for Dropbox EPUB caching ──────────────────────────────
 static class DropboxEpubCache
@@ -1755,3 +2010,43 @@ static class DropboxEpubCache
     public static string GetCacheRoot() => EpubCacheRoot;
     public static string ComputeHashPublic(string value) => ComputeHash(value);
 }
+
+// ─── Helper for tracking OpenAI token usage within this process ─────────
+static class OpenAiUsageTracker
+{
+    private static long _promptTokens = 0;
+    private static long _completionTokens = 0;
+
+    public static void AddUsage(int prompt, int completion)
+    {
+        Interlocked.Add(ref _promptTokens, prompt);
+        Interlocked.Add(ref _completionTokens, completion);
+    }
+
+    public static (long Prompt, long Completion, long Total) GetTotals() =>
+        (_promptTokens, _completionTokens, _promptTokens + _completionTokens);
+}
+        OpenAiUsageTracker.AddUsage(promptTokensTotal, completionTokensTotal);
+        var totals = OpenAiUsageTracker.GetTotals();
+        var allowance = cfg.GetValue<long?>("OpenAI:MonthlyTokenAllowance");
+        double? percent = null;
+        long? remaining = null;
+        if (allowance.HasValue && allowance.Value > 0)
+        {
+            percent = Math.Round((double)totals.Total / allowance.Value * 100, 2);
+            remaining = allowance.Value - totals.Total;
+        }
+
+        var resp = new FullChapterSummaryResponse(
+            finalSummary,
+            promptTokensTotal,
+            completionTokensTotal,
+            promptTokensTotal + completionTokensTotal,
+            percent,
+            remaining,
+            DateTime.UtcNow);
+
+        await SaveChapterSummaryAsync(request.DropboxPath, request.ChapterId, resp);
+
+        return Results.Ok(resp);
+    }

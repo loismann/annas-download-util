@@ -23,7 +23,8 @@ import {
   DropboxEpubChapter,
   DropboxEpubFile,
   DropboxEpubStatus,
-  FlashcardItem
+  FlashcardItem,
+  FullChapterSummaryResponse
 } from '../models/dropbox-epub.model';
 import { AnnaArchiveApiService } from '../services/anna-archive-api.service';
 import { VocabularyService, VocabularyWord } from '../services/vocabulary.service';
@@ -88,6 +89,9 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
 
   summary: string | null = null;
   loadingSummary = false;
+  loadingFullChapterSummary = false;
+  fullChapterSummary: string | null = null;
+  fullSummaryTokens: { total: number; prompt: number; completion: number; allowancePercent?: number | null; remaining?: number | null } | null = null;
   formattedAnalysis: string | null = null;
   vocabularyWords: VocabularyWord[] = [];
   analysisText: string | null = null;
@@ -109,6 +113,9 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
   fontFamily: 'serif' | 'sans' | 'mono' = 'serif';
   fontSize: number = 16;
   theme: 'light' | 'sepia' | 'dark' = 'dark';
+  analysisMode: 'page' | 'chapter' = 'page';
+  tokenUsage: { promptTokens: number; completionTokens: number; totalTokens: number; allowance?: number | null; allowanceUsedPercent?: number | null; tokensRemaining?: number | null; resetsAtUtc?: string | null } | null = null;
+  fullChapterSummaryCache = new Map<number, FullChapterSummaryResponse>();
 
   get readerTextStyles(): any {
     return {
@@ -132,6 +139,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
     this.loadBooks();
     this.vocabFilters = this.vocabularyService.getBookFilters();
     setTimeout(() => this.recalcPageSize(), 0);
+    this.refreshTokenUsage();
   }
 
   ngOnDestroy(): void {
@@ -351,6 +359,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
     this.formattedAnalysis = null;
     this.vocabularyWords = [];
     this.analysisText = null;
+    this.analysisMode = 'page';
 
     this.loadChapterContent(this.selectedBookPath, chapterId);
   }
@@ -439,6 +448,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
   summarize(): void {
     if (!this.chapterContent) return;
     this.loadingSummary = true;
+    this.fullChapterSummary = null;
     const text = this.visibleText || this.chapterContent.content;
 
     const allKnownWords = this.vocabularyService.getKnownWordsForPrompt();
@@ -461,11 +471,48 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
         this.summary = resp.summary;
         this.parseSummaryOnce(resp.summary);
         this.loadingSummary = false;
+        this.refreshTokenUsage();
       },
       error: err => {
         console.error('Failed to summarize', err);
         this.summary = 'Summarization failed.';
         this.loadingSummary = false;
+        this.refreshTokenUsage();
+      }
+    });
+  }
+
+  summarizeFullChapter(): void {
+    if (!this.chapterContent || !this.selectedBookPath || this.selectedChapterId === null) return;
+    this.loadingFullChapterSummary = true;
+    this.fullChapterSummary = null;
+    this.fullSummaryTokens = null;
+
+    const payload = {
+      dropboxPath: this.selectedBookPath,
+      chapterId: this.selectedChapterId,
+      bookTitle: this.selectedBook?.name ?? ''
+    };
+
+    this.api.summarizeFullChapter(payload).subscribe({
+      next: resp => {
+        this.fullChapterSummary = resp.summary;
+        this.fullSummaryTokens = {
+          total: resp.totalTokens,
+          prompt: resp.promptTokens,
+          completion: resp.completionTokens,
+          allowancePercent: resp.allowanceUsedPercent ?? undefined,
+          remaining: resp.tokensRemaining ?? undefined
+        };
+        this.loadingFullChapterSummary = false;
+        this.fullChapterSummaryCache.set(this.selectedChapterId!, resp);
+        this.refreshTokenUsage();
+      },
+      error: err => {
+        console.error('Failed to summarize full chapter', err);
+        this.fullChapterSummary = 'Full chapter summary failed.';
+        this.loadingFullChapterSummary = false;
+        this.refreshTokenUsage();
       }
     });
   }
@@ -527,6 +574,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
         }
         this.pendingCharOffset = null;
         this.loadingContent = false;
+        this.loadCachedFullChapterSummary();
         setTimeout(() => this.recalcPageSize(), 0);
       },
       error: err => {
@@ -583,6 +631,51 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
     ].slice(0, 8);
 
     localStorage.setItem('epub_recent', JSON.stringify(this.previouslyViewed));
+  }
+
+  private loadCachedFullChapterSummary(): void {
+    if (!this.selectedBookPath || this.selectedChapterId == null) return;
+
+    const cached = this.fullChapterSummaryCache.get(this.selectedChapterId);
+    if (cached) {
+      this.fullChapterSummary = cached.summary;
+      this.fullSummaryTokens = {
+        total: cached.totalTokens,
+        prompt: cached.promptTokens,
+        completion: cached.completionTokens,
+        allowancePercent: cached.allowanceUsedPercent ?? undefined,
+        remaining: cached.tokensRemaining ?? undefined
+      };
+      return;
+    }
+
+    this.api.getFullChapterSummary(this.selectedBookPath, this.selectedChapterId).subscribe({
+      next: resp => {
+        this.fullChapterSummaryCache.set(this.selectedChapterId!, resp);
+        this.fullChapterSummary = resp.summary;
+        this.fullSummaryTokens = {
+          total: resp.totalTokens,
+          prompt: resp.promptTokens,
+          completion: resp.completionTokens,
+          allowancePercent: resp.allowanceUsedPercent ?? undefined,
+          remaining: resp.tokensRemaining ?? undefined
+        };
+      },
+      error: () => {
+        // No cached summary; ignore
+      }
+    });
+  }
+
+  private refreshTokenUsage(): void {
+    this.api.getTokenUsage().subscribe({
+      next: usage => {
+        this.tokenUsage = usage;
+      },
+      error: err => {
+        console.error('Failed to fetch token usage', err);
+      }
+    });
   }
 
   openVocabModal(): void {

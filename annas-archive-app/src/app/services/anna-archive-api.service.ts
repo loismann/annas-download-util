@@ -16,7 +16,10 @@ import {
   LearnMoreResponse,
   FlashcardRequestPayload,
   FlashcardItem,
-  WikiImagesResponse
+  WikiImagesResponse,
+  FullChapterSummaryRequest,
+  FullChapterSummaryResponse,
+  TokenUsageResponse
 } from '../models/dropbox-epub.model';
 
 /* ─────────────── existing member-download shape ──────────────── */
@@ -190,6 +193,32 @@ export class AnnaArchiveApiService {
     return this.http.post<SummarizeResponse>(
       `${apiBase}/api/ai/summarize`,
       payload
+    );
+  }
+
+  summarizeFullChapter(payload: FullChapterSummaryRequest): Observable<FullChapterSummaryResponse> {
+    const apiBase = this.baseUrl.replace('/api/anna', '');
+    return this.http.post<FullChapterSummaryResponse>(
+      `${apiBase}/api/ai/summarize/chapter`,
+      payload
+    );
+  }
+
+  getFullChapterSummary(dropboxPath: string, chapterId: number): Observable<FullChapterSummaryResponse> {
+    const apiBase = this.baseUrl.replace('/api/anna', '');
+    const params = new HttpParams()
+      .set('dropboxPath', dropboxPath)
+      .set('chapterId', chapterId.toString());
+    return this.http.get<FullChapterSummaryResponse>(
+      `${apiBase}/api/ai/summarize/chapter`,
+      { params }
+    );
+  }
+
+  getTokenUsage(): Observable<TokenUsageResponse> {
+    const apiBase = this.baseUrl.replace('/api/anna', '');
+    return this.http.get<TokenUsageResponse>(
+      `${apiBase}/api/ai/usage`
     );
   }
 

@@ -59,6 +59,35 @@ export interface SummarizeRequestPayload {
   knownWords?: string[];
 }
 
+export interface FullChapterSummaryRequest {
+  dropboxPath: string;
+  chapterId: number;
+  bookTitle?: string;
+  author?: string;
+  year?: number;
+  premise?: string;
+}
+
+export interface FullChapterSummaryResponse {
+  summary: string;
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  allowanceUsedPercent?: number | null;
+  tokensRemaining?: number | null;
+  cachedAt: string;
+}
+
+export interface TokenUsageResponse {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  allowance?: number | null;
+  allowanceUsedPercent?: number | null;
+  tokensRemaining?: number | null;
+  resetsAtUtc?: string | null;
+}
+
 export interface LearnMoreRequestPayload {
   term: string;
   definition?: string;

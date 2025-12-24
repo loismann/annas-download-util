@@ -97,36 +97,15 @@
       </mat-select>
     </mat-form-field>
 
-    <div class="pager" *ngIf="chapterContent">
-      <button mat-icon-button (click)="pageBack()" [disabled]="wordOffset === 0">
-        <mat-icon>chevron_left</mat-icon>
-      </button>
-      <span>Page {{ currentPage }} / {{ totalPages }}</span>
-      <button mat-icon-button (click)="pageForward()" [disabled]="wordOffset + pageSizeWords >= (chapterContent ? chapterContent.wordCount : 0)">
-        <mat-icon>chevron_right</mat-icon>
-      </button>
-    </div>
-
-    <mat-form-field appearance="outline" class="w-100" *ngIf="chapterContent">
-      <mat-label>Search within chapter</mat-label>
-      <input
-        matInput
-        [(ngModel)]="searchTerm"
-        (ngModelChange)="onSearchTermChange()"
-        placeholder="Find text in this chapter" />
-      <button
-        *ngIf="searchTerm"
-        mat-icon-button
-        matSuffix
-        aria-label="Clear search"
-        (click)="clearSearch()">
-        <mat-icon>close</mat-icon>
-      </button>
-    </mat-form-field>
-
-    <div class="search-meta" *ngIf="searchTerm && chapterContent">
-      {{ searchMatchCount }} match{{ searchMatchCount === 1 ? '' : 'es' }} found
-    </div>
+    <button
+      mat-stroked-button
+      color="primary"
+      class="w-100 full-chapter-summary-btn"
+      [disabled]="!chapterContent || loadingFullChapterSummary"
+      (click)="summarizeFullChapter()">
+      <mat-icon>summarize</mat-icon>
+      {{ loadingFullChapterSummary ? 'Working on full chapter...' : 'Generate full chapter summary' }}
+    </button>
 
     <div class="book-search" *ngIf="selectedBookPath">
       <h3>Search entire book</h3>
@@ -187,17 +166,63 @@
 
       <div class="text-window analysis-pane" [style.flex]="rightFlex" [ngClass]="['reader-theme-' + theme, 'reader-font-' + fontFamily]" [ngStyle]="readerTextStyles">
         <div class="analysis-header">
-          <span>Analysis</span>
-          <button mat-stroked-button color="primary" (click)="summarize()" [disabled]="loadingSummary || !chapterContent">
-            <mat-icon>summarize</mat-icon>
-            {{ loadingSummary ? 'Working...' : 'Summarize' }}
-          </button>
+          <div class="analysis-title-row">
+            <span class="analysis-label">Analysis</span>
+          </div>
+          <div class="analysis-mode-group">
+            <div class="analysis-combo">
+              <mat-select class="analysis-mode-select" [(value)]="analysisMode" panelClass="analysis-mode-panel">
+                <mat-option value="page">Page analysis</mat-option>
+                <mat-option value="chapter">Chapter analysis</mat-option>
+              </mat-select>
+              <button class="summary-btn" mat-stroked-button color="primary" (click)="summarize()" [disabled]="loadingSummary || !chapterContent">
+                <mat-icon>summarize</mat-icon>
+                {{ loadingSummary ? 'Working...' : 'Summarize page' }}
+              </button>
+            </div>
+          </div>
+          <div class="analysis-actions">
+            <div class="token-chip" *ngIf="tokenUsage">
+              <span>{{ tokenUsage.totalTokens | number }} tokens</span>
+              <span *ngIf="tokenUsage.allowanceUsedPercent !== null && tokenUsage.allowanceUsedPercent !== undefined">
+                • {{ tokenUsage.allowanceUsedPercent | number:'1.0-2' }}% used
+              </span>
+              <span *ngIf="tokenUsage.resetsAtUtc">• Resets {{ tokenUsage.resetsAtUtc | date:'short' }}</span>
+            </div>
+          </div>
         </div>
         <div class="analysis-body">
-          <div *ngIf="summary && formattedSummary; else analysisPlaceholder" [innerHTML]="formattedSummary"></div>
-          <ng-template #analysisPlaceholder>
-            <div class="analysis-placeholder">Run a summary to see analysis here.</div>
-          </ng-template>
+          <ng-container *ngIf="analysisMode === 'page'">
+            <div *ngIf="summary && formattedSummary; else analysisPlaceholder" [innerHTML]="formattedSummary"></div>
+            <ng-template #analysisPlaceholder>
+              <div class="analysis-placeholder">Run a summary to see analysis here.</div>
+            </ng-template>
+          </ng-container>
+
+          <ng-container *ngIf="analysisMode === 'chapter'">
+            <div class="full-chapter-summary" *ngIf="fullChapterSummary; else chapterPlaceholder">
+              <div class="full-summary-header">
+                <h4>Full chapter summary</h4>
+                <div class="token-meta" *ngIf="fullSummaryTokens">
+                  <span>Total: {{ fullSummaryTokens.total | number }}</span>
+                  <span>Prompt: {{ fullSummaryTokens.prompt | number }}</span>
+                  <span>Completion: {{ fullSummaryTokens.completion | number }}</span>
+                  <span *ngIf="fullSummaryTokens.allowancePercent !== undefined">
+                    Used: {{ fullSummaryTokens.allowancePercent | number:'1.0-2' }}%
+                  </span>
+                  <span *ngIf="fullSummaryTokens.remaining !== undefined">
+                    Remaining: {{ fullSummaryTokens.remaining | number }}
+                  </span>
+                </div>
+              </div>
+              <div class="full-summary-body">{{ fullChapterSummary }}</div>
+            </div>
+            <ng-template #chapterPlaceholder>
+              <div class="analysis-placeholder">
+                No chapter summary yet. Generate one from the sidebar and it will be saved for this chapter.
+              </div>
+            </ng-template>
+          </ng-container>
           <div class="vocabulary-section" *ngIf="vocabularyWords.length > 0">
             <h4 class="vocabulary-header">Vocabulary</h4>
             <div class="vocabulary-cards">

@@ -12,7 +12,9 @@
       <mat-select
         [disabled]="loadingBooks"
         [value]="selectedBookPath"
-        (selectionChange)="onBookSelected($event.value)">
+        (selectionChange)="onBookSelected($event.value)"
+        panelClass="reader-select-panel"
+        [panelWidth]="'fit-content'">
         <mat-option *ngFor="let book of dropboxBooks" [value]="book.path">
           <span class="book-name">{{ book.name }}</span>
           <span class="book-meta">
@@ -32,7 +34,9 @@
       <mat-label>Previously viewed</mat-label>
       <mat-select
         [value]="null"
-        (selectionChange)="onBookSelected($event.value)">
+        (selectionChange)="onBookSelected($event.value)"
+        panelClass="reader-select-panel"
+        [panelWidth]="'fit-content'">
         <mat-option *ngFor="let prev of previouslyViewed" [value]="prev.path">
           {{ prev.name }}
           <span class="book-meta" *ngIf="prev.serverModified">
@@ -81,7 +85,9 @@
       <mat-select
         [disabled]="loadingChapters || loadingContent"
         [value]="selectedChapterId"
-        (selectionChange)="onChapterSelected($event.value)">
+        (selectionChange)="onChapterSelected($event.value)"
+        panelClass="reader-select-panel"
+        [panelWidth]="'fit-content'">
         <mat-option *ngFor="let chapter of chapters" [value]="chapter.id">
           <div class="chapter-line" [style.paddingLeft.px]="chapter.level * 12">
             <span class="chapter-title">{{ chapter.title }}</span>

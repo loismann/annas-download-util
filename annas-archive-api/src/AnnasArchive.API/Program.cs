@@ -29,6 +29,15 @@ using System.Security.Cryptography;
 using System.Net.Http.Headers;
 
 var builder = WebApplication.CreateBuilder(args);
+static string GetModelDeep(IConfiguration cfg) =>
+    cfg["OpenAI:ModelDeep"]
+    ?? Environment.GetEnvironmentVariable("OPENAI_MODEL_DEEP")
+    ?? "gpt-5.2";
+
+static string GetModelFast(IConfiguration cfg) =>
+    cfg["OpenAI:ModelFast"]
+    ?? Environment.GetEnvironmentVariable("OPENAI_MODEL_FAST")
+    ?? "gpt-4o";
 
 // ─── configuration ───────────────────────────────────────────────────────
 builder.Configuration
@@ -589,6 +598,8 @@ app.MapPost("/api/ai/summarize", async (
     {
         using var http = new HttpClient();
         http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+        http.DefaultRequestHeaders.Add("OpenAI-Beta", "responses=v1");
+        var model = GetModelFast(cfg);
 
         string? previousAnalyses = null;
         string? cacheDirForSummary = null;
@@ -642,48 +653,60 @@ app.MapPost("/api/ai/summarize", async (
             : "Book context -> (not provided)";
 
         // Build the system prompt with known words exclusion
-        var systemPromptBase = "You are a literary study guide assistant. Provide a compact analysis (max 150 words): explain what's happening, key ideas, literary techniques, and theme connections. Reference previous analyses if relevant. Then add a 'Definitions:' section. BE EXTREMELY THOROUGH with definitions - include ALL words/phrases a typical high school student might not know: archaic terms, foreign words/phrases, technical jargon, sophisticated vocabulary, brand names, historical items, British/European terms, proper nouns needing context. Err on the side of over-defining.";
+        var systemPromptBase = @"You are an advanced literary analysis assistant with deep knowledge of philosophy, critical theory, and cultural studies. Provide a rich, thoughtful analysis (max 200 words) that goes beyond surface-level reading:
+
+**Analysis should include:**
+- What's happening narratively and conceptually
+- Philosophical undertones and implicit arguments the author is making
+- Literary techniques and their rhetorical effect
+- How this passage connects to broader themes in the work
+- Academic interpretations and critical perspectives (if applicable)
+- Cultural, historical, or political context that enriches understanding
+- Connections to other philosophical or literary traditions
+
+Then add a 'Definitions:' section. BE EXTREMELY THOROUGH with definitions - include ALL words/phrases a typical high school student might not know: archaic terms, foreign words/phrases, technical jargon, sophisticated vocabulary, philosophical concepts, brand names, historical items, British/European terms, proper nouns needing context, academic terminology. Err on the side of over-defining.";
 
         string systemPrompt;
         if (request.KnownWords != null && request.KnownWords.Count > 0)
         {
             var knownWordsList = string.Join(", ", request.KnownWords);
-            systemPrompt = $"{systemPromptBase} IMPORTANT: The user already knows these words, so DO NOT define them: {knownWordsList}. Total response can be up to 450 words.";
+            systemPrompt = $"{systemPromptBase}\n\nIMPORTANT: The user already knows these words, so DO NOT define them: {knownWordsList}. Total response can be up to 600 words.";
         }
         else
         {
-            systemPrompt = $"{systemPromptBase} Total response can be up to 450 words.";
+            systemPrompt = $"{systemPromptBase}\n\nTotal response can be up to 600 words.";
         }
+
+        var userPrompt = BuildAnalysisPrompt(contextBlock, previousAnalyses, request.Text);
+        var fullInput = $"{systemPrompt}\n\n{userPrompt}";
 
         var payload = new
         {
-            model = "gpt-5",
-            messages = new[]
-            {
-                new { role = "system", content = systemPrompt },
-                new { role = "user", content = BuildAnalysisPrompt(contextBlock, previousAnalyses, request.Text) }
-            },
-            max_tokens = 750,
-            temperature = 0.25
+            model = model,
+            input = fullInput,
+            reasoning = new { effort = "none" },
+            max_output_tokens = 1000,
+            temperature = 0.3
         };
 
-        var response = await http.PostAsJsonAsync("https://api.openai.com/v1/chat/completions", payload);
+        var response = await http.PostAsJsonAsync("https://api.openai.com/v1/responses", payload);
         if (!response.IsSuccessStatusCode)
+        {
+            var body = await response.Content.ReadAsStringAsync();
+            Console.WriteLine($"❌ OpenAI summarize failed status={(int)response.StatusCode} body={body}");
             return Results.Problem($"OpenAI request failed: {(int)response.StatusCode}");
+        }
 
         using var stream = await response.Content.ReadAsStreamAsync();
         using var doc = await JsonDocument.ParseAsync(stream);
-        var summary = doc.RootElement
-            .GetProperty("choices")[0]
-            .GetProperty("message")
-            .GetProperty("content")
-            .GetString();
+
+        var summary = AiResponseParser.ExtractText(doc.RootElement);
 
         // Track token usage
         if (doc.RootElement.TryGetProperty("usage", out var usage))
         {
-            var promptTokens = usage.GetProperty("prompt_tokens").GetInt32();
-            var completionTokens = usage.GetProperty("completion_tokens").GetInt32();
+            var promptTokens = usage.GetProperty("input_tokens").GetInt32();
+            var completionTokens = usage.GetProperty("output_tokens").GetInt32();
             OpenAiUsageTracker.AddUsage(promptTokens, completionTokens);
         }
 
@@ -737,6 +760,8 @@ app.MapPost("/api/ai/vocab/learn-more", async (
     {
         using var http = new HttpClient();
         http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+        http.DefaultRequestHeaders.Add("OpenAI-Beta", "responses=v1");
+        var model = GetModelDeep(cfg);
 
         var contextParts = new List<string>();
         if (!string.IsNullOrWhiteSpace(request.BookTitle))
@@ -744,51 +769,64 @@ app.MapPost("/api/ai/vocab/learn-more", async (
         if (!string.IsNullOrWhiteSpace(request.DropboxPath))
             contextParts.Add($"Source path: {request.DropboxPath}");
 
-        var prompt = $@"Provide a rich 200-300 word deep dive on the term/phrase ""{request.Term}"".
+        var prompt = $@"Provide a rich, scholarly 300-400 word deep dive on the term/phrase ""{request.Term}"" that goes beyond dictionary definitions.
+
 Respond as concise HTML with paragraphs, <ul>, <strong>, and include up to 2-3 reliable image URLs and 1-2 reference links (e.g., Wikipedia) that help explain the term.
+
+**Your analysis should explore:**
+- Core meaning and etymology
+- Historical development and evolution of the concept
+- How this term/concept is understood in different academic disciplines (philosophy, literature, sociology, etc.)
+- Key thinkers, works, or movements associated with it
+- How it appears in popular culture vs. academic discourse
+- Common misconceptions or debates surrounding the term
+- Relevance to contemporary discussions or current events (if applicable)
+- Interesting facts or notable usage examples
+
 IMAGE RULES (strict):
 - Prefer upload.wikimedia.org or commons.wikimedia.org images; use fully-qualified HTTPS URLs with underscores instead of spaces.
 - Do NOT include images unless you are confident the URL exists and is directly fetchable (ending in .jpg/.png/.jpeg).
 - If unsure about an image URL, skip images entirely.
+
 Structure:
-- Short overview paragraph
-- Bullet list of: meaning, etymology, historical context, notable usage/people, interesting facts
-- A small ""Resources"" section with hyperlinks (plain <a href=""..."">text</a>)
+- Rich overview paragraph (2-3 sentences)
+- Bullet list covering the points above
+- A ""Resources"" section with authoritative hyperlinks (plain <a href=""..."">text</a>)
 - After the text, include a line ""Images:"" followed by <img src=""..."" alt=""..."" loading=""lazy"" /> for each image (absolute URLs only). Use images that are likely to be stable (e.g., Wikimedia, Wikipedia, major news/edu sites). No base64.
-If the term looks like a proper noun (first + last name), explain why they matter.
+
 Context: {string.Join(" | ", contextParts)}
-Definition (if given): {request.Definition ?? "(none)"} 
+Definition (if given): {request.Definition ?? "(none)"}
 Relevant passage/context: {request.Context ?? "(none)"}";
+
+        var systemInstructions = "You are a scholarly explainer with expertise in philosophy, critical theory, literature, history, and cultural studies. Provide nuanced, intellectually rich analysis that bridges academic and accessible discourse.";
+        var fullInput = $"{systemInstructions}\n\n{prompt}";
 
         var payload = new
         {
-            model = "gpt-5",
-            messages = new[]
-            {
-                new { role = "system", content = "You are an academic explainer. Respond in rich prose, 200-300 words." },
-                new { role = "user", content = prompt }
-            },
-            max_tokens = 900,
+            model,
+            input = fullInput,
+            reasoning = new { effort = "none" },
+            max_output_tokens = 1200,
             temperature = 0.4
         };
 
-        var response = await http.PostAsJsonAsync("https://api.openai.com/v1/chat/completions", payload);
+        var response = await http.PostAsJsonAsync("https://api.openai.com/v1/responses", payload);
         if (!response.IsSuccessStatusCode)
+        {
+            var body = await response.Content.ReadAsStringAsync();
+            Console.WriteLine($"❌ OpenAI learn-more failed status={(int)response.StatusCode} body={body}");
             return Results.Problem($"OpenAI request failed: {(int)response.StatusCode}");
+        }
 
         using var stream = await response.Content.ReadAsStreamAsync();
         using var doc = await JsonDocument.ParseAsync(stream);
-        var detail = doc.RootElement
-            .GetProperty("choices")[0]
-            .GetProperty("message")
-            .GetProperty("content")
-            .GetString();
+        var detail = AiResponseParser.ExtractText(doc.RootElement);
 
         // Track token usage
         if (doc.RootElement.TryGetProperty("usage", out var usage))
         {
-            var promptTokens = usage.GetProperty("prompt_tokens").GetInt32();
-            var completionTokens = usage.GetProperty("completion_tokens").GetInt32();
+            var promptTokens = usage.GetProperty("input_tokens").GetInt32();
+            var completionTokens = usage.GetProperty("output_tokens").GetInt32();
             OpenAiUsageTracker.AddUsage(promptTokens, completionTokens);
         }
 
@@ -841,75 +879,110 @@ app.MapPost("/api/ai/flashcards", async (
     {
         using var http = new HttpClient();
         http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+        http.DefaultRequestHeaders.Add("OpenAI-Beta", "responses=v1");
 
-        var prompt = $@"Create a concise flashcard for the term/phrase ""{request.Term}"".
-Return ONLY valid JSON with keys: term, definition, etymology, usageExamples (array of 2 short sentences), notes.
-Keep definition 1-2 sentences. Focus on the most common meaning in literary contexts.
-Book context: {request.BookTitle ?? "(none)"} | Source path: {request.DropboxPath}
-Existing definition (if provided): {request.Definition ?? "(none)"}
-Relevant passage/context: {request.Context ?? "(none)"}";
+        var prompt = $@"You are a flashcard generator.
+INPUT TEXT (may be a single term/phrase or a passage): ""{request.Term}""
+CONTEXT: Book={request.BookTitle ?? "(none)"} | Source path={request.DropboxPath} | Existing definition={request.Definition ?? "(none)"} | Passage context={request.Context ?? "(none)"}
+
+TASK:
+- If the input is a single term/phrase, create ONE flashcard for it.
+- If the input is a sentence or paragraph, identify 3-8 important terms/phrases/concepts from it and create a flashcard for EACH.
+
+Return ONLY valid JSON, no markdown. Structure:
+[
+  {{ ""term"": ""..."", ""definition"": ""..."", ""etymology"": ""..."", ""usageExamples"": [""..."", ""...""], ""notes"": ""..."" }},
+  ...
+]
+
+Rules:
+- Definitions: 1-2 sentences; concise and clear.
+- Usage examples: 2 short sentences (if none, provide 1).
+- Etymology: short phrase; ""Unknown"" if not obvious.
+- Notes: optional; use for key nuance/discipline-specific meaning; or """" if none.
+- Prioritize terms that are uncommon, discipline-specific, or conceptually important.";
+
+        var fullInput = prompt;
+        var model = GetModelFast(cfg);
 
         var payload = new
         {
-            model = "gpt-5",
-            messages = new[]
-            {
-                new { role = "system", content = "You are a flashcard generator. Respond ONLY with JSON, no markdown." },
-                new { role = "user", content = prompt }
-            },
-            max_tokens = 600,
+            model,
+            input = fullInput,
+            reasoning = new { effort = "none" },
+            max_output_tokens = 600,
             temperature = 0.35
         };
 
-        var response = await http.PostAsJsonAsync("https://api.openai.com/v1/chat/completions", payload);
+        var response = await http.PostAsJsonAsync("https://api.openai.com/v1/responses", payload);
         if (!response.IsSuccessStatusCode)
+        {
+            var body = await response.Content.ReadAsStringAsync();
+            Console.WriteLine($"❌ OpenAI flashcard failed status={(int)response.StatusCode} body={body}");
             return Results.Problem($"OpenAI request failed: {(int)response.StatusCode}");
+        }
 
         using var stream = await response.Content.ReadAsStreamAsync();
         using var doc = await JsonDocument.ParseAsync(stream);
-        var content = doc.RootElement
-            .GetProperty("choices")[0]
-            .GetProperty("message")
-            .GetProperty("content")
-            .GetString() ?? "{}";
+        var content = AiResponseParser.ExtractText(doc.RootElement) ?? "{}";
 
         // Track token usage
         if (doc.RootElement.TryGetProperty("usage", out var usage))
         {
-            var promptTokens = usage.GetProperty("prompt_tokens").GetInt32();
-            var completionTokens = usage.GetProperty("completion_tokens").GetInt32();
+            var promptTokens = usage.GetProperty("input_tokens").GetInt32();
+            var completionTokens = usage.GetProperty("output_tokens").GetInt32();
             OpenAiUsageTracker.AddUsage(promptTokens, completionTokens);
         }
 
-        FlashcardItem card;
+        List<FlashcardItem> cardsParsed;
         try
         {
-            card = JsonSerializer.Deserialize<FlashcardItem>(content, new JsonSerializerOptions
+            cardsParsed = JsonSerializer.Deserialize<List<FlashcardItem>>(content, new JsonSerializerOptions
             {
                 PropertyNameCaseInsensitive = true
-            }) ?? throw new Exception("Invalid flashcard JSON");
+            }) ?? throw new Exception("Invalid flashcard JSON array");
         }
         catch
         {
-            // Fallback: wrap text
-            card = new FlashcardItem(
-                request.Term,
-                request.Definition ?? "Definition unavailable.",
-                "Etymology unavailable.",
-                new List<string> { content },
-                "Raw AI output could not be parsed."
-            );
+            try
+            {
+                var single = JsonSerializer.Deserialize<FlashcardItem>(content, new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
+                });
+                if (single != null)
+                    cardsParsed = new List<FlashcardItem> { single };
+                else
+                    throw new Exception("Invalid flashcard JSON");
+            }
+            catch
+            {
+                // Fallback: wrap text
+                cardsParsed = new List<FlashcardItem>
+                {
+                    new FlashcardItem(
+                        request.Term,
+                        request.Definition ?? "Definition unavailable.",
+                        "Etymology unavailable.",
+                        new List<string> { content },
+                        "Raw AI output could not be parsed."
+                    )
+                };
+            }
         }
 
         var list = LoadFlashcards(request.DropboxPath!);
-        var existing = list.FindIndex(x => string.Equals(x.Term, card.Term, StringComparison.OrdinalIgnoreCase));
-        if (existing >= 0)
-            list[existing] = card;
-        else
-            list.Add(card);
+        foreach (var card in cardsParsed)
+        {
+            var existing = list.FindIndex(x => string.Equals(x.Term, card.Term, StringComparison.OrdinalIgnoreCase));
+            if (existing >= 0)
+                list[existing] = card;
+            else
+                list.Add(card);
+        }
 
         SaveFlashcards(request.DropboxPath!, list);
-        return Results.Ok(card);
+        return Results.Ok(new FlashcardResult(cardsParsed));
     }
     catch (Exception ex)
     {
@@ -1239,46 +1312,107 @@ app.MapPost("/api/ai/summarize/chapter", async (
         if (string.IsNullOrWhiteSpace(content))
             return Results.BadRequest(new { error = "Chapter content is empty." });
 
-        var chunks = SplitIntoChunks(content, 1400); // approx words per chunk
-        var summaries = new List<string>();
+        var chunks = SplitIntoChunks(content, 2000); // Larger chunks for better context
+        var chunkSummaries = new List<string>();
         var promptTokensTotal = 0;
         var completionTokensTotal = 0;
 
         using var http = new HttpClient();
         http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+        http.DefaultRequestHeaders.Add("OpenAI-Beta", "responses=v1");
+        var model = GetModelDeep(cfg);
+
+        // TIER 1: Detailed chunk summaries
+        var chunkInstructions = @"You are an educational guide helping someone deeply understand complex texts. Analyze this passage with rich detail:
+
+1. **What's Happening**: Summarize the main points, arguments, or narrative events
+2. **Key Concepts**: Explain any philosophical, theoretical, or technical ideas being discussed - define terms as if for an intelligent reader unfamiliar with the subject
+3. **Historical/Political Context**: If the author references events, movements, or debates, briefly explain what they're responding to or building upon
+4. **Rhetorical Strategy**: How is the author making their case? (Examples, analogies, logical arguments, etc.)
+
+Write 300-400 words. Be thorough and educational - assume the reader is intelligent but may not have extensive background in this specific area.";
 
         foreach (var chunk in chunks)
         {
+            var chunkInput = $"{chunkInstructions}\n\n{chunk}";
+
             var payload = new
             {
-                model = "gpt-5",
-                messages = new[]
-                {
-                    new { role = "system", content = "You are a literary study guide assistant. Summarize this passage concisely, focusing on plot, key ideas, themes, and tone. Keep it under 200 words." },
-                    new { role = "user", content = chunk }
-                },
-                max_tokens = 400,
-                temperature = 0.25
+                model,
+                input = chunkInput,
+                reasoning = new { effort = "medium" },
+                max_output_tokens = 650,
+                temperature = 0.3
             };
 
-            var response = await http.PostAsJsonAsync("https://api.openai.com/v1/chat/completions", payload);
+            var response = await http.PostAsJsonAsync("https://api.openai.com/v1/responses", payload);
             if (!response.IsSuccessStatusCode)
+            {
+                var body = await response.Content.ReadAsStringAsync();
+                Console.WriteLine($"❌ OpenAI chunk summary failed status={(int)response.StatusCode} body={body}");
                 return Results.Problem($"OpenAI request failed while chunking: {(int)response.StatusCode}");
+            }
 
             using var stream = await response.Content.ReadAsStreamAsync();
             using var doc = await JsonDocument.ParseAsync(stream);
-            var chunkSummary = doc.RootElement
-                .GetProperty("choices")[0]
-                .GetProperty("message")
-                .GetProperty("content")
-                .GetString() ?? string.Empty;
+            var chunkSummary = AiResponseParser.ExtractText(doc.RootElement) ?? string.Empty;
 
-            summaries.Add(chunkSummary);
+            chunkSummaries.Add(chunkSummary);
 
             if (doc.RootElement.TryGetProperty("usage", out var usage))
             {
-                promptTokensTotal += usage.GetProperty("prompt_tokens").GetInt32();
-                completionTokensTotal += usage.GetProperty("completion_tokens").GetInt32();
+                promptTokensTotal += usage.GetProperty("input_tokens").GetInt32();
+                completionTokensTotal += usage.GetProperty("output_tokens").GetInt32();
+            }
+        }
+
+        // TIER 2: Section-level synthesis (group every 4 chunks)
+        var sectionSummaries = new List<string>();
+        var chunksPerSection = 4;
+
+        for (var i = 0; i < chunkSummaries.Count; i += chunksPerSection)
+        {
+            var sectionChunks = chunkSummaries.Skip(i).Take(chunksPerSection).ToList();
+            if (sectionChunks.Count == 0) continue;
+
+            var sectionInstructions = @"You are synthesizing multiple passage analyses into a coherent section summary. Create a unified narrative that:
+
+1. **Traces the Development**: How do the ideas/arguments/events progress through these passages?
+2. **Identifies Core Themes**: What are the central concerns of this section?
+3. **Contextualizes**: What intellectual traditions, historical debates, or prior thinkers is the author engaging with?
+4. **Clarifies**: Explain difficult concepts in accessible terms
+
+Write 400-500 words. Maintain educational depth while creating a flowing narrative.";
+
+            var sectionInput = $"{sectionInstructions}\n\n{string.Join("\n\n---\n\n", sectionChunks)}";
+
+            var sectionPayload = new
+            {
+                model,
+                input = sectionInput,
+                reasoning = new { effort = "medium" },
+                max_output_tokens = 750,
+                temperature = 0.35
+            };
+
+            var sectionResponse = await http.PostAsJsonAsync("https://api.openai.com/v1/responses", sectionPayload);
+            if (!sectionResponse.IsSuccessStatusCode)
+            {
+                var body = await sectionResponse.Content.ReadAsStringAsync();
+                Console.WriteLine($"❌ OpenAI section summary failed status={(int)sectionResponse.StatusCode} body={body}");
+                return Results.Problem($"OpenAI request failed for section summary: {(int)sectionResponse.StatusCode}");
+            }
+
+            using var sectionStream = await sectionResponse.Content.ReadAsStreamAsync();
+            using var sectionDoc = await JsonDocument.ParseAsync(sectionStream);
+            var sectionSummary = AiResponseParser.ExtractText(sectionDoc.RootElement) ?? string.Empty;
+
+            sectionSummaries.Add(sectionSummary);
+
+            if (sectionDoc.RootElement.TryGetProperty("usage", out var sectionUsage))
+            {
+                promptTokensTotal += sectionUsage.GetProperty("input_tokens").GetInt32();
+                completionTokensTotal += sectionUsage.GetProperty("output_tokens").GetInt32();
             }
         }
 
@@ -1292,34 +1426,62 @@ app.MapPost("/api/ai/summarize/chapter", async (
         if (!string.IsNullOrWhiteSpace(request.Premise))
             contextParts.Add($"Premise: {request.Premise}");
 
+        // TIER 3: Final chapter synthesis
+        var finalInstructions = @"You are a master educator synthesizing a complete chapter analysis. Your reader is intelligent and eager to learn, but may not have deep background in this subject area.
+
+Create a comprehensive chapter summary (700-900 words) that:
+
+1. **Overview**: What is this chapter about? What is the author trying to accomplish?
+
+2. **Historical & Intellectual Context**:
+   - When was this written and what was happening politically/culturally?
+   - What intellectual traditions or prior thinkers is the author building on or responding to?
+   - What debates or conversations in the field does this engage with?
+
+3. **Core Arguments & Ideas**:
+   - What are the main claims or narrative developments?
+   - Explain key philosophical/theoretical concepts in accessible terms
+   - How does the author support their arguments?
+
+4. **Significance & Interpretation**:
+   - Why does this chapter matter in the broader work?
+   - How have scholars or readers typically understood this?
+   - What makes this important or interesting?
+
+5. **Connections**:
+   - How does this relate to other thinkers, movements, or texts?
+   - What contemporary issues or questions does this illuminate?
+
+Write as if teaching an intelligent student. Define specialized terms, explain references, and provide context that helps someone new to this material truly understand what's going on and why it matters. Be thorough and educational.";
+
+        var userContent = $"Book context: {string.Join(" | ", contextParts)}\n\nSection summaries:\n{string.Join("\n\n---\n\n", sectionSummaries)}";
+        var fullInput = $"{finalInstructions}\n\n{userContent}";
+
         var finalPrompt = new
         {
-            model = "gpt-5",
-            messages = new[]
-            {
-                new { role = "system", content = "You are a literary study guide assistant. Using the provided chunk summaries, write a cohesive, comprehensive summary of the entire chapter (max ~350 words). Highlight plot beats, themes, tone, and notable stylistic elements. Avoid hallucinating content not in the summaries." },
-                new { role = "user", content = $"Book context: {string.Join(" | ", contextParts)}\n\nChunk summaries:\n{string.Join("\n\n---\n\n", summaries)}" }
-            },
-            max_tokens = 650,
-            temperature = 0.35
+            model = model,
+            input = fullInput,
+            reasoning = new { effort = "high" },
+            max_output_tokens = 1400,
+            temperature = 0.3
         };
 
-        var finalResponse = await http.PostAsJsonAsync("https://api.openai.com/v1/chat/completions", finalPrompt);
+        var finalResponse = await http.PostAsJsonAsync("https://api.openai.com/v1/responses", finalPrompt);
         if (!finalResponse.IsSuccessStatusCode)
+        {
+            var body = await finalResponse.Content.ReadAsStringAsync();
+            Console.WriteLine($"❌ OpenAI final summary failed status={(int)finalResponse.StatusCode} body={body}");
             return Results.Problem($"OpenAI request failed for final summary: {(int)finalResponse.StatusCode}");
+        }
 
         using var finalStream = await finalResponse.Content.ReadAsStreamAsync();
         using var finalDoc = await JsonDocument.ParseAsync(finalStream);
-        var finalSummary = finalDoc.RootElement
-            .GetProperty("choices")[0]
-            .GetProperty("message")
-            .GetProperty("content")
-            .GetString() ?? "No summary returned.";
+        var finalSummary = AiResponseParser.ExtractText(finalDoc.RootElement) ?? "No summary returned.";
 
         if (finalDoc.RootElement.TryGetProperty("usage", out var finalUsage))
         {
-            promptTokensTotal += finalUsage.GetProperty("prompt_tokens").GetInt32();
-            completionTokensTotal += finalUsage.GetProperty("completion_tokens").GetInt32();
+            promptTokensTotal += finalUsage.GetProperty("input_tokens").GetInt32();
+            completionTokensTotal += finalUsage.GetProperty("output_tokens").GetInt32();
         }
 
         OpenAiUsageTracker.AddUsage(promptTokensTotal, completionTokensTotal);
@@ -1754,6 +1916,7 @@ record LearnMoreRequest(string Term, string? Definition, string? DropboxPath, st
 record LearnMoreResponse(string Detail);
 record FlashcardRequest(string Term, string? Definition, string? DropboxPath, string? BookTitle, string? Context);
 record FlashcardItem(string Term, string Definition, string Etymology, List<string> UsageExamples, string? Notes);
+record FlashcardResult(List<FlashcardItem> Cards);
 record WikiImagesResponse(List<string> Images);
 record SummarizeResponse(string Summary);
 record FullChapterSummaryRequest(string DropboxPath, int ChapterId, string? BookTitle, string? Author, int? Year, string? Premise);
@@ -1764,13 +1927,28 @@ record TokenUsageResponse(long PromptTokens, long CompletionTokens, long TotalTo
 // ─── Helper class for Dropbox EPUB caching ──────────────────────────────
 static class DropboxEpubCache
 {
-    private static readonly string EpubCacheRoot = Path.Combine(Path.GetTempPath(), "annas-epub-cache");
+    private static readonly string EpubCacheRoot = ResolveCacheRoot();
     private static readonly ConcurrentDictionary<string, Task> CacheBuildTasks = new();
     private static readonly JsonSerializerOptions CacheJsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         WriteIndented = false
     };
+
+    private static string ResolveCacheRoot()
+    {
+        var env = Environment.GetEnvironmentVariable("EPUB_CACHE_ROOT");
+        if (!string.IsNullOrWhiteSpace(env))
+        {
+            Directory.CreateDirectory(env);
+            return env;
+        }
+
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var fallback = Path.Combine(home, ".annas-archive", "epub-cache");
+        Directory.CreateDirectory(fallback);
+        return fallback;
+    }
 
     public static async Task<List<DropboxEpubFileDto>> ListDropboxEpubsAsync(
         DropboxClient dropbox,
@@ -2086,6 +2264,41 @@ static class DropboxEpubCache
 
     public static string GetCacheRoot() => EpubCacheRoot;
     public static string ComputeHashPublic(string value) => ComputeHash(value);
+}
+
+static class AiResponseParser
+{
+    public static string? ExtractText(JsonElement root)
+    {
+        try
+        {
+            if (root.TryGetProperty("output", out var output) &&
+                output.ValueKind == JsonValueKind.Array &&
+                output.GetArrayLength() > 0)
+            {
+                var first = output[0];
+                if (first.TryGetProperty("content", out var contentElem))
+                {
+                    if (contentElem.ValueKind == JsonValueKind.String)
+                        return contentElem.GetString();
+                    if (contentElem.ValueKind == JsonValueKind.Array && contentElem.GetArrayLength() > 0)
+                    {
+                        var firstContent = contentElem[0];
+                        if (firstContent.ValueKind == JsonValueKind.String)
+                            return firstContent.GetString();
+                        if (firstContent.TryGetProperty("text", out var textElem) &&
+                            textElem.ValueKind == JsonValueKind.String)
+                            return textElem.GetString();
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // ignore parse errors, return null
+        }
+        return null;
+    }
 }
 
 // ─── Helper for tracking OpenAI token usage with persistent file storage ─────────

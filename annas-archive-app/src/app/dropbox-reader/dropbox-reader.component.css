@@ -473,6 +473,30 @@
   color: #4b3b2c;
 }
 
+.selection-btn {
+  height: 40px;
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 12px;
+  font-size: 14px;
+  border-radius: 10px;
+}
+
+:host ::ng-deep .selection-btn .mat-icon {
+  margin-right: 6px;
+}
+
+.reader-theme-light .selection-btn {
+  color: #1d3070;
+}
+
+.reader-theme-sepia .selection-btn {
+  color: #2d2014;
+}
+
 .vocabulary-section {
   margin-top: 20px;
 }

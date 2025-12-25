@@ -188,16 +188,16 @@
           </div>
           <div class="analysis-mode-group">
             <div class="analysis-combo">
-              <mat-select class="analysis-mode-select" [(value)]="analysisMode" panelClass="analysis-mode-panel">
-                <mat-option value="page">Page analysis</mat-option>
-                <mat-option value="chapter">Chapter analysis</mat-option>
-              </mat-select>
-              <button class="summary-btn" mat-stroked-button color="primary" (click)="summarize()" [disabled]="loadingSummary || !chapterContent">
-                <mat-icon>summarize</mat-icon>
-                {{ loadingSummary ? 'Working...' : 'Summarize page' }}
-              </button>
-            </div>
+            <mat-select class="analysis-mode-select" [(value)]="analysisMode" panelClass="analysis-mode-panel">
+              <mat-option value="page">Page analysis</mat-option>
+              <mat-option value="chapter">Chapter analysis</mat-option>
+            </mat-select>
+            <button class="summary-btn" mat-stroked-button color="primary" (click)="summarize()" [disabled]="loadingSummary || !chapterContent">
+              <mat-icon>summarize</mat-icon>
+              {{ loadingSummary ? 'Working...' : 'Summarize page' }}
+            </button>
           </div>
+        </div>
         </div>
         <div class="analysis-body">
           <ng-container *ngIf="analysisMode === 'page'">
@@ -297,7 +297,7 @@
             <button mat-icon-button aria-label="Decrease font" (click)="changeFontSize(-1)" [disabled]="fontSize <= 12">
               <mat-icon>remove</mat-icon>
             </button>
-            <span class="size-value">{{ fontSize }}px</span>
+            <span class="size-value">{{ fontSize }}</span>
             <button mat-icon-button aria-label="Increase font" (click)="changeFontSize(1)" [disabled]="fontSize >= 28">
               <mat-icon>add</mat-icon>
             </button>
@@ -310,6 +310,14 @@
             <mat-button-toggle value="sepia">Sepia</mat-button-toggle>
             <mat-button-toggle value="dark">Dark</mat-button-toggle>
           </mat-button-toggle-group>
+        </div>
+        <div class="control-group">
+          <button mat-stroked-button color="accent" class="selection-btn"
+            (click)="createVocabFromSelection()"
+            [disabled]="!selectedText || selectedText.trim().length === 0 || loadingSelectionVocab || !chapterContent">
+            <mat-icon>school</mat-icon>
+            Create Vocab
+          </button>
         </div>
       </div>
     </div>

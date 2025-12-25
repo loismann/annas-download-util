@@ -105,15 +105,17 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
   learnMoreTerm: string | null = null;
   loadingLearnMore = false;
   loadingFlashcard = false;
+  loadingSelectionVocab = false;
   vocabFilter: string = 'all';
   vocabFilters: { id: string; name: string }[] = [{ id: 'all', name: 'All books' }];
   leftFlex = '1 1 0';
   rightFlex = '1 1 0';
   showSidebar = true;
   fontFamily: 'serif' | 'sans' | 'mono' = 'serif';
-  fontSize: number = 16;
-  theme: 'light' | 'sepia' | 'dark' = 'dark';
+  fontSize: number = 14;
+  theme: 'light' | 'sepia' | 'dark' = 'sepia';
   analysisMode: 'page' | 'chapter' = 'page';
+  selectedText: string | null = null;
   tokenUsage: { promptTokens: number; completionTokens: number; totalTokens: number; allowance?: number | null; allowanceUsedPercent?: number | null; tokensRemaining?: number | null; resetsAtUtc?: string | null } | null = null;
   fullChapterSummaryCache = new Map<number, FullChapterSummaryResponse>();
 
@@ -198,6 +200,16 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
     }
 
     this.formattedAnalysis = this.formatAnalysis(this.analysisText ?? '');
+  }
+
+  private extractDefinitionsFromSummary(summary: string): VocabularyWord[] {
+    const defRegex = /definitions?\s*:/i;
+    const match = defRegex.exec(summary);
+    if (match) {
+      const definitionsSection = summary.substring(match.index + match[0].length).trim();
+      return this.parseVocabulary(definitionsSection);
+    }
+    return [];
   }
 
   private parseVocabulary(definitionsText: string): VocabularyWord[] {
@@ -360,6 +372,8 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
     this.vocabularyWords = [];
     this.analysisText = null;
     this.analysisMode = 'page';
+    this.fullChapterSummary = null;
+    this.fullSummaryTokens = null;
 
     this.loadChapterContent(this.selectedBookPath, chapterId);
   }
@@ -448,6 +462,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
   summarize(): void {
     if (!this.chapterContent) return;
     this.loadingSummary = true;
+    this.selectedText = null;
     const text = this.visibleText || this.chapterContent.content;
 
     const allKnownWords = this.vocabularyService.getKnownWordsForPrompt();
@@ -486,6 +501,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
     this.loadingFullChapterSummary = true;
     this.fullChapterSummary = null;
     this.fullSummaryTokens = null;
+    this.selectedText = null;
 
     const payload = {
       dropboxPath: this.selectedBookPath,
@@ -555,6 +571,8 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
 
   private loadChapterContent(path: string, chapterId: number): void {
     this.loadingContent = true;
+    this.fullChapterSummary = null;
+    this.fullSummaryTokens = null;
 
     this.api.getDropboxChapterContent(path, chapterId).subscribe({
       next: content => {
@@ -634,6 +652,9 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
 
   private loadCachedFullChapterSummary(): void {
     if (!this.selectedBookPath || this.selectedChapterId == null) return;
+    this.fullChapterSummary = null;
+    this.fullSummaryTokens = null;
+    this.selectedText = null;
 
     const cached = this.fullChapterSummaryCache.get(this.selectedChapterId);
     if (cached) {
@@ -863,14 +884,18 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
       context: this.analysisText ?? undefined
     };
     this.api.createFlashcard(payload).subscribe({
-      next: card => {
-        // replace or add
-        const existingIndex = this.flashcards.findIndex(fc => fc.term.toLowerCase() === card.term.toLowerCase());
-        if (existingIndex >= 0) {
-          this.flashcards[existingIndex] = card;
-        } else {
-          this.flashcards = [...this.flashcards, card];
-        }
+      next: cards => {
+        const normalized = Array.isArray(cards) ? cards : [cards as any];
+        const updated = [...this.flashcards];
+        normalized.forEach(card => {
+          const idx = updated.findIndex(fc => fc.term.toLowerCase() === card.term.toLowerCase());
+          if (idx >= 0) {
+            updated[idx] = card;
+          } else {
+            updated.push(card);
+          }
+        });
+        this.flashcards = updated;
         this.loadingFlashcard = false;
       },
       error: () => {
@@ -953,6 +978,23 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
     return text.slice(startIdx, endIdx);
   }
 
+  @HostListener('mouseup')
+  @HostListener('touchend')
+  captureSelection(): void {
+    this.updateSelection();
+  }
+
+  @HostListener('document:selectionchange')
+  onSelectionChange(): void {
+    this.updateSelection();
+  }
+
+  private updateSelection(): void {
+    const selection = window.getSelection();
+    const text = selection ? selection.toString().trim() : '';
+    this.selectedText = text || null;
+  }
+
   private countWords(text: string): number {
     // Count words the same way sliceByWords iterates: any non-space token
     const regex = /\S+/g;
@@ -994,6 +1036,39 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
       // Wait for DOM to update with new font size before recalculating
       setTimeout(() => this.recalcPageSize(), 0);
     }
+  }
+
+  createVocabFromSelection(): void {
+    const text = (this.selectedText || '').trim();
+    if (!text || this.loadingSelectionVocab || !this.selectedBookPath) return;
+    this.loadingSelectionVocab = true;
+
+    const allKnownWords = this.vocabularyService.getKnownWordsForPrompt();
+    const knownWords = allKnownWords.slice(-100);
+
+    const payload = {
+      text,
+      bookTitle: this.selectedBook?.name ?? '',
+      dropboxPath: this.selectedBookPath ?? '',
+      chapterId: this.selectedChapterId ?? undefined,
+      wordOffset: this.wordOffset,
+      knownWords
+    };
+
+    this.api.summarizeText(payload).subscribe({
+      next: resp => {
+        const vocab = this.extractDefinitionsFromSummary(resp.summary);
+        this.vocabularyWords = vocab;
+        this.loadingSelectionVocab = false;
+        this.refreshTokenUsage();
+        this.selectedText = null;
+      },
+      error: err => {
+        console.error('Failed to build vocab from selection', err);
+        this.loadingSelectionVocab = false;
+        this.refreshTokenUsage();
+      }
+    });
   }
 
   @HostListener('window:mousemove', ['$event'])

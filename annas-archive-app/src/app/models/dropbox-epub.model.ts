@@ -116,6 +116,10 @@ export interface FlashcardItem {
   notes?: string;
 }
 
+export interface FlashcardResult {
+  cards: FlashcardItem[];
+}
+
 export interface WikiImagesResponse {
   images: string[];
 }

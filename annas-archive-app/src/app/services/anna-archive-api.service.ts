@@ -16,6 +16,7 @@ import {
   LearnMoreResponse,
   FlashcardRequestPayload,
   FlashcardItem,
+  FlashcardResult,
   WikiImagesResponse,
   FullChapterSummaryRequest,
   FullChapterSummaryResponse,
@@ -230,11 +231,16 @@ export class AnnaArchiveApiService {
     );
   }
 
-  createFlashcard(payload: FlashcardRequestPayload): Observable<FlashcardItem> {
+  createFlashcard(payload: FlashcardRequestPayload): Observable<FlashcardItem[]> {
     const apiBase = this.baseUrl.replace('/api/anna', '');
-    return this.http.post<FlashcardItem>(
+    return this.http.post<FlashcardResult>(
       `${apiBase}/api/ai/flashcards`,
       payload
+    ).pipe(
+      map(res => {
+        const items = (res as any)?.cards || res;
+        return Array.isArray(items) ? items : [items];
+      })
     );
   }
 

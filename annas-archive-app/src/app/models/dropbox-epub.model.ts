@@ -68,6 +68,15 @@ export interface FullChapterSummaryRequest {
   premise?: string;
 }
 
+export interface ProcessingStep {
+  stage: 'chunks' | 'sections' | 'final' | 'complete' | 'error';
+  stepNumber: number;
+  totalSteps: number;
+  message: string;
+  success: boolean;
+  error?: string | null;
+}
+
 export interface FullChapterSummaryResponse {
   summary: string;
   promptTokens: number;
@@ -76,6 +85,7 @@ export interface FullChapterSummaryResponse {
   allowanceUsedPercent?: number | null;
   tokensRemaining?: number | null;
   cachedAt: string;
+  steps: ProcessingStep[];
 }
 
 export interface TokenUsageResponse {
@@ -106,6 +116,7 @@ export interface FlashcardRequestPayload {
   dropboxPath?: string;
   bookTitle?: string;
   context?: string;
+  knownWords?: string[];
 }
 
 export interface FlashcardItem {
@@ -122,4 +133,68 @@ export interface FlashcardResult {
 
 export interface WikiImagesResponse {
   images: string[];
+}
+
+export interface ChunkBoundary {
+  start: number;
+  end: number;
+  wordCount: number;
+}
+
+export interface ChunkBoundariesResponse {
+  chapterId: number;
+  chunks: ChunkBoundary[];
+  cachedAt: string;
+}
+
+export interface SectionSummaryRequest {
+  dropboxPath: string;
+  chapterId: number;
+  sectionIndex: number;
+  bookTitle?: string;
+  author?: string;
+}
+
+export interface SectionSummaryResponse {
+  summary: string;
+  sectionIndex: number;
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  cachedAt: string;
+  vocab?: FlashcardItem[] | null;
+}
+
+export interface CharacterNode {
+  id: string;
+  label: string;
+  description: string;
+  detailedDescription?: string;
+}
+
+export interface CharacterEdge {
+  from: string;
+  to: string;
+  label: string;
+  detailedDescription?: string;
+}
+
+export interface CharacterGraphResponse {
+  nodes: CharacterNode[];
+  edges: CharacterEdge[];
+  summaryCount: number;
+  cachedAt: string;
+  currentSummaryCount?: number;
+  needsUpdate?: boolean;
+}
+
+export interface CharacterGraphRequest {
+  dropboxPath: string;
+  bookTitle?: string;
+  context?: string;
+}
+
+export interface CharacterGraphUpdateRequest {
+  dropboxPath: string;
+  newContent: string;
 }

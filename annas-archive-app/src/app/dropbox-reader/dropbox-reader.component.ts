@@ -2,6 +2,7 @@ import {
   Component,
   ElementRef,
   HostListener,
+  NgZone,
   OnDestroy,
   OnInit,
   ViewChild
@@ -16,6 +17,9 @@ import { MatButtonToggleModule } from '@angular/material/button-toggle';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatSliderModule } from '@angular/material/slider';
+import { MatTooltipModule } from '@angular/material/tooltip';
+import { MatDialog } from '@angular/material/dialog';
+import { CharacterGraphModalComponent } from '../character-graph-modal/character-graph-modal.component';
 
 import {
   DropboxBookSearchResult,
@@ -24,11 +28,17 @@ import {
   DropboxEpubFile,
   DropboxEpubStatus,
   FlashcardItem,
-  FullChapterSummaryResponse
+  FullChapterSummaryResponse,
+  ChunkBoundariesResponse,
+  SectionSummaryResponse
 } from '../models/dropbox-epub.model';
 import { AnnaArchiveApiService } from '../services/anna-archive-api.service';
 import { VocabularyService, VocabularyWord } from '../services/vocabulary.service';
+import { AuthService } from '../services/auth.service';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
+import { marked } from 'marked';
+import { Subject } from 'rxjs';
+import { takeUntil } from 'rxjs/operators';
 
 interface ViewedBook {
   path: string;
@@ -49,12 +59,15 @@ interface ViewedBook {
     MatButtonToggleModule,
     MatIconModule,
     MatProgressBarModule,
-    MatSliderModule
+    MatSliderModule,
+    MatTooltipModule
   ],
   templateUrl: './dropbox-reader.component.html',
   styleUrls: ['./dropbox-reader.component.css']
 })
 export class DropboxReaderComponent implements OnInit, OnDestroy {
+  private destroy$ = new Subject<void>();
+
   dropboxBooks: DropboxEpubFile[] = [];
   chapters: DropboxEpubChapter[] = [];
 
@@ -74,6 +87,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
   previouslyViewed: ViewedBook[] = [];
   status: DropboxEpubStatus | null = null;
   private statusPoll: any;
+  private timeoutIds: any[] = [];
 
   bookSearchTerm = '';
   bookSearchResults: DropboxBookSearchResult[] = [];
@@ -92,6 +106,13 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
   loadingFullChapterSummary = false;
   fullChapterSummary: string | null = null;
   fullSummaryTokens: { total: number; prompt: number; completion: number; allowancePercent?: number | null; remaining?: number | null } | null = null;
+  chapterSummaryProgress: {
+    stage: 'chunks' | 'sections' | 'final' | 'complete' | 'error';
+    currentStep: number;
+    totalSteps: number;
+    message: string;
+    error?: string;
+  } | null = null;
   formattedAnalysis: string | null = null;
   vocabularyWords: VocabularyWord[] = [];
   analysisText: string | null = null;
@@ -111,13 +132,29 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
   leftFlex = '1 1 0';
   rightFlex = '1 1 0';
   showSidebar = true;
+  showCacheSection = false;
+  showAiUsageSection = false;
   fontFamily: 'serif' | 'sans' | 'mono' = 'serif';
   fontSize: number = 14;
   theme: 'light' | 'sepia' | 'dark' = 'sepia';
-  analysisMode: 'page' | 'chapter' = 'page';
+  analysisMode: 'section' | 'page' | 'chapter' = 'section';
   selectedText: string | null = null;
-  tokenUsage: { promptTokens: number; completionTokens: number; totalTokens: number; allowance?: number | null; allowanceUsedPercent?: number | null; tokensRemaining?: number | null; resetsAtUtc?: string | null } | null = null;
+  tokenUsage: { promptTokens: number; completionTokens: number; totalTokens: number; allowance?: number | null; allowanceUsedPercent?: number | null; tokensRemaining?: number | null; resetsAtUtc?: string | null; totalCostUsd?: number | null } | null = null;
   fullChapterSummaryCache = new Map<number, FullChapterSummaryResponse>();
+
+  // Section/chunk boundary state
+  chunkBoundaries: ChunkBoundariesResponse | null = null;
+  loadingChunkBoundaries = false;
+  chunkBoundariesProgress: {
+    stage: 'indexing' | 'detecting' | 'complete' | 'error';
+    currentStep: number;
+    totalSteps: number;
+    message: string;
+    error?: string;
+  } | null = null;
+  sectionSummaries = new Map<number, SectionSummaryResponse>();
+  loadingSectionSummary = false;
+  currentSectionIndex: number | null = null;
 
   get readerTextStyles(): any {
     return {
@@ -130,22 +167,39 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
     };
   }
 
+  get fullChapterSummaryHtml(): SafeHtml | null {
+    if (!this.fullChapterSummary) return null;
+    const html = marked(this.fullChapterSummary);
+    return this.sanitizer.sanitize(1, html) ? this.sanitizer.bypassSecurityTrustHtml(html as string) : null;
+  }
+
   constructor(
     private api: AnnaArchiveApiService,
     private vocabularyService: VocabularyService,
-    private sanitizer: DomSanitizer
+    private sanitizer: DomSanitizer,
+    private authService: AuthService,
+    private ngZone: NgZone,
+    private dialog: MatDialog
   ) {}
 
   ngOnInit(): void {
     this.loadPreviouslyViewed();
     this.loadBooks();
     this.vocabFilters = this.vocabularyService.getBookFilters();
-    setTimeout(() => this.recalcPageSize(), 0);
+    this.timeoutIds.push(setTimeout(() => this.recalcPageSize(), 0));
     this.refreshTokenUsage();
   }
 
   ngOnDestroy(): void {
     if (this.statusPoll) clearInterval(this.statusPoll);
+
+    // Clear all pending timeouts
+    this.timeoutIds.forEach(id => clearTimeout(id));
+    this.timeoutIds = [];
+
+    // Unsubscribe from all observables
+    this.destroy$.next();
+    this.destroy$.complete();
   }
 
   get selectedBook(): DropboxEpubFile | null {
@@ -165,14 +219,66 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
     const text = this.visibleText;
     if (!text) return '';
 
-    const escaped = this.escapeHtml(text);
-    if (!this.searchTerm.trim()) {
-      return escaped.replace(/\n/g, '<br/>');
+    let processedText = this.escapeHtml(text);
+
+    // Apply section highlighting if section mode is enabled
+    if (this.analysisMode === 'section' && this.chunkBoundaries && this.currentSectionIndex !== null) {
+      processedText = this.applySectionHighlighting(processedText);
     }
 
-    const safeTerm = this.escapeRegExp(this.searchTerm.trim());
-    const highlighted = escaped.replace(new RegExp(`(${safeTerm})`, 'gi'), '<mark>$1</mark>');
-    return highlighted.replace(/\n/g, '<br/>');
+    // Apply search highlighting
+    if (this.searchTerm.trim()) {
+      const safeTerm = this.escapeRegExp(this.searchTerm.trim());
+      processedText = processedText.replace(new RegExp(`(${safeTerm})`, 'gi'), '<mark>$1</mark>');
+    }
+
+    return processedText.replace(/\n/g, '<br/>');
+  }
+
+  private applySectionHighlighting(escapedText: string): string {
+    if (!this.chunkBoundaries || this.currentSectionIndex === null || !this.chapterContent) {
+      return escapedText;
+    }
+
+    const chunk = this.chunkBoundaries.chunks[this.currentSectionIndex];
+    const visibleStart = this.wordOffset;
+    const visibleEnd = this.wordOffset + this.pageSizeWords;
+
+    // Check if current section overlaps with visible text
+    if (chunk.end <= visibleStart || chunk.start >= visibleEnd) {
+      // No overlap - no highlighting needed
+      return escapedText;
+    }
+
+    // Calculate word positions within the visible window
+    const sectionStartInVisible = Math.max(0, chunk.start - visibleStart);
+    const sectionEndInVisible = Math.min(this.pageSizeWords, chunk.end - visibleStart);
+
+    // Split the escaped text into words (preserving spaces and newlines)
+    const words = escapedText.split(/(\s+)/);
+    let wordCount = 0;
+    let result = '';
+
+    for (let i = 0; i < words.length; i++) {
+      const word = words[i];
+      const isWhitespace = /^\s+$/.test(word);
+
+      if (!isWhitespace) {
+        // This is an actual word
+        if (wordCount >= sectionStartInVisible && wordCount < sectionEndInVisible) {
+          // Word is within the highlighted section
+          result += `<span class="section-highlight">${word}</span>`;
+        } else {
+          result += word;
+        }
+        wordCount++;
+      } else {
+        // Whitespace - keep as is
+        result += word;
+      }
+    }
+
+    return result;
   }
 
   get formattedSummary(): string | null {
@@ -262,6 +368,22 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
     return words;
   }
 
+  getSummaryWithoutDefinitions(summary: string): string {
+    const defRegex = /definitions?\s*:/i;
+    const match = defRegex.exec(summary);
+
+    if (match) {
+      return summary.substring(0, match.index).trim();
+    }
+    return summary.trim();
+  }
+
+  formatSectionSummaryAsHtml(summary: string): SafeHtml {
+    const summaryText = this.getSummaryWithoutDefinitions(summary);
+    const html = marked.parse(summaryText, { async: false }) as string;
+    return this.sanitizer.sanitize(1 /* HTML */, html) || '';
+  }
+
   removeVocabularyWord(term: string): void {
     this.vocabularyWords = this.vocabularyWords.filter(w => w.term !== term);
   }
@@ -319,12 +441,12 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
   }
 
   get currentPage(): number {
-    if (!this.chapterContent) return 1;
+    if (!this.chapterContent || !this.pageSizeWords || this.pageSizeWords <= 0) return 1;
     return Math.floor(this.wordOffset / this.pageSizeWords) + 1;
   }
 
   get totalPages(): number {
-    if (!this.chapterContent) return 1;
+    if (!this.chapterContent || !this.pageSizeWords || this.pageSizeWords <= 0) return 1;
     return Math.max(
       1,
       Math.ceil((this.chapterContent.wordCount || 0) / this.pageSizeWords)
@@ -348,6 +470,9 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
     this.formattedAnalysis = null;
     this.vocabularyWords = [];
     this.analysisText = null;
+
+    // Note: Preloading disabled for performance - cached summaries are loaded on-demand instead
+    // Previously supported offline preload; intentionally no-op for lean runtime.
 
     this.recordViewed(path);
     if (this.selectedBook) {
@@ -374,8 +499,12 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
     this.analysisMode = 'page';
     this.fullChapterSummary = null;
     this.fullSummaryTokens = null;
+    this.chunkBoundaries = null;
+    this.sectionSummaries.clear();
+    this.currentSectionIndex = null;
 
     this.loadChapterContent(this.selectedBookPath, chapterId);
+    this.loadChunkBoundaries(this.selectedBookPath, chapterId);
   }
 
   onSearchTermChange(): void {
@@ -390,17 +519,51 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
     if (!this.chapterContent) return;
     const totalPages = this.totalPages;
     const maxStart = Math.max(0, (totalPages - 1) * this.pageSizeWords);
-    this.wordOffset = Math.min(this.wordOffset + this.pageSizeWords, maxStart);
+    const newOffset = this.wordOffset + this.pageSizeWords;
+
+    // Check if we're moving past the last page
+    if (newOffset >= maxStart && this.selectedChapterId !== null) {
+      // Try to advance to next chapter
+      const currentChapterIndex = this.chapters.findIndex(ch => ch.id === this.selectedChapterId);
+      if (currentChapterIndex !== -1 && currentChapterIndex < this.chapters.length - 1) {
+        const nextChapter = this.chapters[currentChapterIndex + 1];
+        console.log(`📖 End of chapter ${this.selectedChapterId} reached, advancing to chapter ${nextChapter.id}`);
+        this.onChapterSelected(nextChapter.id);
+        return;
+      }
+    }
+
+    // Normal page forward within same chapter
+    this.wordOffset = Math.min(newOffset, maxStart);
   }
 
   pageBack(): void {
     if (!this.chapterContent) return;
-    this.wordOffset = Math.max(0, this.wordOffset - this.pageSizeWords);
+    const newOffset = this.wordOffset - this.pageSizeWords;
+
+    // Check if we're moving before the first page
+    if (newOffset < 0 && this.selectedChapterId !== null) {
+      // Try to go to previous chapter
+      const currentChapterIndex = this.chapters.findIndex(ch => ch.id === this.selectedChapterId);
+      if (currentChapterIndex > 0) {
+        const prevChapter = this.chapters[currentChapterIndex - 1];
+        console.log(`📖 Start of chapter ${this.selectedChapterId} reached, going back to chapter ${prevChapter.id}`);
+        // Store that we want to go to the last page of the previous chapter
+        this.pendingCharOffset = -1; // Special marker for "last page"
+        this.onChapterSelected(prevChapter.id);
+        return;
+      }
+    }
+
+    // Normal page back within same chapter
+    this.wordOffset = Math.max(0, newOffset);
   }
 
   startIndexing(): void {
     if (!this.selectedBookPath) return;
-    this.api.startDropboxIndex(this.selectedBookPath).subscribe({
+    this.api.startDropboxIndex(this.selectedBookPath)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
       next: () => this.fetchStatus(this.selectedBookPath!, true),
       error: err => {
         console.error('Failed to start indexing', err);
@@ -411,7 +574,9 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
 
   deleteIndex(): void {
     if (!this.selectedBookPath) return;
-    this.api.deleteDropboxIndex(this.selectedBookPath).subscribe({
+    this.api.deleteDropboxIndex(this.selectedBookPath)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
       next: () => {
         this.status = null;
         this.bookSearchResults = [];
@@ -439,7 +604,9 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
       return;
     }
 
-    this.api.searchDropboxBook(this.selectedBookPath, term).subscribe({
+    this.api.searchDropboxBook(this.selectedBookPath, term)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
       next: results => {
         this.bookSearchResults = results;
         if (!results.length) {
@@ -463,13 +630,17 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
     if (!this.chapterContent) return;
     this.loadingSummary = true;
     this.selectedText = null;
-    const text = this.visibleText || this.chapterContent.content;
+
+    // Use fixed 1000-word chunks based on current word offset
+    const chunkSize = 1000;
+    const chunkStartWord = Math.floor(this.wordOffset / chunkSize) * chunkSize;
+    const text = this.sliceByWords(this.chapterContent.content, chunkStartWord, chunkSize);
 
     const allKnownWords = this.vocabularyService.getKnownWordsForPrompt();
     // Limit to 100 most recent/varied known words to avoid overwhelming the AI
     const knownWords = allKnownWords.slice(-100);
 
-    console.log(`Summarizing ${text.split(' ').length} words with ${knownWords.length} known words excluded`);
+    console.log(`Summarizing chunk starting at word ${chunkStartWord} (${text.split(' ').length} words) with ${knownWords.length} known words excluded`);
 
     const payload = {
       text,
@@ -480,7 +651,9 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
       knownWords
     };
 
-    this.api.summarizeText(payload).subscribe({
+    this.api.summarizeText(payload)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
       next: resp => {
         this.summary = resp.summary;
         this.parseSummaryOnce(resp.summary);
@@ -498,10 +671,25 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
 
   summarizeFullChapter(): void {
     if (!this.chapterContent || !this.selectedBookPath || this.selectedChapterId === null) return;
+
+    // Check if summary already exists in cache
+    const cached = this.fullChapterSummaryCache.get(this.selectedChapterId);
+    if (cached) {
+      console.log('Chapter summary already exists. Use the existing summary.');
+      return;
+    }
+
     this.loadingFullChapterSummary = true;
     this.fullChapterSummary = null;
     this.fullSummaryTokens = null;
     this.selectedText = null;
+    this.chapterSummaryProgress = {
+      stage: 'chunks',
+      currentStep: 0,
+      totalSteps: 1,
+      message: 'Starting chapter analysis...',
+      error: undefined
+    };
 
     const payload = {
       dropboxPath: this.selectedBookPath,
@@ -509,34 +697,169 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
       bookTitle: this.selectedBook?.name ?? ''
     };
 
-    this.api.summarizeFullChapter(payload).subscribe({
-      next: resp => {
-        this.fullChapterSummary = resp.summary;
-        this.fullSummaryTokens = {
-          total: resp.totalTokens,
-          prompt: resp.promptTokens,
-          completion: resp.completionTokens,
-          allowancePercent: resp.allowanceUsedPercent ?? undefined,
-          remaining: resp.tokensRemaining ?? undefined
+    // Use fetch to POST the request and get streaming response
+    const apiBase = window.location.protocol + '//' + window.location.hostname + ':5051';
+    const token = this.authService.getToken();
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json'
+    };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    fetch(`${apiBase}/api/ai/summarize/chapter/stream`, {
+      method: 'POST',
+      headers: headers,
+      body: JSON.stringify(payload)
+    }).then(response => {
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      let buffer = ''; // Buffer for incomplete SSE messages
+
+      const readStream = async (): Promise<void> => {
+        const { done, value } = await reader!.read();
+        if (done) {
+          console.log('SSE stream complete');
+          return;
+        }
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+
+        // Keep the last incomplete line in the buffer
+        buffer = lines.pop() || '';
+
+        let currentEvent = '';
+        for (const line of lines) {
+          if (line.startsWith('event:')) {
+            currentEvent = line.substring(6).trim();
+            continue;
+          }
+
+          if (line.startsWith('data:')) {
+            const data = line.substring(5).trim();
+            if (!data) continue;
+
+            try {
+              const parsed = JSON.parse(data);
+              console.log(`SSE ${currentEvent}:`, parsed);
+              this.handleSSEEvent(parsed);
+            } catch (e) {
+              console.error('Failed to parse SSE data:', data, e);
+            }
+          }
+        }
+
+        return readStream();
+      };
+
+      return readStream();
+    }).catch(err => {
+      console.error('Failed to summarize full chapter', err);
+      this.fullChapterSummary = 'Full chapter summary failed.';
+      this.chapterSummaryProgress = {
+        stage: 'error',
+        currentStep: 0,
+        totalSteps: 1,
+        message: 'Summary failed',
+        error: err.message || 'Unknown error'
+      };
+      this.loadingFullChapterSummary = false;
+      this.refreshTokenUsage();
+    });
+  }
+
+  private handleSSEEvent(event: any): void {
+    console.log('Handling SSE event:', event);
+
+    // Run inside Angular zone to trigger change detection
+    this.ngZone.run(() => {
+      if (event.stage && event.stepNumber !== undefined) {
+        // Progress event
+        console.log(`Progress: ${event.stage} ${event.stepNumber}/${event.totalSteps}`);
+        this.chapterSummaryProgress = {
+          stage: event.stage as any,
+          currentStep: event.stepNumber,
+          totalSteps: event.totalSteps,
+          message: event.message,
+          error: event.error
         };
+      } else if (event.summary) {
+        // Complete event
+        console.log('Summary complete! Length:', event.summary.length);
+        this.fullChapterSummary = event.summary;
+        this.fullSummaryTokens = {
+          total: event.totalTokens,
+          prompt: event.promptTokens,
+          completion: event.completionTokens,
+          allowancePercent: event.allowanceUsedPercent ?? undefined,
+          remaining: event.tokensRemaining ?? undefined
+        };
+
+        this.chapterSummaryProgress = {
+          stage: 'complete',
+          currentStep: 1,
+          totalSteps: 1,
+          message: 'Chapter summary complete!',
+          error: undefined
+        };
+
         this.loadingFullChapterSummary = false;
+
+        const resp = {
+          summary: event.summary,
+          promptTokens: event.promptTokens,
+          completionTokens: event.completionTokens,
+          totalTokens: event.totalTokens,
+          allowanceUsedPercent: event.allowanceUsedPercent,
+          tokensRemaining: event.tokensRemaining,
+          cachedAt: event.cachedAt,
+          steps: []
+        };
         this.fullChapterSummaryCache.set(this.selectedChapterId!, resp);
         this.refreshTokenUsage();
-      },
-      error: err => {
-        console.error('Failed to summarize full chapter', err);
-        this.fullChapterSummary = 'Full chapter summary failed.';
+
+        this.timeoutIds.push(setTimeout(() => this.chapterSummaryProgress = null, 5000));
+      } else if (event.message && event.error) {
+        // Error event
+        console.error('Error event:', event);
+        this.chapterSummaryProgress = {
+          stage: 'error',
+          currentStep: event.stepNumber || 0,
+          totalSteps: event.totalSteps || 1,
+          message: event.message,
+          error: event.error
+        };
         this.loadingFullChapterSummary = false;
         this.refreshTokenUsage();
+      } else {
+        console.warn('Unknown SSE event format:', event);
       }
     });
+  }
+
+  getStageLabel(stage: string): string {
+    switch (stage) {
+      case 'chunks': return 'Analyzing Chunks';
+      case 'sections': return 'Synthesizing Sections';
+      case 'final': return 'Final Summary';
+      case 'complete': return 'Complete';
+      case 'error': return 'Error';
+      default: return 'Processing';
+    }
   }
 
   private loadBooks(): void {
     this.loadingBooks = true;
     this.error = null;
 
-    this.api.getDropboxEpubs().subscribe({
+    this.api.getDropboxEpubs()
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
       next: books => {
         this.dropboxBooks = books;
         this.loadingBooks = false;
@@ -553,7 +876,9 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
     this.loadingChapters = true;
     this.chapters = [];
 
-    this.api.getDropboxEpubChapters(path).subscribe({
+    this.api.getDropboxEpubChapters(path)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
       next: resp => {
         this.chapters = resp.chapters.filter(ch => ch.wordCount >= 50);
         this.loadingChapters = false;
@@ -574,7 +899,9 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
     this.fullChapterSummary = null;
     this.fullSummaryTokens = null;
 
-    this.api.getDropboxChapterContent(path, chapterId).subscribe({
+    this.api.getDropboxChapterContent(path, chapterId)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
       next: content => {
         const collapsed = this.collapseBlankLines(content.content);
         const computedWordCount = this.countWords(collapsed);
@@ -584,15 +911,22 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
           wordCount: computedWordCount
         };
         if (this.pendingCharOffset != null) {
-          const slice = collapsed.slice(0, Math.min(this.pendingCharOffset, collapsed.length));
-          this.wordOffset = this.countWords(slice);
+          if (this.pendingCharOffset === -1) {
+            // Special marker: go to last page
+            const totalPages = Math.max(1, Math.ceil(computedWordCount / this.pageSizeWords));
+            this.wordOffset = Math.max(0, (totalPages - 1) * this.pageSizeWords);
+            console.log(`📖 Jumped to last page (offset ${this.wordOffset}) of chapter with ${computedWordCount} words`);
+          } else {
+            const slice = collapsed.slice(0, Math.min(this.pendingCharOffset, collapsed.length));
+            this.wordOffset = this.countWords(slice);
+          }
         } else {
           this.wordOffset = 0;
         }
         this.pendingCharOffset = null;
         this.loadingContent = false;
         this.loadCachedFullChapterSummary();
-        setTimeout(() => this.recalcPageSize(), 0);
+        this.timeoutIds.push(setTimeout(() => this.recalcPageSize(), 0));
       },
       error: err => {
         console.error('Failed to load chapter content', err);
@@ -603,7 +937,9 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
   }
 
   private fetchStatus(path: string, keepPolling: boolean = false): void {
-    this.api.getDropboxEpubStatus(path).subscribe({
+    this.api.getDropboxEpubStatus(path)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
       next: status => {
         this.status = status;
         if (keepPolling && status.inProgress) {
@@ -650,6 +986,8 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
     localStorage.setItem('epub_recent', JSON.stringify(this.previouslyViewed));
   }
 
+  // preloadCachedSummaries removed (offline preload deprecated for lean runtime).
+
   private loadCachedFullChapterSummary(): void {
     if (!this.selectedBookPath || this.selectedChapterId == null) return;
     this.fullChapterSummary = null;
@@ -669,7 +1007,9 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
       return;
     }
 
-    this.api.getFullChapterSummary(this.selectedBookPath, this.selectedChapterId).subscribe({
+    this.api.getFullChapterSummary(this.selectedBookPath, this.selectedChapterId)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
       next: resp => {
         this.fullChapterSummaryCache.set(this.selectedChapterId!, resp);
         this.fullChapterSummary = resp.summary;
@@ -688,7 +1028,9 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
   }
 
   private refreshTokenUsage(): void {
-    this.api.getTokenUsage().subscribe({
+    this.api.getTokenUsage()
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
       next: usage => {
         this.tokenUsage = usage;
       },
@@ -710,6 +1052,20 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
 
   closeVocabModal(): void {
     this.showVocabModal = false;
+  }
+
+  openCharacterGraphModal(): void {
+    if (!this.selectedBookPath || !this.selectedBook) return;
+
+    this.dialog.open(CharacterGraphModalComponent, {
+      width: '90vw',
+      maxWidth: '1200px',
+      height: '80vh',
+      data: {
+        dropboxPath: this.selectedBookPath,
+        bookTitle: this.selectedBook.name
+      }
+    });
   }
 
   clearKnownWords(): void {
@@ -741,7 +1097,9 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
     this.loadingLearnMore = true;
     console.log(`Fetching learn more for "${payload.term}"`);
 
-    this.api.learnMore(payload).subscribe({
+    this.api.learnMore(payload)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
       next: resp => {
         console.log(`Learn more response received for "${payload.term}"`);
         const cleaned = this.cleanModelHtml(resp.detail);
@@ -756,7 +1114,9 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
           const articleTitle = this.getWikipediaTitleFromUrl(firstWikiUrl);
           console.log(`Fetching images for Wikipedia article: "${articleTitle}"`);
 
-          this.api.getWikiImages(articleTitle).subscribe({
+          this.api.getWikiImages(articleTitle)
+            .pipe(takeUntil(this.destroy$))
+            .subscribe({
             next: wiki => {
               const images = wiki?.images || [];
               console.log(`Wiki images received:`, images.length, 'images', images);
@@ -827,7 +1187,9 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
       this.flashcards = [];
       return;
     }
-    this.api.getFlashcards(this.selectedBookPath).subscribe({
+    this.api.getFlashcards(this.selectedBookPath)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
       next: cards => (this.flashcards = cards || []),
       error: () => (this.flashcards = [])
     });
@@ -835,7 +1197,9 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
 
   clearFlashcards(): void {
     if (!this.selectedBookPath) return;
-    this.api.clearFlashcards(this.selectedBookPath).subscribe({
+    this.api.clearFlashcards(this.selectedBookPath)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
       next: () => (this.flashcards = []),
       error: () => {}
     });
@@ -883,7 +1247,9 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
       bookTitle: this.selectedBook?.name ?? undefined,
       context: this.analysisText ?? undefined
     };
-    this.api.createFlashcard(payload).subscribe({
+    this.api.createFlashcard(payload)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
       next: cards => {
         const normalized = Array.isArray(cards) ? cards : [cards as any];
         const updated = [...this.flashcards];
@@ -1026,7 +1392,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
 
   toggleSidebar(show: boolean): void {
     this.showSidebar = show;
-    setTimeout(() => this.recalcPageSize(), 0);
+    this.timeoutIds.push(setTimeout(() => this.recalcPageSize(), 0));
   }
 
   changeFontSize(delta: number): void {
@@ -1034,37 +1400,116 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
     if (next !== this.fontSize) {
       this.fontSize = next;
       // Wait for DOM to update with new font size before recalculating
-      setTimeout(() => this.recalcPageSize(), 0);
+      this.timeoutIds.push(setTimeout(() => this.recalcPageSize(), 0));
     }
   }
 
   createVocabFromSelection(): void {
     const text = (this.selectedText || '').trim();
     if (!text || this.loadingSelectionVocab || !this.selectedBookPath) return;
+
+    // Check if we're in section mode and have a valid section
+    if (this.currentSectionIndex === null) {
+      console.warn('⚠️ Cannot create vocab - no section selected');
+      return;
+    }
+
+    // Capture the section index for use in callbacks (TypeScript null safety)
+    const sectionIndex = this.currentSectionIndex;
+
     this.loadingSelectionVocab = true;
+
+    // Determine selection type
+    const wordCount = text.split(/\s+/).length;
+    const isSingleWord = wordCount === 1;
+
+    console.log(`🔤 Creating vocab from selection: ${isSingleWord ? 'single word' : `${wordCount} words`}`);
 
     const allKnownWords = this.vocabularyService.getKnownWordsForPrompt();
     const knownWords = allKnownWords.slice(-100);
 
-    const payload = {
-      text,
-      bookTitle: this.selectedBook?.name ?? '',
-      dropboxPath: this.selectedBookPath ?? '',
-      chapterId: this.selectedChapterId ?? undefined,
-      wordOffset: this.wordOffset,
-      knownWords
+    // Build context-aware instruction
+    let contextInstruction = '';
+    if (isSingleWord) {
+      contextInstruction = `SINGLE WORD MODE: Create exactly ONE flashcard for the word "${text}". Include etymology, definition, usage examples, and any specialized meanings in this context.`;
+    } else {
+      contextInstruction = `PHRASE/PASSAGE MODE: Analyze this selection and create flashcards for the KEY CONCEPTS or DIFFICULT TERMS (not every word). Create 1-5 cards depending on complexity. Focus on:
+- Main philosophical/technical concepts being discussed
+- Specialized terminology that needs explanation
+- Foreign phrases or archaic language
+- Historical/cultural references
+
+DO NOT create a card for every word. Only create cards for terms that add educational value.`;
+    }
+
+    const flashcardPayload = {
+      term: text,
+      definition: undefined,
+      dropboxPath: this.selectedBookPath,
+      bookTitle: this.selectedBook?.name ?? undefined,
+      context: contextInstruction,
+      knownWords: knownWords
     };
 
-    this.api.summarizeText(payload).subscribe({
-      next: resp => {
-        const vocab = this.extractDefinitionsFromSummary(resp.summary);
-        this.vocabularyWords = vocab;
+    this.api.createFlashcard(flashcardPayload)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+      next: cards => {
+        console.log(`✅ Generated ${cards.length} vocabulary card(s) from selection`);
+
+        // Merge new cards with existing section vocab (avoid duplicates)
+        const existingTerms = new Set(this.vocabularyWords.map(v => v.term.toLowerCase()));
+        const newCards = cards.filter(card => !existingTerms.has(card.term.toLowerCase()));
+
+        if (newCards.length === 0) {
+          console.log('ℹ️ All generated cards already exist in current section');
+        } else {
+          // Add new cards to vocabulary display
+          const newVocabWords = newCards.map(card => ({
+            term: card.term,
+            definition: card.definition
+          }));
+          this.vocabularyWords = [...this.vocabularyWords, ...newVocabWords];
+
+          // Get all current section cards (existing + new)
+          const allSectionCards = [
+            ...(this.sectionSummaries.get(sectionIndex)?.vocab || []),
+            ...newCards
+          ];
+
+          // Save merged vocab to section cache
+          if (this.selectedBookPath && this.selectedChapterId !== null) {
+            this.api.saveSectionVocab(
+              this.selectedBookPath,
+              this.selectedChapterId,
+              sectionIndex,
+              allSectionCards
+            )
+              .pipe(takeUntil(this.destroy$))
+              .subscribe({
+              next: () => {
+                console.log(`💾 Saved ${newCards.length} new vocab card(s) to section ${sectionIndex} cache`);
+
+                // Update in-memory section summary with new vocab
+                const summary = this.sectionSummaries.get(sectionIndex);
+                if (summary) {
+                  this.sectionSummaries.set(sectionIndex, {
+                    ...summary,
+                    vocab: allSectionCards
+                  });
+                }
+              },
+              error: err => console.error('Failed to save vocab to cache', err)
+            });
+          }
+        }
+
         this.loadingSelectionVocab = false;
         this.refreshTokenUsage();
         this.selectedText = null;
       },
       error: err => {
-        console.error('Failed to build vocab from selection', err);
+        console.error('Failed to generate vocabulary cards from selection', err);
         this.loadingSelectionVocab = false;
         this.refreshTokenUsage();
       }
@@ -1169,5 +1614,360 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
     if (this.wordOffset > maxStart) {
       this.wordOffset = maxStart;
     }
+
+    // Update current section index based on word offset
+    this.updateCurrentSection();
+  }
+
+  // ─── Section/Chunk boundary methods ──────────────────────────────────────
+
+  private loadChunkBoundaries(path: string, chapterId: number): void {
+    if (!path || chapterId < 0) return;
+
+    this.loadingChunkBoundaries = true;
+    this.chunkBoundariesProgress = {
+      stage: 'detecting',
+      currentStep: 0,
+      totalSteps: 1,
+      message: 'Starting section detection...',
+      error: undefined
+    };
+
+    // Use fetch to GET with SSE support
+    const apiBase = window.location.protocol + '//' + window.location.hostname + ':5051';
+    const token = this.authService.getToken();
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const url = `${apiBase}/api/ai/chunk-boundaries?dropboxPath=${encodeURIComponent(path)}&chapterId=${chapterId}`;
+
+    fetch(url, {
+      method: 'GET',
+      headers: headers
+    }).then(response => {
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const contentType = response.headers.get('content-type');
+      if (contentType && contentType.includes('application/json')) {
+        // Cached result - return as JSON
+        return response.json().then(data => {
+          this.ngZone.run(() => {
+            this.chunkBoundaries = data as ChunkBoundariesResponse;
+            this.loadingChunkBoundaries = false;
+            this.chunkBoundariesProgress = null;
+            this.updateCurrentSection();
+            console.log(`✅ Loaded ${data.chunks.length} cached chunk boundaries for chapter ${chapterId}`);
+
+            // Auto-load cached summary for current section (if it exists)
+            if (this.currentSectionIndex !== null) {
+              this.loadCachedSectionSummary(this.currentSectionIndex);
+            }
+          });
+        });
+      }
+
+      // SSE stream - parse events
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      const readStream = async (): Promise<void> => {
+        const { done, value } = await reader!.read();
+        if (done) {
+          console.log('SSE stream complete');
+          return;
+        }
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (line.startsWith('data:')) {
+            const data = line.substring(5).trim();
+            if (!data) continue;
+
+            try {
+              const parsed = JSON.parse(data);
+              console.log('SSE event:', parsed);
+              this.handleChunkBoundarySSEEvent(parsed);
+            } catch (e) {
+              console.error('Failed to parse SSE data:', data, e);
+            }
+          }
+        }
+
+        return readStream();
+      };
+
+      return readStream();
+    }).catch(err => {
+      console.error('Failed to load chunk boundaries', err);
+      this.ngZone.run(() => {
+        this.chunkBoundariesProgress = {
+          stage: 'error',
+          currentStep: 0,
+          totalSteps: 1,
+          message: 'Failed to detect section boundaries',
+          error: err.message || 'Unknown error'
+        };
+        this.loadingChunkBoundaries = false;
+      });
+    });
+  }
+
+  private handleChunkBoundarySSEEvent(event: any): void {
+    this.ngZone.run(() => {
+      if (event.stage && event.stepNumber !== undefined) {
+        // Progress event
+        console.log(`Boundary detection: ${event.stage} ${event.stepNumber}/${event.totalSteps}`);
+        this.chunkBoundariesProgress = {
+          stage: event.stage as any,
+          currentStep: event.stepNumber,
+          totalSteps: event.totalSteps,
+          message: event.message,
+          error: event.error
+        };
+      } else if (event.chapterId !== undefined && event.chunks) {
+        // Complete event
+        console.log('Boundary detection complete! Sections:', event.chunks.length);
+        this.chunkBoundaries = event as ChunkBoundariesResponse;
+        this.chunkBoundariesProgress = {
+          stage: 'complete',
+          currentStep: 1,
+          totalSteps: 1,
+          message: 'Section boundaries detected!',
+          error: undefined
+        };
+        this.loadingChunkBoundaries = false;
+        this.updateCurrentSection();
+
+        // Auto-load cached summary for current section
+        if (this.currentSectionIndex !== null) {
+          this.loadCachedSectionSummary(this.currentSectionIndex);
+        }
+
+        this.timeoutIds.push(setTimeout(() => this.chunkBoundariesProgress = null, 3000));
+      } else if (event.error) {
+        // Error event
+        console.error('Boundary detection error:', event);
+        this.chunkBoundariesProgress = {
+          stage: 'error',
+          currentStep: event.stepNumber || 0,
+          totalSteps: event.totalSteps || 1,
+          message: event.message || 'Detection failed',
+          error: event.error
+        };
+        this.loadingChunkBoundaries = false;
+      }
+    });
+  }
+
+  private updateCurrentSection(): void {
+    if (!this.chunkBoundaries || !this.chunkBoundaries.chunks.length) {
+      this.currentSectionIndex = null;
+      return;
+    }
+
+    // Find which section contains the current word offset
+    for (let i = 0; i < this.chunkBoundaries.chunks.length; i++) {
+      const chunk = this.chunkBoundaries.chunks[i];
+      if (this.wordOffset >= chunk.start && this.wordOffset < chunk.end) {
+        this.currentSectionIndex = i;
+        return;
+      }
+    }
+
+    // If not found, set to last section if we're beyond all chunks
+    if (this.wordOffset >= this.chunkBoundaries.chunks[this.chunkBoundaries.chunks.length - 1].end) {
+      this.currentSectionIndex = this.chunkBoundaries.chunks.length - 1;
+    }
+  }
+
+  generateSectionSummary(sectionIndex: number): void {
+    if (!this.selectedBookPath || this.selectedChapterId === null || !this.chunkBoundaries || !this.chapterContent) return;
+    if (sectionIndex < 0 || sectionIndex >= this.chunkBoundaries.chunks.length) return;
+
+    // Check if already loading
+    if (this.loadingSectionSummary) return;
+
+    // If regenerating (summary already exists), remove old summary and clear vocab
+    const isRegenerating = this.sectionSummaries.has(sectionIndex);
+    if (isRegenerating) {
+      console.log(`🔄 Regenerating summary for section ${sectionIndex}`);
+      this.sectionSummaries.delete(sectionIndex);
+      this.vocabularyWords = [];
+    }
+
+    this.loadingSectionSummary = true;
+
+    const summaryPayload = {
+      dropboxPath: this.selectedBookPath,
+      chapterId: this.selectedChapterId,
+      sectionIndex: sectionIndex,
+      bookTitle: this.selectedBook?.name ?? undefined,
+      author: undefined
+    };
+
+    // Step 1: Generate summary (fast)
+    this.api.generateSectionSummary(summaryPayload)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+      next: summary => {
+        this.sectionSummaries.set(sectionIndex, summary);
+        this.loadingSectionSummary = false;
+        this.refreshTokenUsage();
+        console.log(`✅ Generated summary for section ${sectionIndex}`);
+
+        // Clear vocabulary while we generate it
+        this.vocabularyWords = [];
+
+        // Step 2: Generate vocabulary cards from section text (separate call)
+        this.generateSectionVocabulary(sectionIndex);
+      },
+      error: err => {
+        console.error('Failed to generate section summary', err);
+        console.error('Error details:', {
+          status: err.status,
+          statusText: err.statusText,
+          message: err.error?.error || err.message,
+          url: err.url
+        });
+        this.loadingSectionSummary = false;
+        this.refreshTokenUsage();
+      }
+    });
+  }
+
+  private generateSectionVocabulary(sectionIndex: number): void {
+    if (!this.selectedBookPath || !this.chapterContent || !this.chunkBoundaries) return;
+    if (sectionIndex < 0 || sectionIndex >= this.chunkBoundaries.chunks.length) return;
+
+    // Extract section text from chapter content
+    const chunk = this.chunkBoundaries.chunks[sectionIndex];
+    const words = this.chapterContent.content.split(/\s+/);
+    const sectionWords = words.slice(chunk.start, chunk.start + chunk.wordCount);
+
+    // Limit to max 1000 words to avoid overwhelming the API
+    const limitedWords = sectionWords.slice(0, 1000);
+    const sectionText = limitedWords.join(' ');
+
+    console.log(`🔤 Generating vocabulary cards for section ${sectionIndex} (${limitedWords.length} words)...`);
+
+    // Get known words to exclude from vocabulary
+    const allKnownWords = this.vocabularyService.getKnownWordsForPrompt();
+    const knownWords = allKnownWords.slice(-100); // Limit to 100 most recent
+
+    const flashcardPayload = {
+      term: sectionText,
+      dropboxPath: this.selectedBookPath,
+      bookTitle: this.selectedBook?.name ?? undefined,
+      knownWords: knownWords
+    };
+
+    this.api.createFlashcard(flashcardPayload)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+      next: cards => {
+        // Convert flashcard items to vocabulary words
+        this.vocabularyWords = cards.map(card => ({
+          term: card.term,
+          definition: card.definition
+        }));
+        console.log(`✅ Generated ${cards.length} vocabulary cards for section ${sectionIndex}`);
+
+        // Save vocab to cache
+        if (this.selectedBookPath && this.selectedChapterId !== null && cards.length > 0) {
+          this.api.saveSectionVocab(this.selectedBookPath, this.selectedChapterId, sectionIndex, cards)
+            .pipe(takeUntil(this.destroy$))
+            .subscribe({
+            next: () => console.log(`💾 Saved ${cards.length} vocab cards to cache`),
+            error: err => console.error('Failed to save vocab to cache', err)
+          });
+        }
+
+        this.refreshTokenUsage();
+      },
+      error: err => {
+        console.error('Failed to generate vocabulary cards', err);
+        this.vocabularyWords = [];
+        this.refreshTokenUsage();
+      }
+    });
+  }
+
+  navigateToSection(sectionIndex: number): void {
+    if (!this.chunkBoundaries || sectionIndex < 0 || sectionIndex >= this.chunkBoundaries.chunks.length) return;
+
+    const chunk = this.chunkBoundaries.chunks[sectionIndex];
+    this.wordOffset = chunk.start;
+    this.currentSectionIndex = sectionIndex;
+
+    // Clear vocabulary immediately when switching sections
+    // It will be repopulated from cache if the new section has vocab
+    this.vocabularyWords = [];
+
+    // Auto-load cached summary and vocab if they exist
+    this.loadCachedSectionSummary(sectionIndex);
+  }
+
+  private loadCachedSectionSummary(sectionIndex: number): void {
+    if (!this.selectedBookPath || this.selectedChapterId === null) return;
+
+    // Check if summary is already loaded in memory
+    if (this.sectionSummaries.has(sectionIndex)) {
+      console.log(`✅ Summary for section ${sectionIndex} already in memory`);
+      // Still need to load vocab if it exists in the cached summary
+      const summary = this.sectionSummaries.get(sectionIndex);
+      if (summary?.vocab && summary.vocab.length > 0) {
+        this.vocabularyWords = summary.vocab.map(card => ({
+          term: card.term,
+          definition: card.definition
+        }));
+        console.log(`✅ Loaded ${summary.vocab.length} vocab cards from memory`);
+      } else {
+        this.vocabularyWords = [];
+      }
+      return;
+    }
+
+    // Try to load from server cache (GET endpoint - no generation)
+    this.api.getCachedSectionSummary(this.selectedBookPath, this.selectedChapterId, sectionIndex)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+      next: summary => {
+        this.sectionSummaries.set(sectionIndex, summary);
+        console.log(`✅ Auto-loaded cached summary for section ${sectionIndex}`);
+
+        // Load vocab if available in cached summary
+        if (summary.vocab && summary.vocab.length > 0) {
+          this.vocabularyWords = summary.vocab.map(card => ({
+            term: card.term,
+            definition: card.definition
+          }));
+          console.log(`✅ Auto-loaded ${summary.vocab.length} vocab cards for section ${sectionIndex}`);
+        } else {
+          // Clear vocab if this section doesn't have any cached
+          this.vocabularyWords = [];
+        }
+
+        // NOTE: Do NOT auto-generate vocab here
+        // Vocab should only be generated when user explicitly clicks "Generate" or "Regenerate" button
+      },
+      error: () => {
+        // No cached summary exists, that's fine - user will need to click "Generate"
+        console.log(`ℹ️ No cached summary for section ${sectionIndex}`);
+        // Clear vocab since there's no cached summary
+        this.vocabularyWords = [];
+      }
+    });
+  }
+
+  hasSectionSummary(sectionIndex: number): boolean {
+    return this.sectionSummaries.has(sectionIndex);
   }
 }

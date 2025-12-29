@@ -56,7 +56,7 @@ public class AnnaArchiveService
         collected = collected.Take(limit).ToList();
 
         /* 3️⃣  build DTOs in parallel */
-        var sem   = new SemaphoreSlim(4);
+        var sem   = new SemaphoreSlim(10);  // Increased from 4 to 10 for faster parallel processing
         var tasks = collected.Select(async container =>
         {
             await sem.WaitAsync();

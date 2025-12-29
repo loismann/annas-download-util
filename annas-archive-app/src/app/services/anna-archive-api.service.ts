@@ -20,7 +20,13 @@ import {
   WikiImagesResponse,
   FullChapterSummaryRequest,
   FullChapterSummaryResponse,
-  TokenUsageResponse
+  TokenUsageResponse,
+  ChunkBoundariesResponse,
+  SectionSummaryRequest,
+  SectionSummaryResponse,
+  CharacterGraphResponse,
+  CharacterGraphRequest,
+  CharacterGraphUpdateRequest
 } from '../models/dropbox-epub.model';
 
 /* ─────────────── existing member-download shape ──────────────── */
@@ -64,12 +70,12 @@ export interface GamingStatusResponse {
 @Injectable({ providedIn: 'root' })
 export class AnnaArchiveApiService {
   private readonly isLocalDev = window.location.hostname === 'localhost';
-  private readonly baseUrl = this.isLocalDev
-    ? 'http://localhost:5050/api/anna'
-    : 'https://fs01pfbooks.synology.me:5051/api/anna';
-  private readonly gamingBaseUrl = this.isLocalDev
-    ? 'http://localhost:5050/api/gaming'
-    : 'https://fs01pfbooks.synology.me:5051/api/gaming';
+  private readonly apiHost = this.isLocalDev
+    ? 'http://localhost:5050'
+    : 'https://fs01pfbooks.synology.me:5051';
+  private readonly baseUrl = `${this.apiHost}/api/anna`;
+  private readonly aiBaseUrl = `${this.apiHost}/api/ai`;
+  private readonly gamingBaseUrl = `${this.apiHost}/api/gaming`;
 
   constructor(private http: HttpClient) {
     if (this.isLocalDev) {
@@ -189,52 +195,45 @@ export class AnnaArchiveApiService {
   }
 
   summarizeText(payload: SummarizeRequestPayload): Observable<SummarizeResponse> {
-    // summarize endpoint is outside /api/anna prefix
-    const apiBase = this.baseUrl.replace('/api/anna', '');
     return this.http.post<SummarizeResponse>(
-      `${apiBase}/api/ai/summarize`,
+      `${this.aiBaseUrl}/summarize`,
       payload
     );
   }
 
   summarizeFullChapter(payload: FullChapterSummaryRequest): Observable<FullChapterSummaryResponse> {
-    const apiBase = this.baseUrl.replace('/api/anna', '');
     return this.http.post<FullChapterSummaryResponse>(
-      `${apiBase}/api/ai/summarize/chapter`,
+      `${this.aiBaseUrl}/summarize/chapter`,
       payload
     );
   }
 
   getFullChapterSummary(dropboxPath: string, chapterId: number): Observable<FullChapterSummaryResponse> {
-    const apiBase = this.baseUrl.replace('/api/anna', '');
     const params = new HttpParams()
       .set('dropboxPath', dropboxPath)
       .set('chapterId', chapterId.toString());
     return this.http.get<FullChapterSummaryResponse>(
-      `${apiBase}/api/ai/summarize/chapter`,
+      `${this.aiBaseUrl}/summarize/chapter`,
       { params }
     );
   }
 
   getTokenUsage(): Observable<TokenUsageResponse> {
-    const apiBase = this.baseUrl.replace('/api/anna', '');
     return this.http.get<TokenUsageResponse>(
-      `${apiBase}/api/ai/usage`
+      `${this.aiBaseUrl}/usage`
     );
   }
 
   learnMore(payload: LearnMoreRequestPayload): Observable<LearnMoreResponse> {
-    const apiBase = this.baseUrl.replace('/api/anna', '');
     return this.http.post<LearnMoreResponse>(
-      `${apiBase}/api/ai/vocab/learn-more`,
+      `${this.aiBaseUrl}/vocab/learn-more`,
       payload
     );
   }
 
   createFlashcard(payload: FlashcardRequestPayload): Observable<FlashcardItem[]> {
-    const apiBase = this.baseUrl.replace('/api/anna', '');
     return this.http.post<FlashcardResult>(
-      `${apiBase}/api/ai/flashcards`,
+      `${this.aiBaseUrl}/flashcards`,
       payload
     ).pipe(
       map(res => {
@@ -245,29 +244,76 @@ export class AnnaArchiveApiService {
   }
 
   getFlashcards(dropboxPath: string): Observable<FlashcardItem[]> {
-    const apiBase = this.baseUrl.replace('/api/anna', '');
     const params = new HttpParams().set('path', dropboxPath);
     return this.http.get<FlashcardItem[]>(
-      `${apiBase}/api/ai/flashcards`,
+      `${this.aiBaseUrl}/flashcards`,
       { params }
     );
   }
 
   clearFlashcards(dropboxPath: string): Observable<{ cleared: boolean }> {
-    const apiBase = this.baseUrl.replace('/api/anna', '');
     const params = new HttpParams().set('path', dropboxPath);
     return this.http.delete<{ cleared: boolean }>(
-      `${apiBase}/api/ai/flashcards`,
+      `${this.aiBaseUrl}/flashcards`,
       { params }
     );
   }
 
   getWikiImages(term: string): Observable<WikiImagesResponse> {
-    const apiBase = this.baseUrl.replace('/api/anna', '');
     const params = new HttpParams().set('term', term);
     return this.http.get<WikiImagesResponse>(
-      `${apiBase}/api/media/wiki-images`,
+      `${this.aiBaseUrl}/media/wiki-images`,
       { params }
+    );
+  }
+
+  getAllCachedSummaries(dropboxPath: string): Observable<{ [chapterId: number]: any }> {
+    const params = new HttpParams().set('dropboxPath', dropboxPath);
+    return this.http.get<{ [chapterId: number]: any }>(
+      `${this.aiBaseUrl}/summarize/book`,
+      { params }
+    );
+  }
+
+  /* ══════════════════════════════════════════════════════════════
+     NEW  ➜  Get chunk boundaries (auto-detects if not cached)
+     ══════════════════════════════════════════════════════════════ */
+  getChunkBoundaries(dropboxPath: string, chapterId: number): Observable<ChunkBoundariesResponse> {
+    const params = new HttpParams()
+      .set('dropboxPath', dropboxPath)
+      .set('chapterId', chapterId.toString());
+    return this.http.get<ChunkBoundariesResponse>(
+      `${this.aiBaseUrl}/chunk-boundaries`,
+      { params }
+    );
+  }
+
+  /* ══════════════════════════════════════════════════════════════
+     NEW  ➜  Get cached section summary (no generation)
+     ══════════════════════════════════════════════════════════════ */
+  getCachedSectionSummary(dropboxPath: string, chapterId: number, sectionIndex: number): Observable<SectionSummaryResponse> {
+    return this.http.get<SectionSummaryResponse>(
+      `${this.aiBaseUrl}/section-summary?dropboxPath=${encodeURIComponent(dropboxPath)}&chapterId=${chapterId}&sectionIndex=${sectionIndex}`
+    );
+  }
+
+  /* ══════════════════════════════════════════════════════════════
+     NEW  ➜  Generate section summary using GPT-5.2
+     ══════════════════════════════════════════════════════════════ */
+  generateSectionSummary(payload: SectionSummaryRequest): Observable<SectionSummaryResponse> {
+    return this.http.post<SectionSummaryResponse>(
+      `${this.aiBaseUrl}/section-summary`,
+      payload
+    );
+  }
+
+  /* ══════════════════════════════════════════════════════════════
+     NEW  ➜  Save section vocabulary to cache
+     ══════════════════════════════════════════════════════════════ */
+  saveSectionVocab(dropboxPath: string, chapterId: number, sectionIndex: number, vocab: FlashcardItem[]): Observable<{ success: boolean; vocabCount: number }> {
+    return this.http.post<{ success: boolean; vocabCount: number }>(
+      `${this.aiBaseUrl}/section-vocab`,
+      { dropboxPath, chapterId, sectionIndex, vocab }
     );
   }
 
@@ -289,6 +335,31 @@ export class AnnaArchiveApiService {
   getGamingPCStatus(): Observable<GamingStatusResponse> {
     return this.http.get<GamingStatusResponse>(
       `${this.gamingBaseUrl}/status`
+    );
+  }
+
+  /* ══════════════════════════════════════════════════════════════
+     NEW  ➜  Character Graph APIs
+     ══════════════════════════════════════════════════════════════ */
+  generateCharacterGraph(payload: CharacterGraphRequest): Observable<CharacterGraphResponse> {
+    return this.http.post<CharacterGraphResponse>(
+      `${this.aiBaseUrl}/characters/graph`,
+      payload
+    );
+  }
+
+  getCharacterGraph(dropboxPath: string): Observable<CharacterGraphResponse> {
+    const params = new HttpParams().set('dropboxPath', dropboxPath);
+    return this.http.get<CharacterGraphResponse>(
+      `${this.aiBaseUrl}/characters/graph`,
+      { params }
+    );
+  }
+
+  updateCharacterGraph(payload: CharacterGraphUpdateRequest): Observable<CharacterGraphResponse> {
+    return this.http.post<CharacterGraphResponse>(
+      `${this.aiBaseUrl}/characters/update`,
+      payload
     );
   }
 }

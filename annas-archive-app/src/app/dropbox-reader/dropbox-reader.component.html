@@ -51,49 +51,78 @@
       <div>Updated: {{ selectedBook.serverModified | date:'short' }}</div>
     </div>
 
-    <div class="token-usage-block" *ngIf="tokenUsage"
-         [class.warning]="(tokenUsage.allowanceUsedPercent || 0) >= 70 && (tokenUsage.allowanceUsedPercent || 0) < 90"
-         [class.danger]="(tokenUsage.allowanceUsedPercent || 0) >= 90">
-      <div class="token-usage-header">
-        <span class="token-label">AI Usage</span>
-        <span class="token-percent">{{ tokenUsage.allowanceUsedPercent | number:'1.0-1' }}%</span>
-      </div>
-      <mat-progress-bar
-        mode="determinate"
-        [value]="tokenUsage.allowanceUsedPercent || 0"
-        [color]="(tokenUsage.allowanceUsedPercent || 0) >= 90 ? 'warn' : (tokenUsage.allowanceUsedPercent || 0) >= 70 ? 'accent' : 'primary'">
-      </mat-progress-bar>
-      <div class="token-reset" *ngIf="tokenUsage.resetsAtUtc">
-        Resets {{ tokenUsage.resetsAtUtc | date:'MMM d' }}
+    <button mat-flat-button color="accent" class="w-100 vocab-btn-main"
+      (click)="openVocabModal()">
+      <mat-icon>menu_book</mat-icon>
+      Vocab
+    </button>
+
+    <button mat-flat-button color="primary" class="w-100 character-graph-btn"
+      (click)="openCharacterGraphModal()"
+      [disabled]="!selectedBook">
+      <mat-icon>account_tree</mat-icon>
+      Characters
+    </button>
+
+    <div class="ai-usage-section" *ngIf="tokenUsage">
+      <button mat-button class="cache-toggle" (click)="showAiUsageSection = !showAiUsageSection"
+              [class.warning]="(tokenUsage.allowanceUsedPercent || 0) >= 70 && (tokenUsage.allowanceUsedPercent || 0) < 90"
+              [class.danger]="(tokenUsage.allowanceUsedPercent || 0) >= 90">
+        <mat-icon>{{ showAiUsageSection ? 'expand_less' : 'expand_more' }}</mat-icon>
+        AI Usage
+      </button>
+      <div class="ai-usage-content" *ngIf="showAiUsageSection">
+        <div class="token-usage-block"
+             [class.warning]="(tokenUsage.allowanceUsedPercent || 0) >= 70 && (tokenUsage.allowanceUsedPercent || 0) < 90"
+             [class.danger]="(tokenUsage.allowanceUsedPercent || 0) >= 90">
+          <div class="token-usage-header">
+            <span class="token-cost" *ngIf="tokenUsage.totalCostUsd !== null && tokenUsage.totalCostUsd !== undefined">
+              ${{ tokenUsage.totalCostUsd | number:'1.2-2' }}
+            </span>
+            <span class="token-percent" *ngIf="tokenUsage.totalCostUsd === null || tokenUsage.totalCostUsd === undefined">
+              {{ tokenUsage.allowanceUsedPercent | number:'1.0-1' }}%
+            </span>
+          </div>
+          <mat-progress-bar
+            mode="determinate"
+            [value]="tokenUsage.allowanceUsedPercent || 0"
+            [color]="(tokenUsage.allowanceUsedPercent || 0) >= 90 ? 'warn' : (tokenUsage.allowanceUsedPercent || 0) >= 70 ? 'accent' : 'primary'">
+          </mat-progress-bar>
+          <div class="token-reset" *ngIf="tokenUsage.resetsAtUtc">
+            Resets {{ tokenUsage.resetsAtUtc | date:'MMM d' }}
+          </div>
+        </div>
       </div>
     </div>
 
-    <div class="status-block" *ngIf="status">
-      <div class="status-row">
-        <span>Indexing: {{ status.percent }}%</span>
-        <span *ngIf="status.cachedAt">Cached: {{ status.cachedAt | date:'short' }}</span>
-      </div>
-      <mat-progress-bar
-        mode="determinate"
-        [value]="status.percent">
-      </mat-progress-bar>
-      <div class="status-row small">
-        <span>{{ status.chaptersCached }}/{{ status.chaptersTotal }} chapters cached</span>
-        <span *ngIf="status.inProgress">Building…</span>
-      </div>
-      <div class="status-actions">
-        <button mat-flat-button color="primary" class="status-btn status-btn-primary"
-          (click)="startIndexing()" [disabled]="!selectedBookPath || (status && status.inProgress)">
-          Cache
-        </button>
-        <button mat-flat-button color="warn" class="status-btn status-btn-warn"
-          (click)="deleteIndex()" [disabled]="!selectedBookPath">
-          Delete
-        </button>
-        <button mat-flat-button color="accent" class="status-btn status-btn-accent"
-          (click)="openVocabModal()">
-          Vocab
-        </button>
+    <div class="cache-section" *ngIf="status">
+      <button mat-button class="cache-toggle" (click)="showCacheSection = !showCacheSection">
+        <mat-icon>{{ showCacheSection ? 'expand_less' : 'expand_more' }}</mat-icon>
+        Cache Management
+      </button>
+      <div class="cache-content" *ngIf="showCacheSection">
+        <div class="status-row">
+          <span>Indexing: {{ status.percent }}%</span>
+          <span *ngIf="status.cachedAt">Cached: {{ status.cachedAt | date:'short' }}</span>
+        </div>
+        <mat-progress-bar
+          mode="determinate"
+          [value]="status.percent">
+        </mat-progress-bar>
+        <div class="status-row small">
+          <span>{{ status.chaptersCached }}/{{ status.chaptersTotal }} chapters cached</span>
+          <span *ngIf="status.inProgress">Building…</span>
+        </div>
+        <div class="status-actions">
+          <button mat-flat-button color="primary" class="status-btn status-btn-primary"
+            (click)="startIndexing()" [disabled]="!selectedBookPath || (status && status.inProgress)">
+            Cache
+          </button>
+          <button mat-flat-button color="warn" class="status-btn status-btn-warn"
+            (click)="deleteIndex()" [disabled]="!selectedBookPath">
+            Delete
+          </button>
+        </div>
       </div>
     </div>
 
@@ -109,6 +138,7 @@
           <div class="chapter-line" [style.paddingLeft.px]="chapter.level * 12">
             <span class="chapter-title">{{ chapter.title }}</span>
             <span class="chapter-meta">({{ chapter.wordCount | number }} words)</span>
+            <mat-icon *ngIf="fullChapterSummaryCache.has(chapter.id)" class="cached-indicator" [matTooltip]="'Summary cached for offline access'">cloud_done</mat-icon>
           </div>
         </mat-option>
       </mat-select>
@@ -123,6 +153,27 @@
       <mat-icon>summarize</mat-icon>
       {{ loadingFullChapterSummary ? 'Working on full chapter...' : 'Generate full chapter summary' }}
     </button>
+
+    <div class="chapter-progress" *ngIf="chapterSummaryProgress">
+      <div class="progress-header">
+        <span class="stage-label">{{ getStageLabel(chapterSummaryProgress.stage) }}</span>
+        <span class="step-counter">{{ chapterSummaryProgress.currentStep }}/{{ chapterSummaryProgress.totalSteps }}</span>
+      </div>
+      <mat-progress-bar
+        mode="determinate"
+        [value]="(chapterSummaryProgress.currentStep / chapterSummaryProgress.totalSteps) * 100"
+        [color]="chapterSummaryProgress.stage === 'error' ? 'warn' : 'primary'">
+      </mat-progress-bar>
+      <div class="progress-message">
+        <mat-icon [class.success]="!chapterSummaryProgress.error" [class.error]="!!chapterSummaryProgress.error">
+          {{ chapterSummaryProgress.error ? 'error' : 'check_circle' }}
+        </mat-icon>
+        <span>{{ chapterSummaryProgress.message }}</span>
+      </div>
+      <div class="error-detail" *ngIf="chapterSummaryProgress.error">
+        {{ chapterSummaryProgress.error }}
+      </div>
+    </div>
 
     <div class="book-search" *ngIf="selectedBookPath">
       <h3>Search entire book</h3>
@@ -189,17 +240,95 @@
           <div class="analysis-mode-group">
             <div class="analysis-combo">
             <mat-select class="analysis-mode-select" [(value)]="analysisMode" panelClass="analysis-mode-panel">
-              <mat-option value="page">Page analysis</mat-option>
+              <mat-option value="section">Section Summary</mat-option>
               <mat-option value="chapter">Chapter analysis</mat-option>
             </mat-select>
-            <button class="summary-btn" mat-stroked-button color="primary" (click)="summarize()" [disabled]="loadingSummary || !chapterContent">
-              <mat-icon>summarize</mat-icon>
-              {{ loadingSummary ? 'Working...' : 'Summarize page' }}
+            <button class="summary-btn" mat-stroked-button color="primary"
+                    (click)="analysisMode === 'section' && currentSectionIndex !== null ? generateSectionSummary(currentSectionIndex) : summarizeFullChapter()"
+                    [disabled]="(analysisMode === 'section' ? (loadingSectionSummary || currentSectionIndex === null || !chunkBoundaries) : loadingFullChapterSummary) || !chapterContent">
+              <mat-icon>{{ analysisMode === 'section' && currentSectionIndex !== null && hasSectionSummary(currentSectionIndex) ? 'refresh' : 'summarize' }}</mat-icon>
+              {{ analysisMode === 'section'
+                ? (loadingSectionSummary ? 'Generating...' : (currentSectionIndex !== null && hasSectionSummary(currentSectionIndex) ? 'Regenerate Section' : 'Generate Section'))
+                : (loadingFullChapterSummary ? 'Generating...' : 'Summarize Chapter')
+              }}
             </button>
           </div>
         </div>
         </div>
         <div class="analysis-body">
+          <ng-container *ngIf="analysisMode === 'section'">
+            <!-- Chunk boundary detection progress -->
+            <div class="chunk-boundary-progress" *ngIf="chunkBoundariesProgress">
+              <div class="progress-header">
+                <span class="stage-label">{{
+                  chunkBoundariesProgress.stage === 'indexing' ? 'Indexing Book' :
+                  chunkBoundariesProgress.stage === 'detecting' ? 'Detecting Sections' :
+                  chunkBoundariesProgress.stage === 'complete' ? 'Complete' : 'Error'
+                }}</span>
+                <span class="step-counter">{{ chunkBoundariesProgress.currentStep }}/{{ chunkBoundariesProgress.totalSteps }}</span>
+              </div>
+              <mat-progress-bar
+                mode="determinate"
+                [value]="(chunkBoundariesProgress.currentStep / chunkBoundariesProgress.totalSteps) * 100"
+                [color]="chunkBoundariesProgress.stage === 'error' ? 'warn' : 'primary'">
+              </mat-progress-bar>
+              <div class="progress-message">
+                <mat-icon [class.success]="!chunkBoundariesProgress.error" [class.error]="!!chunkBoundariesProgress.error">
+                  {{ chunkBoundariesProgress.error ? 'error' : 'check_circle' }}
+                </mat-icon>
+                <span>{{ chunkBoundariesProgress.message }}</span>
+              </div>
+              <div class="error-detail" *ngIf="chunkBoundariesProgress.error">
+                {{ chunkBoundariesProgress.error }}
+              </div>
+            </div>
+
+            <div class="section-summary-container" *ngIf="chunkBoundaries && !chunkBoundariesProgress; else sectionPlaceholder">
+              <div class="section-selector">
+                <mat-select class="section-dropdown"
+                            [value]="currentSectionIndex"
+                            (selectionChange)="navigateToSection($event.value)"
+                            placeholder="Select section">
+                  <mat-option *ngFor="let chunk of chunkBoundaries.chunks; let i = index" [value]="i">
+                    Section {{ i + 1 }} ({{ chunk.start }}-{{ chunk.end }})
+                    <span *ngIf="hasSectionSummary(i)" class="section-checkmark">✓</span>
+                  </mat-option>
+                </mat-select>
+              </div>
+
+              <!-- Section summary generation progress -->
+              <div class="section-summary-progress" *ngIf="loadingSectionSummary">
+                <div class="progress-header">
+                  <span class="stage-label">Generating Summary</span>
+                  <mat-icon class="spinning">hourglass_empty</mat-icon>
+                </div>
+                <mat-progress-bar mode="indeterminate" color="primary"></mat-progress-bar>
+                <div class="progress-message">
+                  <mat-icon class="pulse">auto_awesome</mat-icon>
+                  <span>Analyzing section content and generating summary...</span>
+                </div>
+              </div>
+
+              <div *ngIf="currentSectionIndex !== null && sectionSummaries.has(currentSectionIndex)" class="section-summary-content">
+                <div class="section-summary-header">
+                  <h4>Section {{ currentSectionIndex + 1 }} Summary</h4>
+                </div>
+                <div class="section-summary-body markdown-content"
+                     [innerHTML]="formatSectionSummaryAsHtml(sectionSummaries.get(currentSectionIndex)?.summary ?? '')">
+                </div>
+              </div>
+
+              <div *ngIf="currentSectionIndex !== null && !sectionSummaries.has(currentSectionIndex)" class="section-summary-prompt">
+                <p>Click "Summarize Section" to generate a summary for Section {{ currentSectionIndex + 1 }}.</p>
+              </div>
+            </div>
+            <ng-template #sectionPlaceholder>
+              <div class="analysis-placeholder" *ngIf="!chunkBoundariesProgress">
+                {{ loadingChunkBoundaries ? 'Loading section boundaries...' : 'Section boundaries are being detected. This happens once per chapter.' }}
+              </div>
+            </ng-template>
+          </ng-container>
+
           <ng-container *ngIf="analysisMode === 'page'">
             <div *ngIf="summary && formattedSummary; else analysisPlaceholder" [innerHTML]="formattedSummary"></div>
             <ng-template #analysisPlaceholder>
@@ -223,7 +352,7 @@
                   </span>
                 </div>
               </div>
-              <div class="full-summary-body">{{ fullChapterSummary }}</div>
+              <div class="full-summary-body markdown-content" [innerHTML]="fullChapterSummaryHtml"></div>
             </div>
             <ng-template #chapterPlaceholder>
               <div class="analysis-placeholder">

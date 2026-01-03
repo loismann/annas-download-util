@@ -5,8 +5,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="EpubCore" Version="1.6.2" />
     <PackageReference Include="HtmlAgilityPack" Version="1.11.70" />
     <PackageReference Include="MailKit" Version="4.14.0" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="9.0.9" />
+    <PackageReference Include="SharpZipLib" Version="1.4.2" />
   </ItemGroup>
 </Project>

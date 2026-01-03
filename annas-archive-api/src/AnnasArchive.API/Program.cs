@@ -29,15 +29,6 @@ using System.Security.Cryptography;
 using System.Net.Http.Headers;
 
 var builder = WebApplication.CreateBuilder(args);
-static string GetModelDeep(IConfiguration cfg) =>
-    cfg["OpenAI:ModelDeep"]
-    ?? Environment.GetEnvironmentVariable("OPENAI_MODEL_DEEP")
-    ?? "gpt-5.2";
-
-static string GetModelFast(IConfiguration cfg) =>
-    cfg["OpenAI:ModelFast"]
-    ?? Environment.GetEnvironmentVariable("OPENAI_MODEL_FAST")
-    ?? "gpt-4o";
 
 // ─── configuration ───────────────────────────────────────────────────────
 builder.Configuration
@@ -136,6 +127,49 @@ builder.Services.AddHttpClient("OpenAI", (serviceProvider, client) =>
 // ─── Email Service ───────────────────────────────────────────────────────
 builder.Services.AddSingleton<IEmailService, EmailService>();
 
+// ─── Token Usage Service ─────────────────────────────────────────────────
+builder.Services.AddSingleton<ITokenUsageService, TokenUsageService>();
+
+// ─── Download Tracking Service ───────────────────────────────────────────────
+builder.Services.AddSingleton<IDownloadTrackingService>(provider =>
+{
+    var cfg = provider.GetRequiredService<IConfiguration>();
+    var downloadLimit = cfg.GetValue<int>("DownloadTracking:DownloadLimit", 50);
+    var rollingHours = cfg.GetValue<double>("DownloadTracking:RollingWindowHours", 18);
+    var configuredPath = cfg.GetValue<string>("DownloadTracking:StoragePath");
+    var storagePath = string.IsNullOrWhiteSpace(configuredPath)
+        ? Path.Combine(Directory.GetCurrentDirectory(), "download-tracking.json")
+        : (Path.IsPathRooted(configuredPath)
+            ? configuredPath
+            : Path.Combine(Directory.GetCurrentDirectory(), configuredPath));
+    return new DownloadTrackingService(downloadLimit, rollingHours, storagePath);
+});
+
+// ─── OpenAI Model Helper Service ─────────────────────────────────────────────
+builder.Services.AddSingleton<IOpenAiModelHelper, AnnasArchive.Core.Services.OpenAiModelHelper>();
+
+// ─── AI Response Parser Service ──────────────────────────────────────────────
+builder.Services.AddSingleton<IAiResponseParser, AnnasArchive.Core.Services.AiResponseParser>();
+
+// ─── Model Selection Service ─────────────────────────────────────────────────
+builder.Services.AddSingleton<IModelSelectionService, ModelSelectionService>();
+
+// ─── Validation Service ──────────────────────────────────────────────────────
+builder.Services.AddSingleton<IValidationService, ValidationService>();
+
+// ─── Text Processing Service ─────────────────────────────────────────────────
+builder.Services.AddSingleton<ITextProcessingService, TextProcessingService>();
+
+// ─── EPUB Cache Path Provider (Adapter for static DropboxEpubCache) ──────────
+builder.Services.AddSingleton<IEpubCachePathProvider>(provider =>
+    new EpubCachePathProviderAdapter());
+
+// ─── Flashcard Service ───────────────────────────────────────────────────────
+builder.Services.AddSingleton<IFlashcardService, FlashcardService>();
+
+// ─── Ebook Cover Service ─────────────────────────────────────────────────────
+builder.Services.AddHttpClient<IEbookCoverService, EbookCoverService>();
+
 // ─── dropbox client (refresh token auth) ─────────────────────────────────────
 builder.Services.AddSingleton<DropboxClient>(provider =>
 {
@@ -208,67 +242,10 @@ app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 
-// ─── validation helpers ──────────────────────────────────────────────────
-static bool IsValidMd5(string md5) =>
-    !string.IsNullOrWhiteSpace(md5) &&
-    Regex.IsMatch(md5, "^[a-f0-9]{32}$", RegexOptions.IgnoreCase);
-
-static bool IsValidDropboxPath(string? path)
-{
-    if (string.IsNullOrWhiteSpace(path))
-        return false;
-
-    // Must start with /
-    if (!path.StartsWith('/'))
-        return false;
-
-    // Check for path traversal attempts
-    if (path.Contains("..") || path.Contains("~"))
-        return false;
-
-    // Must end with .epub
-    if (!path.EndsWith(".epub", StringComparison.OrdinalIgnoreCase))
-        return false;
-
-    // Reasonable length limit (max 500 chars)
-    if (path.Length > 500)
-        return false;
-
-    return true;
-}
-
-static bool IsValidChapterId(int chapterId) =>
-    chapterId >= 0 && chapterId < 10000; // Reasonable max chapter limit
-
-static bool IsValidTextLength(string? text, int maxLength = 1_000_000)
-{
-    if (string.IsNullOrEmpty(text))
-        return true; // Empty is valid, required checks should be separate
-
-    return text.Length <= maxLength;
-}
-
-static bool IsValidSearchQuery(string? query, int minLength = 1, int maxLength = 500)
-{
-    if (string.IsNullOrWhiteSpace(query))
-        return false;
-
-    var trimmed = query.Trim();
-    return trimmed.Length >= minLength && trimmed.Length <= maxLength;
-}
-
-static bool IsValidTitle(string? title, int maxLength = 500)
-{
-    if (string.IsNullOrEmpty(title))
-        return true; // Empty is valid for optional fields
-
-    return title.Length <= maxLength;
-}
-
-static IResult? CheckTokenLimit(IConfiguration cfg)
+static IResult? CheckTokenLimit(IConfiguration cfg, ITokenUsageService tokenUsage)
 {
     var allowance = cfg.GetValue<long?>("OpenAI:MonthlyTokenAllowance");
-    if (allowance.HasValue && OpenAiUsageTracker.IsOverLimit(allowance.Value))
+    if (allowance.HasValue && tokenUsage.IsOverLimit(allowance.Value))
     {
         return Results.Problem(
             detail: "Monthly token allowance has been exceeded. The service will reset at the beginning of next month.",
@@ -280,24 +257,361 @@ static IResult? CheckTokenLimit(IConfiguration cfg)
     return null;
 }
 
-static bool IsTokenLimitExceeded(IConfiguration cfg)
+static bool IsTokenLimitExceeded(IConfiguration cfg, ITokenUsageService tokenUsage)
 {
     var allowance = cfg.GetValue<long?>("OpenAI:MonthlyTokenAllowance");
-    return allowance.HasValue && OpenAiUsageTracker.IsOverLimit(allowance.Value);
+    return allowance.HasValue && tokenUsage.IsOverLimit(allowance.Value);
+}
+
+var openLibraryAuthorCacheTtl = TimeSpan.FromHours(6);
+var openLibraryAuthorCache = new Dictionary<string, (DateTime fetchedAt, List<AuthorSuggestion> authors)>();
+var openLibraryAuthorCacheLock = new object();
+
+bool TryGetOpenLibraryAuthorCache(string title, out List<AuthorSuggestion> authors)
+{
+    var key = title.Trim().ToLowerInvariant();
+    lock (openLibraryAuthorCacheLock)
+    {
+        if (openLibraryAuthorCache.TryGetValue(key, out var entry))
+        {
+            if (DateTime.UtcNow - entry.fetchedAt <= openLibraryAuthorCacheTtl)
+            {
+                authors = entry.authors;
+                return true;
+            }
+            openLibraryAuthorCache.Remove(key);
+        }
+    }
+
+    authors = new List<AuthorSuggestion>();
+    return false;
+}
+
+void SetOpenLibraryAuthorCache(string title, List<AuthorSuggestion> authors)
+{
+    var key = title.Trim().ToLowerInvariant();
+    lock (openLibraryAuthorCacheLock)
+    {
+        openLibraryAuthorCache[key] = (DateTime.UtcNow, authors);
+    }
+}
+
+async Task<List<AuthorSuggestion>> FetchAuthorsFromOpenLibraryAsync(string title, IHttpClientFactory httpFactory)
+{
+    if (string.IsNullOrWhiteSpace(title)) return new List<AuthorSuggestion>();
+
+    if (TryGetOpenLibraryAuthorCache(title, out var cached))
+        return cached;
+
+    try
+    {
+        using var http = httpFactory.CreateClient();
+        http.Timeout = TimeSpan.FromSeconds(3);
+
+        var query = Uri.EscapeDataString(title.Trim());
+        var url = $"https://openlibrary.org/search.json?title={query}&limit=10";
+        using var response = await http.GetAsync(url);
+        if (!response.IsSuccessStatusCode) return new List<AuthorSuggestion>();
+
+        using var stream = await response.Content.ReadAsStreamAsync();
+        using var doc = await JsonDocument.ParseAsync(stream);
+
+        if (!doc.RootElement.TryGetProperty("docs", out var docs) || docs.ValueKind != JsonValueKind.Array)
+            return new List<AuthorSuggestion>();
+
+        var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var item in docs.EnumerateArray())
+        {
+            if (!item.TryGetProperty("author_name", out var authorNames) || authorNames.ValueKind != JsonValueKind.Array)
+                continue;
+
+            foreach (var author in authorNames.EnumerateArray())
+            {
+                var name = author.GetString();
+                if (string.IsNullOrWhiteSpace(name)) continue;
+                var key = name.Trim();
+                counts[key] = counts.TryGetValue(key, out var existing) ? existing + 1 : 1;
+            }
+        }
+
+        if (counts.Count == 0) return new List<AuthorSuggestion>();
+
+        var max = counts.Values.Max();
+        string ConfidenceFromScore(int score)
+        {
+            var ratio = score / (double)max;
+            if (ratio >= 0.66) return "high";
+            if (ratio >= 0.34) return "medium";
+            return "low";
+        }
+
+        var results = counts
+            .OrderByDescending(kv => kv.Value)
+            .ThenBy(kv => kv.Key)
+            .Take(5)
+            .Select(kv => new AuthorSuggestion(kv.Key, ConfidenceFromScore(kv.Value)))
+            .ToList();
+        SetOpenLibraryAuthorCache(title, results);
+        return results;
+    }
+    catch
+    {
+        return new List<AuthorSuggestion>();
+    }
+}
+
+async Task<string?> FetchGoogleBooksCoverAsync(string title, string? author, IHttpClientFactory httpFactory)
+{
+    if (string.IsNullOrWhiteSpace(title)) return null;
+
+    try
+    {
+        using var http = httpFactory.CreateClient();
+        http.Timeout = TimeSpan.FromSeconds(3);
+
+        var candidateTitles = BuildCoverTitleCandidates(title);
+        foreach (var candidate in candidateTitles)
+        {
+            var titleQuery = Uri.EscapeDataString(candidate);
+            var authorQuery = string.IsNullOrWhiteSpace(author) ? "" : $"+inauthor:{Uri.EscapeDataString(author.Trim())}";
+            var url = $"https://www.googleapis.com/books/v1/volumes?q=intitle:{titleQuery}{authorQuery}&maxResults=3";
+
+            using var response = await http.GetAsync(url);
+            if (!response.IsSuccessStatusCode) continue;
+
+            using var stream = await response.Content.ReadAsStreamAsync();
+            using var doc = await JsonDocument.ParseAsync(stream);
+
+            if (!doc.RootElement.TryGetProperty("items", out var items) || items.ValueKind != JsonValueKind.Array)
+                continue;
+
+            foreach (var item in items.EnumerateArray())
+            {
+                if (!item.TryGetProperty("volumeInfo", out var volumeInfo)) continue;
+                if (!volumeInfo.TryGetProperty("imageLinks", out var imageLinks)) continue;
+
+                string? urlValue = null;
+                if (imageLinks.TryGetProperty("thumbnail", out var thumb))
+                    urlValue = thumb.GetString();
+                else if (imageLinks.TryGetProperty("smallThumbnail", out var smallThumb))
+                    urlValue = smallThumb.GetString();
+
+                if (string.IsNullOrWhiteSpace(urlValue)) continue;
+                return urlValue.Replace("http://", "https://", StringComparison.OrdinalIgnoreCase);
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(author))
+        {
+            return await FetchGoogleBooksCoverAsync(title, null, httpFactory);
+        }
+    }
+    catch
+    {
+        return null;
+    }
+
+    return null;
+}
+
+async Task<string?> FetchOpenLibraryCoverAsync(string title, string? author, IHttpClientFactory httpFactory)
+{
+    if (string.IsNullOrWhiteSpace(title)) return null;
+
+    try
+    {
+        using var http = httpFactory.CreateClient();
+        http.Timeout = TimeSpan.FromSeconds(3);
+
+        var candidateTitles = BuildCoverTitleCandidates(title);
+        foreach (var candidate in candidateTitles)
+        {
+            var titleQuery = Uri.EscapeDataString(candidate);
+            var authorQuery = string.IsNullOrWhiteSpace(author) ? "" : $"&author={Uri.EscapeDataString(author.Trim())}";
+            var url = $"https://openlibrary.org/search.json?title={titleQuery}{authorQuery}&limit=10";
+
+            using var response = await http.GetAsync(url);
+            if (!response.IsSuccessStatusCode) continue;
+
+            using var stream = await response.Content.ReadAsStreamAsync();
+            using var doc = await JsonDocument.ParseAsync(stream);
+
+            if (!doc.RootElement.TryGetProperty("docs", out var docs) || docs.ValueKind != JsonValueKind.Array)
+                continue;
+
+            int bestScore = -1;
+            int bestCoverId = -1;
+
+            foreach (var item in docs.EnumerateArray())
+            {
+                if (!item.TryGetProperty("cover_i", out var coverProp) || coverProp.ValueKind != JsonValueKind.Number)
+                    continue;
+
+                var coverId = coverProp.GetInt32();
+                var editionCount = item.TryGetProperty("edition_count", out var editionProp) && editionProp.ValueKind == JsonValueKind.Number
+                    ? editionProp.GetInt32()
+                    : 0;
+
+                if (editionCount > bestScore)
+                {
+                    bestScore = editionCount;
+                    bestCoverId = coverId;
+                }
+            }
+
+            if (bestCoverId > 0)
+                return $"https://covers.openlibrary.org/b/id/{bestCoverId}-L.jpg";
+        }
+
+        if (!string.IsNullOrWhiteSpace(author))
+        {
+            return await FetchOpenLibraryCoverAsync(title, null, httpFactory);
+        }
+    }
+    catch
+    {
+        return null;
+    }
+
+    return null;
+}
+
+async Task EnrichBookCoversAsync(List<BookDto> books, IHttpClientFactory httpFactory, int maxToEnrich = 30)
+{
+    var targets = books
+        .Where(b => string.IsNullOrWhiteSpace(b.Isbn))
+        .Take(maxToEnrich)
+        .ToList();
+
+    if (targets.Count == 0) return;
+
+    Console.WriteLine($"🖼️ Cover enrichment: {targets.Count}/{books.Count} candidates");
+
+    var sem = new SemaphoreSlim(4);
+    var tasks = targets.Select(async book =>
+    {
+        await sem.WaitAsync();
+        try
+        {
+            var author = book.Authors?.FirstOrDefault();
+            var title = book.Title ?? string.Empty;
+
+            var cover = await FetchOpenLibraryCoverAsync(title, author, httpFactory)
+                        ?? await FetchGoogleBooksCoverAsync(title, author, httpFactory);
+
+            if (string.IsNullOrWhiteSpace(cover)) return;
+
+            if (!book.CoverCandidates.Contains(cover, StringComparer.OrdinalIgnoreCase))
+                book.CoverCandidates.Add(cover);
+
+            Console.WriteLine($"✅ Cover enriched: {title} | {author} -> {cover}");
+        }
+        finally
+        {
+            sem.Release();
+        }
+    });
+
+    await Task.WhenAll(tasks);
+}
+
+static List<string> BuildCoverTitleCandidates(string title)
+{
+    var candidates = new List<string>();
+    var trimmed = title.Trim();
+    if (string.IsNullOrWhiteSpace(trimmed)) return candidates;
+
+    string Simplify(string value)
+    {
+        var withoutBracket = Regex.Replace(value, @"\[[^\]]+\]", "").Trim();
+        var withoutParens = Regex.Replace(withoutBracket, @"\([^)]+\)", "").Trim();
+        var withoutSeries = Regex.Replace(withoutParens, @"\bbook\s+\d+\b", "", RegexOptions.IgnoreCase).Trim();
+        var withoutDash = Regex.Replace(withoutSeries, @"\s*-\s*\d+\s*-\s*", " ").Trim();
+        return Regex.Replace(withoutDash, @"\s{2,}", " ").Trim();
+    }
+
+    var baseTitle = Simplify(trimmed);
+    candidates.Add(baseTitle);
+
+    var colonSplit = baseTitle.Split(':')[0].Trim();
+    if (!string.Equals(colonSplit, baseTitle, StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(colonSplit))
+        candidates.Add(colonSplit);
+
+    if (!string.Equals(trimmed, baseTitle, StringComparison.OrdinalIgnoreCase))
+        candidates.Add(trimmed);
+
+    return candidates.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+}
+
+static async Task<List<SeriesBook>> FetchBookCovers(List<SeriesBook> books, string author, IHttpClientFactory httpFactory)
+{
+    if (books == null || books.Count == 0)
+        return books ?? new List<SeriesBook>();
+
+    var result = new List<SeriesBook>();
+    using var http = httpFactory.CreateClient();
+    http.Timeout = TimeSpan.FromSeconds(5); // Short timeout for cover fetching
+
+    foreach (var book in books)
+    {
+        string? coverUrl = null;
+        try
+        {
+            // Google Books API - free, no auth required
+            var encodedTitle = Uri.EscapeDataString(book.Title);
+            var encodedAuthor = Uri.EscapeDataString(author);
+            var googleBooksUrl = $"https://www.googleapis.com/books/v1/volumes?q=intitle:{encodedTitle}+inauthor:{encodedAuthor}&maxResults=1";
+
+            var response = await http.GetAsync(googleBooksUrl);
+            if (response.IsSuccessStatusCode)
+            {
+                var json = await response.Content.ReadAsStringAsync();
+                using var doc = JsonDocument.Parse(json);
+
+                // Navigate: root.items[0].volumeInfo.imageLinks.thumbnail
+                if (doc.RootElement.TryGetProperty("items", out var items) &&
+                    items.GetArrayLength() > 0)
+                {
+                    var firstItem = items[0];
+                    if (firstItem.TryGetProperty("volumeInfo", out var volumeInfo) &&
+                        volumeInfo.TryGetProperty("imageLinks", out var imageLinks) &&
+                        imageLinks.TryGetProperty("thumbnail", out var thumbnail))
+                    {
+                        coverUrl = thumbnail.GetString();
+                        // Upgrade HTTP to HTTPS if needed
+                        if (!string.IsNullOrEmpty(coverUrl) && coverUrl.StartsWith("http:"))
+                        {
+                            coverUrl = coverUrl.Replace("http:", "https:");
+                        }
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"⚠️ Failed to fetch cover for '{book.Title}': {ex.Message}");
+        }
+
+        result.Add(new SeriesBook(book.Title, book.Order, book.Description, coverUrl));
+    }
+
+    return result;
 }
 
 // ─── 1) search ───────────────────────────────────────────────────────────
 app.MapGet("/api/anna/book", async (
     [FromQuery] string name,
     AnnaArchiveService svc,
+    IValidationService validation,
+    IHttpClientFactory httpFactory,
     [FromQuery] bool exact = false) =>
 {
-    if (!IsValidSearchQuery(name))
+    if (!validation.IsValidSearchQuery(name))
         return Results.BadRequest(new {
             error = "Query parameter 'name' is required and must be between 1 and 500 characters."
         });
 
-    var books = (await svc.SearchAsync(name, searchLimit)).ToList();
+    var books = (await svc.SearchAsync(name, searchLimit, exact)).ToList();
 
     if (exact)
         books = books
@@ -311,12 +625,35 @@ app.MapGet("/api/anna/book", async (
 .RequireAuthorization()
 .RequireRateLimiting("api");
 
+// ─── 1a) Cover lookup (OpenLibrary -> Google Books) ───────────────────────
+app.MapGet("/api/anna/book/cover", async (
+    [FromQuery] string title,
+    [FromQuery] string? author,
+    IHttpClientFactory httpFactory) =>
+{
+    if (string.IsNullOrWhiteSpace(title))
+        return Results.BadRequest(new { error = "title is required." });
+
+    Console.WriteLine($"🖼️ Cover lookup: title='{title}', author='{author}'");
+    var cover = await FetchOpenLibraryCoverAsync(title, author, httpFactory)
+                ?? await FetchGoogleBooksCoverAsync(title, author, httpFactory);
+
+    Console.WriteLine(cover is null
+        ? $"⚠️ Cover lookup failed for '{title}'"
+        : $"✅ Cover lookup found for '{title}': {cover}");
+
+    return Results.Ok(new { coverUrl = cover });
+})
+.RequireAuthorization()
+.RequireRateLimiting("api");
+
 // ─── 2) non-member download ──────────────────────────────────────────────
 app.MapGet("/api/anna/book/{md5}/download", async (
     [FromRoute] string md5,
-    AnnaArchiveService svc) =>
+    AnnaArchiveService svc,
+    IValidationService validation) =>
 {
-    if (!IsValidMd5(md5))
+    if (!validation.IsValidMd5(md5))
         return Results.BadRequest(new { error = "Invalid MD5 format. Must be 32 hexadecimal characters." });
 
     var links = await svc.GetDownloadLinksAsync(md5);
@@ -328,62 +665,165 @@ app.MapGet("/api/anna/book/{md5}/download", async (
 .RequireRateLimiting("api");
 
 // ─── 3) member download (url + counters) ─────────────────────────────────
-app.MapGet("/api/anna/book/{md5}/download/member", async (
+app.MapPost("/api/anna/book/{md5}/download/member", async (
     [FromRoute] string md5,
-    AnnaArchiveService svc) =>
+    [FromQuery] string? title,
+    [FromQuery] string? coverUrl,
+    AnnaArchiveService anna,
+    IValidationService validation,
+    IEbookCoverService coverService,
+    IDownloadTrackingService downloadTracking,
+    HttpContext context) =>
 {
-    if (!IsValidMd5(md5))
+    if (!validation.IsValidMd5(md5))
         return Results.BadRequest(new { error = "Invalid MD5 format. Must be 32 hexadecimal characters." });
 
-    var doc = await svc.GetMemberDownloadDocumentAsync(md5, memberKey);
+    if (!validation.IsValidTitle(title))
+        return Results.BadRequest(new { error = "Title too long. Maximum 500 characters." });
 
-    string? downloadUrl = null;
-    if (doc.TryGetProperty("download_url", out var du))
-        downloadUrl = du.ValueKind == JsonValueKind.String
-                    ? du.GetString()
-                    : du.EnumerateArray().FirstOrDefault().GetString();
+    // Get user name from auth context
+    var userName = context.User?.FindFirst(ClaimTypes.Email)?.Value
+        ?? context.User?.FindFirst(ClaimTypes.Name)?.Value
+        ?? "unknown";
 
-    AccountFastDownloadInfoDto? acctInfo = null;
-    if (doc.TryGetProperty("account_fast_download_info", out var ai) &&
-        ai.ValueKind == JsonValueKind.Object)
-        acctInfo = new AccountFastDownloadInfoDto(
-            ai.GetProperty("downloads_left").GetInt32(),
-            ai.GetProperty("downloads_per_day").GetInt32());
+    // Use shared helper to download book from Anna's Archive
+    var (resp, fileName, acctInfo, errorMessage) = await DownloadBookFromAnnaArchiveAsync(md5, title, anna, memberKey);
 
-    return string.IsNullOrEmpty(downloadUrl)
-        ? ApiResponse.NotFound("No download URL found.")
-        : Results.Ok(new { downloadUrl, accountFastInfo = acctInfo });
+    if (errorMessage != null)
+    {
+        // Get current download status even on failure
+        var (downloadsLeft, downloadsPerDay) = downloadTracking.GetDownloadStatus();
+        var trackingInfo = new AccountFastDownloadInfoDto(downloadsLeft, downloadsPerDay);
+        return Results.Ok(new { success = false, message = errorMessage, accountFastInfo = trackingInfo });
+    }
+
+    if (resp == null || fileName == null)
+    {
+        var (downloadsLeft, downloadsPerDay) = downloadTracking.GetDownloadStatus();
+        var trackingInfo = new AccountFastDownloadInfoDto(downloadsLeft, downloadsPerDay);
+        return Results.Ok(new { success = false, message = "Failed to download book.", accountFastInfo = trackingInfo });
+    }
+
+    // Record successful download in our tracking system
+    downloadTracking.RecordDownload(md5, userName);
+    Console.WriteLine($"[download-member] Recorded download for user {userName}, MD5: {md5}");
+
+    // Get updated download status
+    var (currentDownloadsLeft, currentDownloadsPerDay) = downloadTracking.GetDownloadStatus();
+
+    using (resp)
+    {
+        Stream ebookStream = await resp.Content.ReadAsStreamAsync();
+
+        // Attempt cover replacement if coverUrl is provided and format is supported
+        if (!string.IsNullOrWhiteSpace(coverUrl))
+        {
+            var ext = Path.GetExtension(fileName).TrimStart('.');
+            if (coverService.IsFormatSupported(ext))
+            {
+                Console.WriteLine($"[download-member] Attempting cover replacement for {fileName}");
+                ebookStream = await coverService.ReplaceCoverAsync(ebookStream, coverUrl, ext);
+            }
+            else
+            {
+                Console.WriteLine($"[download-member] Format {ext} not supported for cover replacement, skipping");
+            }
+        }
+
+        // Set content type based on file extension
+        var contentType = Path.GetExtension(fileName).ToLowerInvariant() switch
+        {
+            ".epub" => "application/epub+zip",
+            ".pdf" => "application/pdf",
+            ".mobi" => "application/x-mobipocket-ebook",
+            ".azw3" => "application/vnd.amazon.ebook",
+            ".fb2" => "text/xml",
+            _ => "application/octet-stream"
+        };
+
+        // Stream the file back to the client
+        return Results.Stream(ebookStream, contentType, fileName);
+    }
+})
+.RequireAuthorization()
+.RequireRateLimiting("api");
+
+// ─── 3.5) Check download counter status ────────────────────────────────────────
+app.MapGet("/api/anna/download-status", (IDownloadTrackingService downloadTracking) =>
+{
+    try
+    {
+        var (downloadsLeft, downloadsPerDay) = downloadTracking.GetDownloadStatus();
+        var acctInfo = new AccountFastDownloadInfoDto(downloadsLeft, downloadsPerDay);
+
+        return Results.Ok(new { accountFastInfo = acctInfo });
+    }
+    catch (Exception ex)
+    {
+        return Results.Ok(new { accountFastInfo = (AccountFastDownloadInfoDto?)null, error = ex.Message });
+    }
 })
 .RequireAuthorization()
 .RequireRateLimiting("api");
 
 // ─── 4) send-to-boox (via Dropbox) ──────────────────────────────────────
 app.MapPost("/api/anna/book/{md5}/send-to-boox", async (
+    HttpContext context,
     [FromRoute] string md5,
     [FromQuery] string? title,
+    [FromQuery] string? coverUrl,
+    IValidationService validation,
     AnnaArchiveService anna,
+    IEbookCoverService coverService,
     DropboxClient dropbox,
-    IConfiguration cfg) =>
+    IConfiguration cfg,
+    IDownloadTrackingService downloadTracking) =>
 {
-    if (!IsValidMd5(md5))
+    if (!validation.IsValidMd5(md5))
         return Results.BadRequest(new { error = "Invalid MD5 format. Must be 32 hexadecimal characters." });
 
-    if (!IsValidTitle(title))
+    if (!validation.IsValidTitle(title))
         return Results.BadRequest(new { error = "Title too long. Maximum 500 characters." });
 
     // Use shared helper to download book from Anna's Archive
     var (resp, fileName, acctInfo, errorMessage) = await DownloadBookFromAnnaArchiveAsync(md5, title, anna, memberKey);
 
     if (errorMessage != null)
-        return Results.Ok(new { success = false, message = errorMessage, accountFastInfo = acctInfo });
+    {
+        // Return current tracking status on error
+        var (downloadsLeft, downloadsPerDay) = downloadTracking.GetDownloadStatus();
+        var trackingInfo = new AccountFastDownloadInfoDto(downloadsLeft, downloadsPerDay);
+        return Results.Ok(new { success = false, message = errorMessage, accountFastInfo = trackingInfo });
+    }
 
     if (resp == null || fileName == null)
-        return Results.Ok(new { success = false, message = "Failed to download book.", accountFastInfo = acctInfo });
+    {
+        var (downloadsLeft, downloadsPerDay) = downloadTracking.GetDownloadStatus();
+        var trackingInfo = new AccountFastDownloadInfoDto(downloadsLeft, downloadsPerDay);
+        return Results.Ok(new { success = false, message = "Failed to download book.", accountFastInfo = trackingInfo });
+    }
 
     using (resp)
     {
         var uploadPath = $"{cfg["Dropbox:UploadFolderPath"]}/{fileName}";
-        using var stream = await resp.Content.ReadAsStreamAsync();
+        Stream ebookStream = await resp.Content.ReadAsStreamAsync();
+
+        // Attempt cover replacement if coverUrl is provided and format is supported
+        if (!string.IsNullOrWhiteSpace(coverUrl))
+        {
+            var ext = Path.GetExtension(fileName).TrimStart('.');
+            if (coverService.IsFormatSupported(ext))
+            {
+                Console.WriteLine($"[send-to-boox] Attempting cover replacement for {fileName}");
+                ebookStream = await coverService.ReplaceCoverAsync(ebookStream, coverUrl, ext);
+            }
+            else
+            {
+                Console.WriteLine($"[send-to-boox] Format {ext} not supported for cover replacement, skipping");
+            }
+        }
+
+        using var stream = ebookStream;
 
     try
     {
@@ -397,12 +837,25 @@ app.MapPost("/api/anna/book/{md5}/send-to-boox", async (
 
         Console.WriteLine($"✅ Dropbox upload successful! File: {uploaded.PathDisplay}");
 
+        // Get user name from auth context
+        var userName = context.User?.FindFirst(ClaimTypes.Email)?.Value
+            ?? context.User?.FindFirst(ClaimTypes.Name)?.Value
+            ?? "unknown";
+
+        // Record successful download in our tracking system
+        downloadTracking.RecordDownload(md5, userName);
+        Console.WriteLine($"[send-to-boox] Recorded download for user {userName}, MD5: {md5}");
+
+        // Get updated download tracking status
+        var (downloadsLeft, downloadsPerDay) = downloadTracking.GetDownloadStatus();
+        var counterInfo = new AccountFastDownloadInfoDto(downloadsLeft, downloadsPerDay);
+
         return Results.Ok(new
         {
             success         = true,
             dropboxPath     = uploaded.PathDisplay,
             dropboxFileId   = uploaded.Id,
-            accountFastInfo = acctInfo
+            accountFastInfo = counterInfo
         });
     }
     catch (ApiException<UploadError> ex)
@@ -486,9 +939,10 @@ app.MapGet("/api/anna/dropbox/epubs", async (
 
 app.MapGet("/api/anna/dropbox/epub/chapters", async (
     [FromQuery] string path,
+    IValidationService validation,
     DropboxClient dropbox) =>
 {
-    if (!IsValidDropboxPath(path))
+    if (!validation.IsValidDropboxPath(path))
         return Results.BadRequest(new {
             error = "Invalid Dropbox path. Must start with '/', end with '.epub', and be less than 500 characters."
         });
@@ -524,14 +978,15 @@ app.MapGet("/api/anna/dropbox/epub/chapters", async (
 app.MapGet("/api/anna/dropbox/epub/chapter", async (
     [FromQuery] string path,
     [FromQuery] int chapterId,
+    IValidationService validation,
     DropboxClient dropbox) =>
 {
-    if (!IsValidDropboxPath(path))
+    if (!validation.IsValidDropboxPath(path))
         return Results.BadRequest(new {
             error = "Invalid Dropbox path. Must start with '/', end with '.epub', and be less than 500 characters."
         });
 
-    if (!IsValidChapterId(chapterId))
+    if (!validation.IsValidChapterId(chapterId))
         return Results.BadRequest(new { error = "Chapter ID must be between 0 and 9999." });
 
     try
@@ -656,21 +1111,26 @@ app.MapDelete("/api/anna/dropbox/epub/index", (
 app.MapPost("/api/ai/summarize", async (
     [FromBody] SummarizeRequest request,
     IHttpClientFactory httpFactory,
-    IConfiguration cfg) =>
+    IConfiguration cfg,
+    ITokenUsageService tokenUsage,
+    IAiResponseParser aiResponseParser,
+    IModelSelectionService modelSelection,
+    IValidationService validation,
+    ITextProcessingService textProcessing) =>
 {
     if (request is null || string.IsNullOrWhiteSpace(request.Text))
         return Results.BadRequest(new { error = "Text is required." });
 
-    if (!IsValidTextLength(request.Text))
+    if (!validation.IsValidTextLength(request.Text))
         return Results.BadRequest(new { error = "Text too long. Maximum 1,000,000 characters." });
 
-    var tokenLimitResult = CheckTokenLimit(cfg);
+    var tokenLimitResult = CheckTokenLimit(cfg, tokenUsage);
     if (tokenLimitResult is not null) return tokenLimitResult;
 
     try
     {
         using var http = httpFactory.CreateClient("OpenAI");
-        var model = GetModelFast(cfg);
+        var model = modelSelection.GetModelFast();
 
         string? previousAnalyses = null;
         string? cacheDirForSummary = null;
@@ -687,7 +1147,7 @@ app.MapPost("/api/ai/summarize", async (
                     .Select(f => new
                     {
                         Path = f,
-                        Offset = ExtractWordOffset(Path.GetFileNameWithoutExtension(f))
+                        Offset = textProcessing.ExtractWordOffset(Path.GetFileNameWithoutExtension(f))
                     })
                     .Where(x => x.Offset < (request.WordOffset ?? int.MaxValue)) // Only include analyses from earlier in the chapter
                     .OrderBy(x => x.Offset)
@@ -748,7 +1208,7 @@ Then add a 'Definitions:' section. BE EXTREMELY THOROUGH with definitions - incl
             systemPrompt = $"{systemPromptBase}\n\nTotal response can be up to 600 words.";
         }
 
-        var userPrompt = BuildAnalysisPrompt(contextBlock, previousAnalyses, request.Text);
+        var userPrompt = textProcessing.BuildAnalysisPrompt(contextBlock, previousAnalyses, request.Text);
         var fullInput = $"{systemPrompt}\n\n{userPrompt}";
 
         var payload = new
@@ -771,14 +1231,14 @@ Then add a 'Definitions:' section. BE EXTREMELY THOROUGH with definitions - incl
         using var stream = await response.Content.ReadAsStreamAsync();
         using var doc = await JsonDocument.ParseAsync(stream);
 
-        var summary = AiResponseParser.ExtractText(doc.RootElement);
+        var summary = aiResponseParser.ExtractText(doc.RootElement);
 
         // Track token usage
         if (doc.RootElement.TryGetProperty("usage", out var usage))
         {
             var promptTokens = usage.GetProperty("input_tokens").GetInt32();
             var completionTokens = usage.GetProperty("output_tokens").GetInt32();
-            OpenAiUsageTracker.AddUsage(promptTokens, completionTokens);
+            tokenUsage.AddUsage(promptTokens, completionTokens);
         }
 
         if (cacheDirForSummary != null && request.ChapterId.HasValue)
@@ -808,18 +1268,21 @@ Then add a 'Definitions:' section. BE EXTREMELY THOROUGH with definitions - incl
 app.MapPost("/api/ai/vocab/learn-more", async (
     [FromBody] LearnMoreRequest request,
     IHttpClientFactory httpFactory,
-    IConfiguration cfg) =>
+    IConfiguration cfg,
+    ITokenUsageService tokenUsage,
+    IAiResponseParser aiResponseParser,
+    IModelSelectionService modelSelection) =>
 {
     if (request is null || string.IsNullOrWhiteSpace(request.Term))
         return Results.BadRequest(new { error = "Term is required." });
 
-    var tokenLimitResult = CheckTokenLimit(cfg);
+    var tokenLimitResult = CheckTokenLimit(cfg, tokenUsage);
     if (tokenLimitResult is not null) return tokenLimitResult;
 
     try
     {
         using var http = httpFactory.CreateClient("OpenAI");
-        var model = GetModelDeep(cfg);
+        var model = modelSelection.GetModelDeep();
 
         var contextParts = new List<string>();
         if (!string.IsNullOrWhiteSpace(request.BookTitle))
@@ -878,14 +1341,14 @@ Relevant passage/context: {request.Context ?? "(none)"}";
 
         using var stream = await response.Content.ReadAsStreamAsync();
         using var doc = await JsonDocument.ParseAsync(stream);
-        var detail = AiResponseParser.ExtractText(doc.RootElement);
+        var detail = aiResponseParser.ExtractText(doc.RootElement);
 
         // Track token usage
         if (doc.RootElement.TryGetProperty("usage", out var usage))
         {
             var promptTokens = usage.GetProperty("input_tokens").GetInt32();
             var completionTokens = usage.GetProperty("output_tokens").GetInt32();
-            OpenAiUsageTracker.AddUsage(promptTokens, completionTokens);
+            tokenUsage.AddUsage(promptTokens, completionTokens);
         }
 
         return Results.Ok(new LearnMoreResponse(detail ?? "No details returned."));
@@ -900,12 +1363,12 @@ Relevant passage/context: {request.Context ?? "(none)"}";
 .RequireRateLimiting("api");
 
 // ─── 5g) Flashcards CRUD ─────────────────────────────────────────
-app.MapGet("/api/ai/flashcards", ([FromQuery] string path) =>
+app.MapGet("/api/ai/flashcards", ([FromQuery] string path, IFlashcardService flashcardService) =>
 {
     if (string.IsNullOrWhiteSpace(path))
         return Results.BadRequest(new { error = "Query parameter 'path' is required." });
 
-    var flashcards = LoadFlashcards(path);
+    var flashcards = flashcardService.LoadFlashcards(path);
     return Results.Ok(flashcards);
 })
 .RequireAuthorization()
@@ -914,12 +1377,16 @@ app.MapGet("/api/ai/flashcards", ([FromQuery] string path) =>
 app.MapPost("/api/ai/flashcards", async (
     [FromBody] FlashcardRequest request,
     IHttpClientFactory httpFactory,
-    IConfiguration cfg) =>
+    IConfiguration cfg,
+    ITokenUsageService tokenUsage,
+    IOpenAiModelHelper modelHelper,
+    IAiResponseParser aiResponseParser,
+    IFlashcardService flashcardService) =>
 {
     if (request is null || string.IsNullOrWhiteSpace(request.Term) || string.IsNullOrWhiteSpace(request.DropboxPath))
         return Results.BadRequest(new { error = "Term and dropboxPath are required." });
 
-    var tokenLimitResult = CheckTokenLimit(cfg);
+    var tokenLimitResult = CheckTokenLimit(cfg, tokenUsage);
     if (tokenLimitResult is not null) return tokenLimitResult;
 
     try
@@ -987,7 +1454,7 @@ Context: {request.BookTitle ?? "Unknown book"}{knownWordsContext}{customInstruct
 Return JSON array of flashcards for individual terms found in the passage.";
 
         var model = "gpt-4o"; // Use GPT-4o for cost-effective vocab extraction
-        var payload = OpenAiModelHelper.BuildChatCompletionPayload(
+        var payload = modelHelper.BuildChatCompletionPayload(
             model,
             new[]
             {
@@ -1008,14 +1475,14 @@ Return JSON array of flashcards for individual terms found in the passage.";
 
         using var stream = await response.Content.ReadAsStreamAsync();
         using var doc = await JsonDocument.ParseAsync(stream);
-        var content = AiResponseParser.ExtractText(doc.RootElement) ?? "{}";
+        var content = aiResponseParser.ExtractText(doc.RootElement) ?? "{}";
 
         // Track token usage
         if (doc.RootElement.TryGetProperty("usage", out var usage))
         {
             var promptTokens = usage.GetProperty("prompt_tokens").GetInt32();
             var completionTokens = usage.GetProperty("completion_tokens").GetInt32();
-            OpenAiUsageTracker.AddUsage(promptTokens, completionTokens);
+            tokenUsage.AddUsage(promptTokens, completionTokens);
         }
 
         List<FlashcardItem> cardsParsed;
@@ -1073,7 +1540,7 @@ Return JSON array of flashcards for individual terms found in the passage.";
             }
         }
 
-        var list = LoadFlashcards(request.DropboxPath!);
+        var list = flashcardService.LoadFlashcards(request.DropboxPath!);
         foreach (var card in cardsParsed)
         {
             var existing = list.FindIndex(x => string.Equals(x.Term, card.Term, StringComparison.OrdinalIgnoreCase));
@@ -1083,7 +1550,7 @@ Return JSON array of flashcards for individual terms found in the passage.";
                 list.Add(card);
         }
 
-        SaveFlashcards(request.DropboxPath!, list);
+        flashcardService.SaveFlashcards(request.DropboxPath!, list);
         return Results.Ok(new FlashcardResult(cardsParsed));
     }
     catch (Exception ex)
@@ -1095,14 +1562,14 @@ Return JSON array of flashcards for individual terms found in the passage.";
 .RequireAuthorization()
 .RequireRateLimiting("api");
 
-app.MapDelete("/api/ai/flashcards", ([FromQuery] string path) =>
+app.MapDelete("/api/ai/flashcards", ([FromQuery] string path, IFlashcardService flashcardService) =>
 {
     if (string.IsNullOrWhiteSpace(path))
         return Results.BadRequest(new { error = "Query parameter 'path' is required." });
 
     try
     {
-        var (_, filePath) = GetFlashcardPath(path);
+        var (_, filePath) = flashcardService.GetFlashcardPath(path);
         if (System.IO.File.Exists(filePath))
             System.IO.File.Delete(filePath);
         return Results.Ok(new { cleared = true });
@@ -1219,86 +1686,6 @@ app.MapGet("/api/media/wiki-images", async ([FromQuery] string term) =>
 .RequireAuthorization()
 .RequireRateLimiting("api");
 
-// Helper function to extract word offset from summary filename
-static int ExtractWordOffset(string filenameWithoutExtension)
-{
-    // Format: "summary-{chapterId}-{wordOffset}"
-    var parts = filenameWithoutExtension.Split('-');
-    if (parts.Length >= 3 && int.TryParse(parts[2], out var offset))
-        return offset;
-    return int.MaxValue; // If we can't parse, put at the end
-}
-
-// Helper function to build the analysis prompt
-static string BuildAnalysisPrompt(string contextBlock, string? previousAnalyses, string currentText)
-{
-    var prompt = new System.Text.StringBuilder();
-
-    prompt.AppendLine($"{contextBlock}\n");
-
-    if (!string.IsNullOrWhiteSpace(previousAnalyses))
-    {
-        prompt.AppendLine("Previous analyses from this reading session:");
-        prompt.AppendLine(previousAnalyses);
-        prompt.AppendLine("\n---\n");
-    }
-
-    prompt.AppendLine("Analyze this passage:");
-    prompt.AppendLine(currentText);
-
-    return prompt.ToString();
-}
-
-static List<string> SplitIntoChunks(string text, int maxWords)
-{
-    if (string.IsNullOrWhiteSpace(text) || maxWords <= 0)
-        return new List<string>();
-
-    var words = Regex.Split(text, @"\s+").Where(w => !string.IsNullOrWhiteSpace(w)).ToArray();
-    var chunks = new List<string>();
-    for (var i = 0; i < words.Length; i += maxWords)
-    {
-        var slice = words.Skip(i).Take(maxWords);
-        chunks.Add(string.Join(" ", slice));
-    }
-    return chunks;
-}
-
-static (string cacheDir, string filePath) GetFlashcardPath(string dropboxPath)
-{
-    var cacheDir = Path.Combine(DropboxEpubCache.GetCacheRoot(), DropboxEpubCache.ComputeHashPublic(dropboxPath));
-    Directory.CreateDirectory(cacheDir);
-    var filePath = Path.Combine(cacheDir, "flashcards.json");
-    return (cacheDir, filePath);
-}
-
-static List<FlashcardItem> LoadFlashcards(string dropboxPath)
-{
-    try
-    {
-        var (_, filePath) = GetFlashcardPath(dropboxPath);
-        if (!System.IO.File.Exists(filePath)) return new List<FlashcardItem>();
-        var json = System.IO.File.ReadAllText(filePath);
-        var cards = JsonSerializer.Deserialize<List<FlashcardItem>>(json, new JsonSerializerOptions
-        {
-            PropertyNameCaseInsensitive = true
-        });
-        return cards ?? new List<FlashcardItem>();
-    }
-    catch
-    {
-        return new List<FlashcardItem>();
-    }
-}
-
-static void SaveFlashcards(string dropboxPath, List<FlashcardItem> cards)
-{
-    var (cacheDir, filePath) = GetFlashcardPath(dropboxPath);
-    Directory.CreateDirectory(cacheDir);
-    var json = JsonSerializer.Serialize(cards, new JsonSerializerOptions { WriteIndented = true });
-    System.IO.File.WriteAllText(filePath, json);
-}
-
 static DateTime? ComputeResetDateUtc(IConfiguration cfg)
 {
     var resetDay = cfg.GetValue<int?>("OpenAI:AllowanceResetDay") ?? 1;
@@ -1343,7 +1730,12 @@ app.MapPost("/api/ai/summarize/chapter/stream", async (
     [FromBody] FullChapterSummaryRequest request,
     DropboxClient dropbox,
     IHttpClientFactory httpFactory,
-    IConfiguration cfg) =>
+    IConfiguration cfg,
+    ITokenUsageService tokenUsage,
+    IOpenAiModelHelper modelHelper,
+    IAiResponseParser aiResponseParser,
+    IModelSelectionService modelSelection,
+    ITextProcessingService textProcessing) =>
 {
     if (request is null || string.IsNullOrWhiteSpace(request.DropboxPath))
     {
@@ -1381,7 +1773,7 @@ app.MapPost("/api/ai/summarize/chapter/stream", async (
     }
 
     // Check token limit
-    var tokenLimitResult = CheckTokenLimit(cfg);
+    var tokenLimitResult = CheckTokenLimit(cfg, tokenUsage);
     if (tokenLimitResult is not null)
     {
         await tokenLimitResult.ExecuteAsync(context);
@@ -1427,36 +1819,36 @@ app.MapPost("/api/ai/summarize/chapter/stream", async (
 
         // Split into chunks
         var chunkSize = cfg.GetValue<int>("AI:ChunkSize");
-        var chunks = SplitIntoChunks(content, chunkSize);
+        var chunks = textProcessing.SplitIntoChunks(content, chunkSize);
 
         using var http = httpFactory.CreateClient("OpenAI");
-        var model = GetModelDeep(cfg);
+        var model = modelSelection.GetModelDeep();
 
         // TIER 1: Summarize chunks using helper
         var (chunkSummaries, tier1PromptTokens, tier1CompletionTokens) =
-            await SummarizeChunksAsync(http, model, chunks, contextLine, context.Response, cfg);
+            await SummarizeChunksAsync(http, model, chunks, contextLine, context.Response, cfg, aiResponseParser, tokenUsage);
 
         // TIER 2: Synthesize sections using helper
         var (sectionSummaries, tier2PromptTokens, tier2CompletionTokens) =
-            await SynthesizeSectionsAsync(http, model, chunkSummaries, contextLine, context.Response, cfg);
+            await SynthesizeSectionsAsync(http, model, chunkSummaries, contextLine, context.Response, cfg, aiResponseParser, tokenUsage);
 
         // TIER 3: Create final summary using helper
         var (finalSummary, tier3PromptTokens, tier3CompletionTokens) =
-            await CreateFinalSummaryAsync(http, model, sectionSummaries, contextParts, context.Response, cfg);
+            await CreateFinalSummaryAsync(http, model, sectionSummaries, contextParts, context.Response, cfg, aiResponseParser);
 
         // Calculate total tokens
         var promptTokensTotal = tier1PromptTokens + tier2PromptTokens + tier3PromptTokens;
         var completionTokensTotal = tier1CompletionTokens + tier2CompletionTokens + tier3CompletionTokens;
 
-        OpenAiUsageTracker.AddUsage(promptTokensTotal, completionTokensTotal);
-        var totals = OpenAiUsageTracker.GetTotals();
+        tokenUsage.AddUsage(promptTokensTotal, completionTokensTotal);
+        var totals = tokenUsage.GetTotals();
         var monthlyAllowance = cfg.GetValue<long?>("OpenAI:MonthlyTokenAllowance");
         double? percent = null;
         long? remaining = null;
         if (monthlyAllowance.HasValue && monthlyAllowance.Value > 0)
         {
-            percent = Math.Round((double)totals.Total / monthlyAllowance.Value * 100, 2);
-            remaining = monthlyAllowance.Value - totals.Total;
+            percent = Math.Round((double)totals.TotalTokens / monthlyAllowance.Value * 100, 2);
+            remaining = monthlyAllowance.Value - totals.TotalTokens;
         }
 
         // Save summary to cache
@@ -1530,25 +1922,25 @@ app.MapGet("/api/ai/summarize/book", (
 .RequireRateLimiting("api");
 
 // Token usage status
-app.MapGet("/api/ai/usage", (IConfiguration cfg) =>
+app.MapGet("/api/ai/usage", (IConfiguration cfg, ITokenUsageService tokenUsage) =>
 {
-    var totals = OpenAiUsageTracker.GetTotals();
+    var totals = tokenUsage.GetTotals();
     var allowance = cfg.GetValue<long?>("OpenAI:MonthlyTokenAllowance");
     double? percent = null;
     long? remaining = null;
     if (allowance.HasValue && allowance.Value > 0)
     {
-        percent = Math.Round((double)totals.Total / allowance.Value * 100, 2);
-        remaining = allowance.Value - totals.Total;
+        percent = Math.Round((double)totals.TotalTokens / allowance.Value * 100, 2);
+        remaining = allowance.Value - totals.TotalTokens;
     }
 
     var reset = ComputeResetDateUtc(cfg);
-    var costUsd = OpenAiUsageTracker.CalculateCostUsd(totals.Prompt, totals.Completion);
+    var costUsd = tokenUsage.CalculateCostUsd(totals.PromptTokens, totals.CompletionTokens);
 
     var resp = new TokenUsageResponse(
-        totals.Prompt,
-        totals.Completion,
-        totals.Total,
+        totals.PromptTokens,
+        totals.CompletionTokens,
+        totals.TotalTokens,
         allowance,
         percent,
         remaining,
@@ -1560,9 +1952,9 @@ app.MapGet("/api/ai/usage", (IConfiguration cfg) =>
 .RequireRateLimiting("api");
 
 // Reset token usage counter
-app.MapPost("/api/ai/usage/reset", () =>
+app.MapPost("/api/ai/usage/reset", (ITokenUsageService tokenUsage) =>
 {
-    OpenAiUsageTracker.Reset();
+    tokenUsage.Reset();
     Console.WriteLine("✅ Token usage counter has been reset");
     return Results.Ok(new { success = true, message = "Token usage counter has been reset" });
 })
@@ -1576,7 +1968,10 @@ app.MapGet("/api/ai/chunk-boundaries", async (
     [FromQuery] int chapterId,
     DropboxClient dropbox,
     IHttpClientFactory httpFactory,
-    IConfiguration cfg) =>
+    IConfiguration cfg,
+    ITokenUsageService tokenUsage,
+    IOpenAiModelHelper modelHelper,
+    IAiResponseParser aiResponseParser) =>
 {
     if (string.IsNullOrWhiteSpace(dropboxPath) || chapterId < 0)
     {
@@ -1604,7 +1999,7 @@ app.MapGet("/api/ai/chunk-boundaries", async (
     context.Response.Headers["Connection"] = "keep-alive";
 
     // Check token limit
-    if (IsTokenLimitExceeded(cfg))
+    if (IsTokenLimitExceeded(cfg, tokenUsage))
     {
         await ServerSentEventsHelper.SendEventAsync(context.Response, new
         {
@@ -1714,7 +2109,7 @@ app.MapGet("/api/ai/chunk-boundaries", async (
         var model = "gpt-4o"; // Use GPT-4o for cost-effective chunking
 
         Console.WriteLine($"🤖 Using model for chunk detection: {model}");
-        Console.WriteLine($"   Model info: {OpenAiModelHelper.GetModelDescription(model)}");
+        Console.WriteLine($"   Model info: {modelHelper.GetModelDescription(model)}");
 
         while (currentStart < totalWords)
         {
@@ -1773,7 +2168,7 @@ Return format (JSON only, no explanation):
                 Console.WriteLine($"⚠️ Config read error (using defaults): {configEx.Message}");
             }
 
-            var payload = OpenAiModelHelper.BuildChatCompletionPayload(
+            var payload = modelHelper.BuildChatCompletionPayload(
                 model,
                 new object[]
                 {
@@ -1801,14 +2196,14 @@ Return format (JSON only, no explanation):
             using var stream = await response.Content.ReadAsStreamAsync();
             using var doc = await JsonDocument.ParseAsync(stream);
 
-            var aiText = AiResponseParser.ExtractText(doc.RootElement);
+            var aiText = aiResponseParser.ExtractText(doc.RootElement);
 
             // Track token usage
             if (doc.RootElement.TryGetProperty("usage", out var usage))
             {
                 var promptTokens = usage.GetProperty("prompt_tokens").GetInt32();
                 var completionTokens = usage.GetProperty("completion_tokens").GetInt32();
-                OpenAiUsageTracker.AddUsage(promptTokens, completionTokens);
+                tokenUsage.AddUsage(promptTokens, completionTokens);
             }
 
             // Parse the break point
@@ -1974,7 +2369,11 @@ app.MapPost("/api/ai/section-summary", async (
     [FromBody] SectionSummaryRequest request,
     DropboxClient dropbox,
     IHttpClientFactory httpFactory,
-    IConfiguration cfg) =>
+    IConfiguration cfg,
+    ITokenUsageService tokenUsage,
+    IOpenAiModelHelper modelHelper,
+    IAiResponseParser aiResponseParser,
+    IModelSelectionService modelSelection) =>
 {
     if (request is null || string.IsNullOrWhiteSpace(request.DropboxPath))
         return Results.BadRequest(new { error = "dropboxPath is required." });
@@ -1990,7 +2389,7 @@ app.MapPost("/api/ai/section-summary", async (
     }
 
     // Check token limit
-    var tokenLimitResult = CheckTokenLimit(cfg);
+    var tokenLimitResult = CheckTokenLimit(cfg, tokenUsage);
     if (tokenLimitResult is not null) return tokenLimitResult;
 
     // Load chunk boundaries
@@ -2026,10 +2425,10 @@ app.MapPost("/api/ai/section-summary", async (
     try
     {
         using var http = httpFactory.CreateClient("OpenAI");
-        var model = GetModelDeep(cfg);
+        var model = modelSelection.GetModelDeep();
 
         Console.WriteLine($"🤖 Using model: {model}");
-        Console.WriteLine($"   Model info: {OpenAiModelHelper.GetModelDescription(model)}");
+        Console.WriteLine($"   Model info: {modelHelper.GetModelDescription(model)}");
 
         var bookContext = !string.IsNullOrWhiteSpace(request.BookTitle)
             ? $" from the book \"{request.BookTitle}\""
@@ -2062,7 +2461,7 @@ Keep your summary thorough but focused (2-5 paragraphs depending on complexity).
 Text to summarize:
 {sectionText}";
 
-        var payload = OpenAiModelHelper.BuildChatCompletionPayload(
+        var payload = modelHelper.BuildChatCompletionPayload(
             model,
             new object[]
             {
@@ -2085,7 +2484,7 @@ Text to summarize:
         using var stream = await response.Content.ReadAsStreamAsync();
         using var doc = await JsonDocument.ParseAsync(stream);
 
-        var summary = AiResponseParser.ExtractText(doc.RootElement);
+        var summary = aiResponseParser.ExtractText(doc.RootElement);
         Console.WriteLine($"✅ Summary generated: {summary?.Length ?? 0} characters");
 
         // Track token usage
@@ -2094,7 +2493,7 @@ Text to summarize:
         {
             promptTokens = usage.GetProperty("prompt_tokens").GetInt32();
             completionTokens = usage.GetProperty("completion_tokens").GetInt32();
-            OpenAiUsageTracker.AddUsage(promptTokens, completionTokens);
+            tokenUsage.AddUsage(promptTokens, completionTokens);
             Console.WriteLine($"📊 Token usage: {promptTokens} prompt + {completionTokens} completion = {promptTokens + completionTokens} total");
         }
 
@@ -2142,12 +2541,544 @@ app.MapPost("/api/ai/section-vocab", ([FromBody] SaveSectionVocabRequest request
 .RequireAuthorization()
 .RequireRateLimiting("api");
 
+// ─── 5m) Suggest authors for a book title ────────────────────────────────────
+app.MapPost("/api/ai/suggest-authors", async (
+    [FromBody] SuggestAuthorsRequest request,
+    IHttpClientFactory httpFactory,
+    IConfiguration cfg,
+    ITokenUsageService tokenUsage,
+    IOpenAiModelHelper modelHelper,
+    IAiResponseParser aiResponseParser,
+    IModelSelectionService modelSelection) =>
+{
+    if (request is null || string.IsNullOrWhiteSpace(request.BookTitle))
+        return Results.BadRequest(new { error = "BookTitle is required." });
+
+    try
+    {
+        var openLibraryAuthors = await FetchAuthorsFromOpenLibraryAsync(request.BookTitle, httpFactory);
+        if (openLibraryAuthors.Count > 0)
+        {
+            Console.WriteLine($"✅ Author suggestions (OpenLibrary) for '{request.BookTitle}': {openLibraryAuthors.Count} authors found");
+            return Results.Ok(new SuggestAuthorsResponse(openLibraryAuthors));
+        }
+
+        var tokenLimitResult = CheckTokenLimit(cfg, tokenUsage);
+        if (tokenLimitResult is not null) return tokenLimitResult;
+
+        using var http = httpFactory.CreateClient("OpenAI");
+        var model = modelSelection.GetModelFast();  // Uses gpt-4o by default
+
+        var systemPrompt = @"You are a book metadata expert. Given a book title, suggest the 3-5 most likely authors sorted by probability. Return ONLY valid JSON with no markdown, explanation, or additional text.";
+
+        var userPrompt = $@"Book title: ""{request.BookTitle}""
+
+Return ONLY a JSON array of likely authors sorted by probability (most likely first). Each entry should have ""author"" (full name) and ""confidence"" (high/medium/low).
+
+Example format:
+[
+  {{""author"": ""J.R.R. Tolkien"", ""confidence"": ""high""}},
+  {{""author"": ""Christopher Tolkien"", ""confidence"": ""medium""}}
+]
+
+If the title is ambiguous or you don't recognize it, return an empty array: []
+
+Do NOT include any markdown formatting, explanations, or text outside the JSON array.";
+
+        var payload = modelHelper.BuildChatCompletionPayload(
+            model,
+            new[]
+            {
+                new { role = "system", content = systemPrompt },
+                new { role = "user", content = userPrompt }
+            },
+            maxCompletionTokens: 500,
+            temperature: 0.3
+        );
+
+        var response = await http.PostAsJsonAsync("https://api.openai.com/v1/chat/completions", payload);
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = await response.Content.ReadAsStringAsync();
+            Console.WriteLine($"❌ OpenAI suggest-authors failed status={(int)response.StatusCode} body={body}");
+            return Results.Problem($"OpenAI request failed: {(int)response.StatusCode}");
+        }
+
+        using var stream = await response.Content.ReadAsStreamAsync();
+        using var doc = await JsonDocument.ParseAsync(stream);
+        var rawText = aiResponseParser.ExtractText(doc.RootElement);
+
+        // Track token usage
+        if (doc.RootElement.TryGetProperty("usage", out var usage))
+        {
+            var promptTokens = usage.GetProperty("prompt_tokens").GetInt32();
+            var completionTokens = usage.GetProperty("completion_tokens").GetInt32();
+            tokenUsage.AddUsage(promptTokens, completionTokens);
+        }
+
+        // Parse the JSON array of authors
+        var authors = new List<AuthorSuggestion>();
+        if (!string.IsNullOrWhiteSpace(rawText))
+        {
+            try
+            {
+                // Remove markdown code blocks if present
+                var cleanedText = rawText.Trim();
+                if (cleanedText.StartsWith("```"))
+                {
+                    cleanedText = cleanedText
+                        .Replace("```json", "")
+                        .Replace("```", "")
+                        .Trim();
+                }
+
+                // If the model adds extra text, extract the JSON array.
+                var arrayMatch = Regex.Match(cleanedText, @"\[[\s\S]*\]");
+                var jsonPayload = arrayMatch.Success ? arrayMatch.Value : cleanedText;
+
+                var authorsDoc = JsonDocument.Parse(jsonPayload);
+                if (authorsDoc.RootElement.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var item in authorsDoc.RootElement.EnumerateArray())
+                    {
+                        if (item.TryGetProperty("author", out var authorProp) &&
+                            item.TryGetProperty("confidence", out var confidenceProp))
+                        {
+                            authors.Add(new AuthorSuggestion(
+                                authorProp.GetString() ?? "",
+                                confidenceProp.GetString() ?? "low"
+                            ));
+                        }
+                    }
+                }
+            }
+            catch (JsonException ex)
+            {
+                Console.WriteLine($"⚠️ Failed to parse author suggestions JSON: {ex.Message}");
+                Console.WriteLine($"Raw text: {rawText}");
+                // Return empty array on parse failure
+            }
+        }
+
+        Console.WriteLine($"✅ Author suggestions for '{request.BookTitle}': {authors.Count} authors found");
+        return Results.Ok(new SuggestAuthorsResponse(authors));
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"❌ OpenAI suggest-authors failed: {ex.Message}");
+        return ApiResponse.InternalError("Failed to suggest authors.");
+    }
+})
+.RequireAuthorization()
+.RequireRateLimiting("api");
+
+// ─── 5n) Find related books (series + other series by author) ────────────────
+app.MapPost("/api/ai/related-books", async (
+    [FromBody] RelatedBooksRequest request,
+    AnnaArchiveService annaArchiveService,
+    IHttpClientFactory httpFactory,
+    IConfiguration cfg,
+    ITokenUsageService tokenUsage,
+    IOpenAiModelHelper modelHelper,
+    IAiResponseParser aiResponseParser,
+    IModelSelectionService modelSelection) =>
+{
+    if (request is null || string.IsNullOrWhiteSpace(request.BookTitle) || string.IsNullOrWhiteSpace(request.Author))
+        return Results.BadRequest(new { error = "BookTitle and Author are required." });
+
+    var tokenLimitResult = CheckTokenLimit(cfg, tokenUsage);
+    if (tokenLimitResult is not null) return tokenLimitResult;
+
+    try
+    {
+        using var http = httpFactory.CreateClient("OpenAI");
+        var model = modelSelection.GetModelFast();
+
+        var systemPrompt = @"You are a literary expert with comprehensive knowledge of book series and author bibliographies. Given a book title and author, identify related books. Return ONLY valid JSON with no markdown or explanations.";
+
+        var userPrompt = $@"Book: ""{request.BookTitle}"" by {request.Author}
+
+Provide:
+1. A summary of the current series (if this book is part of a series)
+2. Other books in the SAME SERIES (if this book is part of a series)
+3. OTHER SERIES by this author (different series they've written) with ALL books in each series
+
+Return ONLY this JSON structure:
+{{
+  ""seriesSummary"": ""A 2-3 sentence overview of the current series, its themes, and significance. Null if not part of a series."",
+  ""sameSeries"": [
+    {{""title"": ""Book Title"", ""order"": 1, ""description"": ""Brief 1-line description""}}
+  ],
+  ""seriesName"": ""Series Name (optional)"",
+  ""seriesSearchQuery"": ""Search query to find series books (optional)"",
+  ""otherSeries"": [
+    {{
+      ""seriesName"": ""Series Name"",
+      ""bookCount"": 3,
+      ""books"": [
+        {{""title"": ""Book 1 Title"", ""order"": 1, ""description"": ""Brief description""}}
+      ],
+      ""description"": ""Brief 1-line description of series"",
+      ""summary"": ""2-3 sentence overview of this series""
+    }}
+  ]
+}}
+
+Rules:
+- If the book is NOT part of a series, return null for seriesSummary
+- If the series has MANY books, still return ALL known published titles (no ellipses)
+- If you cannot list all titles, set seriesName and seriesSearchQuery for lookup
+- For otherSeries, include ALL books in each series in the ""books"" array
+- Only include PUBLISHED books (no unreleased/rumored books)
+- Sort all books by publication/reading order
+- For otherSeries, include 3-5 most notable series
+- Each series summary should be 2-3 sentences covering themes, plot arc, and significance
+- Keep individual book descriptions concise (max 15 words)
+- Return ONLY the JSON object, no markdown formatting";
+
+        var payload = modelHelper.BuildChatCompletionPayload(
+            model,
+            new[]
+            {
+                new { role = "system", content = systemPrompt },
+                new { role = "user", content = userPrompt }
+            },
+            maxCompletionTokens: 3500,
+            temperature: 0.3
+        );
+
+        var response = await http.PostAsJsonAsync("https://api.openai.com/v1/chat/completions", payload);
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = await response.Content.ReadAsStringAsync();
+            Console.WriteLine($"❌ OpenAI related-books failed status={(int)response.StatusCode} body={body}");
+            return Results.Problem($"OpenAI request failed: {(int)response.StatusCode}");
+        }
+
+        using var stream = await response.Content.ReadAsStreamAsync();
+        using var doc = await JsonDocument.ParseAsync(stream);
+        var rawText = aiResponseParser.ExtractText(doc.RootElement);
+
+        // Track token usage
+        if (doc.RootElement.TryGetProperty("usage", out var usage))
+        {
+            var promptTokens = usage.GetProperty("prompt_tokens").GetInt32();
+            var completionTokens = usage.GetProperty("completion_tokens").GetInt32();
+            tokenUsage.AddUsage(promptTokens, completionTokens);
+        }
+
+        // Parse the JSON response
+        var sameSeries = new List<SeriesBook>();
+        var otherSeries = new List<AuthorSeries>();
+        string? seriesName = null;
+        string? seriesSearchQuery = null;
+        string? seriesSummary = null;
+
+        if (!string.IsNullOrWhiteSpace(rawText))
+        {
+            try
+            {
+                // Remove markdown code blocks if present
+                var cleanedText = rawText.Trim();
+                if (cleanedText.StartsWith("```"))
+                {
+                    cleanedText = cleanedText
+                        .Replace("```json", "")
+                        .Replace("```", "")
+                        .Trim();
+                }
+
+                var relatedDoc = JsonDocument.Parse(cleanedText);
+
+                // Parse seriesSummary
+                if (relatedDoc.RootElement.TryGetProperty("seriesSummary", out var summaryProp) &&
+                    summaryProp.ValueKind == JsonValueKind.String)
+                {
+                    seriesSummary = summaryProp.GetString();
+                }
+
+                // Parse sameSeries
+                if (relatedDoc.RootElement.TryGetProperty("sameSeries", out var sameSeriesArray) &&
+                    sameSeriesArray.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var item in sameSeriesArray.EnumerateArray())
+                    {
+                        if (item.TryGetProperty("title", out var titleProp))
+                        {
+                            sameSeries.Add(new SeriesBook(
+                                titleProp.GetString() ?? "",
+                                item.TryGetProperty("order", out var orderProp) ? orderProp.GetInt32() : 0,
+                                item.TryGetProperty("description", out var descProp) ? descProp.GetString() ?? "" : "",
+                                null  // CoverUrl will be populated later
+                            ));
+                        }
+                    }
+                }
+
+                if (relatedDoc.RootElement.TryGetProperty("seriesName", out var seriesNameProp) &&
+                    seriesNameProp.ValueKind == JsonValueKind.String)
+                {
+                    seriesName = seriesNameProp.GetString();
+                }
+
+                if (relatedDoc.RootElement.TryGetProperty("seriesSearchQuery", out var seriesSearchProp) &&
+                    seriesSearchProp.ValueKind == JsonValueKind.String)
+                {
+                    seriesSearchQuery = seriesSearchProp.GetString();
+                }
+
+                // Parse otherSeries
+                if (relatedDoc.RootElement.TryGetProperty("otherSeries", out var otherSeriesArray) &&
+                    otherSeriesArray.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var item in otherSeriesArray.EnumerateArray())
+                    {
+                        if (item.TryGetProperty("seriesName", out var nameProp))
+                        {
+                            // Parse books array for this series
+                            var seriesBooks = new List<SeriesBook>();
+                            if (item.TryGetProperty("books", out var booksArray) &&
+                                booksArray.ValueKind == JsonValueKind.Array)
+                            {
+                                foreach (var book in booksArray.EnumerateArray())
+                                {
+                                    if (book.TryGetProperty("title", out var bookTitleProp))
+                                    {
+                                        seriesBooks.Add(new SeriesBook(
+                                            bookTitleProp.GetString() ?? "",
+                                            book.TryGetProperty("order", out var bookOrderProp) ? bookOrderProp.GetInt32() : 0,
+                                            book.TryGetProperty("description", out var bookDescProp) ? bookDescProp.GetString() ?? "" : "",
+                                            null  // CoverUrl will be populated later
+                                        ));
+                                    }
+                                }
+                            }
+
+                            otherSeries.Add(new AuthorSeries(
+                                nameProp.GetString() ?? "",
+                                item.TryGetProperty("bookCount", out var countProp) ? countProp.GetInt32() : seriesBooks.Count,
+                                seriesBooks,
+                                item.TryGetProperty("description", out var descProp) ? descProp.GetString() ?? "" : "",
+                                item.TryGetProperty("summary", out var seriesSummaryProp) ? seriesSummaryProp.GetString() ?? "" : ""
+                            ));
+                        }
+                    }
+                }
+            }
+            catch (JsonException ex)
+            {
+                Console.WriteLine($"⚠️ Failed to parse related books JSON: {ex.Message}");
+                Console.WriteLine($"Raw text: {rawText}");
+            }
+        }
+
+        if (sameSeries.Count < 15)
+        {
+            string Normalize(string value) =>
+                Regex.Replace(value.ToLowerInvariant(), @"[^a-z0-9]+", " ").Trim();
+
+            var query = seriesSearchQuery ?? seriesName ?? $"{request.BookTitle} {request.Author}";
+            try
+            {
+                var searchResults = await annaArchiveService.SearchAsync(query, 80, exact: false);
+                var normalizedAuthor = Normalize(request.Author);
+                var normalizedSeries = Normalize(seriesName ?? request.BookTitle);
+
+                var matches = searchResults
+                    .Where(b => b.Authors.Any(a => Normalize(a).Contains(normalizedAuthor)))
+                    .Select(b => b.Title)
+                    .Where(t => !string.IsNullOrWhiteSpace(t))
+                    .Distinct()
+                    .Where(t => Normalize(t!).Contains(normalizedSeries))
+                    .Select((t, index) => new SeriesBook(t!, index + 1, "", null))
+                    .ToList();
+
+                if (matches.Count > sameSeries.Count)
+                {
+                    sameSeries = matches;
+                    Console.WriteLine($"✅ Series expanded via search: {matches.Count} titles");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"⚠️ Series expansion failed: {ex.Message}");
+            }
+        }
+
+        Console.WriteLine($"✅ Related books for '{request.BookTitle}': {sameSeries.Count} series books, {otherSeries.Count} other series");
+
+        return Results.Ok(new RelatedBooksResponse(sameSeries, otherSeries, seriesSummary));
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"❌ OpenAI related-books failed: {ex.Message}");
+        return ApiResponse.InternalError("Failed to get related books.");
+    }
+})
+.RequireAuthorization()
+.RequireRateLimiting("api");
+
+// ─── 5o) Match series books intelligently using GPT ─────────────────────────
+app.MapPost("/api/ai/match-series-books", async (
+    [FromBody] MatchSeriesBooksRequest request,
+    IHttpClientFactory httpFactory,
+    IConfiguration cfg,
+    ITokenUsageService tokenUsage,
+    IOpenAiModelHelper modelHelper,
+    IAiResponseParser aiResponseParser,
+    IModelSelectionService modelSelection) =>
+{
+    if (request is null || request.Books is null || request.Books.Count == 0)
+        return Results.BadRequest(new { error = "Books list is required." });
+
+    var tokenLimitResult = CheckTokenLimit(cfg, tokenUsage);
+    if (tokenLimitResult is not null) return tokenLimitResult;
+
+    try
+    {
+        using var http = httpFactory.CreateClient("OpenAI");
+        var model = modelSelection.GetModelFast();
+
+        // Build a comprehensive prompt with all search results
+        var booksJson = System.Text.Json.JsonSerializer.Serialize(request.Books, new JsonSerializerOptions { WriteIndented = true });
+
+        var systemPrompt = @"You are an expert book matcher. You analyze search results from a library database and select the best match for each book in a series.
+
+Your task: For each book, examine all search result candidates and select the BEST match based on:
+1. Title match (handle variations like subtitles, series numbers in parentheses)
+2. Author match (exact or close match)
+3. Format match (if specified)
+4. Detect and AVOID: Omnibus editions, anthologies, collections, combined volumes
+5. Prefer standalone individual books over compilations
+
+Return ONLY valid JSON with no markdown or explanation.";
+
+        var userPrompt = $@"Series: ""{request.SeriesName ?? "Unknown Series"}""
+Author: ""{request.Author}""
+Preferred Format: ""{request.PreferredFormat ?? "ANY"}""
+
+For each book below, I'm providing the title we're looking for and the search results. Select the BEST candidate or flag if no good match exists.
+
+Books and Search Results:
+{booksJson}
+
+Return ONLY this JSON structure:
+{{
+  ""matches"": [
+    {{
+      ""bookTitle"": ""Book title we searched for"",
+      ""order"": 1,
+      ""status"": ""matched|ambiguous|not_found"",
+      ""selectedMd5"": ""md5_of_best_match"",
+      ""selectedTitle"": ""Full title from search results"",
+      ""confidence"": ""exact|likely|uncertain"",
+      ""reason"": ""Brief explanation (e.g., 'Exact title and author match', 'Anthology detected', etc.)""
+    }}
+  ]
+}}
+
+Rules:
+- status: ""matched"" if you found a good match, ""ambiguous"" if multiple viable options, ""not_found"" if no good match
+- confidence: ""exact"" for perfect matches, ""likely"" for close matches, ""uncertain"" if you're not sure
+- ALWAYS avoid omnibus/anthology editions unless that's the ONLY option
+- If a book has ""(Books 1-3)"" or ""Complete Series"" in the title, flag it as ambiguous or not_found
+- Match format if specified (e.g., only select EPUB if format is EPUB)";
+
+        var payload = modelHelper.BuildChatCompletionPayload(
+            model,
+            new[]
+            {
+                new { role = "system", content = systemPrompt },
+                new { role = "user", content = userPrompt }
+            },
+            maxCompletionTokens: 2000,
+            temperature: 0.2
+        );
+
+        var response = await http.PostAsJsonAsync("https://api.openai.com/v1/chat/completions", payload);
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = await response.Content.ReadAsStringAsync();
+            Console.WriteLine($"❌ OpenAI match-series-books failed status={(int)response.StatusCode} body={body}");
+            return Results.Problem($"OpenAI request failed: {(int)response.StatusCode}");
+        }
+
+        using var stream = await response.Content.ReadAsStreamAsync();
+        using var doc = await JsonDocument.ParseAsync(stream);
+        var rawText = aiResponseParser.ExtractText(doc.RootElement);
+
+        // Track token usage
+        if (doc.RootElement.TryGetProperty("usage", out var usage))
+        {
+            var promptTokens = usage.GetProperty("prompt_tokens").GetInt32();
+            var completionTokens = usage.GetProperty("completion_tokens").GetInt32();
+            tokenUsage.AddUsage(promptTokens, completionTokens);
+        }
+
+        // Parse the JSON response
+        var matches = new List<SeriesBookMatch>();
+
+        if (!string.IsNullOrWhiteSpace(rawText))
+        {
+            try
+            {
+                // Remove markdown code blocks if present
+                var cleanedText = rawText.Trim();
+                if (cleanedText.StartsWith("```"))
+                {
+                    cleanedText = cleanedText
+                        .Replace("```json", "")
+                        .Replace("```", "")
+                        .Trim();
+                }
+
+                var matchDoc = JsonDocument.Parse(cleanedText);
+
+                if (matchDoc.RootElement.TryGetProperty("matches", out var matchesArray) &&
+                    matchesArray.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var item in matchesArray.EnumerateArray())
+                    {
+                        matches.Add(new SeriesBookMatch(
+                            item.TryGetProperty("bookTitle", out var bt) ? bt.GetString() ?? "" : "",
+                            item.TryGetProperty("order", out var ord) ? ord.GetInt32() : 0,
+                            item.TryGetProperty("status", out var st) ? st.GetString() ?? "" : "",
+                            item.TryGetProperty("selectedMd5", out var md5) ? md5.GetString() : null,
+                            item.TryGetProperty("selectedTitle", out var title) ? title.GetString() : null,
+                            item.TryGetProperty("confidence", out var conf) ? conf.GetString() ?? "" : "",
+                            item.TryGetProperty("reason", out var rsn) ? rsn.GetString() ?? "" : ""
+                        ));
+                    }
+                }
+            }
+            catch (JsonException ex)
+            {
+                Console.WriteLine($"⚠️ Failed to parse series match JSON: {ex.Message}");
+                Console.WriteLine($"Raw text: {rawText}");
+            }
+        }
+
+        Console.WriteLine($"✅ Matched {matches.Count(m => m.Status == "matched")} of {request.Books.Count} books");
+        return Results.Ok(new MatchSeriesBooksResponse(matches));
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"❌ OpenAI match-series-books failed: {ex.Message}");
+        return ApiResponse.InternalError("Failed to match series books.");
+    }
+})
+.RequireAuthorization()
+.RequireRateLimiting("api");
+
 // ─── Character Graph Generation ─────────────────────────────────────────────
 
 app.MapPost("/api/ai/characters/graph", async (
     [FromBody] CharacterGraphRequest request,
     IHttpClientFactory httpFactory,
-    IConfiguration cfg) =>
+    IConfiguration cfg,
+    ITokenUsageService tokenUsage,
+    IOpenAiModelHelper modelHelper,
+    IAiResponseParser aiResponseParser) =>
 {
     if (string.IsNullOrWhiteSpace(request.DropboxPath))
         return Results.BadRequest(new { error = "DropboxPath is required." });
@@ -2243,7 +3174,7 @@ Create a character relationship network graph based ONLY on information in these
         var model = "gpt-4o"; // Use GPT-4o for cost-effective character graph generation
         Console.WriteLine($"🤖 Using model for character graph: {model}");
 
-        var payload = OpenAiModelHelper.BuildChatCompletionPayload(
+        var payload = modelHelper.BuildChatCompletionPayload(
             model,
             new[]
             {
@@ -2264,7 +3195,7 @@ Create a character relationship network graph based ONLY on information in these
 
         using var stream = await response.Content.ReadAsStreamAsync();
         using var doc = await JsonDocument.ParseAsync(stream);
-        var content = AiResponseParser.ExtractText(doc.RootElement);
+        var content = aiResponseParser.ExtractText(doc.RootElement);
 
         if (string.IsNullOrWhiteSpace(content))
         {
@@ -2277,7 +3208,7 @@ Create a character relationship network graph based ONLY on information in these
         {
             var promptTokens = usage.GetProperty("prompt_tokens").GetInt32();
             var completionTokens = usage.GetProperty("completion_tokens").GetInt32();
-            OpenAiUsageTracker.AddUsage(promptTokens, completionTokens);
+            tokenUsage.AddUsage(promptTokens, completionTokens);
         }
 
         // Parse the character graph JSON
@@ -2355,7 +3286,10 @@ app.MapGet("/api/ai/characters/graph", ([FromQuery] string dropboxPath) =>
 app.MapPost("/api/ai/characters/update", async (
     [FromBody] CharacterGraphUpdateRequest request,
     IHttpClientFactory httpFactory,
-    IConfiguration cfg) =>
+    IConfiguration cfg,
+    ITokenUsageService tokenUsage,
+    IOpenAiModelHelper modelHelper,
+    IAiResponseParser aiResponseParser) =>
 {
     if (string.IsNullOrWhiteSpace(request.DropboxPath) || string.IsNullOrWhiteSpace(request.NewContent))
         return Results.BadRequest(new { error = "DropboxPath and NewContent are required." });
@@ -2398,7 +3332,7 @@ Update the character graph with any new information. Return the complete updated
         var model = "gpt-4o"; // Use GPT-4o for cost-effective character graph updates
         Console.WriteLine($"🤖 Using model for character graph update: {model}");
 
-        var payload = OpenAiModelHelper.BuildChatCompletionPayload(
+        var payload = modelHelper.BuildChatCompletionPayload(
             model,
             new[]
             {
@@ -2418,7 +3352,7 @@ Update the character graph with any new information. Return the complete updated
 
         using var stream = await response.Content.ReadAsStreamAsync();
         using var doc = await JsonDocument.ParseAsync(stream);
-        var content = AiResponseParser.ExtractText(doc.RootElement);
+        var content = aiResponseParser.ExtractText(doc.RootElement);
 
         if (string.IsNullOrWhiteSpace(content))
             return Results.Problem("No updated graph data returned.");
@@ -2428,7 +3362,7 @@ Update the character graph with any new information. Return the complete updated
         {
             var promptTokens = usage.GetProperty("prompt_tokens").GetInt32();
             var completionTokens = usage.GetProperty("completion_tokens").GetInt32();
-            OpenAiUsageTracker.AddUsage(promptTokens, completionTokens);
+            tokenUsage.AddUsage(promptTokens, completionTokens);
         }
 
         // Parse updated graph
@@ -2454,17 +3388,22 @@ Update the character graph with any new information. Return the complete updated
 
 // ─── 5) send-to-kindle ───────────────────────────────────────────────────
 app.MapPost("/api/anna/book/{md5}/send-to-kindle", async (
+    HttpContext context,
     [FromRoute] string md5,
     [FromQuery] string? title,
     [FromQuery] string target,
+    [FromQuery] string? coverUrl,
     AnnaArchiveService anna,
     IEmailService emailService,
-    IConfiguration cfg) =>
+    IEbookCoverService coverService,
+    IConfiguration cfg,
+    IValidationService validation,
+    IDownloadTrackingService downloadTracking) =>
 {
-    if (!IsValidMd5(md5))
+    if (!validation.IsValidMd5(md5))
         return Results.BadRequest(new { error = "Invalid MD5 format. Must be 32 hexadecimal characters." });
 
-    if (!IsValidTitle(title))
+    if (!validation.IsValidTitle(title))
         return Results.BadRequest(new { error = "Title too long. Maximum 500 characters." });
 
     if (string.IsNullOrWhiteSpace(target) || (target != "dad" && target != "mom"))
@@ -2474,10 +3413,18 @@ app.MapPost("/api/anna/book/{md5}/send-to-kindle", async (
     var (resp, fileName, acctInfo, errorMessage) = await DownloadBookFromAnnaArchiveAsync(md5, title, anna, memberKey);
 
     if (errorMessage != null)
-        return Results.Ok(new { success = false, message = errorMessage, accountFastInfo = acctInfo });
+    {
+        var (downloadsLeft, downloadsPerDay) = downloadTracking.GetDownloadStatus();
+        var trackingInfo = new AccountFastDownloadInfoDto(downloadsLeft, downloadsPerDay);
+        return Results.Ok(new { success = false, message = errorMessage, accountFastInfo = trackingInfo });
+    }
 
     if (resp == null || fileName == null)
-        return Results.Ok(new { success = false, message = "Failed to download book.", accountFastInfo = acctInfo });
+    {
+        var (downloadsLeft, downloadsPerDay) = downloadTracking.GetDownloadStatus();
+        var trackingInfo = new AccountFastDownloadInfoDto(downloadsLeft, downloadsPerDay);
+        return Results.Ok(new { success = false, message = "Failed to download book.", accountFastInfo = trackingInfo });
+    }
 
     var tempFilePath = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid()}_{fileName}");
 
@@ -2485,10 +3432,29 @@ app.MapPost("/api/anna/book/{md5}/send-to-kindle", async (
     {
         try
         {
-            // Download to temp file
+            // Get the ebook stream
+            Stream ebookStream = await resp.Content.ReadAsStreamAsync();
+
+            // Attempt cover replacement if coverUrl is provided and format is supported
+            // FIXED: Now preserves ZIP metadata consistency to prevent Kindle E999 errors
+            if (!string.IsNullOrWhiteSpace(coverUrl))
+            {
+                var ext = Path.GetExtension(fileName).TrimStart('.');
+                if (coverService.IsFormatSupported(ext))
+                {
+                    Console.WriteLine($"[send-to-kindle] Attempting cover replacement for {fileName}");
+                    ebookStream = await coverService.ReplaceCoverAsync(ebookStream, coverUrl, ext);
+                }
+                else
+                {
+                    Console.WriteLine($"[send-to-kindle] Format {ext} not supported for cover replacement, skipping");
+                }
+            }
+
+            // Write to temp file
             using (var fileStream = new FileStream(tempFilePath, FileMode.Create, FileAccess.Write, FileShare.None))
             {
-                await resp.Content.CopyToAsync(fileStream);
+                await ebookStream.CopyToAsync(fileStream);
             }
 
             // Send email to the appropriate Kindle
@@ -2503,11 +3469,24 @@ app.MapPost("/api/anna/book/{md5}/send-to-kindle", async (
                 tempFilePath,
                 fileName);
 
+            // Get user name from auth context
+            var userName = context.User?.FindFirst(ClaimTypes.Email)?.Value
+                ?? context.User?.FindFirst(ClaimTypes.Name)?.Value
+                ?? "unknown";
+
+            // Record successful download in our tracking system
+            downloadTracking.RecordDownload(md5, userName);
+            Console.WriteLine($"[send-to-kindle] Recorded download for user {userName}, MD5: {md5}");
+
+            // Get updated download tracking status
+            var (downloadsLeft, downloadsPerDay) = downloadTracking.GetDownloadStatus();
+            var counterInfo = new AccountFastDownloadInfoDto(downloadsLeft, downloadsPerDay);
+
             return Results.Ok(new
             {
                 success         = true,
                 message         = $"Book sent to {target}'s Kindle",
-                accountFastInfo = acctInfo
+                accountFastInfo = counterInfo
             });
         }
         catch (Exception ex)
@@ -2789,7 +3768,9 @@ static async Task<(List<string> chunkSummaries, int promptTokens, int completion
     List<string> chunks,
     string contextLine,
     HttpResponse response,
-    IConfiguration cfg)
+    IConfiguration cfg,
+    IAiResponseParser aiResponseParser,
+    ITokenUsageService tokenUsage)
 {
     var chunkSummaries = new List<string>();
     var promptTokensTotal = 0;
@@ -2846,7 +3827,7 @@ Write 300-400 words that assume the reader is intelligent but may lack specializ
 
         Console.WriteLine($"🔍 Chunk {i + 1} response JSON: {doc.RootElement.GetRawText()}");
 
-        var chunkSummary = AiResponseParser.ExtractText(doc.RootElement) ?? string.Empty;
+        var chunkSummary = aiResponseParser.ExtractText(doc.RootElement) ?? string.Empty;
         Console.WriteLine($"🔍 Chunk {i + 1} extracted summary length: {chunkSummary.Length}");
 
         chunkSummaries.Add(chunkSummary);
@@ -2881,6 +3862,8 @@ static async Task<(List<string> sectionSummaries, int promptTokens, int completi
     string contextLine,
     HttpResponse response,
     IConfiguration cfg,
+    IAiResponseParser aiResponseParser,
+    ITokenUsageService tokenUsage,
     int chunksPerSection = 4)
 {
     var sectionSummaries = new List<string>();
@@ -2941,7 +3924,7 @@ Write 400-500 words. Maintain educational depth while creating a flowing narrati
 
         using var sectionStream = await sectionResponse.Content.ReadAsStreamAsync();
         using var sectionDoc = await JsonDocument.ParseAsync(sectionStream);
-        var sectionSummary = AiResponseParser.ExtractText(sectionDoc.RootElement) ?? string.Empty;
+        var sectionSummary = aiResponseParser.ExtractText(sectionDoc.RootElement) ?? string.Empty;
 
         sectionSummaries.Add(sectionSummary);
 
@@ -2974,7 +3957,8 @@ static async Task<(string finalSummary, int promptTokens, int completionTokens)>
     List<string> sectionSummaries,
     List<string> contextParts,
     HttpResponse response,
-    IConfiguration cfg)
+    IConfiguration cfg,
+    IAiResponseParser aiResponseParser)
 {
     await ServerSentEventsHelper.SendEventAsync(response, new
     {
@@ -3046,7 +4030,7 @@ Write as if teaching an intelligent student. Define specialized terms, explain r
 
     Console.WriteLine($"🔍 Final response JSON: {finalDoc.RootElement.GetRawText()}");
 
-    string finalSummary = AiResponseParser.ExtractText(finalDoc.RootElement) ?? "No summary returned.";
+    string finalSummary = aiResponseParser.ExtractText(finalDoc.RootElement) ?? "No summary returned.";
     Console.WriteLine($"🔍 Extracted summary length: {finalSummary.Length}");
 
     var promptTokens = 0;
@@ -3069,7 +4053,7 @@ Write as if teaching an intelligent student. Define specialized terms, explain r
 /// A tuple containing:
 /// - response: HttpResponseMessage with the file stream
 /// - fileName: Sanitized file name with appropriate extension
-/// - accountInfo: Account download info if available
+/// - accountInfo: Account download info if available (null - tracking happens at endpoint level)
 /// - errorMessage: Error message if something went wrong (null on success)
 /// </returns>
 static async Task<(HttpResponseMessage? response, string? fileName, AccountFastDownloadInfoDto? accountInfo, string? errorMessage)>
@@ -3080,7 +4064,19 @@ static async Task<(HttpResponseMessage? response, string? fileName, AccountFastD
         string memberKey)
 {
     // Get download document from Anna's Archive
-    var doc = await anna.GetMemberDownloadDocumentAsync(md5, memberKey);
+    JsonElement doc;
+    try
+    {
+        doc = await anna.GetMemberDownloadDocumentAsync(md5, memberKey);
+    }
+    catch (InvalidOperationException ex) when (ex.Message.Contains("Rate limit"))
+    {
+        return (null, null, null, "⏱️ Rate limit exceeded. Please wait 30-60 seconds before trying again.");
+    }
+    catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+    {
+        return (null, null, null, "⏱️ Rate limit exceeded. Please wait 30-60 seconds before trying again.");
+    }
 
     // Extract download URL
     string? downloadUrl = null;
@@ -3101,9 +4097,11 @@ static async Task<(HttpResponseMessage? response, string? fileName, AccountFastD
             ai.GetProperty("downloads_per_day").GetInt32());
 
     // Download the file
-    var resp = await anna.HttpClient.GetAsync(downloadUrl, HttpCompletionOption.ResponseHeadersRead);
-    if (!resp.IsSuccessStatusCode)
-        return (null, null, acctInfo, $"Download failed with status {(int)resp.StatusCode}");
+    var resp = await anna.GetDownloadResponseWithFallbackAsync(
+        downloadUrl,
+        HttpCompletionOption.ResponseHeadersRead);
+    if (resp == null || !resp.IsSuccessStatusCode)
+        return (null, null, acctInfo, "Download failed.");
 
     // Sanitize title
     var rawTitle  = !string.IsNullOrWhiteSpace(title) ? title : md5;
@@ -3193,10 +4191,22 @@ record SummarizeRequest(string Text, string? BookTitle, string? Author, int? Yea
 record LearnMoreRequest(string Term, string? Definition, string? DropboxPath, string? BookTitle, string? Context);
 record LearnMoreResponse(string Detail);
 record FlashcardRequest(string Term, string? Definition, string? DropboxPath, string? BookTitle, string? Context, List<string>? KnownWords);
-public record FlashcardItem(string Term, string Definition, string Etymology, List<string> UsageExamples, string? Notes);
+// FlashcardItem is now defined in AnnasArchive.Core.Services.IFlashcardService
 public record FlashcardResult(List<FlashcardItem> Cards);
 record WikiImagesResponse(List<string> Images);
 record SummarizeResponse(string Summary);
+record SuggestAuthorsRequest(string BookTitle);
+record SuggestAuthorsResponse(List<AuthorSuggestion> Authors);
+record AuthorSuggestion(string Author, string Confidence);
+record RelatedBooksRequest(string BookTitle, string Author);
+record RelatedBooksResponse(List<SeriesBook> SameSeries, List<AuthorSeries> OtherSeries, string? SeriesSummary);
+record SeriesBook(string Title, int Order, string Description, string? CoverUrl);
+record AuthorSeries(string SeriesName, int BookCount, List<SeriesBook> Books, string Description, string Summary);
+record MatchSeriesBooksRequest(string? SeriesName, string Author, string? PreferredFormat, List<BookWithCandidates> Books);
+record BookWithCandidates(string Title, int Order, List<CandidateBook> Candidates);
+record CandidateBook(string Md5, string Title, List<string> Authors, string Format, string FileSize);
+record SeriesBookMatch(string BookTitle, int Order, string Status, string? SelectedMd5, string? SelectedTitle, string Confidence, string Reason);
+record MatchSeriesBooksResponse(List<SeriesBookMatch> Matches);
 record FullChapterSummaryRequest(string DropboxPath, int ChapterId, string? BookTitle, string? Author, int? Year, string? Premise);
 record FullChapterSummaryResponse(string Summary, int PromptTokens, int CompletionTokens, int TotalTokens, double? AllowanceUsedPercent, long? TokensRemaining, DateTime CachedAt, List<ProcessingStep> Steps);
 record ProcessingStep(string Stage, int StepNumber, int TotalSteps, string Message, bool Success, string? Error);
@@ -3217,96 +4227,11 @@ public record CharacterNode(string Id, string Label, string Description, string?
 public record CharacterEdge(string From, string To, string Label, string? DetailedDescription);
 public record CharacterGraphResponse(List<CharacterNode> Nodes, List<CharacterEdge> Edges, int SummaryCount, DateTime CachedAt);
 
-// ─── OpenAI Model Abstraction Helper ────────────────────────────────────
-static class OpenAiModelHelper
+// ─── Adapter for EPUB Cache Path Provider ───────────────────────────────
+class EpubCachePathProviderAdapter : IEpubCachePathProvider
 {
-    /// <summary>
-    /// Checks if the model is part of the GPT-5 family (gpt-5, gpt-5.2, gpt-5-mini, etc.)
-    /// </summary>
-    public static bool IsGpt5Family(string model) =>
-        model.StartsWith("gpt-5", StringComparison.OrdinalIgnoreCase);
-
-    /// <summary>
-    /// Checks if the model is part of the o1 family (o1-mini, o1-preview, o3, etc.)
-    /// </summary>
-    public static bool IsO1Family(string model) =>
-        model.StartsWith("o1-", StringComparison.OrdinalIgnoreCase) ||
-        model.Equals("o3", StringComparison.OrdinalIgnoreCase);
-
-    /// <summary>
-    /// Builds a Chat Completions API payload with model-specific parameters.
-    /// Handles GPT-5.2, o1, and GPT-4 model families correctly.
-    /// </summary>
-    public static object BuildChatCompletionPayload(
-        string model,
-        object[] messages,
-        int? maxCompletionTokens = null,
-        double? temperature = null,
-        string? reasoningEffort = null)
-    {
-        var payload = new Dictionary<string, object>
-        {
-            ["model"] = model,
-            ["messages"] = messages
-        };
-
-        if (maxCompletionTokens.HasValue)
-        {
-            payload["max_completion_tokens"] = maxCompletionTokens.Value;
-        }
-
-        // Handle temperature and reasoning based on model family
-        if (IsGpt5Family(model))
-        {
-            // GPT-5 family: temperature only works with reasoning_effort = "none"
-            if (temperature.HasValue)
-            {
-                payload["reasoning_effort"] = "none";
-                payload["temperature"] = temperature.Value;
-                Console.WriteLine($"🔧 GPT-5 model: Using temperature={temperature.Value} with reasoning_effort=none");
-            }
-            else if (!string.IsNullOrWhiteSpace(reasoningEffort))
-            {
-                payload["reasoning_effort"] = reasoningEffort;
-                Console.WriteLine($"🔧 GPT-5 model: Using reasoning_effort={reasoningEffort} (no temperature)");
-            }
-            else
-            {
-                // Default to "none" for GPT-5.2
-                payload["reasoning_effort"] = "none";
-                Console.WriteLine($"🔧 GPT-5 model: Using default reasoning_effort=none");
-            }
-        }
-        else if (IsO1Family(model))
-        {
-            // o1 family: no temperature support, reasoning is built-in
-            Console.WriteLine($"🔧 o1 model: No temperature or reasoning_effort parameters");
-            // o1 models don't support temperature, top_p, or explicit reasoning_effort
-        }
-        else
-        {
-            // GPT-4 and earlier: standard temperature support
-            if (temperature.HasValue)
-            {
-                payload["temperature"] = temperature.Value;
-                Console.WriteLine($"🔧 GPT-4 model: Using temperature={temperature.Value}");
-            }
-        }
-
-        return payload;
-    }
-
-    /// <summary>
-    /// Gets a user-friendly description of model capabilities
-    /// </summary>
-    public static string GetModelDescription(string model)
-    {
-        if (IsGpt5Family(model))
-            return "GPT-5 family (supports reasoning_effort, temperature with effort=none)";
-        if (IsO1Family(model))
-            return "o1 family (built-in reasoning, no temperature support)";
-        return "GPT-4 or earlier (standard temperature support)";
-    }
+    public string GetCacheRoot() => DropboxEpubCache.GetCacheRoot();
+    public string ComputeHash(string value) => DropboxEpubCache.ComputeHashPublic(value);
 }
 
 // ─── Helper class for Dropbox EPUB caching ──────────────────────────────
@@ -3649,209 +4574,6 @@ static class DropboxEpubCache
 
     public static string GetCacheRoot() => EpubCacheRoot;
     public static string ComputeHashPublic(string value) => ComputeHash(value);
-}
-
-static class AiResponseParser
-{
-    public static string? ExtractText(JsonElement root)
-    {
-        try
-        {
-            // Try Chat Completions API format first (choices[0].message.content)
-            if (root.TryGetProperty("choices", out var choices) &&
-                choices.ValueKind == JsonValueKind.Array &&
-                choices.GetArrayLength() > 0)
-            {
-                var firstChoice = choices[0];
-                if (firstChoice.TryGetProperty("message", out var message) &&
-                    message.TryGetProperty("content", out var content) &&
-                    content.ValueKind == JsonValueKind.String)
-                {
-                    return content.GetString();
-                }
-            }
-
-            // Fallback to Responses API format (output array)
-            if (root.TryGetProperty("output", out var output) &&
-                output.ValueKind == JsonValueKind.Array &&
-                output.GetArrayLength() > 0)
-            {
-                // Responses API structure: output array contains reasoning + message items
-                // Find the message type item
-                foreach (var item in output.EnumerateArray())
-                {
-                    if (item.TryGetProperty("type", out var typeElem) &&
-                        typeElem.GetString() == "message" &&
-                        item.TryGetProperty("content", out var contentArray) &&
-                        contentArray.ValueKind == JsonValueKind.Array &&
-                        contentArray.GetArrayLength() > 0)
-                    {
-                        // Look for output_text type in content array
-                        foreach (var contentItem in contentArray.EnumerateArray())
-                        {
-                            if (contentItem.TryGetProperty("type", out var contentType) &&
-                                contentType.GetString() == "output_text" &&
-                                contentItem.TryGetProperty("text", out var textElem) &&
-                                textElem.ValueKind == JsonValueKind.String)
-                            {
-                                return textElem.GetString();
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        catch
-        {
-            // ignore parse errors, return null
-        }
-        return null;
-    }
-}
-
-// ─── Helper for tracking OpenAI token usage with persistent file storage ─────────
-static class OpenAiUsageTracker
-{
-    private static readonly string UsageFilePath = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-        ".annas-archive",
-        "openai-usage.json"
-    );
-    private static readonly object FileLock = new object();
-
-    private class UsageData
-    {
-        public long PromptTokens { get; set; }
-        public long CompletionTokens { get; set; }
-        public DateTime LastResetDate { get; set; }
-    }
-
-    private static UsageData LoadUsage()
-    {
-        lock (FileLock)
-        {
-            try
-            {
-                Directory.CreateDirectory(Path.GetDirectoryName(UsageFilePath)!);
-
-                if (!File.Exists(UsageFilePath))
-                {
-                    return new UsageData
-                    {
-                        PromptTokens = 0,
-                        CompletionTokens = 0,
-                        LastResetDate = DateTime.UtcNow
-                    };
-                }
-
-                var json = File.ReadAllText(UsageFilePath);
-                return JsonSerializer.Deserialize<UsageData>(json) ?? new UsageData
-                {
-                    PromptTokens = 0,
-                    CompletionTokens = 0,
-                    LastResetDate = DateTime.UtcNow
-                };
-            }
-            catch
-            {
-                return new UsageData
-                {
-                    PromptTokens = 0,
-                    CompletionTokens = 0,
-                    LastResetDate = DateTime.UtcNow
-                };
-            }
-        }
-    }
-
-    private static void SaveUsage(UsageData data)
-    {
-        lock (FileLock)
-        {
-            try
-            {
-                Directory.CreateDirectory(Path.GetDirectoryName(UsageFilePath)!);
-                var json = JsonSerializer.Serialize(data, new JsonSerializerOptions
-                {
-                    WriteIndented = true
-                });
-                File.WriteAllText(UsageFilePath, json);
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"⚠️ Failed to save token usage: {ex.Message}");
-            }
-        }
-    }
-
-    public static void AddUsage(int prompt, int completion)
-    {
-        var data = LoadUsage();
-        data.PromptTokens += prompt;
-        data.CompletionTokens += completion;
-        SaveUsage(data);
-    }
-
-    public static (long Prompt, long Completion, long Total) GetTotals()
-    {
-        var data = LoadUsage();
-        CheckAndAutoReset(ref data);
-        return (data.PromptTokens, data.CompletionTokens, data.PromptTokens + data.CompletionTokens);
-    }
-
-    public static double CalculateCostUsd(long promptTokens, long completionTokens)
-    {
-        // GPT-5.2 pricing (as of Dec 2025):
-        // Input: $5 per 1M tokens
-        // Output: $15 per 1M tokens
-        const double inputCostPer1M = 5.0;
-        const double outputCostPer1M = 15.0;
-
-        var inputCost = (promptTokens / 1_000_000.0) * inputCostPer1M;
-        var outputCost = (completionTokens / 1_000_000.0) * outputCostPer1M;
-
-        return Math.Round(inputCost + outputCost, 2);
-    }
-
-    public static bool IsOverLimit(long allowance)
-    {
-        var data = LoadUsage();
-        CheckAndAutoReset(ref data);
-        var total = data.PromptTokens + data.CompletionTokens;
-        return total >= allowance;
-    }
-
-    public static void Reset()
-    {
-        var data = new UsageData
-        {
-            PromptTokens = 0,
-            CompletionTokens = 0,
-            LastResetDate = DateTime.UtcNow
-        };
-        SaveUsage(data);
-    }
-
-    private static void CheckAndAutoReset(ref UsageData data)
-    {
-        // Check if we've passed into a new month since last reset
-        var now = DateTime.UtcNow;
-        var lastReset = data.LastResetDate;
-
-        // Reset if we're in a different month OR if it's been more than 30 days
-        var shouldReset = (now.Year > lastReset.Year && now.Month >= lastReset.Month) ||
-                         (now.Year == lastReset.Year && now.Month > lastReset.Month) ||
-                         (now - lastReset).TotalDays >= 30;
-
-        if (shouldReset)
-        {
-            Console.WriteLine($"📅 Auto-resetting token usage counter (last reset: {lastReset:yyyy-MM-dd}, now: {now:yyyy-MM-dd})");
-            data.PromptTokens = 0;
-            data.CompletionTokens = 0;
-            data.LastResetDate = now;
-            SaveUsage(data);
-        }
-    }
 }
 
 // ========================================

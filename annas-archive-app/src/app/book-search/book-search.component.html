@@ -3,19 +3,53 @@
 </div>
 
 <div class="search-wrapper">
+  <!-- Mobile collapse toggle button (only visible on mobile) -->
+  <button class="mobile-collapse-toggle"
+          mat-icon-button
+          (click)="toggleSearchPanel()"
+          [attr.aria-label]="searchPanelCollapsed ? 'Expand search' : 'Collapse search'">
+    <mat-icon>{{ searchPanelCollapsed ? 'expand_more' : 'expand_less' }}</mat-icon>
+  </button>
+
   <!-- LEFT column: form + counter -->
-  <div class="search-form">
+  <div class="search-form" [class.collapsed]="searchPanelCollapsed">
     <form (ngSubmit)="onSearch()">
       <!-- Book name -->
       <mat-form-field appearance="outline" class="w-100">
         <mat-label>Book name</mat-label>
-        <input matInput [(ngModel)]="searchTerm" name="searchTerm" required />
+        <input
+          matInput
+          [(ngModel)]="searchTerm"
+          (ngModelChange)="onSearchTermChange($event)"
+          name="searchTerm"
+          required
+        />
+      </mat-form-field>
+
+      <!-- Author suggestions -->
+      <mat-form-field appearance="outline" class="w-100">
+        <mat-label>Author</mat-label>
+        <mat-select
+          [(ngModel)]="selectedAuthor"
+          name="selectedAuthor"
+          [disabled]="loadingAuthors || authorSuggestions.length === 0"
+        >
+          <mat-option value="">All Authors</mat-option>
+          <mat-option *ngFor="let suggestion of authorSuggestions" [value]="suggestion.author">
+            {{ suggestion.author }} ({{ suggestion.confidence }})
+          </mat-option>
+        </mat-select>
+        <mat-spinner
+          *ngIf="loadingAuthors"
+          matSuffix
+          diameter="20"
+          style="margin-right: 8px;"
+        ></mat-spinner>
       </mat-form-field>
 
       <!-- Filters row -->
-      <div class="filter-row">
-        <mat-checkbox [(ngModel)]="exact" name="exact">Exact match</mat-checkbox>
-
+      <div class="filter-row split-row">
+        <!-- Format selector -->
         <mat-form-field appearance="outline" class="format-filter">
           <mat-label>Format</mat-label>
           <mat-select [(ngModel)]="selectedFormat" name="format">
@@ -25,6 +59,17 @@
             </mat-option>
           </mat-select>
         </mat-form-field>
+
+        <!-- Download counter -->
+        <div *ngIf="downloadsLeft !== null"
+             class="download-counter inline"
+             [class.warning-yellow]="downloadWarningLevel === 'yellow'"
+             [class.warning-orange]="downloadWarningLevel === 'orange'"
+             [class.warning-red]="downloadWarningLevel === 'red'">
+          <div class="counter-main">
+            <strong>Downloads:</strong> {{ downloadsLeft }} / {{ downloadsPerDay }}
+          </div>
+        </div>
       </div>
 
       <!-- Search button -->
@@ -37,10 +82,18 @@
         Search
       </button>
 
-      <!-- Fast-download counter -->
-      <div *ngIf="downloadsLeft !== null" class="download-counter">
-        Downloads left today: {{ downloadsLeft }}
-      </div>
+      <!-- Find Related Books button -->
+      <button
+        *ngIf="selectedAuthor"
+        mat-raised-button
+        color="accent"
+        type="button"
+        (click)="openRelatedBooksModal()"
+        [disabled]="!searchTerm.trim() || !selectedAuthor"
+      >
+        Find Related Books
+      </button>
+
 
       <!-- Feedback -->
       <div *ngIf="error" class="error">{{ error }}</div>
@@ -71,14 +124,16 @@
             </mat-card-content>
 
             <!-- ACTION BUTTONS -->
-            <mat-card-actions>
+            <mat-card-actions class="action-buttons">
               <!-- existing download -->
-              <button mat-button (click)="download(book)">Download</button>
+              <button mat-raised-button color="primary" (click)="download(book)">
+                Download
+              </button>
 
               <!-- send-to-boox (admin only) -->
               <button
                 *ngIf="authService.isAdmin()"
-                mat-button
+                mat-raised-button
                 color="accent"
                 (click)="sendToBoox(book)"
                 [disabled]="book.sendState === 'sending'"
@@ -87,39 +142,39 @@
                   <span *ngSwitchCase="'sending'">Uploading…</span>
                   <span *ngSwitchCase="'success'">✓ Uploaded!</span>
                   <span *ngSwitchCase="'error'">✖ Retry</span>
-                  <span *ngSwitchDefault>📤 Send to Dropbox</span>
+                  <span *ngSwitchDefault>📤 Dropbox</span>
                 </ng-container>
               </button>
 
               <!-- send-to-dad's-kindle (admin only) -->
               <button
                 *ngIf="authService.isAdmin()"
-                mat-button
+                mat-raised-button
                 color="primary"
                 (click)="sendToDadsKindle(book)"
-                [disabled]="book.dadsKindleState === 'sending'"
+                [disabled]="book.dadsKindleState === 'sending' || book.format !== 'EPUB'"
               >
                 <ng-container [ngSwitch]="book.dadsKindleState">
                   <span *ngSwitchCase="'sending'">Sending…</span>
                   <span *ngSwitchCase="'success'">✔ Sent!</span>
                   <span *ngSwitchCase="'error'">✖ Retry</span>
-                  <span *ngSwitchDefault>Send to Dad's Kindle</span>
+                  <span *ngSwitchDefault>Dad's Kindle</span>
                 </ng-container>
               </button>
 
               <!-- send-to-mom's-kindle (admin only) -->
               <button
                 *ngIf="authService.isAdmin()"
-                mat-button
+                mat-raised-button
                 color="primary"
                 (click)="sendToMomsKindle(book)"
-                [disabled]="book.momsKindleState === 'sending'"
+                [disabled]="book.momsKindleState === 'sending' || book.format !== 'EPUB'"
               >
                 <ng-container [ngSwitch]="book.momsKindleState">
                   <span *ngSwitchCase="'sending'">Sending…</span>
                   <span *ngSwitchCase="'success'">✔ Sent!</span>
                   <span *ngSwitchCase="'error'">✖ Retry</span>
-                  <span *ngSwitchDefault>Send to Mom's Kindle</span>
+                  <span *ngSwitchDefault>Mom's Kindle</span>
                 </ng-container>
               </button>
             </mat-card-actions>

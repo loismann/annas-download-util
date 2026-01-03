@@ -34,6 +34,12 @@
     display: grid;
     grid-template-columns: 1fr 1fr;
     height: 100%;
+    position: relative;
+  }
+
+  /* Mobile collapse toggle button (hidden on desktop) */
+  .mobile-collapse-toggle {
+    display: none;
   }
   
   /* ─── LEFT column ─────────────────────────────── */
@@ -52,23 +58,119 @@
   }
   
   /* Downloads‐left info window */
-  .download-counter {
-    margin: 0 auto;
-    padding: 0.5rem 1rem;
-    border: 1px solid #ccc;
-    border-radius: 4px;
-    background: #f9f9f9;
-    text-align: center;
+.download-counter {
+  margin: 0 auto;
+  padding: 0.75rem 1rem;
+  border-radius: 4px;
+  background: #e3f2fd;
+  border-left: 4px solid #2196f3;
+  text-align: center;
+  width: 100%;
+  transition: all 0.3s ease;
+}
+
+.download-counter.inline {
+  margin: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 56px;
+  padding: 0 1rem;
+}
+
+  .download-counter .counter-main {
+    font-size: 1rem;
+    color: #1976d2;
+  }
+
+  .download-counter .counter-reset {
+    margin-top: 0.25rem;
+    font-size: 0.8rem;
+    color: #666;
+    opacity: 0.85;
+  }
+
+  .download-counter .counter-warning {
+    margin-top: 0.5rem;
+    font-size: 0.9rem;
     font-weight: 500;
-    max-width: 360px;
+  }
+
+  .download-counter.warning-yellow {
+    background: #fffde7;
+    border-left-color: #fbc02d;
+  }
+
+  .download-counter.warning-yellow .counter-main {
+    color: #f9a825;
+  }
+
+  .download-counter.warning-yellow .counter-warning {
+    color: #f9a825;
+  }
+
+  .download-counter.warning-orange {
+    background: #fff3e0;
+    border-left-color: #ff9800;
+  }
+
+  .download-counter.warning-orange .counter-main {
+    color: #f57c00;
+  }
+
+  .download-counter.warning-orange .counter-warning {
+    color: #f57c00;
+  }
+
+  .download-counter.warning-red {
+    background: #ffebee;
+    border-left-color: #f44336;
+    animation: pulse 2s ease-in-out infinite;
+  }
+
+  .download-counter.warning-red .counter-main {
+    color: #c62828;
+  }
+
+  .download-counter.warning-red .counter-warning {
+    color: #c62828;
+  }
+
+  @keyframes pulse {
+    0%, 100% {
+      transform: scale(1);
+    }
+    50% {
+      transform: scale(1.02);
+    }
+  }
+
+  /* Disabled author dropdown styling */
+  :host ::ng-deep .mat-mdc-form-field.mat-form-field-disabled .mat-mdc-text-field-wrapper {
+    background-color: #f5f5f5;
+  }
+
+  :host ::ng-deep .mat-mdc-form-field.mat-form-field-disabled .mdc-notched-outline__leading,
+  :host ::ng-deep .mat-mdc-form-field.mat-form-field-disabled .mdc-notched-outline__notch,
+  :host ::ng-deep .mat-mdc-form-field.mat-form-field-disabled .mdc-notched-outline__trailing {
+    border-color: #999 !important;
   }
   
-  /* filter row: checkbox + dropdown side by side */
-  .filter-row {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-  }
+/* filter row: checkbox + dropdown side by side */
+.filter-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.filter-row.split-row {
+  align-items: stretch;
+}
+
+.filter-row.split-row > * {
+  flex: 1 1 50%;
+}
   
   /* format dropdown sizing */
   .format-filter {
@@ -90,7 +192,7 @@
   }
   
   .results-inner {
-    width: 70%;
+    width: 82%;
   }
   
   /* card spacing */
@@ -136,13 +238,32 @@
     padding: 0 16px 16px 16px;
   }
   
-  :host ::ng-deep mat-card.book-card .info .mat-card-actions {
+  :host ::ng-deep mat-card.book-card .info .mat-card-actions,
+  :host ::ng-deep mat-card.book-card .info .action-buttons {
     padding: 0 16px 16px 16px;
+    display: flex;
+    flex-wrap: wrap;
+    margin: -4px;
+    align-items: stretch;
+  }
+
+  :host ::ng-deep mat-card.book-card .info .mat-card-actions button,
+  :host ::ng-deep mat-card.book-card .info .action-buttons button {
+    flex: 1 1 120px;
+    min-width: 0;
+    white-space: nowrap;
+    height: auto;
+    min-height: 36px;
+    padding: 8px 10px;
+    line-height: 1.2;
+    text-align: center;
+    margin: 4px !important;
+    font-size: 13px;
   }
 
   /* ─── RESPONSIVE: Tablet and Mobile ─────────────── */
 
-  /* Tablet: 768px and below */
+  /* Small tablets (iPad Mini) and phones: 768px and below - Single column stacked */
   @media (max-width: 768px) {
     .search-wrapper {
       grid-template-columns: 1fr;
@@ -150,9 +271,38 @@
       overflow: hidden;
     }
 
+    /* Show the mobile collapse toggle button */
+    .mobile-collapse-toggle {
+      display: flex;
+      position: absolute;
+      top: 4.5rem;
+      right: 1rem;
+      z-index: 100;
+      background: #3f51b5;
+      color: white;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+    }
+
+    .mobile-collapse-toggle:hover {
+      background: #303f9f;
+    }
+
     .search-form {
       padding: 4rem 1rem 1rem 1rem;
       border-bottom: 1px solid #e0e0e0;
+      transition: max-height 0.3s ease-in-out, padding 0.3s ease-in-out, opacity 0.3s ease-in-out;
+      max-height: 1000px;
+      overflow: hidden;
+    }
+
+    .search-form.collapsed {
+      max-height: 0;
+      padding: 0 1rem;
+      opacity: 0;
+      pointer-events: none;
     }
 
     .search-form form {
@@ -170,8 +320,16 @@
 
   /* Mobile: 480px and below */
   @media (max-width: 480px) {
+    .mobile-collapse-toggle {
+      top: 4rem;
+    }
+
     .search-form {
       padding: 4rem 0.75rem 0.75rem 0.75rem;
+    }
+
+    .search-form.collapsed {
+      padding: 0 0.75rem;
     }
 
     .search-form form {
@@ -204,13 +362,6 @@
     }
 
     :host ::ng-deep mat-card.book-card .info .mat-card-actions {
-      display: flex;
       flex-direction: column;
-      gap: 0.5rem;
-    }
-
-    :host ::ng-deep mat-card.book-card .info .mat-card-actions button {
-      width: 100%;
     }
   }
-  

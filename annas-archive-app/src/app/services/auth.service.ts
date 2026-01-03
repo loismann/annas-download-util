@@ -17,7 +17,10 @@ export interface LoginResponse {
 
 @Injectable({ providedIn: 'root' })
 export class AuthService {
-  private readonly baseUrl = 'https://fs01pfbooks.synology.me:5051/api/auth';
+  private readonly isLocalDev = typeof window !== 'undefined' && window.location.hostname === 'localhost';
+  private readonly baseUrl = this.isLocalDev
+    ? 'http://localhost:5050/api/auth'
+    : 'https://fs01pfbooks.synology.me:5051/api/auth';
   private readonly TOKEN_KEY = 'auth_token';
   private readonly NAME_KEY = 'auth_name';
   private readonly ADMIN_KEY = 'auth_admin';

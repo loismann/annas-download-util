@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
-import { map } from 'rxjs/operators';
+import { finalize, map, tap } from 'rxjs/operators';
 
 import { BookDto } from '../models/book-dto.model';
 import {
@@ -67,6 +67,78 @@ export interface GamingStatusResponse {
   error?: string;
 }
 
+export interface CoverLookupResponse {
+  coverUrl: string | null;
+}
+
+/* ─────────────── author suggestion response ─────────────────────── */
+export interface AuthorSuggestion {
+  author: string;
+  confidence: string;
+}
+
+export interface SuggestAuthorsResponse {
+  authors: AuthorSuggestion[];
+}
+
+/* ─────────────── related books response ─────────────────────── */
+export interface SeriesBook {
+  title: string;
+  order: number;
+  description: string;
+  coverUrl?: string;
+}
+
+export interface AuthorSeriesInfo {
+  seriesName: string;
+  bookCount: number;
+  books: SeriesBook[];
+  description: string;
+  summary: string;
+}
+
+export interface RelatedBooksResponse {
+  sameSeries: SeriesBook[];
+  otherSeries: AuthorSeriesInfo[];
+  seriesSummary: string | null;
+}
+
+/* ─────────────── series book matching ─────────────────────── */
+export interface BookWithCandidates {
+  title: string;
+  order: number;
+  candidates: CandidateBook[];
+}
+
+export interface CandidateBook {
+  md5: string;
+  title: string;
+  authors: string[];
+  format: string;
+  fileSize: string;
+}
+
+export interface SeriesBookMatch {
+  bookTitle: string;
+  order: number;
+  status: string;
+  selectedMd5?: string;
+  selectedTitle?: string;
+  confidence: string;
+  reason: string;
+}
+
+export interface MatchSeriesBooksRequest {
+  seriesName?: string;
+  author: string;
+  preferredFormat?: string;
+  books: BookWithCandidates[];
+}
+
+export interface MatchSeriesBooksResponse {
+  matches: SeriesBookMatch[];
+}
+
 @Injectable({ providedIn: 'root' })
 export class AnnaArchiveApiService {
   private readonly isLocalDev = window.location.hostname === 'localhost';
@@ -91,26 +163,74 @@ export class AnnaArchiveApiService {
       .set('name', name)
       .set('exact', exact.toString());
 
+    const label = `searchBooks:${name}:${exact}`;
+    console.time(label);
+    console.log('[searchBooks] start', { name, exact });
+
     return this.http
       .get<BookDto | BookDto[]>(`${this.baseUrl}/book`, { params })
-      .pipe(map(res => (Array.isArray(res) ? res : [res])));
+      .pipe(
+        map(res => (Array.isArray(res) ? res : [res])),
+        tap(list => {
+          const sample = list.slice(0, 3).map(b => ({
+            title: b.title,
+            md5: b.md5,
+            format: b.format,
+          }));
+          console.log('[searchBooks] result', { count: list.length, sample });
+        }),
+        finalize(() => {
+          console.timeEnd(label);
+          console.log('[searchBooks] done');
+        })
+      );
   }
 
   /* ══════════════════════════════════════════════════════════════
-     Member download – returns fast-download URL + counter
+     Member download – downloads file with optional cover replacement
      ══════════════════════════════════════════════════════════════ */
-  downloadMember(md5: string): Observable<DownloadMemberResponse> {
-    return this.http.get<DownloadMemberResponse>(
-      `${this.baseUrl}/book/${md5}/download/member`
+  downloadMember(md5: string, title: string, coverUrl?: string): Observable<Blob> {
+    let params = new HttpParams().set('title', title);
+    if (coverUrl) {
+      params = params.set('coverUrl', coverUrl);
+    }
+    return this.http.post(
+      `${this.baseUrl}/book/${md5}/download/member`,
+      null,
+      { params, responseType: 'blob' }
+    );
+  }
+
+  /* ══════════════════════════════════════════════════════════════
+     Check download status – returns current download counter
+     ══════════════════════════════════════════════════════════════ */
+  getDownloadStatus(): Observable<{ accountFastInfo: { downloadsLeft: number; downloadsPerDay: number } | null }> {
+    return this.http.get<{ accountFastInfo: { downloadsLeft: number; downloadsPerDay: number } | null }>(
+      `${this.baseUrl}/download-status`
+    );
+  }
+
+  fetchCover(title: string, author?: string): Observable<CoverLookupResponse> {
+    let params = new HttpParams().set('title', title);
+    if (author) {
+      params = params.set('author', author);
+    }
+    return this.http.get<CoverLookupResponse>(
+      `${this.baseUrl}/book/cover`,
+      { params }
     );
   }
 
   /* ══════════════════════════════════════════════════════════════
      NEW  ➜  Send the file to Dropbox for Boox sync
      – passes book title so backend can name it correctly
+     – optionally passes coverUrl for cover replacement
      ══════════════════════════════════════════════════════════════ */
-  sendToBoox(md5: string, title: string): Observable<SendToBooxResponse> {
-    const params = new HttpParams().set('title', title);
+  sendToBoox(md5: string, title: string, coverUrl?: string): Observable<SendToBooxResponse> {
+    let params = new HttpParams().set('title', title);
+    if (coverUrl) {
+      params = params.set('coverUrl', coverUrl);
+    }
     return this.http.post<SendToBooxResponse>(
       `${this.baseUrl}/book/${md5}/send-to-boox`,
       null,
@@ -120,11 +240,15 @@ export class AnnaArchiveApiService {
 
   /* ══════════════════════════════════════════════════════════════
      NEW  ➜  Send the file to Kindle via email
+     – optionally passes coverUrl for cover replacement
      ══════════════════════════════════════════════════════════════ */
-  sendToKindle(md5: string, title: string, target: 'dad' | 'mom'): Observable<SendToBooxResponse> {
-    const params = new HttpParams()
+  sendToKindle(md5: string, title: string, target: 'dad' | 'mom', coverUrl?: string): Observable<SendToBooxResponse> {
+    let params = new HttpParams()
       .set('title', title)
       .set('target', target);
+    if (coverUrl) {
+      params = params.set('coverUrl', coverUrl);
+    }
     return this.http.post<SendToBooxResponse>(
       `${this.baseUrl}/book/${md5}/send-to-kindle`,
       null,
@@ -360,6 +484,36 @@ export class AnnaArchiveApiService {
     return this.http.post<CharacterGraphResponse>(
       `${this.aiBaseUrl}/characters/update`,
       payload
+    );
+  }
+
+  /* ══════════════════════════════════════════════════════════════
+     NEW  ➜  Suggest authors for a book title
+     ══════════════════════════════════════════════════════════════ */
+  suggestAuthors(bookTitle: string): Observable<SuggestAuthorsResponse> {
+    return this.http.post<SuggestAuthorsResponse>(
+      `${this.aiBaseUrl}/suggest-authors`,
+      { bookTitle }
+    );
+  }
+
+  /* ══════════════════════════════════════════════════════════════
+     NEW  ➜  Get related books (same series + other series by author)
+     ══════════════════════════════════════════════════════════════ */
+  getRelatedBooks(bookTitle: string, author: string): Observable<RelatedBooksResponse> {
+    return this.http.post<RelatedBooksResponse>(
+      `${this.aiBaseUrl}/related-books`,
+      { bookTitle, author }
+    );
+  }
+
+  /* ══════════════════════════════════════════════════════════════
+     NEW  ➜  Match series books using GPT
+     ══════════════════════════════════════════════════════════════ */
+  matchSeriesBooks(request: MatchSeriesBooksRequest): Observable<MatchSeriesBooksResponse> {
+    return this.http.post<MatchSeriesBooksResponse>(
+      `${this.aiBaseUrl}/match-series-books`,
+      request
     );
   }
 }

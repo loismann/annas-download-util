@@ -1,0 +1,204 @@
+<h2 mat-dialog-title>Related Books</h2>
+
+<mat-dialog-content>
+  <div class="modal-layout">
+    <div class="left-panel">
+      <div class="modal-header">
+        <h3>{{ data.bookTitle }}</h3>
+        <p class="author">by {{ data.author }}</p>
+      </div>
+
+      <div *ngIf="data.loading" class="loading-state">
+        <mat-spinner diameter="40"></mat-spinner>
+        <p *ngIf="statusUpdates.length === 0">Finding related books...</p>
+        <p *ngIf="statusUpdates.length > 0">{{ statusUpdates[statusUpdates.length - 1] }}</p>
+      </div>
+
+      <div *ngIf="!data.loading">
+        <!-- Series Summary -->
+        <div class="series-summary" *ngIf="data.seriesSummary">
+          <p>{{ data.seriesSummary }}</p>
+        </div>
+
+        <!-- Same Series Section -->
+        <div class="section" *ngIf="data.sameSeries.length > 0">
+          <h4><mat-icon>menu_book</mat-icon> Books in This Series</h4>
+          <div class="books-grid">
+            <div
+              *ngFor="let book of data.sameSeries"
+              class="book-card"
+              [class.selected]="selectedKeys.has(bookKey(book))"
+              (click)="toggleSelected(book)"
+            >
+              <button
+                mat-icon-button
+                class="select-toggle"
+                (click)="toggleSelected(book); $event.stopPropagation()"
+              >
+                <mat-icon>{{ selectedKeys.has(bookKey(book)) ? 'check_circle' : 'radio_button_unchecked' }}</mat-icon>
+              </button>
+              <div class="book-cover-wrapper">
+                <img *ngIf="book.coverUrl"
+                     [src]="book.coverUrl"
+                     [alt]="book.title + ' cover'"
+                     class="book-cover-image" />
+                <div *ngIf="!book.coverUrl" class="book-cover-placeholder">
+                  <mat-icon>menu_book</mat-icon>
+                  <span class="book-number">{{ book.order }}</span>
+                </div>
+                <span *ngIf="book.coverUrl" class="book-number">{{ book.order }}</span>
+              </div>
+              <div class="book-details">
+                <p class="book-title">{{ book.title }}</p>
+                <p class="book-description">{{ book.description }}</p>
+                <button mat-button color="primary" (click)="onSearchBook(book.title); $event.stopPropagation()">
+                  Search this book
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <mat-divider *ngIf="data.sameSeries.length > 0 && data.otherSeries.length > 0"></mat-divider>
+
+        <!-- Other Series Section -->
+        <div class="section" *ngIf="data.otherSeries.length > 0">
+          <h4><mat-icon>library_books</mat-icon> Other Series by {{ data.author }}</h4>
+
+          <div *ngFor="let series of data.otherSeries" class="other-series-container">
+            <div class="other-series-header" (click)="toggleSeriesExpansion(series.seriesName)">
+              <div class="series-header-content">
+                <div class="series-title">
+                  <mat-icon>{{ isSeriesExpanded(series.seriesName) ? 'expand_more' : 'chevron_right' }}</mat-icon>
+                  <strong>{{ series.seriesName }}</strong>
+                  <span class="series-count">({{ series.bookCount }} books)</span>
+                </div>
+                <p class="series-summary">{{ series.summary }}</p>
+              </div>
+            </div>
+
+            <div *ngIf="isSeriesExpanded(series.seriesName)" class="series-books-grid">
+              <div class="books-grid">
+                <div
+                  *ngFor="let book of series.books"
+                  class="book-card"
+                  [class.selected]="selectedOtherSeriesKeys.has(otherSeriesBookKey(series.seriesName, book))"
+                  (click)="toggleOtherSeriesBook(series.seriesName, book)"
+                >
+                  <button
+                    mat-icon-button
+                    class="select-toggle"
+                    (click)="toggleOtherSeriesBook(series.seriesName, book); $event.stopPropagation()"
+                  >
+                    <mat-icon>{{ selectedOtherSeriesKeys.has(otherSeriesBookKey(series.seriesName, book)) ? 'check_circle' : 'radio_button_unchecked' }}</mat-icon>
+                  </button>
+                  <div class="book-cover-wrapper">
+                    <img *ngIf="book.coverUrl"
+                         [src]="book.coverUrl"
+                         [alt]="book.title + ' cover'"
+                         class="book-cover-image" />
+                    <div *ngIf="!book.coverUrl" class="book-cover-placeholder">
+                      <mat-icon>menu_book</mat-icon>
+                      <span class="book-number">{{ book.order }}</span>
+                    </div>
+                    <span *ngIf="book.coverUrl" class="book-number">{{ book.order }}</span>
+                  </div>
+                  <div class="book-details">
+                    <p class="book-title">{{ book.title }}</p>
+                    <p class="book-description">{{ book.description }}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- No results message -->
+        <div *ngIf="data.sameSeries.length === 0 && data.otherSeries.length === 0" class="no-results">
+          <mat-icon>info</mat-icon>
+          <p>No related books or series found for this book.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="right-panel" *ngIf="selectedBooks.length > 0 || matchResults.length > 0 || preparingMatches || sending">
+      <div class="panel-section">
+        <h4>Bulk Actions</h4>
+        <p class="panel-subtitle">Selected: {{ selectedBooks.length }}</p>
+
+        <mat-form-field appearance="outline" class="w-100">
+          <mat-label>Format</mat-label>
+          <mat-select [(ngModel)]="selectedFormat" (selectionChange)="matchResults = []; sendLog = []">
+            <mat-option value="ALL">All</mat-option>
+            <mat-option value="EPUB">EPUB</mat-option>
+            <mat-option value="MOBI">MOBI</mat-option>
+            <mat-option value="PDF">PDF</mat-option>
+            <mat-option value="AZW3">AZW3</mat-option>
+            <mat-option value="FB2">FB2</mat-option>
+            <mat-option value="TXT">TXT</mat-option>
+          </mat-select>
+        </mat-form-field>
+
+        <button mat-raised-button color="primary" [disabled]="!canReview" (click)="reviewSelections()">
+          Review selections
+        </button>
+      </div>
+
+      <div class="panel-section" *ngIf="preparingMatches">
+        <mat-spinner diameter="32"></mat-spinner>
+        <p>Matching books to format...</p>
+      </div>
+
+      <div class="panel-section" *ngIf="!preparingMatches && matchResults.length > 0">
+        <h5>Review Matches</h5>
+        <div class="match-card" *ngFor="let result of matchResults">
+          <div class="match-header">
+            <strong>{{ result.title }}</strong>
+            <span class="status" [class]="result.status">{{ result.status }}</span>
+          </div>
+          <p class="match-reason" *ngIf="result.reason">{{ result.reason }}</p>
+
+          <div *ngIf="result.status === 'matched' && result.selected">
+            <p class="match-choice">{{ result.selected.title }} — {{ result.selected.format }} — {{ result.selected.fileSize }}</p>
+          </div>
+
+          <div *ngIf="result.status === 'ambiguous'">
+            <mat-form-field appearance="outline" class="w-100">
+              <mat-label>Select match</mat-label>
+              <mat-select (selectionChange)="setSelectedCandidate(result, $event.value)">
+                <mat-option *ngFor="let candidate of result.candidates" [value]="candidate.md5">
+                  {{ candidate.title }} — {{ candidate.authors.join(', ') }} — {{ candidate.format }}
+                </mat-option>
+              </mat-select>
+            </mat-form-field>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel-section" *ngIf="!preparingMatches && matchResults.length > 0">
+        <h5>Send Selected</h5>
+        <div class="action-grid">
+          <button mat-raised-button color="primary" [disabled]="!canSend" (click)="sendSelected('download')">
+            Download
+          </button>
+          <button mat-raised-button color="accent" [disabled]="!canSend" (click)="sendSelected('dropbox')">
+            Dropbox
+          </button>
+          <button mat-raised-button color="primary" [disabled]="!canSend" (click)="sendSelected('kindle-dad')">
+            Dad's Kindle
+          </button>
+          <button mat-raised-button color="primary" [disabled]="!canSend" (click)="sendSelected('kindle-mom')">
+            Mom's Kindle
+          </button>
+        </div>
+        <div *ngIf="sendLog.length > 0" class="send-log">
+          <p *ngFor="let line of sendLog">{{ line }}</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</mat-dialog-content>
+
+<mat-dialog-actions align="end">
+  <button mat-button (click)="onClose()">Close</button>
+</mat-dialog-actions>

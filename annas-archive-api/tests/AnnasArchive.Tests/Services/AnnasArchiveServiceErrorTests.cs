@@ -65,7 +65,7 @@ public class AnnasArchiveServiceErrorTests
         var act = async () => await service.SearchAsync("test", limit: 10);
 
         // Assert
-        await act.Should().ThrowAsync<TaskCanceledException>();
+        await act.Should().ThrowAsync<HttpRequestException>();
     }
 
     [Fact]
@@ -275,7 +275,7 @@ public class AnnasArchiveServiceErrorTests
     [InlineData("")]
     [InlineData("   ")]
     [InlineData("\t\n")]
-    public async Task SearchAsync_WithWhitespaceQuery_ShouldStillMakeRequest(string query)
+    public async Task SearchAsync_WithWhitespaceQuery_ShouldReturnEmptyAndSkipRequest(string query)
     {
         // Arrange
         var mockHandler = new Mock<HttpMessageHandler>();
@@ -300,9 +300,10 @@ public class AnnasArchiveServiceErrorTests
 
         // Assert
         results.Should().NotBeNull();
+        results.Should().BeEmpty();
         mockHandler.Protected().Verify(
             "SendAsync",
-            Times.Once(),
+            Times.Never(),
             ItExpr.IsAny<HttpRequestMessage>(),
             ItExpr.IsAny<CancellationToken>()
         );

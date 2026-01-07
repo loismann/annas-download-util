@@ -1,0 +1,151 @@
+<h2 mat-dialog-title>Edit Book Details</h2>
+
+<mat-dialog-content>
+  <div class="dialog-layout">
+    <!-- Book Cover -->
+    <div class="cover-section">
+      <button type="button" class="cover-button" (click)="toggleCoverPicker()" aria-label="Change cover">
+        <img
+          [src]="displayCoverUrl"
+          [alt]="data.title + ' cover'"
+          (error)="onCoverError($event)"
+          class="book-cover"
+        />
+        <span class="cover-edit-label">Change cover</span>
+      </button>
+      <div class="cover-actions">
+        <button mat-raised-button color="primary" type="button" (click)="sendToKindle('dad')" [disabled]="!data.canSendToKindle || dadsKindleState === 'sending'">
+          <ng-container [ngSwitch]="dadsKindleState">
+            <span *ngSwitchCase="'sending'">Sending…</span>
+            <span *ngSwitchCase="'success'">✔ Sent</span>
+            <span *ngSwitchCase="'error'">✖ Retry</span>
+            <span *ngSwitchDefault>Dad's Kindle</span>
+          </ng-container>
+        </button>
+        <button mat-raised-button color="primary" type="button" (click)="sendToKindle('mom')" [disabled]="!data.canSendToKindle || momsKindleState === 'sending'">
+          <ng-container [ngSwitch]="momsKindleState">
+            <span *ngSwitchCase="'sending'">Sending…</span>
+            <span *ngSwitchCase="'success'">✔ Sent</span>
+            <span *ngSwitchCase="'error'">✖ Retry</span>
+            <span *ngSwitchDefault>Mom's Kindle</span>
+          </ng-container>
+        </button>
+        <button mat-raised-button color="primary" type="button" (click)="sendToDropbox()" [disabled]="!data.canSendToKindle || dropboxState === 'sending'">
+          <ng-container [ngSwitch]="dropboxState">
+            <span *ngSwitchCase="'sending'">Sending…</span>
+            <span *ngSwitchCase="'success'">✔ Sent</span>
+            <span *ngSwitchCase="'error'">✖ Retry</span>
+            <span *ngSwitchDefault>Dropbox</span>
+          </ng-container>
+        </button>
+      </div>
+      <div class="reader-action">
+        <button mat-stroked-button color="primary" type="button" (click)="enableReader()"
+          [disabled]="!data.fileName || data.readerEnabled || readerState === 'sending'">
+          <ng-container [ngSwitch]="readerState">
+            <span *ngSwitchCase="'sending'">Adding…</span>
+            <span *ngSwitchCase="'success'">✔ Added to reader</span>
+            <span *ngSwitchCase="'error'">✖ Retry</span>
+            <span *ngSwitchDefault>{{ data.readerEnabled ? 'In ebook reader' : 'Add to ebook reader' }}</span>
+          </ng-container>
+        </button>
+      </div>
+      <div class="cover-picker" *ngIf="coverPickerOpen">
+        <div class="cover-picker-header">
+          <span>1:1.6 ratio - min {{ minCoverWidth }}x{{ minCoverHeight }}</span>
+          <button mat-button type="button" (click)="refreshCoverCandidates()">Refresh</button>
+        </div>
+        <div class="cover-picker-status" *ngIf="coverCandidatesLoading">Loading covers...</div>
+        <div class="cover-picker-status error" *ngIf="!coverCandidatesLoading && coverCandidatesError">
+          {{ coverCandidatesError }}
+        </div>
+        <div class="cover-grid" *ngIf="!coverCandidatesLoading && coverCandidates.length > 0">
+          <button
+            type="button"
+            class="cover-option"
+            *ngFor="let candidate of coverCandidates"
+            (click)="selectCover(candidate)"
+            [class.selected]="candidate.url === selectedCoverUrl"
+          >
+            <img [src]="candidate.url" [alt]="data.title + ' cover option'" />
+            <span class="cover-dim">{{ candidate.width }}x{{ candidate.height }}</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Edit Form -->
+    <div class="form-section">
+      <div class="book-header">
+        <mat-form-field appearance="outline" class="w-100">
+          <mat-label>Title</mat-label>
+          <input matInput [(ngModel)]="title" placeholder="Book title" />
+        </mat-form-field>
+        <mat-form-field appearance="outline" class="w-100">
+          <mat-label>Authors</mat-label>
+          <input matInput [(ngModel)]="authorsInput" placeholder="Comma-separated authors" />
+        </mat-form-field>
+      </div>
+
+      <!-- Genre Selection -->
+      <mat-form-field appearance="outline" class="w-100">
+        <mat-label>Genre</mat-label>
+        <mat-select [(ngModel)]="selectedGenre" name="genre">
+          <mat-option *ngFor="let genre of genres" [value]="genre">
+            {{ genre }}
+          </mat-option>
+        </mat-select>
+        <mat-hint>Select the main genre that best describes this book</mat-hint>
+      </mat-form-field>
+      <div class="genre-actions">
+        <button mat-stroked-button type="button" (click)="addSelectedGenreAsTag()">+ Add as tag</button>
+      </div>
+
+      <div class="manual-cover-row">
+        <mat-form-field appearance="outline" class="w-100">
+          <mat-label>Cover image URL</mat-label>
+          <input matInput [(ngModel)]="manualCoverUrl" placeholder="https://example.com/cover.jpg" />
+        </mat-form-field>
+        <button mat-stroked-button type="button" (click)="applyManualCoverUrl()">Use URL</button>
+      </div>
+
+      <!-- Series Input -->
+      <mat-form-field appearance="outline" class="w-100">
+        <mat-label>Series (optional)</mat-label>
+        <input matInput [(ngModel)]="series" placeholder="e.g., Foundation #1" />
+        <mat-hint>Include series name and number if applicable</mat-hint>
+      </mat-form-field>
+
+      <!-- Tags Input -->
+      <mat-form-field appearance="outline" class="w-100">
+        <mat-label>Tags</mat-label>
+        <mat-chip-grid #chipGrid aria-label="Book tags">
+          <mat-chip-row
+            *ngFor="let tag of tags"
+            (removed)="removeTag(tag)"
+            [editable]="false"
+          >
+            {{ tag }}
+            <button matChipRemove [attr.aria-label]="'Remove ' + tag">
+              <mat-icon>cancel</mat-icon>
+            </button>
+          </mat-chip-row>
+        </mat-chip-grid>
+        <input
+          placeholder="Add tag..."
+          [matChipInputFor]="chipGrid"
+          [matChipInputSeparatorKeyCodes]="separatorKeysCodes"
+          (matChipInputTokenEnd)="addTag($event)"
+        />
+        <mat-hint>Press Enter or comma to add tags (e.g., Space Opera, Classic)</mat-hint>
+      </mat-form-field>
+    </div>
+  </div>
+</mat-dialog-content>
+
+<mat-dialog-actions align="end">
+  <button mat-button color="warn" (click)="confirmDelete()" [disabled]="isDeleting">Delete book</button>
+  <span class="action-spacer"></span>
+  <button mat-button (click)="onCancel()">Cancel</button>
+  <button mat-raised-button color="primary" (click)="onSave()">Save</button>
+</mat-dialog-actions>

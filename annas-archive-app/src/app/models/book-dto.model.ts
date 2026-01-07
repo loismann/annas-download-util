@@ -14,6 +14,7 @@ export interface BookDto {
 
   /* NEW – track button state in the UI */
   sendState?: 'idle' | 'sending' | 'success' | 'error';
+  libraryState?: 'idle' | 'sending' | 'success' | 'error';
   dadsKindleState?: 'idle' | 'sending' | 'success' | 'error';
   momsKindleState?: 'idle' | 'sending' | 'success' | 'error';
 }

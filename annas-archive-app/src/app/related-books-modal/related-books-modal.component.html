@@ -1,11 +1,12 @@
-<h2 mat-dialog-title>Related Books</h2>
+<h2 mat-dialog-title>{{ data.mode === 'ai' ? 'AI Book Search' : 'Related Books' }}</h2>
 
 <mat-dialog-content>
   <div class="modal-layout">
     <div class="left-panel">
       <div class="modal-header">
         <h3>{{ data.bookTitle }}</h3>
-        <p class="author">by {{ data.author }}</p>
+        <p class="author" *ngIf="data.mode !== 'ai'">by {{ data.author }}</p>
+        <p class="author" *ngIf="data.mode === 'ai'">AI-curated results</p>
       </div>
 
       <div *ngIf="data.loading" class="loading-state">
@@ -15,15 +16,21 @@
       </div>
 
       <div *ngIf="!data.loading">
-        <!-- Series Summary -->
+        <!-- Summary -->
         <div class="series-summary" *ngIf="data.seriesSummary">
+          <h5 class="summary-title">
+            {{ data.mode === 'ai' ? 'Search Summary' : 'Series Summary' }}
+          </h5>
           <p>{{ data.seriesSummary }}</p>
         </div>
 
         <!-- Same Series Section -->
         <div class="section" *ngIf="data.sameSeries.length > 0">
-          <h4><mat-icon>menu_book</mat-icon> Books in This Series</h4>
-          <div class="books-grid">
+          <h4>
+            <mat-icon>menu_book</mat-icon>
+            {{ data.mode === 'ai' ? 'Recommended Books' : 'Books in This Series' }}
+          </h4>
+          <div class="books-grid" [class.ai-grid]="data.mode === 'ai'">
             <div
               *ngFor="let book of data.sameSeries"
               class="book-card"
@@ -51,18 +58,32 @@
               <div class="book-details">
                 <p class="book-title">{{ book.title }}</p>
                 <p class="book-description">{{ book.description }}</p>
-                <button mat-button color="primary" (click)="onSearchBook(book.title); $event.stopPropagation()">
+                <button
+                  *ngIf="data.mode !== 'ai'"
+                  mat-button
+                  color="primary"
+                  (click)="onSearchBook(book.title); $event.stopPropagation()"
+                >
                   Search this book
                 </button>
               </div>
+              <button
+                *ngIf="data.mode === 'ai'"
+                mat-icon-button
+                class="search-icon-button"
+                (click)="onSearchBook(book.title); $event.stopPropagation()"
+                aria-label="Search this book"
+              >
+                <mat-icon>search</mat-icon>
+              </button>
             </div>
           </div>
         </div>
 
-        <mat-divider *ngIf="data.sameSeries.length > 0 && data.otherSeries.length > 0"></mat-divider>
+        <mat-divider *ngIf="data.mode !== 'ai' && data.sameSeries.length > 0 && data.otherSeries.length > 0"></mat-divider>
 
         <!-- Other Series Section -->
-        <div class="section" *ngIf="data.otherSeries.length > 0">
+        <div class="section" *ngIf="data.mode !== 'ai' && data.otherSeries.length > 0">
           <h4><mat-icon>library_books</mat-icon> Other Series by {{ data.author }}</h4>
 
           <div *ngFor="let series of data.otherSeries" class="other-series-container">
@@ -165,9 +186,16 @@
           <div *ngIf="result.status === 'ambiguous'">
             <mat-form-field appearance="outline" class="w-100">
               <mat-label>Select match</mat-label>
-              <mat-select (selectionChange)="setSelectedCandidate(result, $event.value)">
-                <mat-option *ngFor="let candidate of result.candidates" [value]="candidate.md5">
-                  {{ candidate.title }} — {{ candidate.authors.join(', ') }} — {{ candidate.format }}
+              <mat-select
+                (selectionChange)="setSelectedCandidate(result, $event.value)"
+                [panelClass]="'match-select-panel'"
+              >
+                <mat-option
+                  *ngFor="let candidate of getFilteredCandidates(result)"
+                  [value]="candidate.md5"
+                  class="match-option"
+                >
+                  {{ candidate.title }} — {{ candidate.authors.join(', ') || 'Unknown author' }} — {{ candidate.format }}
                 </mat-option>
               </mat-select>
             </mat-form-field>
@@ -178,8 +206,11 @@
       <div class="panel-section" *ngIf="!preparingMatches && matchResults.length > 0">
         <h5>Send Selected</h5>
         <div class="action-grid">
-          <button mat-raised-button color="primary" [disabled]="!canSend" (click)="sendSelected('download')">
-            Download
+          <button mat-raised-button color="primary" [disabled]="!canSend" (click)="sendSelected('library')">
+            <span class="button-label-with-icon">
+              <mat-icon class="inline-icon">menu_book</mat-icon>
+              Library
+            </span>
           </button>
           <button mat-raised-button color="accent" [disabled]="!canSend" (click)="sendSelected('dropbox')">
             Dropbox

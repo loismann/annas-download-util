@@ -1,54 +1,60 @@
 <div class="reader-wrapper" [class.sidebar-hidden]="!showSidebar">
   <section class="controls" *ngIf="showSidebar">
     <div class="control-header">
-      <h2>Dropbox EPUB Reader</h2>
+      <h2>Ebook Reader</h2>
       <button mat-icon-button color="primary" aria-label="Hide menu" (click)="toggleSidebar(false)">
         <mat-icon>chevron_left</mat-icon>
       </button>
     </div>
 
-    <mat-form-field appearance="outline" class="w-100">
-      <mat-label>Select Dropbox EPUB</mat-label>
-      <mat-select
-        [disabled]="loadingBooks"
-        [value]="selectedBookPath"
-        (selectionChange)="onBookSelected($event.value)"
-        panelClass="reader-select-panel"
-        [panelWidth]="'fit-content'">
-        <mat-option *ngFor="let book of dropboxBooks" [value]="book.path">
-          <span class="book-name">{{ book.name }}</span>
-          <span class="book-meta">
-            • {{ (book.size / 1048576) | number: '1.0-1' }} MB
-            <ng-container *ngIf="book.serverModified">
-              • {{ book.serverModified | date:'short' }}
-            </ng-container>
-          </span>
-        </mat-option>
-      </mat-select>
-    </mat-form-field>
+    <div class="reader-select-row">
+      <mat-form-field appearance="outline" class="w-100 reader-select">
+        <mat-label>Select library book</mat-label>
+        <mat-select
+          [disabled]="loadingBooks"
+          [value]="selectedBookFileName"
+          (selectionChange)="onBookSelected($event.value)"
+          panelClass="reader-select-panel"
+          [panelWidth]="'fit-content'">
+          <mat-option *ngFor="let book of readerBooks" [value]="book.fileName">
+            <span class="book-name">{{ book.title }}</span>
+            <span class="book-meta">
+              • {{ book.format }}
+              <ng-container *ngIf="book.authors?.length">
+                • {{ book.authors[0] }}
+              </ng-container>
+              <ng-container *ngIf="book.hasSummaries">
+                • Summary saved
+              </ng-container>
+            </span>
+          </mat-option>
+        </mat-select>
+      </mat-form-field>
+      <button mat-stroked-button color="primary" type="button" class="reader-add-button" (click)="goToLibrary()" aria-label="Add from library">
+        <mat-icon>add</mat-icon>
+      </button>
+    </div>
 
     <mat-form-field
       appearance="outline"
       class="w-100"
-      *ngIf="previouslyViewed.length">
+      [class.dropdown-disabled]="!previouslyViewed.length">
       <mat-label>Previously viewed</mat-label>
       <mat-select
+        [disabled]="!previouslyViewed.length"
         [value]="null"
         (selectionChange)="onBookSelected($event.value)"
         panelClass="reader-select-panel"
         [panelWidth]="'fit-content'">
-        <mat-option *ngFor="let prev of previouslyViewed" [value]="prev.path">
-          {{ prev.name }}
-          <span class="book-meta" *ngIf="prev.serverModified">
-            • {{ prev.serverModified | date:'short' }}
-          </span>
+        <mat-option *ngFor="let prev of previouslyViewed" [value]="prev.fileName">
+          {{ prev.title }}
         </mat-option>
       </mat-select>
     </mat-form-field>
 
     <div class="book-path" *ngIf="selectedBook">
-      <div>Path: {{ selectedBook.path }}</div>
-      <div>Updated: {{ selectedBook.serverModified | date:'short' }}</div>
+      <div>File: {{ selectedBook.fileName }}</div>
+      <div *ngIf="selectedBook.authors?.length">Author: {{ selectedBook.authors.join(', ') }}</div>
     </div>
 
     <button mat-flat-button color="accent" class="w-100 vocab-btn-main"
@@ -126,54 +132,102 @@
       </div>
     </div>
 
-    <mat-form-field appearance="outline" class="w-100" *ngIf="chapters.length">
+    <div class="reader-controls-section" [class.dropdown-disabled]="!chapterContent">
+      <button mat-button class="cache-toggle" (click)="showReaderControlsSection = !showReaderControlsSection">
+        <mat-icon>{{ showReaderControlsSection ? 'expand_less' : 'expand_more' }}</mat-icon>
+        Reader Controls
+      </button>
+      <div class="reader-controls-content" *ngIf="showReaderControlsSection">
+        <div class="control-row font-row">
+          <span class="control-label">Font</span>
+          <div class="segmented-control" role="radiogroup" aria-label="Font family">
+            <button
+              type="button"
+              class="segmented-button"
+              [class.active]="fontFamily === 'serif'"
+              [disabled]="!chapterContent"
+              (click)="fontFamily = 'serif'">
+              Serif
+            </button>
+            <button
+              type="button"
+              class="segmented-button"
+              [class.active]="fontFamily === 'sans'"
+              [disabled]="!chapterContent"
+              (click)="fontFamily = 'sans'">
+              Sans
+            </button>
+            <button
+              type="button"
+              class="segmented-button"
+              [class.active]="fontFamily === 'mono'"
+              [disabled]="!chapterContent"
+              (click)="fontFamily = 'mono'">
+              Mono
+            </button>
+          </div>
+        </div>
+        <div class="control-row">
+          <span class="control-label">Size</span>
+          <div class="size-stepper">
+            <button mat-icon-button aria-label="Decrease font" (click)="changeFontSize(-1)" [disabled]="!chapterContent || fontSize <= 12">
+              <mat-icon>remove</mat-icon>
+            </button>
+            <span class="size-value">{{ fontSize }}</span>
+            <button mat-icon-button aria-label="Increase font" (click)="changeFontSize(1)" [disabled]="!chapterContent || fontSize >= 28">
+              <mat-icon>add</mat-icon>
+            </button>
+          </div>
+        </div>
+        <div class="control-row">
+          <span class="control-label">Theme</span>
+          <div class="segmented-control" role="radiogroup" aria-label="Reader theme">
+            <button
+              type="button"
+              class="segmented-button"
+              [class.active]="theme === 'light'"
+              [disabled]="!chapterContent"
+              (click)="theme = 'light'">
+              Light
+            </button>
+            <button
+              type="button"
+              class="segmented-button"
+              [class.active]="theme === 'sepia'"
+              [disabled]="!chapterContent"
+              (click)="theme = 'sepia'">
+              Sepia
+            </button>
+            <button
+              type="button"
+              class="segmented-button"
+              [class.active]="theme === 'dark'"
+              [disabled]="!chapterContent"
+              (click)="theme = 'dark'">
+              Dark
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <mat-form-field appearance="outline" class="w-100" [class.dropdown-disabled]="!chapters.length">
       <mat-label>Chapter</mat-label>
       <mat-select
-        [disabled]="loadingChapters || loadingContent"
+        [disabled]="!chapters.length || loadingChapters || loadingContent"
         [value]="selectedChapterId"
         (selectionChange)="onChapterSelected($event.value)"
         panelClass="reader-select-panel"
         [panelWidth]="'fit-content'">
         <mat-option *ngFor="let chapter of chapters" [value]="chapter.id">
           <div class="chapter-line" [style.paddingLeft.px]="chapter.level * 12">
-            <span class="chapter-title">{{ chapter.title }}</span>
+            <span class="chapter-title">{{ chapter.displayLabel || chapter.title }}</span>
             <span class="chapter-meta">({{ chapter.wordCount | number }} words)</span>
             <mat-icon *ngIf="fullChapterSummaryCache.has(chapter.id)" class="cached-indicator" [matTooltip]="'Summary cached for offline access'">cloud_done</mat-icon>
           </div>
         </mat-option>
       </mat-select>
     </mat-form-field>
-
-    <button
-      mat-stroked-button
-      color="primary"
-      class="w-100 full-chapter-summary-btn"
-      [disabled]="!chapterContent || loadingFullChapterSummary"
-      (click)="summarizeFullChapter()">
-      <mat-icon>summarize</mat-icon>
-      {{ loadingFullChapterSummary ? 'Working on full chapter...' : 'Generate full chapter summary' }}
-    </button>
-
-    <div class="chapter-progress" *ngIf="chapterSummaryProgress">
-      <div class="progress-header">
-        <span class="stage-label">{{ getStageLabel(chapterSummaryProgress.stage) }}</span>
-        <span class="step-counter">{{ chapterSummaryProgress.currentStep }}/{{ chapterSummaryProgress.totalSteps }}</span>
-      </div>
-      <mat-progress-bar
-        mode="determinate"
-        [value]="(chapterSummaryProgress.currentStep / chapterSummaryProgress.totalSteps) * 100"
-        [color]="chapterSummaryProgress.stage === 'error' ? 'warn' : 'primary'">
-      </mat-progress-bar>
-      <div class="progress-message">
-        <mat-icon [class.success]="!chapterSummaryProgress.error" [class.error]="!!chapterSummaryProgress.error">
-          {{ chapterSummaryProgress.error ? 'error' : 'check_circle' }}
-        </mat-icon>
-        <span>{{ chapterSummaryProgress.message }}</span>
-      </div>
-      <div class="error-detail" *ngIf="chapterSummaryProgress.error">
-        {{ chapterSummaryProgress.error }}
-      </div>
-    </div>
 
     <div class="book-search" *ngIf="selectedBookPath">
       <h3>Search entire book</h3>
@@ -194,10 +248,10 @@
       </mat-form-field>
       <div class="error" *ngIf="bookSearchError">{{ bookSearchError }}</div>
 
-      <div class="book-results" *ngIf="bookSearchResults.length">
-        <mat-form-field appearance="outline" class="w-100">
+      <div class="book-results">
+        <mat-form-field appearance="outline" class="w-100" [class.dropdown-disabled]="!bookSearchResults.length">
           <mat-label>Matching chapters</mat-label>
-          <mat-select (selectionChange)="goToBookMatch($event.value)">
+          <mat-select (selectionChange)="goToBookMatch($event.value)" [disabled]="!bookSearchResults.length">
             <mat-option *ngFor="let res of bookSearchResults" [value]="res">
               <div class="chapter-line">
                 <span class="chapter-title">{{ res.title }}</span>
@@ -239,17 +293,24 @@
           </div>
           <div class="analysis-mode-group">
             <div class="analysis-combo">
-            <mat-select class="analysis-mode-select" [(value)]="analysisMode" panelClass="analysis-mode-panel">
+            <mat-select class="analysis-mode-select"
+                        [(value)]="analysisMode"
+                        (selectionChange)="onAnalysisModeChange($event.value)"
+                        panelClass="analysis-mode-panel">
               <mat-option value="section">Section Summary</mat-option>
               <mat-option value="chapter">Chapter analysis</mat-option>
             </mat-select>
             <button class="summary-btn" mat-stroked-button color="primary"
-                    (click)="analysisMode === 'section' && currentSectionIndex !== null ? generateSectionSummary(currentSectionIndex) : summarizeFullChapter()"
+                    (click)="handleSummaryAction()"
                     [disabled]="(analysisMode === 'section' ? (loadingSectionSummary || currentSectionIndex === null || !chunkBoundaries) : loadingFullChapterSummary) || !chapterContent">
-              <mat-icon>{{ analysisMode === 'section' && currentSectionIndex !== null && hasSectionSummary(currentSectionIndex) ? 'refresh' : 'summarize' }}</mat-icon>
+              <mat-icon>{{
+                analysisMode === 'section' && currentSectionIndex !== null && hasSectionSummary(currentSectionIndex)
+                  ? 'refresh'
+                  : (analysisMode === 'chapter' && hasFullChapterSummary() ? 'refresh' : 'summarize')
+              }}</mat-icon>
               {{ analysisMode === 'section'
                 ? (loadingSectionSummary ? 'Generating...' : (currentSectionIndex !== null && hasSectionSummary(currentSectionIndex) ? 'Regenerate Section' : 'Generate Section'))
-                : (loadingFullChapterSummary ? 'Generating...' : 'Summarize Chapter')
+                : (loadingFullChapterSummary ? 'Generating...' : (hasFullChapterSummary() ? 'Regenerate Chapter' : 'Summarize Chapter'))
               }}
             </button>
           </div>
@@ -337,26 +398,38 @@
           </ng-container>
 
           <ng-container *ngIf="analysisMode === 'chapter'">
+            <div class="section-summary-progress" *ngIf="loadingFullChapterSummary || chapterSummaryProgress">
+              <div class="progress-header">
+                <span class="stage-label">
+                  {{ chapterSummaryProgress ? getStageLabel(chapterSummaryProgress.stage) : 'Generating Summary' }}
+                </span>
+                <mat-icon class="spinning">hourglass_empty</mat-icon>
+              </div>
+              <mat-progress-bar
+                [mode]="chapterSummaryProgress ? 'determinate' : 'indeterminate'"
+                color="primary"
+                [value]="chapterSummaryProgress ? (chapterSummaryProgress.currentStep / chapterSummaryProgress.totalSteps) * 100 : null">
+              </mat-progress-bar>
+              <div class="progress-message">
+                <mat-icon class="pulse">{{ chapterSummaryProgress?.error ? 'error' : 'auto_awesome' }}</mat-icon>
+                <span>
+                  {{ chapterSummaryProgress?.message || 'Analyzing chapter content and generating summary...' }}
+                </span>
+              </div>
+              <div class="error-detail" *ngIf="chapterSummaryProgress?.error">
+                {{ chapterSummaryProgress?.error }}
+              </div>
+            </div>
+
             <div class="full-chapter-summary" *ngIf="fullChapterSummary; else chapterPlaceholder">
               <div class="full-summary-header">
                 <h4>Full chapter summary</h4>
-                <div class="token-meta" *ngIf="fullSummaryTokens">
-                  <span>Total: {{ fullSummaryTokens.total | number }}</span>
-                  <span>Prompt: {{ fullSummaryTokens.prompt | number }}</span>
-                  <span>Completion: {{ fullSummaryTokens.completion | number }}</span>
-                  <span *ngIf="fullSummaryTokens.allowancePercent !== undefined">
-                    Used: {{ fullSummaryTokens.allowancePercent | number:'1.0-2' }}%
-                  </span>
-                  <span *ngIf="fullSummaryTokens.remaining !== undefined">
-                    Remaining: {{ fullSummaryTokens.remaining | number }}
-                  </span>
-                </div>
               </div>
               <div class="full-summary-body markdown-content" [innerHTML]="fullChapterSummaryHtml"></div>
             </div>
             <ng-template #chapterPlaceholder>
               <div class="analysis-placeholder">
-                No chapter summary yet. Generate one from the sidebar and it will be saved for this chapter.
+                No chapter summary yet. Generate one from the analysis panel to save it for this chapter.
               </div>
             </ng-template>
           </ng-container>
@@ -398,47 +471,53 @@
     </div>
 
     <div class="state" *ngIf="!selectedBookPath && !loadingBooks && !error">
-      Pick an EPUB from Dropbox to start reading.
+      Pick a book from your library to start reading.
     </div>
 
     <div class="reader-controls" *ngIf="chapterContent">
       <div class="reader-controls-left">
-        <button mat-icon-button aria-label="Previous page" (click)="pageBack()" [disabled]="wordOffset === 0">
+        <button mat-icon-button aria-label="Previous page" (click)="pageBack()" [disabled]="!canPageBack()">
           <mat-icon>chevron_left</mat-icon>
         </button>
-        <div class="page-indicator">Page {{ currentPage }} / {{ totalPages }}</div>
+        <div class="page-indicator">
+          Page {{ currentPage }} / {{ totalPages }}
+          • <span class="page-indicator-muted">Book: {{ currentBookPage }} / {{ totalBookPages }}</span>
+          • <span class="page-indicator-muted">{{ bookProgressPercent }}%</span>
+        </div>
         <button mat-icon-button aria-label="Next page" (click)="pageForward()" [disabled]="wordOffset + pageSizeWords >= (chapterContent ? chapterContent.wordCount : 0)">
           <mat-icon>chevron_right</mat-icon>
         </button>
       </div>
       <div class="reader-controls-right">
-        <div class="control-group">
-          <span class="control-label">Font</span>
-          <mat-button-toggle-group [(ngModel)]="fontFamily" aria-label="Font family">
-            <mat-button-toggle value="serif">Serif</mat-button-toggle>
-            <mat-button-toggle value="sans">Sans</mat-button-toggle>
-            <mat-button-toggle value="mono">Mono</mat-button-toggle>
-          </mat-button-toggle-group>
-        </div>
-        <div class="control-group">
-          <span class="control-label">Size</span>
-          <div class="size-stepper">
-            <button mat-icon-button aria-label="Decrease font" (click)="changeFontSize(-1)" [disabled]="fontSize <= 12">
-              <mat-icon>remove</mat-icon>
+        <div class="control-group bookmark-group">
+          <button
+            type="button"
+            class="bookmark-square"
+            [class.active]="isCurrentPageBookmarked"
+            (click)="toggleBookmark()"
+            [disabled]="!chapterContent"
+            aria-label="Toggle bookmark">
+            <mat-icon>{{ isCurrentPageBookmarked ? 'bookmark' : 'bookmark_border' }}</mat-icon>
+          </button>
+          <div class="bookmark-dropdown" (click)="$event.stopPropagation()">
+            <button
+              type="button"
+              class="bookmark-dropdown-trigger"
+              [disabled]="!visibleBookmarks.length"
+              (click)="toggleBookmarksDropdown()">
+              <span class="bookmark-dropdown-label">{{ selectedBookmarkLabel }}</span>
+              <mat-icon class="bookmark-dropdown-arrow">expand_more</mat-icon>
             </button>
-            <span class="size-value">{{ fontSize }}</span>
-            <button mat-icon-button aria-label="Increase font" (click)="changeFontSize(1)" [disabled]="fontSize >= 28">
-              <mat-icon>add</mat-icon>
-            </button>
+            <div class="bookmark-dropdown-menu" *ngIf="showBookmarksDropdown">
+              <button
+                type="button"
+                class="bookmark-dropdown-item"
+                *ngFor="let bookmark of visibleBookmarks"
+                (click)="selectBookmarkFromDropdown(bookmark.id)">
+                {{ formatBookmarkLabel(bookmark) }}
+              </button>
+            </div>
           </div>
-        </div>
-        <div class="control-group">
-          <span class="control-label">Theme</span>
-          <mat-button-toggle-group [(ngModel)]="theme" aria-label="Reader theme">
-            <mat-button-toggle value="light">Light</mat-button-toggle>
-            <mat-button-toggle value="sepia">Sepia</mat-button-toggle>
-            <mat-button-toggle value="dark">Dark</mat-button-toggle>
-          </mat-button-toggle-group>
         </div>
         <div class="control-group">
           <button mat-stroked-button color="accent" class="selection-btn"
@@ -458,6 +537,22 @@
     (click)="toggleSidebar(true)">
     <mat-icon>chevron_right</mat-icon>
   </button>
+</div>
+
+<div class="confirm-overlay" *ngIf="showChapterRegenerateConfirm">
+  <div class="confirm-modal">
+    <div class="confirm-header">
+      <h3>Regenerate chapter summary?</h3>
+    </div>
+    <p>
+      This summary uses an expensive GPT model. Regenerate only if the existing
+      summary is outdated or incorrect.
+    </p>
+    <div class="confirm-actions">
+      <button mat-stroked-button color="primary" (click)="cancelRegenerateChapterSummary()">Cancel</button>
+      <button mat-flat-button color="warn" (click)="confirmRegenerateChapterSummary()">Regenerate</button>
+    </div>
+  </div>
 </div>
 
 <div class="vocab-modal-overlay" *ngIf="showVocabModal">

@@ -18,6 +18,16 @@ const MOCK_EPUBS = [
   }
 ];
 
+const MOCK_READER_BOOKS = MOCK_EPUBS.map((book, idx) => ({
+  fileName: book.name,
+  readerKey: book.path,
+  title: book.name.replace(/\.epub$/i, ''),
+  authors: ['Unknown Author'],
+  format: 'EPUB',
+  coverUrl: null,
+  hasSummaries: idx === 0
+}));
+
 const MOCK_CHAPTERS = [
   { id: 0, title: 'Chapter 1: Keter', level: 0, wordCount: 8542 },
   { id: 1, title: 'Chapter 2: Hokhmah', level: 0, wordCount: 7234 },
@@ -109,6 +119,11 @@ export const mockDataInterceptor: HttpInterceptorFn = (req, next) => {
     return of(new HttpResponse({ status: 200, body: MOCK_EPUBS })).pipe(delay(300));
   }
 
+  // Mock library reader list
+  if (url.includes('/api/library/reader/books') && req.method === 'GET') {
+    return of(new HttpResponse({ status: 200, body: MOCK_READER_BOOKS })).pipe(delay(300));
+  }
+
   // Mock EPUB chapters
   if (url.includes('/dropbox/epub/chapters') && req.method === 'GET') {
     return of(new HttpResponse({
@@ -117,8 +132,26 @@ export const mockDataInterceptor: HttpInterceptorFn = (req, next) => {
     })).pipe(delay(200));
   }
 
+  if (url.includes('/api/library/reader/epub/chapters') && req.method === 'GET') {
+    return of(new HttpResponse({
+      status: 200,
+      body: { chapters: MOCK_CHAPTERS }
+    })).pipe(delay(200));
+  }
+
   // Mock chapter content
   if (url.includes('/dropbox/epub/chapter') && req.method === 'GET') {
+    const wordCount = MOCK_CHAPTER_CONTENT.match(/\S+/g)?.length ?? MOCK_CHAPTER_CONTENT.length;
+    return of(new HttpResponse({
+      status: 200,
+      body: {
+        content: MOCK_CHAPTER_CONTENT,
+        wordCount
+      }
+    })).pipe(delay(400));
+  }
+
+  if (url.includes('/api/library/reader/epub/chapter') && req.method === 'GET') {
     const wordCount = MOCK_CHAPTER_CONTENT.match(/\S+/g)?.length ?? MOCK_CHAPTER_CONTENT.length;
     return of(new HttpResponse({
       status: 200,
@@ -143,8 +176,28 @@ export const mockDataInterceptor: HttpInterceptorFn = (req, next) => {
     })).pipe(delay(150));
   }
 
+  if (url.includes('/api/library/reader/epub/status') && req.method === 'GET') {
+    return of(new HttpResponse({
+      status: 200,
+      body: {
+        percent: 100,
+        cachedAt: new Date().toISOString(),
+        chaptersCached: 4,
+        chaptersTotal: 4,
+        inProgress: false
+      }
+    })).pipe(delay(150));
+  }
+
   // Mock start indexing
   if (url.includes('/dropbox/epub/index') && req.method === 'POST') {
+    return of(new HttpResponse({
+      status: 200,
+      body: { started: true }
+    })).pipe(delay(100));
+  }
+
+  if (url.includes('/api/library/reader/epub/index') && req.method === 'POST') {
     return of(new HttpResponse({
       status: 200,
       body: { started: true }
@@ -159,8 +212,29 @@ export const mockDataInterceptor: HttpInterceptorFn = (req, next) => {
     })).pipe(delay(100));
   }
 
+  if (url.includes('/api/library/reader/epub/index') && req.method === 'DELETE') {
+    return of(new HttpResponse({
+      status: 200,
+      body: { removed: true }
+    })).pipe(delay(100));
+  }
+
   // Mock book search
   if (url.includes('/dropbox/epub/search') && req.method === 'GET') {
+    return of(new HttpResponse({
+      status: 200,
+      body: [
+        {
+          chapterId: 1,
+          title: 'Chapter 2: Hokhmah',
+          matchCount: 3,
+          snippet: '...curious Clocks and Motions of Return...'
+        }
+      ]
+    })).pipe(delay(500));
+  }
+
+  if (url.includes('/api/library/reader/epub/search') && req.method === 'GET') {
     return of(new HttpResponse({
       status: 200,
       body: [

@@ -19,18 +19,19 @@ import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatSliderModule } from '@angular/material/slider';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatDialog } from '@angular/material/dialog';
+import { Router } from '@angular/router';
 import { CharacterGraphModalComponent } from '../character-graph-modal/character-graph-modal.component';
 
 import {
   DropboxBookSearchResult,
   DropboxChapterContent,
   DropboxEpubChapter,
-  DropboxEpubFile,
   DropboxEpubStatus,
   FlashcardItem,
   FullChapterSummaryResponse,
   ChunkBoundariesResponse,
-  SectionSummaryResponse
+  SectionSummaryResponse,
+  LibraryReaderBook
 } from '../models/dropbox-epub.model';
 import { AnnaArchiveApiService } from '../services/anna-archive-api.service';
 import { VocabularyService, VocabularyWord } from '../services/vocabulary.service';
@@ -41,9 +42,18 @@ import { Subject } from 'rxjs';
 import { takeUntil } from 'rxjs/operators';
 
 interface ViewedBook {
-  path: string;
-  name: string;
-  serverModified?: string;
+  fileName: string;
+  readerKey: string;
+  title: string;
+  updatedAt?: string;
+}
+
+interface BookmarkEntry {
+  id: string;
+  readerKey: string;
+  chapterId: number;
+  wordOffset: number;
+  createdAt: string;
 }
 
 @Component({
@@ -68,10 +78,11 @@ interface ViewedBook {
 export class DropboxReaderComponent implements OnInit, OnDestroy {
   private destroy$ = new Subject<void>();
 
-  dropboxBooks: DropboxEpubFile[] = [];
+  readerBooks: LibraryReaderBook[] = [];
   chapters: DropboxEpubChapter[] = [];
 
   selectedBookPath: string | null = null;
+  selectedBookFileName: string | null = null;
   selectedChapterId: number | null = null;
   chapterContent: DropboxChapterContent | null = null;
 
@@ -93,6 +104,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
   bookSearchResults: DropboxBookSearchResult[] = [];
   bookSearchError: string | null = null;
   private pendingCharOffset: number | null = null;
+  private pendingWordOffset: number | null = null;
 
   topHeightPercent = 50;
   isResizing = false;
@@ -134,6 +146,8 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
   showSidebar = true;
   showCacheSection = false;
   showAiUsageSection = false;
+  showReaderControlsSection = false;
+  showChapterRegenerateConfirm = false;
   fontFamily: 'serif' | 'sans' | 'mono' = 'serif';
   fontSize: number = 14;
   theme: 'light' | 'sepia' | 'dark' = 'sepia';
@@ -141,6 +155,9 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
   selectedText: string | null = null;
   tokenUsage: { promptTokens: number; completionTokens: number; totalTokens: number; allowance?: number | null; allowanceUsedPercent?: number | null; tokensRemaining?: number | null; resetsAtUtc?: string | null; totalCostUsd?: number | null } | null = null;
   fullChapterSummaryCache = new Map<number, FullChapterSummaryResponse>();
+  bookmarks: BookmarkEntry[] = [];
+  bookmarkSelectValue: string | null = null;
+  showBookmarksDropdown = false;
 
   // Section/chunk boundary state
   chunkBoundaries: ChunkBoundariesResponse | null = null;
@@ -155,6 +172,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
   sectionSummaries = new Map<number, SectionSummaryResponse>();
   loadingSectionSummary = false;
   currentSectionIndex: number | null = null;
+  private chapterContentCache = new Map<string, DropboxChapterContent>();
 
   get readerTextStyles(): any {
     return {
@@ -179,11 +197,13 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
     private sanitizer: DomSanitizer,
     private authService: AuthService,
     private ngZone: NgZone,
-    private dialog: MatDialog
+    private dialog: MatDialog,
+    private router: Router
   ) {}
 
   ngOnInit(): void {
     this.loadPreviouslyViewed();
+    this.loadBookmarks();
     this.loadBooks();
     this.vocabFilters = this.vocabularyService.getBookFilters();
     this.timeoutIds.push(setTimeout(() => this.recalcPageSize(), 0));
@@ -202,8 +222,54 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
     this.destroy$.complete();
   }
 
-  get selectedBook(): DropboxEpubFile | null {
-    return this.dropboxBooks.find(b => b.path === this.selectedBookPath) ?? null;
+  get selectedBook(): LibraryReaderBook | null {
+    return this.readerBooks.find(b => b.readerKey === this.selectedBookPath) ?? null;
+  }
+
+  get totalBookWords(): number {
+    return this.chapters.reduce((sum, ch) => sum + (ch.wordCount || 0), 0);
+  }
+
+  get totalBookPages(): number {
+    if (!this.pageSizeWords || this.pageSizeWords <= 0) return 1;
+    const totalWords = this.totalBookWords;
+    return Math.max(1, Math.ceil(totalWords / this.pageSizeWords));
+  }
+
+  get currentBookWordOffset(): number {
+    if (!this.selectedChapterId) return this.wordOffset;
+    const chapterIndex = this.chapters.findIndex(ch => ch.id === this.selectedChapterId);
+    if (chapterIndex < 0) return this.wordOffset;
+    const before = this.chapters
+      .slice(0, chapterIndex)
+      .reduce((sum, ch) => sum + (ch.wordCount || 0), 0);
+    return before + this.wordOffset;
+  }
+
+  get currentBookPage(): number {
+    if (!this.pageSizeWords || this.pageSizeWords <= 0) return 1;
+    return Math.floor(this.currentBookWordOffset / this.pageSizeWords) + 1;
+  }
+
+  get bookProgressPercent(): number {
+    const total = this.totalBookWords;
+    if (!total) return 0;
+    const progress = (this.currentBookWordOffset + 1) / total;
+    return Math.min(100, Math.max(0, Math.round(progress * 100)));
+  }
+
+  get visibleBookmarks(): BookmarkEntry[] {
+    if (!this.selectedBookPath) return [];
+    return this.bookmarks
+      .filter(b => b.readerKey === this.selectedBookPath)
+      .sort((a, b) => a.chapterId - b.chapterId || a.wordOffset - b.wordOffset);
+  }
+
+  get isCurrentPageBookmarked(): boolean {
+    if (!this.selectedBookPath || this.selectedChapterId === null) return false;
+    const page = Math.floor(this.wordOffset / Math.max(1, this.pageSizeWords));
+    return this.visibleBookmarks.some(b => b.chapterId === this.selectedChapterId &&
+      Math.floor(b.wordOffset / Math.max(1, this.pageSizeWords)) === page);
   }
 
   get visibleText(): string {
@@ -457,9 +523,17 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
     this.loadBooks();
   }
 
-  onBookSelected(path: string): void {
-    if (!path) return;
-    this.selectedBookPath = path;
+  goToLibrary(): void {
+    this.router.navigate(['/library']);
+  }
+
+  onBookSelected(fileName: string): void {
+    if (!fileName) return;
+    const selected = this.readerBooks.find(book => book.fileName === fileName);
+    if (!selected) return;
+
+    this.selectedBookFileName = selected.fileName;
+    this.selectedBookPath = selected.readerKey;
     this.selectedChapterId = null;
     this.chapterContent = null;
     this.searchTerm = '';
@@ -470,49 +544,110 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
     this.formattedAnalysis = null;
     this.vocabularyWords = [];
     this.analysisText = null;
+    this.status = null;
+    this.bookmarkSelectValue = null;
+    this.pendingWordOffset = null;
+    this.chunkBoundariesProgress = null;
+    this.loadingChunkBoundaries = false;
+    if (this.statusPoll) {
+      clearInterval(this.statusPoll);
+      this.statusPoll = null;
+    }
 
     // Note: Preloading disabled for performance - cached summaries are loaded on-demand instead
     // Previously supported offline preload; intentionally no-op for lean runtime.
 
-    this.recordViewed(path);
+    this.recordViewed(selected);
     if (this.selectedBook) {
-      this.vocabularyService.registerBook(path, this.selectedBook.name);
+      this.vocabularyService.registerBook(this.selectedBookPath ?? '', this.selectedBook.title);
       this.vocabFilters = this.vocabularyService.getBookFilters();
     }
-    this.fetchStatus(path, true);
-    this.loadChapters(path);
+    this.fetchStatus(selected.fileName, true);
+    this.loadChapters(selected.fileName);
   }
 
-  onChapterSelected(chapterId: number): void {
-    if (!this.selectedBookPath) return;
+  onChapterSelected(chapterId: number, preservePendingOffset: boolean = false): void {
+    if (!this.selectedBookFileName || !this.selectedBookPath) return;
     this.selectedBookPath = this.selectedBookPath; // keep for clarity
     this.selectedChapterId = chapterId;
     this.chapterContent = null;
     this.searchTerm = '';
     this.wordOffset = 0;
-    this.pendingCharOffset = null;
+    if (!preservePendingOffset) {
+      this.pendingCharOffset = null;
+      this.pendingWordOffset = null;
+    } else if (this.pendingCharOffset != null) {
+      this.pendingWordOffset = null;
+    }
     this.error = null;
     this.summary = null;
     this.formattedAnalysis = null;
     this.vocabularyWords = [];
     this.analysisText = null;
-    this.analysisMode = 'page';
     this.fullChapterSummary = null;
     this.fullSummaryTokens = null;
     this.chunkBoundaries = null;
     this.sectionSummaries.clear();
     this.currentSectionIndex = null;
 
-    this.loadChapterContent(this.selectedBookPath, chapterId);
-    this.loadChunkBoundaries(this.selectedBookPath, chapterId);
+    this.loadChapterContent(this.selectedBookFileName, chapterId);
+    if (this.analysisMode === 'section') {
+      this.loadChunkBoundaries(this.selectedBookPath, chapterId);
+    }
   }
 
   onSearchTermChange(): void {
     // trigger template update
   }
 
+  onAnalysisModeChange(mode: 'section' | 'page' | 'chapter'): void {
+    this.analysisMode = mode;
+    if (mode === 'section' && this.selectedBookPath && this.selectedChapterId !== null && !this.chunkBoundaries) {
+      this.loadChunkBoundaries(this.selectedBookPath, this.selectedChapterId);
+    }
+  }
+
   clearSearch(): void {
     this.searchTerm = '';
+  }
+
+  handleSummaryAction(): void {
+    if (this.analysisMode === 'section') {
+      if (this.currentSectionIndex !== null) {
+        this.generateSectionSummary(this.currentSectionIndex);
+      }
+      return;
+    }
+
+    if (this.hasFullChapterSummary()) {
+      this.showChapterRegenerateConfirm = true;
+      return;
+    }
+
+    this.summarizeFullChapter();
+  }
+
+  confirmRegenerateChapterSummary(): void {
+    this.showChapterRegenerateConfirm = false;
+    this.summarizeFullChapter(true);
+  }
+
+  cancelRegenerateChapterSummary(): void {
+    this.showChapterRegenerateConfirm = false;
+  }
+
+  hasFullChapterSummary(): boolean {
+    if (this.selectedChapterId === null) return false;
+    if (this.fullChapterSummary) return true;
+    return this.fullChapterSummaryCache.has(this.selectedChapterId);
+  }
+
+  canPageBack(): boolean {
+    if (!this.chapterContent) return false;
+    if (this.wordOffset > 0) return true;
+    if (this.selectedChapterId === null) return false;
+    const currentChapterIndex = this.chapters.findIndex(ch => ch.id === this.selectedChapterId);
+    return currentChapterIndex > 0;
   }
 
   pageForward(): void {
@@ -550,7 +685,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
         console.log(`📖 Start of chapter ${this.selectedChapterId} reached, going back to chapter ${prevChapter.id}`);
         // Store that we want to go to the last page of the previous chapter
         this.pendingCharOffset = -1; // Special marker for "last page"
-        this.onChapterSelected(prevChapter.id);
+    this.onChapterSelected(prevChapter.id, true);
         return;
       }
     }
@@ -560,11 +695,11 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
   }
 
   startIndexing(): void {
-    if (!this.selectedBookPath) return;
-    this.api.startDropboxIndex(this.selectedBookPath)
+    if (!this.selectedBookFileName) return;
+    this.api.startLibraryReaderIndex(this.selectedBookFileName)
       .pipe(takeUntil(this.destroy$))
       .subscribe({
-      next: () => this.fetchStatus(this.selectedBookPath!, true),
+      next: () => this.fetchStatus(this.selectedBookFileName!, true),
       error: err => {
         console.error('Failed to start indexing', err);
         this.error = 'Unable to start indexing.';
@@ -573,8 +708,8 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
   }
 
   deleteIndex(): void {
-    if (!this.selectedBookPath) return;
-    this.api.deleteDropboxIndex(this.selectedBookPath)
+    if (!this.selectedBookFileName) return;
+    this.api.deleteLibraryReaderIndex(this.selectedBookFileName)
       .pipe(takeUntil(this.destroy$))
       .subscribe({
       next: () => {
@@ -593,7 +728,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
   searchWholeBook(): void {
     this.bookSearchError = null;
     this.bookSearchResults = [];
-    if (!this.selectedBookPath) {
+    if (!this.selectedBookFileName) {
       this.bookSearchError = 'Select a book first.';
       return;
     }
@@ -604,7 +739,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
       return;
     }
 
-    this.api.searchDropboxBook(this.selectedBookPath, term)
+    this.api.searchLibraryReaderBook(this.selectedBookFileName, term)
       .pipe(takeUntil(this.destroy$))
       .subscribe({
       next: results => {
@@ -621,9 +756,89 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
   }
 
   goToBookMatch(match: DropboxBookSearchResult): void {
-    if (!this.selectedBookPath) return;
+    if (!this.selectedBookFileName) return;
     this.pendingCharOffset = match.position;
-    this.onChapterSelected(match.chapterId);
+    this.onChapterSelected(match.chapterId, true);
+  }
+
+  toggleBookmark(): void {
+    if (!this.selectedBookPath || this.selectedChapterId === null || !this.chapterContent) return;
+    const page = Math.floor(this.wordOffset / Math.max(1, this.pageSizeWords));
+    const existingIndex = this.bookmarks.findIndex(b =>
+      b.readerKey === this.selectedBookPath &&
+      b.chapterId === this.selectedChapterId &&
+      Math.floor(b.wordOffset / Math.max(1, this.pageSizeWords)) === page
+    );
+
+    if (existingIndex >= 0) {
+      this.bookmarks.splice(existingIndex, 1);
+    } else {
+      const entry: BookmarkEntry = {
+        id: `${this.selectedBookPath}|${this.selectedChapterId}|${this.wordOffset}`,
+        readerKey: this.selectedBookPath,
+        chapterId: this.selectedChapterId,
+        wordOffset: this.wordOffset,
+        createdAt: new Date().toISOString()
+      };
+      this.bookmarks.push(entry);
+    }
+
+    this.saveBookmarks();
+  }
+
+  toggleBookmarksDropdown(): void {
+    if (!this.visibleBookmarks.length) return;
+    this.showBookmarksDropdown = !this.showBookmarksDropdown;
+  }
+
+  selectBookmarkFromDropdown(bookmarkId: string): void {
+    if (!bookmarkId) return;
+    this.onBookmarkSelected(bookmarkId);
+    this.showBookmarksDropdown = false;
+  }
+
+  get selectedBookmarkLabel(): string {
+    if (!this.bookmarkSelectValue) return 'Bookmarks';
+    const entry = this.bookmarks.find(b => b.id === this.bookmarkSelectValue);
+    return entry ? this.formatBookmarkLabel(entry) : 'Bookmarks';
+  }
+
+  onBookmarkSelected(bookmarkId: string): void {
+    if (!bookmarkId) return;
+    const entry = this.bookmarks.find(b => b.id === bookmarkId);
+    if (!entry) return;
+
+    this.bookmarkSelectValue = bookmarkId;
+    if (this.selectedChapterId === entry.chapterId && this.chapterContent) {
+      const totalWords = this.chapterContent.wordCount ?? this.countWords(this.chapterContent.content);
+      this.wordOffset = Math.max(0, Math.min(entry.wordOffset, totalWords));
+      this.pendingWordOffset = null;
+      this.updateCurrentSection();
+      return;
+    }
+
+    this.pendingWordOffset = entry.wordOffset;
+    this.onChapterSelected(entry.chapterId, true);
+  }
+
+  formatBookmarkLabel(bookmark: BookmarkEntry): string {
+    const chapter = this.chapters.find(ch => ch.id === bookmark.chapterId);
+    const chapterIndex = this.chapters.findIndex(ch => ch.id === bookmark.chapterId);
+    const chapterNumber = chapterIndex >= 0 ? chapterIndex + 1 : bookmark.chapterId + 1;
+    const page = Math.floor(bookmark.wordOffset / Math.max(1, this.pageSizeWords)) + 1;
+    const chapterLabel = chapter?.displayLabel || chapter?.title || `Chapter ${chapterNumber}`;
+    const normalized = chapterLabel.trim();
+    const chapterMatch = normalized.match(/^chapter\s+(\d+)/i);
+    if (chapterMatch) {
+      return `Ch. ${chapterMatch[1]} p. ${page}`;
+    }
+
+    const romanMatch = normalized.match(/^([ivxlcdm]+)\b/i);
+    if (romanMatch && !/^chapter\b/i.test(normalized)) {
+      return `${romanMatch[1].toLowerCase()} p. ${page}`;
+    }
+
+    return `${chapterLabel} • p. ${page}`;
   }
 
   summarize(): void {
@@ -644,7 +859,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
 
     const payload = {
       text,
-      bookTitle: this.selectedBook?.name ?? '',
+      bookTitle: this.selectedBook?.title ?? '',
       dropboxPath: this.selectedBookPath ?? '',
       chapterId: this.selectedChapterId ?? undefined,
       wordOffset: this.wordOffset,
@@ -669,14 +884,17 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
     });
   }
 
-  summarizeFullChapter(): void {
+  summarizeFullChapter(force: boolean = false): void {
     if (!this.chapterContent || !this.selectedBookPath || this.selectedChapterId === null) return;
 
     // Check if summary already exists in cache
     const cached = this.fullChapterSummaryCache.get(this.selectedChapterId);
-    if (cached) {
+    if (cached && !force) {
       console.log('Chapter summary already exists. Use the existing summary.');
       return;
+    }
+    if (force && cached) {
+      this.fullChapterSummaryCache.delete(this.selectedChapterId);
     }
 
     this.loadingFullChapterSummary = true;
@@ -694,7 +912,8 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
     const payload = {
       dropboxPath: this.selectedBookPath,
       chapterId: this.selectedChapterId,
-      bookTitle: this.selectedBook?.name ?? ''
+      bookTitle: this.selectedBook?.title ?? '',
+      forceRegenerate: force
     };
 
     // Use fetch to POST the request and get streaming response
@@ -857,30 +1076,35 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
     this.loadingBooks = true;
     this.error = null;
 
-    this.api.getDropboxEpubs()
+    this.api.getLibraryReaderBooks()
       .pipe(takeUntil(this.destroy$))
       .subscribe({
       next: books => {
-        this.dropboxBooks = books;
+        this.readerBooks = books;
         this.loadingBooks = false;
       },
       error: err => {
-        console.error('Failed to load Dropbox files', err);
-        this.error = 'Unable to load Dropbox books.';
+        console.error('Failed to load reader library books', err);
+        this.error = 'Unable to load reader books.';
         this.loadingBooks = false;
       }
     });
   }
 
-  private loadChapters(path: string): void {
+  private loadChapters(fileName: string): void {
     this.loadingChapters = true;
     this.chapters = [];
 
-    this.api.getDropboxEpubChapters(path)
+    this.api.getLibraryReaderChapters(fileName)
       .pipe(takeUntil(this.destroy$))
       .subscribe({
       next: resp => {
-        this.chapters = resp.chapters.filter(ch => ch.wordCount >= 50);
+        this.chapters = resp.chapters
+          .filter(ch => ch.wordCount >= 50)
+          .map(ch => ({
+            ...ch,
+            displayLabel: ch.displayLabel ?? ch.title
+          }));
         this.loadingChapters = false;
         if (!this.chapters.length) {
           this.error = 'No chapters found in this EPUB.';
@@ -894,39 +1118,28 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
     });
   }
 
-  private loadChapterContent(path: string, chapterId: number): void {
+  private loadChapterContent(fileName: string, chapterId: number): void {
     this.loadingContent = true;
     this.fullChapterSummary = null;
     this.fullSummaryTokens = null;
 
-    this.api.getDropboxChapterContent(path, chapterId)
+    const cacheKey = this.getChapterCacheKey(fileName, chapterId);
+    const cached = this.chapterContentCache.get(cacheKey);
+    if (cached) {
+      this.applyChapterContent(cached);
+      this.loadingContent = false;
+    }
+
+    this.api.getLibraryReaderChapterContent(fileName, chapterId)
       .pipe(takeUntil(this.destroy$))
       .subscribe({
       next: content => {
-        const collapsed = this.collapseBlankLines(content.content);
-        const computedWordCount = this.countWords(collapsed);
-        this.chapterContent = {
-          ...content,
-          content: collapsed,
-          wordCount: computedWordCount
-        };
-        if (this.pendingCharOffset != null) {
-          if (this.pendingCharOffset === -1) {
-            // Special marker: go to last page
-            const totalPages = Math.max(1, Math.ceil(computedWordCount / this.pageSizeWords));
-            this.wordOffset = Math.max(0, (totalPages - 1) * this.pageSizeWords);
-            console.log(`📖 Jumped to last page (offset ${this.wordOffset}) of chapter with ${computedWordCount} words`);
-          } else {
-            const slice = collapsed.slice(0, Math.min(this.pendingCharOffset, collapsed.length));
-            this.wordOffset = this.countWords(slice);
-          }
-        } else {
-          this.wordOffset = 0;
+        const normalized = this.normalizeChapterContent(content);
+        this.chapterContentCache.set(cacheKey, normalized);
+        if (this.selectedBookFileName === fileName && this.selectedChapterId === chapterId) {
+          this.applyChapterContent(normalized);
+          this.loadingContent = false;
         }
-        this.pendingCharOffset = null;
-        this.loadingContent = false;
-        this.loadCachedFullChapterSummary();
-        this.timeoutIds.push(setTimeout(() => this.recalcPageSize(), 0));
       },
       error: err => {
         console.error('Failed to load chapter content', err);
@@ -936,21 +1149,67 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
     });
   }
 
-  private fetchStatus(path: string, keepPolling: boolean = false): void {
-    this.api.getDropboxEpubStatus(path)
+  private getChapterCacheKey(fileName: string, chapterId: number): string {
+    return `${fileName}::${chapterId}`;
+  }
+
+  private normalizeChapterContent(content: DropboxChapterContent): DropboxChapterContent {
+    const collapsed = this.collapseBlankLines(content.content);
+    const computedWordCount = this.countWords(collapsed);
+    return {
+      ...content,
+      content: collapsed,
+      wordCount: computedWordCount
+    };
+  }
+
+  private applyChapterContent(content: DropboxChapterContent): void {
+    const computedWordCount = content.wordCount ?? this.countWords(content.content);
+    this.chapterContent = {
+      ...content,
+      wordCount: computedWordCount
+    };
+    if (this.pendingWordOffset != null) {
+      const totalWords = computedWordCount;
+      this.wordOffset = Math.max(0, Math.min(this.pendingWordOffset, totalWords));
+      this.pendingWordOffset = null;
+    } else if (this.pendingCharOffset != null) {
+      if (this.pendingCharOffset === -1) {
+        // Special marker: go to last page
+        const totalPages = Math.max(1, Math.ceil(computedWordCount / this.pageSizeWords));
+        this.wordOffset = Math.max(0, (totalPages - 1) * this.pageSizeWords);
+        console.log(`📖 Jumped to last page (offset ${this.wordOffset}) of chapter with ${computedWordCount} words`);
+      } else {
+        const slice = content.content.slice(0, Math.min(this.pendingCharOffset, content.content.length));
+        this.wordOffset = this.countWords(slice);
+      }
+    } else {
+      this.wordOffset = 0;
+    }
+    this.pendingCharOffset = null;
+    this.loadCachedFullChapterSummary();
+    this.timeoutIds.push(setTimeout(() => this.recalcPageSize(), 0));
+  }
+
+  private fetchStatus(fileName: string, keepPolling: boolean = false): void {
+    this.api.getLibraryReaderStatus(fileName)
       .pipe(takeUntil(this.destroy$))
       .subscribe({
       next: status => {
         this.status = status;
         if (keepPolling && status.inProgress) {
           if (this.statusPoll) clearInterval(this.statusPoll);
-          this.statusPoll = setInterval(() => this.fetchStatus(path, false), 2000);
+          this.statusPoll = setInterval(() => this.fetchStatus(fileName, false), 2000);
         } else if (this.statusPoll && !status.inProgress) {
           clearInterval(this.statusPoll);
         }
       },
       error: err => {
         console.error('Failed to fetch status', err);
+        if (this.statusPoll) {
+          clearInterval(this.statusPoll);
+          this.statusPoll = null;
+        }
       }
     });
   }
@@ -961,26 +1220,61 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
     try {
       const raw = localStorage.getItem('epub_recent');
       if (!raw) return;
-      const parsed = JSON.parse(raw) as ViewedBook[];
-      this.previouslyViewed = Array.isArray(parsed) ? parsed : [];
+      const parsed = JSON.parse(raw) as any[];
+      if (!Array.isArray(parsed)) {
+        this.previouslyViewed = [];
+        return;
+      }
+
+      this.previouslyViewed = parsed.map(item => {
+        if ('fileName' in item && 'readerKey' in item) {
+          return item as ViewedBook;
+        }
+        return {
+          fileName: item.path ?? '',
+          readerKey: item.path ?? '',
+          title: item.name ?? item.path ?? 'Unknown',
+          updatedAt: item.serverModified ?? undefined
+        } as ViewedBook;
+      }).filter(entry => entry.fileName && entry.readerKey);
     } catch {
       this.previouslyViewed = [];
     }
   }
 
-  private recordViewed(path: string): void {
+  private loadBookmarks(): void {
+    if (typeof localStorage === 'undefined') return;
+    try {
+      const raw = localStorage.getItem('epub_bookmarks');
+      if (!raw) {
+        this.bookmarks = [];
+        return;
+      }
+      const parsed = JSON.parse(raw) as BookmarkEntry[];
+      this.bookmarks = Array.isArray(parsed) ? parsed : [];
+    } catch {
+      this.bookmarks = [];
+    }
+  }
+
+  private saveBookmarks(): void {
+    if (typeof localStorage === 'undefined') return;
+    localStorage.setItem('epub_bookmarks', JSON.stringify(this.bookmarks));
+  }
+
+  private recordViewed(book: LibraryReaderBook): void {
     if (typeof localStorage === 'undefined') return;
 
-    const found = this.dropboxBooks.find(b => b.path === path);
     const entry: ViewedBook = {
-      path,
-      name: found?.name ?? path.split('/').pop() ?? path,
-      serverModified: found?.serverModified
+      fileName: book.fileName,
+      readerKey: book.readerKey,
+      title: book.title,
+      updatedAt: new Date().toISOString()
     };
 
     this.previouslyViewed = [
       entry,
-      ...this.previouslyViewed.filter(b => b.path !== path)
+      ...this.previouslyViewed.filter(b => b.readerKey !== book.readerKey)
     ].slice(0, 8);
 
     localStorage.setItem('epub_recent', JSON.stringify(this.previouslyViewed));
@@ -1042,7 +1336,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
 
   openVocabModal(): void {
     if (this.selectedBookPath && this.selectedBook) {
-      this.vocabularyService.registerBook(this.selectedBookPath, this.selectedBook.name);
+      this.vocabularyService.registerBook(this.selectedBookPath, this.selectedBook.title);
     }
     this.vocabFilters = this.vocabularyService.getBookFilters();
     this.refreshVocabLists();
@@ -1063,7 +1357,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
       height: '80vh',
       data: {
         dropboxPath: this.selectedBookPath,
-        bookTitle: this.selectedBook.name
+        bookTitle: this.selectedBook.title
       }
     });
   }
@@ -1226,7 +1520,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
       term: item.term,
       definition: item.definition,
       dropboxPath: this.selectedBookPath ?? undefined,
-      bookTitle: this.selectedBook?.name ?? undefined,
+      bookTitle: this.selectedBook?.title ?? undefined,
       context: this.analysisText ?? undefined
     };
     this.fetchLearnMoreAndImages(payload, true);
@@ -1244,8 +1538,9 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
       term: item.term,
       definition: item.definition,
       dropboxPath: this.selectedBookPath,
-      bookTitle: this.selectedBook?.name ?? undefined,
-      context: this.analysisText ?? undefined
+      bookTitle: this.selectedBook?.title ?? undefined,
+      context: this.analysisText ?? undefined,
+      saveToLibrary: true
     };
     this.api.createFlashcard(payload)
       .pipe(takeUntil(this.destroy$))
@@ -1446,7 +1741,7 @@ DO NOT create a card for every word. Only create cards for terms that add educat
       term: text,
       definition: undefined,
       dropboxPath: this.selectedBookPath,
-      bookTitle: this.selectedBook?.name ?? undefined,
+      bookTitle: this.selectedBook?.title ?? undefined,
       context: contextInstruction,
       knownWords: knownWords
     };
@@ -1574,6 +1869,13 @@ DO NOT create a card for every word. Only create cards for terms that add educat
   @HostListener('window:resize')
   onWindowResize(): void {
     this.recalcPageSize();
+  }
+
+  @HostListener('document:click')
+  onDocumentClick(): void {
+    if (this.showBookmarksDropdown) {
+      this.showBookmarksDropdown = false;
+    }
   }
 
   private recalcPageSize(adjustOffset: boolean = true): void {
@@ -1809,7 +2111,7 @@ DO NOT create a card for every word. Only create cards for terms that add educat
       dropboxPath: this.selectedBookPath,
       chapterId: this.selectedChapterId,
       sectionIndex: sectionIndex,
-      bookTitle: this.selectedBook?.name ?? undefined,
+      bookTitle: this.selectedBook?.title ?? undefined,
       author: undefined
     };
 
@@ -1865,8 +2167,9 @@ DO NOT create a card for every word. Only create cards for terms that add educat
     const flashcardPayload = {
       term: sectionText,
       dropboxPath: this.selectedBookPath,
-      bookTitle: this.selectedBook?.name ?? undefined,
-      knownWords: knownWords
+      bookTitle: this.selectedBook?.title ?? undefined,
+      knownWords: knownWords,
+      saveToLibrary: false
     };
 
     this.api.createFlashcard(flashcardPayload)

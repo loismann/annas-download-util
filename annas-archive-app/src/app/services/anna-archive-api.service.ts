@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
-import { finalize, map, tap } from 'rxjs/operators';
+import { finalize, map, tap, timeout, catchError } from 'rxjs/operators';
 
 import { BookDto } from '../models/book-dto.model';
 import {
@@ -10,6 +10,7 @@ import {
   DropboxEpubFile,
   DropboxEpubStatus,
   DropboxBookSearchResult,
+  LibraryReaderBook,
   SummarizeResponse,
   SummarizeRequestPayload,
   LearnMoreRequestPayload,
@@ -71,6 +72,22 @@ export interface CoverLookupResponse {
   coverUrl: string | null;
 }
 
+export interface CoverCandidatesResponse {
+  covers: string[];
+}
+
+export interface AiBookSearchItem {
+  title: string;
+  author: string;
+  summary: string;
+  importance: string;
+  coverUrl?: string | null;
+}
+
+export interface AiBookSearchResult {
+  summary?: string | null;
+  books: AiBookSearchItem[];
+}
 /* ─────────────── author suggestion response ─────────────────────── */
 export interface AuthorSuggestion {
   author: string;
@@ -143,9 +160,10 @@ export interface MatchSeriesBooksResponse {
 export class AnnaArchiveApiService {
   private readonly isLocalDev = window.location.hostname === 'localhost';
   private readonly apiHost = this.isLocalDev
-    ? 'http://localhost:5050'
+    ? 'http://localhost:5001'
     : 'https://fs01pfbooks.synology.me:5051';
   private readonly baseUrl = `${this.apiHost}/api/anna`;
+  private readonly libgenBaseUrl = `${this.apiHost}/api/libgen`;
   private readonly aiBaseUrl = `${this.apiHost}/api/ai`;
   private readonly gamingBaseUrl = `${this.apiHost}/api/gaming`;
 
@@ -201,6 +219,38 @@ export class AnnaArchiveApiService {
     );
   }
 
+  sendToLibrary(
+    md5: string,
+    title: string,
+    coverUrl?: string,
+    authors?: string,
+    format?: string,
+    fileSize?: string,
+    source?: string
+  ): Observable<any> {
+    let params = new HttpParams().set('title', title);
+    if (coverUrl) {
+      params = params.set('coverUrl', coverUrl);
+    }
+    if (authors) {
+      params = params.set('authors', authors);
+    }
+    if (format) {
+      params = params.set('format', format);
+    }
+    if (fileSize) {
+      params = params.set('fileSize', fileSize);
+    }
+    if (source) {
+      params = params.set('source', source);
+    }
+    return this.http.post(
+      `${this.baseUrl}/book/${md5}/send-to-library`,
+      null,
+      { params }
+    );
+  }
+
   /* ══════════════════════════════════════════════════════════════
      Check download status – returns current download counter
      ══════════════════════════════════════════════════════════════ */
@@ -210,6 +260,187 @@ export class AnnaArchiveApiService {
     );
   }
 
+  /* ══════════════════════════════════════════════════════════════
+     LIBGEN ENDPOINTS
+     ══════════════════════════════════════════════════════════════ */
+
+  /* ══════════════════════════════════════════════════════════════
+     LibGen Search – searches LibGen instead of Anna's Archive
+     ══════════════════════════════════════════════════════════════ */
+  searchBooksLibGen(name: string, exact: boolean): Observable<BookDto[]> {
+    const params = new HttpParams()
+      .set('name', name)
+      .set('exact', exact.toString());
+
+    const label = `searchBooksLibGen:${name}:${exact}`;
+    console.time(label);
+    console.log('[searchBooksLibGen] start', { name, exact });
+
+    return this.http
+      .get<BookDto | BookDto[]>(`${this.libgenBaseUrl}/book`, { params })
+      .pipe(
+        timeout(60000), // 60 second timeout for the entire request
+        map(res => (Array.isArray(res) ? res : [res])),
+        tap(list => {
+          const sample = list.slice(0, 3).map(b => ({
+            title: b.title,
+            md5: b.md5,
+            format: b.format,
+          }));
+          console.log('[searchBooksLibGen] result', { count: list.length, sample });
+        }),
+        catchError(error => {
+          console.error('[searchBooksLibGen] ERROR:', error);
+          if (error.name === 'TimeoutError') {
+            console.error('[searchBooksLibGen] Request timed out after 60 seconds');
+          }
+          throw error;
+        }),
+        finalize(() => {
+          console.timeEnd(label);
+          console.log('[searchBooksLibGen] done');
+        })
+      );
+  }
+
+  /* ══════════════════════════════════════════════════════════════
+     LibGen Member download – downloads file with optional cover replacement
+     ══════════════════════════════════════════════════════════════ */
+  downloadMemberLibGen(md5: string, title: string, coverUrl?: string): Observable<Blob> {
+    let params = new HttpParams().set('title', title);
+    if (coverUrl) {
+      params = params.set('coverUrl', coverUrl);
+    }
+    return this.http.post(
+      `${this.libgenBaseUrl}/book/${md5}/download/member`,
+      null,
+      { params, responseType: 'blob' }
+    );
+  }
+
+  sendToLibraryLibGen(
+    md5: string,
+    title: string,
+    coverUrl?: string,
+    authors?: string,
+    format?: string,
+    fileSize?: string,
+    source?: string
+  ): Observable<any> {
+    let params = new HttpParams().set('title', title);
+    if (coverUrl) {
+      params = params.set('coverUrl', coverUrl);
+    }
+    if (authors) {
+      params = params.set('authors', authors);
+    }
+    if (format) {
+      params = params.set('format', format);
+    }
+    if (fileSize) {
+      params = params.set('fileSize', fileSize);
+    }
+    if (source) {
+      params = params.set('source', source);
+    }
+    return this.http.post(
+      `${this.libgenBaseUrl}/book/${md5}/send-to-library`,
+      null,
+      { params }
+    );
+  }
+
+  getLibraryBooks(): Observable<any[]> {
+    return this.http.get<any[]>(`${this.apiHost}/api/library/books`);
+  }
+
+  getLibraryReaderBooks(): Observable<LibraryReaderBook[]> {
+    return this.http.get<LibraryReaderBook[]>(`${this.apiHost}/api/library/reader/books`);
+  }
+
+  sendLibraryToKindle(
+    fileName: string,
+    title: string | undefined,
+    target: 'dad' | 'mom',
+    toDropbox = false
+  ): Observable<any> {
+    let params = new HttpParams()
+      .set('fileName', fileName)
+      .set('target', target)
+      .set('toDropbox', toDropbox.toString());
+    if (title) {
+      params = params.set('title', title);
+    }
+    return this.http.post(
+      `${this.apiHost}/api/library/book/send-to-kindle`,
+      null,
+      { params }
+    );
+  }
+
+  updateLibraryBookMetadata(fileName: string, metadata: {
+    primaryGenre: string;
+    tags: string[];
+    series: string | null;
+    title?: string;
+    authors?: string[];
+  }): Observable<any> {
+    return this.http.patch(
+      `${this.apiHost}/api/library/book/${encodeURIComponent(fileName)}/metadata`,
+      metadata
+    );
+  }
+
+  updateLibraryBookCover(fileName: string, coverUrl: string): Observable<{ coverUrl: string | null }> {
+    return this.http.post<{ coverUrl: string | null }>(
+      `${this.apiHost}/api/library/book/${encodeURIComponent(fileName)}/cover`,
+      { coverUrl }
+    );
+  }
+
+  updateLibraryBookRatings(fileName: string, ratings: {
+    goodreadsRating?: number | null;
+    personalRating?: number | null;
+  }): Observable<any> {
+    return this.http.patch(
+      `${this.apiHost}/api/library/book/${encodeURIComponent(fileName)}/ratings`,
+      ratings
+    );
+  }
+
+  updateLibraryBookReaderEnabled(fileName: string, enabled: boolean): Observable<{ success: boolean; enabled: boolean }> {
+    const params = new HttpParams().set('fileName', fileName);
+    return this.http.post<{ success: boolean; enabled: boolean }>(
+      `${this.apiHost}/api/library/book/reader`,
+      { enabled },
+      { params }
+    );
+  }
+
+  wipeLibraryGenres(): Observable<{ success: boolean; updated: number }> {
+    return this.http.post<{ success: boolean; updated: number }>(
+      `${this.apiHost}/api/library/books/genres/wipe`,
+      null
+    );
+  }
+
+  deleteLibraryBook(fileName: string): Observable<{ success: boolean }> {
+    return this.http.delete<{ success: boolean }>(
+      `${this.apiHost}/api/library/book/${encodeURIComponent(fileName)}`
+    );
+  }
+
+  /* ══════════════════════════════════════════════════════════════
+     SLUM Health Status – proxied through backend to avoid CORS
+     ══════════════════════════════════════════════════════════════ */
+  getSlumHealth(): Observable<any> {
+    return this.http.get<any>(`${this.baseUrl}/slum-health`);
+  }
+
+  getMirrorHealth(): Observable<any> {
+    return this.http.get<any>(`${this.baseUrl}/mirror-health`);
+  }
+
   fetchCover(title: string, author?: string): Observable<CoverLookupResponse> {
     let params = new HttpParams().set('title', title);
     if (author) {
@@ -217,6 +448,17 @@ export class AnnaArchiveApiService {
     }
     return this.http.get<CoverLookupResponse>(
       `${this.baseUrl}/book/cover`,
+      { params }
+    );
+  }
+
+  fetchLibraryCoverCandidates(title: string, author?: string): Observable<CoverCandidatesResponse> {
+    let params = new HttpParams().set('title', title);
+    if (author) {
+      params = params.set('author', author);
+    }
+    return this.http.get<CoverCandidatesResponse>(
+      `${this.apiHost}/api/library/book/cover-candidates`,
       { params }
     );
   }
@@ -252,6 +494,60 @@ export class AnnaArchiveApiService {
     return this.http.post<SendToBooxResponse>(
       `${this.baseUrl}/book/${md5}/send-to-kindle`,
       null,
+      { params }
+    );
+  }
+
+  /* ══════════════════════════════════════════════════════════════
+     NEW  ➜  Library EPUB reader endpoints
+     ══════════════════════════════════════════════════════════════ */
+  getLibraryReaderChapters(fileName: string): Observable<DropboxEpubChaptersResponse> {
+    const params = new HttpParams().set('fileName', fileName);
+    return this.http.get<DropboxEpubChaptersResponse>(
+      `${this.apiHost}/api/library/reader/epub/chapters`,
+      { params }
+    );
+  }
+
+  getLibraryReaderChapterContent(fileName: string, chapterId: number): Observable<DropboxChapterContent> {
+    const params = new HttpParams()
+      .set('fileName', fileName)
+      .set('chapterId', chapterId.toString());
+    return this.http.get<DropboxChapterContent>(
+      `${this.apiHost}/api/library/reader/epub/chapter`,
+      { params }
+    );
+  }
+
+  getLibraryReaderStatus(fileName: string): Observable<DropboxEpubStatus> {
+    const params = new HttpParams().set('fileName', fileName);
+    return this.http.get<DropboxEpubStatus>(
+      `${this.apiHost}/api/library/reader/epub/status`,
+      { params }
+    );
+  }
+
+  startLibraryReaderIndex(fileName: string): Observable<{ success: boolean }> {
+    return this.http.post<{ success: boolean }>(
+      `${this.apiHost}/api/library/reader/epub/index`,
+      { fileName }
+    );
+  }
+
+  deleteLibraryReaderIndex(fileName: string): Observable<{ success: boolean }> {
+    return this.http.request<{ success: boolean }>(
+      'delete',
+      `${this.apiHost}/api/library/reader/epub/index`,
+      { body: { fileName } }
+    );
+  }
+
+  searchLibraryReaderBook(fileName: string, query: string): Observable<DropboxBookSearchResult[]> {
+    const params = new HttpParams()
+      .set('fileName', fileName)
+      .set('query', query);
+    return this.http.get<DropboxBookSearchResult[]>(
+      `${this.apiHost}/api/library/reader/epub/search`,
       { params }
     );
   }
@@ -352,6 +648,13 @@ export class AnnaArchiveApiService {
     return this.http.post<LearnMoreResponse>(
       `${this.aiBaseUrl}/vocab/learn-more`,
       payload
+    );
+  }
+
+  aiBookSearch(query: string): Observable<AiBookSearchResult> {
+    return this.http.post<AiBookSearchResult>(
+      `${this.aiBaseUrl}/book-search`,
+      { query }
     );
   }
 

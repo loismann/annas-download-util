@@ -1,7 +1,3 @@
-<div class="version-banner">
-  Latest Version: {{ buildTime }}
-</div>
-
 <div class="search-wrapper">
   <!-- Mobile collapse toggle button (only visible on mobile) -->
   <button class="mobile-collapse-toggle"
@@ -13,17 +9,52 @@
 
   <!-- LEFT column: form + counter -->
   <div class="search-form" [class.collapsed]="searchPanelCollapsed">
+    <!-- Anna's Archive Domain Health Status -->
+    <div class="health-status-row">
+      <div class="health-item"
+           *ngFor="let domain of annaDomains; let i = index"
+           [ngClass]="getHealthColorClass(domain.health)">
+        <div class="health-domain">.{{ domain.extension }}</div>
+        <div class="health-percent">{{ domain.health !== null ? (domain.health + '%') : '...' }}</div>
+      </div>
+    </div>
+
     <form (ngSubmit)="onSearch()">
       <!-- Book name -->
-      <mat-form-field appearance="outline" class="w-100">
+      <mat-form-field
+        appearance="outline"
+        class="w-100 ai-search-field"
+        [floatLabel]="aiSearchExpanded ? 'always' : 'auto'"
+      >
         <mat-label>Book name</mat-label>
-        <input
-          matInput
-          [(ngModel)]="searchTerm"
-          (ngModelChange)="onSearchTermChange($event)"
-          name="searchTerm"
-          required
-        />
+        <ng-container *ngIf="!aiSearchExpanded; else aiSearchInput">
+          <input
+            matInput
+            [(ngModel)]="searchTerm"
+            (ngModelChange)="onSearchTermChange($event)"
+            name="searchTerm"
+            required
+          />
+        </ng-container>
+        <ng-template #aiSearchInput>
+          <textarea
+            matInput
+            [(ngModel)]="aiSearchQuery"
+            name="aiSearchQuery"
+            rows="4"
+            placeholder="Ask for books, e.g., top-rated Hugo winners from the 1980s"
+          ></textarea>
+        </ng-template>
+        <button
+          mat-icon-button
+          matSuffix
+          type="button"
+          class="ai-toggle"
+          (click)="toggleAiSearch()"
+          [attr.aria-label]="aiSearchExpanded ? 'Close AI search' : 'Open AI search'"
+        >
+          <mat-icon>{{ aiSearchExpanded ? 'close' : 'smart_toy' }}</mat-icon>
+        </button>
       </mat-form-field>
 
       <!-- Author suggestions -->
@@ -32,7 +63,7 @@
         <mat-select
           [(ngModel)]="selectedAuthor"
           name="selectedAuthor"
-          [disabled]="loadingAuthors || authorSuggestions.length === 0"
+          [disabled]="aiSearchExpanded || loadingAuthors || authorSuggestions.length === 0"
         >
           <mat-option value="">All Authors</mat-option>
           <mat-option *ngFor="let suggestion of authorSuggestions" [value]="suggestion.author">
@@ -79,21 +110,30 @@
         type="submit"
         [disabled]="loading"
       >
-        Search
+        {{ aiSearchExpanded ? 'Ask AI' : 'Search' }}
       </button>
 
       <!-- Find Related Books button -->
       <button
-        *ngIf="selectedAuthor"
         mat-raised-button
         color="accent"
         type="button"
         (click)="openRelatedBooksModal()"
-        [disabled]="!searchTerm.trim() || !selectedAuthor"
+        [disabled]="!selectedAuthor"
+        [class.halftone]="!selectedAuthor"
       >
         Find Related Books
       </button>
 
+      <!-- Source toggle -->
+      <div class="source-toggle-row">
+        <mat-slide-toggle
+          [(ngModel)]="useLibGen"
+          name="useLibGen"
+          color="primary">
+          {{ useLibGen ? 'Using LibGen' : 'Using Anna\'s Archive' }}
+        </mat-slide-toggle>
+      </div>
 
       <!-- Feedback -->
       <div *ngIf="error" class="error">{{ error }}</div>
@@ -125,9 +165,17 @@
 
             <!-- ACTION BUTTONS -->
             <mat-card-actions class="action-buttons">
-              <!-- existing download -->
-              <button mat-raised-button color="primary" (click)="download(book)">
-                Download
+              <!-- library -->
+              <button mat-raised-button color="primary" (click)="sendToLibrary(book)">
+                <ng-container [ngSwitch]="book.libraryState">
+                  <span *ngSwitchCase="'sending'">Saving…</span>
+                  <span *ngSwitchCase="'success'">✓ Saved</span>
+                  <span *ngSwitchCase="'error'">✖ Retry</span>
+                  <span *ngSwitchDefault class="button-label-with-icon">
+                    <mat-icon class="inline-icon">menu_book</mat-icon>
+                    Library
+                  </span>
+                </ng-container>
               </button>
 
               <!-- send-to-boox (admin only) -->

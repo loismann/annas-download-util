@@ -20,6 +20,14 @@
   border-left: 4px solid #3f51b5;
   border-radius: 4px;
 
+  .summary-title {
+    margin: 0 0 0.5rem 0;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #475569;
+  }
+
   p {
     margin: 0;
     color: #333;
@@ -74,6 +82,19 @@
   gap: 0.75rem;
 }
 
+.button-label-with-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.inline-icon {
+  font-size: 16px;
+  width: 16px;
+  height: 16px;
+  line-height: 16px;
+}
+
 .match-card {
   border: 1px solid #e0e0e0;
   background: white;
@@ -123,6 +144,16 @@
   margin: 0.4rem 0 0;
   font-size: 0.85rem;
   color: #444;
+}
+
+.match-select-panel .mat-mdc-option {
+  white-space: nowrap;
+}
+
+.match-select-panel .mdc-list-item__primary-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .send-log {
@@ -175,6 +206,20 @@
   grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
   gap: 1rem;
   margin-top: 1rem;
+}
+
+.books-grid.ai-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.books-grid.ai-grid .book-card .book-details .book-description {
+  -webkit-line-clamp: 8;
+  line-height: 1.4;
+  max-height: calc(1.4em * 8);
+}
+
+.books-grid.ai-grid .book-details {
+  padding-bottom: 2.25rem;
 }
 
 .book-card {
@@ -292,6 +337,20 @@
   color: #3f51b5;
 }
 
+.search-icon-button {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  z-index: 3;
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 999px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+}
+
+.search-icon-button mat-icon {
+  color: #3f51b5;
+}
+
 .other-series-container {
   margin-bottom: 1.5rem;
   border: 1px solid #e3e3f2;
@@ -399,6 +458,10 @@ mat-list-item {
     gap: 0.75rem;
   }
 
+  .books-grid.ai-grid {
+    grid-template-columns: 1fr;
+  }
+
   .book-card {
     .book-details {
       padding: 0.5rem;
@@ -417,6 +480,10 @@ mat-list-item {
 @media (max-width: 900px) {
   .modal-layout {
     flex-direction: column;
+  }
+
+  .books-grid.ai-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .right-panel {

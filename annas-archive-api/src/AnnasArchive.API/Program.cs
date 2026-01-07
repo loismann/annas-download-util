@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.OpenApi.Models;
+using AnnasArchive.API.Services;
 using AnnasArchive.Core.Models;
 using AnnasArchive.Core.Services;
 using Dropbox.Api;
@@ -21,12 +22,16 @@ using System.Text;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Threading.RateLimiting;
+using System.Threading;
 using BCrypt.Net;
 using System.Diagnostics;
 using VersOne.Epub;
 using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Net.Http.Headers;
+using HtmlAgilityPack;
+using NReadability;
+using Microsoft.Extensions.Caching.Memory;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -101,10 +106,25 @@ builder.Services.AddSwaggerGen(c =>
     c.SwaggerDoc("v1", new OpenApiInfo { Title = "Anna's Archive Proxy API", Version = "v1" });
 });
 
+builder.Services.AddHostedService<LibraryWatcherService>();
+
 // ─── Anna's Archive HTTP client ──────────────────────────────────────────
 builder.Services.AddHttpClient<AnnaArchiveService>(c =>
 {
     c.BaseAddress = new Uri("https://annas-archive.org");
+    c.DefaultRequestHeaders.UserAgent.ParseAdd(
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+        "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36");
+    c.DefaultRequestHeaders.Add("Accept",
+        "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
+    c.DefaultRequestHeaders.Add("Accept-Language", "en-US,en;q=0.9");
+});
+
+// ─── LibGen HTTP client ──────────────────────────────────────────────────
+builder.Services.AddHttpClient<LibGenService>(c =>
+{
+    c.BaseAddress = new Uri("https://libgen.rs");
+    c.Timeout = TimeSpan.FromSeconds(15); // 15 second timeout per domain attempt
     c.DefaultRequestHeaders.UserAgent.ParseAdd(
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
         "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36");
@@ -476,6 +496,123 @@ async Task<string?> FetchOpenLibraryCoverAsync(string title, string? author, IHt
     return null;
 }
 
+async Task<List<string>> FetchOpenLibraryCoverCandidatesAsync(string title, string? author, IHttpClientFactory httpFactory, int limit = 12)
+{
+    if (string.IsNullOrWhiteSpace(title))
+        return new List<string>();
+
+    try
+    {
+        using var http = httpFactory.CreateClient();
+        http.Timeout = TimeSpan.FromSeconds(4);
+
+        var coverScores = new Dictionary<int, int>();
+        var candidateTitles = BuildCoverTitleCandidates(title);
+
+        foreach (var candidate in candidateTitles)
+        {
+            var titleQuery = Uri.EscapeDataString(candidate);
+            var authorQuery = string.IsNullOrWhiteSpace(author) ? "" : $"&author={Uri.EscapeDataString(author.Trim())}";
+            var url = $"https://openlibrary.org/search.json?title={titleQuery}{authorQuery}&limit=20";
+
+            using var response = await http.GetAsync(url);
+            if (!response.IsSuccessStatusCode) continue;
+
+            using var stream = await response.Content.ReadAsStreamAsync();
+            using var doc = await JsonDocument.ParseAsync(stream);
+
+            if (!doc.RootElement.TryGetProperty("docs", out var docs) || docs.ValueKind != JsonValueKind.Array)
+                continue;
+
+            foreach (var item in docs.EnumerateArray())
+            {
+                if (!item.TryGetProperty("cover_i", out var coverProp) || coverProp.ValueKind != JsonValueKind.Number)
+                    continue;
+
+                var coverId = coverProp.GetInt32();
+                var editionCount = item.TryGetProperty("edition_count", out var editionProp) && editionProp.ValueKind == JsonValueKind.Number
+                    ? editionProp.GetInt32()
+                    : 0;
+
+                if (coverScores.TryGetValue(coverId, out var existing))
+                {
+                    if (editionCount > existing)
+                        coverScores[coverId] = editionCount;
+                }
+                else
+                {
+                    coverScores[coverId] = editionCount;
+                }
+            }
+        }
+
+        var covers = coverScores
+            .OrderByDescending(kvp => kvp.Value)
+            .Take(limit)
+            .Select(kvp => $"https://covers.openlibrary.org/b/id/{kvp.Key}-L.jpg")
+            .ToList();
+
+        if (covers.Count == 0 && !string.IsNullOrWhiteSpace(author))
+            return await FetchOpenLibraryCoverCandidatesAsync(title, null, httpFactory, limit);
+
+        return covers;
+    }
+    catch
+    {
+        return new List<string>();
+    }
+}
+
+async Task<List<string>> FetchGoogleBooksCoverCandidatesAsync(string title, string? author, IHttpClientFactory httpFactory, int limit = 12)
+{
+    if (string.IsNullOrWhiteSpace(title))
+        return new List<string>();
+
+    try
+    {
+        using var http = httpFactory.CreateClient();
+        http.Timeout = TimeSpan.FromSeconds(5);
+
+        var query = string.IsNullOrWhiteSpace(author)
+            ? $"intitle:{title}"
+            : $"intitle:{title} inauthor:{author}";
+        var url = $"https://www.googleapis.com/books/v1/volumes?q={Uri.EscapeDataString(query)}&maxResults={Math.Max(limit, 5)}";
+
+        using var response = await http.GetAsync(url);
+        if (!response.IsSuccessStatusCode)
+            return new List<string>();
+
+        using var stream = await response.Content.ReadAsStreamAsync();
+        using var doc = await JsonDocument.ParseAsync(stream);
+
+        if (!doc.RootElement.TryGetProperty("items", out var items) || items.ValueKind != JsonValueKind.Array)
+            return new List<string>();
+
+        var results = new List<string>();
+        foreach (var item in items.EnumerateArray())
+        {
+            if (!item.TryGetProperty("volumeInfo", out var info)) continue;
+            if (!info.TryGetProperty("imageLinks", out var imageLinks)) continue;
+
+            string? urlValue = null;
+            if (imageLinks.TryGetProperty("thumbnail", out var thumb))
+                urlValue = thumb.GetString();
+            else if (imageLinks.TryGetProperty("smallThumbnail", out var smallThumb))
+                urlValue = smallThumb.GetString();
+
+            if (string.IsNullOrWhiteSpace(urlValue)) continue;
+            urlValue = urlValue.Replace("http://", "https://", StringComparison.OrdinalIgnoreCase);
+            results.Add(urlValue);
+        }
+
+        return results.Distinct(StringComparer.OrdinalIgnoreCase).Take(limit).ToList();
+    }
+    catch
+    {
+        return new List<string>();
+    }
+}
+
 async Task EnrichBookCoversAsync(List<BookDto> books, IHttpClientFactory httpFactory, int maxToEnrich = 30)
 {
     var targets = books
@@ -541,6 +678,123 @@ static List<string> BuildCoverTitleCandidates(string title)
         candidates.Add(trimmed);
 
     return candidates.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+}
+
+const int MinCoverWidth = 400;
+const int MinCoverHeight = 600;
+const double TargetCoverRatio = 1.6;
+const double CoverRatioTolerance = 0.3;
+
+static bool IsCoverSizeValid(int width, int height)
+{
+    if (width < MinCoverWidth || height < MinCoverHeight)
+        return false;
+
+    var ratio = height / (double)width;
+    return Math.Abs(ratio - TargetCoverRatio) <= CoverRatioTolerance;
+}
+
+static bool TryGetImageSize(byte[] data, out int width, out int height)
+{
+    width = 0;
+    height = 0;
+
+    if (data.Length < 10)
+        return false;
+
+    // PNG: 89 50 4E 47 0D 0A 1A 0A, IHDR at offset 12
+    if (data.Length >= 24 &&
+        data[0] == 0x89 && data[1] == 0x50 && data[2] == 0x4E && data[3] == 0x47)
+    {
+        width = ReadInt32BigEndian(data, 16);
+        height = ReadInt32BigEndian(data, 20);
+        return width > 0 && height > 0;
+    }
+
+    // GIF: "GIF87a" or "GIF89a"
+    if (data[0] == 0x47 && data[1] == 0x49 && data[2] == 0x46)
+    {
+        width = data[6] | (data[7] << 8);
+        height = data[8] | (data[9] << 8);
+        return width > 0 && height > 0;
+    }
+
+    // JPEG
+    if (data[0] == 0xFF && data[1] == 0xD8)
+    {
+        return TryGetJpegSize(data, out width, out height);
+    }
+
+    return false;
+}
+
+static int ReadInt32BigEndian(byte[] data, int offset)
+{
+    return (data[offset] << 24)
+         | (data[offset + 1] << 16)
+         | (data[offset + 2] << 8)
+         | data[offset + 3];
+}
+
+static bool TryGetJpegSize(byte[] data, out int width, out int height)
+{
+    width = 0;
+    height = 0;
+
+    int index = 2;
+    while (index + 9 < data.Length)
+    {
+        if (data[index] != 0xFF)
+        {
+            index++;
+            continue;
+        }
+
+        byte marker = data[index + 1];
+        if (marker == 0xD9 || marker == 0xDA)
+            break;
+
+        if (index + 3 >= data.Length)
+            break;
+
+        int length = (data[index + 2] << 8) + data[index + 3];
+        if (length < 2 || index + 2 + length > data.Length)
+            break;
+
+        if (marker == 0xC0 || marker == 0xC2)
+        {
+            height = (data[index + 5] << 8) + data[index + 6];
+            width = (data[index + 7] << 8) + data[index + 8];
+            return width > 0 && height > 0;
+        }
+
+        index += 2 + length;
+    }
+
+    return false;
+}
+
+static string DetermineImageExtension(string url, byte[] imageData)
+{
+    var urlLower = url.ToLowerInvariant();
+    if (urlLower.EndsWith(".jpg") || urlLower.EndsWith(".jpeg"))
+        return ".jpg";
+    if (urlLower.EndsWith(".png"))
+        return ".png";
+    if (urlLower.EndsWith(".gif"))
+        return ".gif";
+
+    if (imageData.Length >= 4)
+    {
+        if (imageData[0] == 0x89 && imageData[1] == 0x50 && imageData[2] == 0x4E && imageData[3] == 0x47)
+            return ".png";
+        if (imageData[0] == 0xFF && imageData[1] == 0xD8 && imageData[2] == 0xFF)
+            return ".jpg";
+        if (imageData[0] == 0x47 && imageData[1] == 0x49 && imageData[2] == 0x46)
+            return ".gif";
+    }
+
+    return ".jpg";
 }
 
 static async Task<List<SeriesBook>> FetchBookCovers(List<SeriesBook> books, string author, IHttpClientFactory httpFactory)
@@ -669,6 +923,10 @@ app.MapPost("/api/anna/book/{md5}/download/member", async (
     [FromRoute] string md5,
     [FromQuery] string? title,
     [FromQuery] string? coverUrl,
+    [FromQuery] string? authors,
+    [FromQuery] string? format,
+    [FromQuery] string? fileSize,
+    [FromQuery] string? source,
     AnnaArchiveService anna,
     IValidationService validation,
     IEbookCoverService coverService,
@@ -748,6 +1006,111 @@ app.MapPost("/api/anna/book/{md5}/download/member", async (
 .RequireAuthorization()
 .RequireRateLimiting("api");
 
+// ─── 3a) send-to-library (save to Synology disk) ──────────────────────────
+app.MapPost("/api/anna/book/{md5}/send-to-library", async (
+    [FromRoute] string md5,
+    [FromQuery] string? title,
+    [FromQuery] string? coverUrl,
+    [FromQuery] string? authors,
+    [FromQuery] string? format,
+    [FromQuery] string? fileSize,
+    [FromQuery] string? source,
+    AnnaArchiveService anna,
+    IValidationService validation,
+    IEbookCoverService coverService,
+    IDownloadTrackingService downloadTracking,
+    HttpContext context) =>
+{
+    if (!validation.IsValidMd5(md5))
+        return Results.BadRequest(new { error = "Invalid MD5 format. Must be 32 hexadecimal characters." });
+
+    if (!validation.IsValidTitle(title))
+        return Results.BadRequest(new { error = "Title too long. Maximum 500 characters." });
+
+    // Get user name from auth context
+    var userName = context.User?.FindFirst(ClaimTypes.Email)?.Value
+        ?? context.User?.FindFirst(ClaimTypes.Name)?.Value
+        ?? "unknown";
+    var userTag = ResolveUserLibraryTag(context);
+
+    // Use shared helper to download book from Anna's Archive
+    var (resp, fileName, acctInfo, errorMessage) = await DownloadBookFromAnnaArchiveAsync(md5, title, anna, memberKey);
+
+    if (errorMessage != null)
+    {
+        var (downloadsLeft, downloadsPerDay) = downloadTracking.GetDownloadStatus();
+        var trackingInfo = new AccountFastDownloadInfoDto(downloadsLeft, downloadsPerDay);
+        return Results.Ok(new { success = false, message = errorMessage, accountFastInfo = trackingInfo });
+    }
+
+    if (resp == null || fileName == null)
+    {
+        var (downloadsLeft, downloadsPerDay) = downloadTracking.GetDownloadStatus();
+        var trackingInfo = new AccountFastDownloadInfoDto(downloadsLeft, downloadsPerDay);
+        return Results.Ok(new { success = false, message = "Failed to download book.", accountFastInfo = trackingInfo });
+    }
+
+    // Record successful download in our tracking system
+    downloadTracking.RecordDownload(md5, userName);
+    Console.WriteLine($"[library-anna] Recorded download for user {userName}, MD5: {md5}");
+
+    // Get updated download status
+    var (currentDownloadsLeft, currentDownloadsPerDay) = downloadTracking.GetDownloadStatus();
+    var currentTrackingInfo = new AccountFastDownloadInfoDto(currentDownloadsLeft, currentDownloadsPerDay);
+
+    var libraryRoot = ResolveLibraryRoot();
+    Directory.CreateDirectory(libraryRoot);
+
+    using (resp)
+    {
+        Stream ebookStream = await resp.Content.ReadAsStreamAsync();
+
+        // Attempt cover replacement if coverUrl is provided and format is supported
+        if (!string.IsNullOrWhiteSpace(coverUrl))
+        {
+            var ext = Path.GetExtension(fileName).TrimStart('.');
+            if (coverService.IsFormatSupported(ext))
+            {
+                Console.WriteLine($"[library-anna] Attempting cover replacement for {fileName}");
+                ebookStream = await coverService.ReplaceCoverAsync(ebookStream, coverUrl, ext);
+            }
+            else
+            {
+                Console.WriteLine($"[library-anna] Format {ext} not supported for cover replacement, skipping");
+            }
+        }
+
+        var destinationPath = Path.Combine(libraryRoot, fileName);
+        if (File.Exists(destinationPath))
+        {
+            return Results.Ok(new
+            {
+                success = true,
+                message = "File already exists in library.",
+                fileName,
+                path = destinationPath,
+                accountFastInfo = currentTrackingInfo
+            });
+        }
+
+        await using var outStream = File.Create(destinationPath);
+        await ebookStream.CopyToAsync(outStream);
+
+        await WriteLibraryMetadataAsync(libraryRoot, fileName, md5, title, authors, format, fileSize, coverUrl, source, userTag);
+
+        return Results.Ok(new
+        {
+            success = true,
+            message = "Saved to library.",
+            fileName,
+            path = destinationPath,
+            accountFastInfo = currentTrackingInfo
+        });
+    }
+})
+.RequireAuthorization()
+.RequireRateLimiting("api");
+
 // ─── 3.5) Check download counter status ────────────────────────────────────────
 app.MapGet("/api/anna/download-status", (IDownloadTrackingService downloadTracking) =>
 {
@@ -761,6 +1124,1240 @@ app.MapGet("/api/anna/download-status", (IDownloadTrackingService downloadTracki
     catch (Exception ex)
     {
         return Results.Ok(new { accountFastInfo = (AccountFastDownloadInfoDto?)null, error = ex.Message });
+    }
+})
+.RequireAuthorization()
+.RequireRateLimiting("api");
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ═══ LIBGEN ENDPOINTS ══════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ─── LibGen search ───────────────────────────────────────────────────────
+app.MapGet("/api/libgen/book", async (
+    [FromQuery] string name,
+    LibGenService svc,
+    IValidationService validation,
+    [FromQuery] bool exact = false) =>
+{
+    Console.WriteLine($"[API LibGen Search] Received request: name='{name}', exact={exact}");
+
+    if (!validation.IsValidSearchQuery(name))
+    {
+        Console.WriteLine($"[API LibGen Search] Validation failed for query: '{name}'");
+        return Results.BadRequest(new {
+            error = "Query parameter 'name' is required and must be between 1 and 500 characters."
+        });
+    }
+
+    Console.WriteLine($"[API LibGen Search] Calling LibGenService.SearchAsync...");
+    var books = (await svc.SearchAsync(name, searchLimit, exact)).ToList();
+    Console.WriteLine($"[API LibGen Search] Service returned {books.Count} books");
+
+    if (exact)
+    {
+        var originalCount = books.Count;
+        books = books
+            .Where(b => string.Equals(b.Title?.Trim(), name.Trim(), StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        Console.WriteLine($"[API LibGen Search] After exact filter: {books.Count} books (was {originalCount})");
+    }
+
+    if (books.Any())
+    {
+        var result = books.Count == 1 ? Results.Ok(books[0]) : Results.Ok(books);
+        Console.WriteLine($"[API LibGen Search] Returning {books.Count} books");
+        return result;
+    }
+    else
+    {
+        Console.WriteLine($"[API LibGen Search] No books found, returning 404");
+        return ApiResponse.NotFound("No books found matching that name.");
+    }
+})
+.RequireAuthorization()
+.RequireRateLimiting("api");
+
+// ─── LibGen download ─────────────────────────────────────────────────────
+app.MapPost("/api/libgen/book/{md5}/download/member", async (
+    [FromRoute] string md5,
+    [FromQuery] string? title,
+    [FromQuery] string? coverUrl,
+    [FromQuery] string? authors,
+    [FromQuery] string? format,
+    [FromQuery] string? fileSize,
+    [FromQuery] string? source,
+    LibGenService libgen,
+    IValidationService validation,
+    IEbookCoverService coverService,
+    IDownloadTrackingService downloadTracking,
+    HttpContext context) =>
+{
+    if (!validation.IsValidMd5(md5))
+        return Results.BadRequest(new { error = "Invalid MD5 format. Must be 32 hexadecimal characters." });
+
+    if (!validation.IsValidTitle(title))
+        return Results.BadRequest(new { error = "Title too long. Maximum 500 characters." });
+
+    // Get user name from auth context
+    var userName = context.User?.FindFirst(ClaimTypes.Email)?.Value
+        ?? context.User?.FindFirst(ClaimTypes.Name)?.Value
+        ?? "unknown";
+
+    Console.WriteLine($"📚 [LibGen] Downloading book {md5} for user {userName}...");
+
+    // Download the book from LibGen
+    var resp = await libgen.GetDownloadResponseAsync(md5, HttpCompletionOption.ResponseHeadersRead);
+
+    if (resp == null || !resp.IsSuccessStatusCode)
+    {
+        var (downloadsLeft, downloadsPerDay) = downloadTracking.GetDownloadStatus();
+        var trackingInfo = new AccountFastDownloadInfoDto(downloadsLeft, downloadsPerDay);
+        Console.WriteLine($"❌ [LibGen] Failed to download book {md5}");
+        return Results.Ok(new { success = false, message = "Failed to download book from LibGen.", accountFastInfo = trackingInfo });
+    }
+
+    // Sanitize title and determine file extension
+    var rawTitle = !string.IsNullOrWhiteSpace(title) ? title : md5;
+    var safeTitle = Regex.Replace(rawTitle, $"[{Regex.Escape(new string(Path.GetInvalidFileNameChars()))}]", "_");
+
+    var downloadUrl = await libgen.GetDownloadUrlAsync(md5);
+    var ext = !string.IsNullOrEmpty(downloadUrl) ? Path.GetExtension(new Uri(downloadUrl).AbsolutePath) : "";
+
+    if (string.IsNullOrEmpty(ext))
+        ext = resp.Content.Headers.ContentType?.MediaType switch
+        {
+            "application/pdf"                 => ".pdf",
+            "application/epub+zip"            => ".epub",
+            "application/x-mobipocket-ebook"  => ".mobi",
+            _                                 => ".bin"
+        };
+
+    var fileName = $"{safeTitle}{ext}";
+
+    Console.WriteLine($"✅ [LibGen] Downloaded: {fileName}");
+
+    // Record successful download in our tracking system
+    downloadTracking.RecordDownload(md5, userName);
+    Console.WriteLine($"[download-libgen] Recorded download for user {userName}, MD5: {md5}");
+
+    // Get updated download status
+    var (currentDownloadsLeft, currentDownloadsPerDay) = downloadTracking.GetDownloadStatus();
+
+    using (resp)
+    {
+        Stream ebookStream = await resp.Content.ReadAsStreamAsync();
+
+        // Attempt cover replacement if coverUrl is provided and format is supported
+        if (!string.IsNullOrWhiteSpace(coverUrl))
+        {
+            var extNoDot = ext.TrimStart('.');
+            if (coverService.IsFormatSupported(extNoDot))
+            {
+                Console.WriteLine($"[download-libgen] Attempting cover replacement for {fileName}");
+                ebookStream = await coverService.ReplaceCoverAsync(ebookStream, coverUrl, extNoDot);
+            }
+            else
+            {
+                Console.WriteLine($"[download-libgen] Format {extNoDot} not supported for cover replacement, skipping");
+            }
+        }
+
+        // Set content type based on file extension
+        var contentType = ext.ToLowerInvariant() switch
+        {
+            ".epub" => "application/epub+zip",
+            ".pdf" => "application/pdf",
+            ".mobi" => "application/x-mobipocket-ebook",
+            ".azw3" => "application/vnd.amazon.ebook",
+            ".fb2" => "text/xml",
+            _ => "application/octet-stream"
+        };
+
+        // Stream the file back to the client
+        return Results.Stream(ebookStream, contentType, fileName);
+    }
+})
+.RequireAuthorization()
+.RequireRateLimiting("api");
+
+// ─── LibGen send-to-library ──────────────────────────────────────────────
+app.MapPost("/api/libgen/book/{md5}/send-to-library", async (
+    [FromRoute] string md5,
+    [FromQuery] string? title,
+    [FromQuery] string? coverUrl,
+    [FromQuery] string? authors,
+    [FromQuery] string? format,
+    [FromQuery] string? fileSize,
+    [FromQuery] string? source,
+    LibGenService libgen,
+    IValidationService validation,
+    IEbookCoverService coverService,
+    IDownloadTrackingService downloadTracking,
+    HttpContext context) =>
+{
+    if (!validation.IsValidMd5(md5))
+        return Results.BadRequest(new { error = "Invalid MD5 format. Must be 32 hexadecimal characters." });
+
+    if (!validation.IsValidTitle(title))
+        return Results.BadRequest(new { error = "Title too long. Maximum 500 characters." });
+
+    // Get user name from auth context
+    var userName = context.User?.FindFirst(ClaimTypes.Email)?.Value
+        ?? context.User?.FindFirst(ClaimTypes.Name)?.Value
+        ?? "unknown";
+    var userTag = ResolveUserLibraryTag(context);
+
+    Console.WriteLine($"📚 [LibGen] Saving book {md5} to library for user {userName}...");
+
+    // Download the book from LibGen
+    var resp = await libgen.GetDownloadResponseAsync(md5, HttpCompletionOption.ResponseHeadersRead);
+
+    if (resp == null || !resp.IsSuccessStatusCode)
+    {
+        var (downloadsLeft, downloadsPerDay) = downloadTracking.GetDownloadStatus();
+        var trackingInfo = new AccountFastDownloadInfoDto(downloadsLeft, downloadsPerDay);
+        Console.WriteLine($"❌ [LibGen] Failed to download book {md5}");
+        return Results.Ok(new { success = false, message = "Failed to download book from LibGen.", accountFastInfo = trackingInfo });
+    }
+
+    // Sanitize title and determine file extension
+    var rawTitle = !string.IsNullOrWhiteSpace(title) ? title : md5;
+    var safeTitle = Regex.Replace(rawTitle, $"[{Regex.Escape(new string(Path.GetInvalidFileNameChars()))}]", "_");
+
+    var downloadUrl = await libgen.GetDownloadUrlAsync(md5);
+    var ext = !string.IsNullOrEmpty(downloadUrl) ? Path.GetExtension(new Uri(downloadUrl).AbsolutePath) : "";
+
+    if (string.IsNullOrEmpty(ext))
+        ext = resp.Content.Headers.ContentType?.MediaType switch
+        {
+            "application/pdf"                 => ".pdf",
+            "application/epub+zip"            => ".epub",
+            "application/x-mobipocket-ebook"  => ".mobi",
+            _                                 => ".bin"
+        };
+
+    var fileName = $"{safeTitle}{ext}";
+
+    // Record successful download in our tracking system
+    downloadTracking.RecordDownload(md5, userName);
+    Console.WriteLine($"[library-libgen] Recorded download for user {userName}, MD5: {md5}");
+
+    // Get updated download status
+    var (currentDownloadsLeft, currentDownloadsPerDay) = downloadTracking.GetDownloadStatus();
+    var currentTrackingInfo = new AccountFastDownloadInfoDto(currentDownloadsLeft, currentDownloadsPerDay);
+
+    var libraryRoot = ResolveLibraryRoot();
+    Directory.CreateDirectory(libraryRoot);
+
+    using (resp)
+    {
+        Stream ebookStream = await resp.Content.ReadAsStreamAsync();
+
+        // Attempt cover replacement if coverUrl is provided and format is supported
+        if (!string.IsNullOrWhiteSpace(coverUrl))
+        {
+            var extNoDot = ext.TrimStart('.');
+            if (coverService.IsFormatSupported(extNoDot))
+            {
+                Console.WriteLine($"[library-libgen] Attempting cover replacement for {fileName}");
+                ebookStream = await coverService.ReplaceCoverAsync(ebookStream, coverUrl, extNoDot);
+            }
+            else
+            {
+                Console.WriteLine($"[library-libgen] Format {extNoDot} not supported for cover replacement, skipping");
+            }
+        }
+
+        var destinationPath = Path.Combine(libraryRoot, fileName);
+        if (File.Exists(destinationPath))
+        {
+            return Results.Ok(new
+            {
+                success = true,
+                message = "File already exists in library.",
+                fileName,
+                path = destinationPath,
+                accountFastInfo = currentTrackingInfo
+            });
+        }
+
+        await using var outStream = File.Create(destinationPath);
+        await ebookStream.CopyToAsync(outStream);
+
+        await WriteLibraryMetadataAsync(libraryRoot, fileName, md5, title, authors, format, fileSize, coverUrl, source, userTag);
+
+        return Results.Ok(new
+        {
+            success = true,
+            message = "Saved to library.",
+            fileName,
+            path = destinationPath,
+            accountFastInfo = currentTrackingInfo
+        });
+    }
+})
+.RequireAuthorization()
+.RequireRateLimiting("api");
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ═══ END LIBGEN ENDPOINTS ══════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ─── SLUM Health Status Proxy ───────────────────────────────────────────
+app.MapGet("/api/anna/slum-health", async (IHttpClientFactory httpFactory) =>
+{
+    try
+    {
+        using var http = httpFactory.CreateClient();
+        http.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
+
+        Console.WriteLine("[slum-health] Fetching status page data...");
+        var statusResponse = await http.GetAsync("https://open-slum.org/api/status-page/slum");
+        if (!statusResponse.IsSuccessStatusCode)
+        {
+            Console.WriteLine($"❌ [slum-health] Failed to fetch status page: {statusResponse.StatusCode}");
+            return Results.Json(new { success = false, error = "Failed to fetch status page data" });
+        }
+
+        Console.WriteLine("[slum-health] Fetching heartbeat data...");
+        var heartbeatResponse = await http.GetAsync("https://open-slum.org/api/status-page/heartbeat/slum");
+        if (!heartbeatResponse.IsSuccessStatusCode)
+        {
+            Console.WriteLine($"❌ [slum-health] Failed to fetch heartbeat: {heartbeatResponse.StatusCode}");
+            return Results.Json(new { success = false, error = "Failed to fetch heartbeat data" });
+        }
+
+        var statusJson = await statusResponse.Content.ReadAsStringAsync();
+        var heartbeatJson = await heartbeatResponse.Content.ReadAsStringAsync();
+
+        using var statusDoc = JsonDocument.Parse(statusJson);
+        using var heartbeatDoc = JsonDocument.Parse(heartbeatJson);
+
+        // Build result array with Anna's Archive monitors
+        var result = new List<object>();
+        var heartbeats = heartbeatDoc.RootElement.GetProperty("heartbeatList");
+
+        // Find Anna's Archive group
+        if (statusDoc.RootElement.TryGetProperty("publicGroupList", out var groups))
+        {
+            foreach (var group in groups.EnumerateArray())
+            {
+                if (group.TryGetProperty("name", out var groupName) &&
+                    groupName.GetString()?.Contains("Anna's Archive") == true)
+                {
+                    foreach (var monitor in group.GetProperty("monitorList").EnumerateArray())
+                    {
+                        var name = monitor.GetProperty("name").GetString() ?? "";
+                        var id = monitor.GetProperty("id").GetInt32().ToString();
+
+                        // Calculate health percentage from heartbeats
+                        double health = 0;
+                        if (heartbeats.TryGetProperty(id, out var monitorHeartbeats))
+                        {
+                            int upCount = 0, totalCount = 0;
+                            foreach (var heartbeat in monitorHeartbeats.EnumerateArray())
+                            {
+                                totalCount++;
+                                if (heartbeat.GetProperty("status").GetInt32() == 1) upCount++;
+                            }
+                            health = totalCount > 0 ? Math.Round((double)upCount / totalCount * 100, 2) : 0;
+                        }
+
+                        // Get cert expiry
+                        int? certExpDays = null;
+                        if (monitor.TryGetProperty("certExpiryDaysRemaining", out var cert))
+                        {
+                            certExpDays = cert.GetInt32();
+                        }
+
+                        result.Add(new
+                        {
+                            name = name,
+                            health = $"{health}%",
+                            cert_exp = certExpDays.HasValue ? $"{certExpDays} days" : null
+                        });
+                    }
+                    break;
+                }
+            }
+        }
+
+        Console.WriteLine($"✅ [slum-health] Returning {result.Count} monitors");
+        return Results.Json(result);
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"❌ [slum-health] Error: {ex.Message}");
+        return Results.Json(new { success = false, error = ex.Message });
+    }
+});
+
+// ─── 3b) Anna's Archive mirror health (direct probe) ──────────────────────
+app.MapGet("/api/anna/mirror-health", async (IHttpClientFactory httpFactory) =>
+{
+    var client = httpFactory.CreateClient();
+    client.Timeout = TimeSpan.FromSeconds(4);
+
+    var mirrors = new[]
+    {
+        ("org", "https://annas-archive.org"),
+        ("se",  "https://annas-archive.se"),
+        ("li",  "https://annas-archive.li"),
+        ("pm",  "https://annas-archive.pm"),
+        ("in",  "https://annas-archive.in")
+    };
+
+    var results = new List<object>();
+
+    foreach (var (extension, url) in mirrors)
+    {
+        var sw = Stopwatch.StartNew();
+        try
+        {
+            using var resp = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
+            sw.Stop();
+
+            var statusCode = (int)resp.StatusCode;
+            var ok = statusCode >= 200 && statusCode < 500;
+            results.Add(new
+            {
+                name = $"Anna's Archive {extension.ToUpperInvariant()}",
+                extension,
+                health = ok ? 100 : 0,
+                statusCode,
+                responseMs = sw.ElapsedMilliseconds
+            });
+        }
+        catch (Exception ex)
+        {
+            sw.Stop();
+            results.Add(new
+            {
+                name = $"Anna's Archive {extension.ToUpperInvariant()}",
+                extension,
+                health = (int?)null,
+                statusCode = (int?)null,
+                responseMs = sw.ElapsedMilliseconds,
+                error = ex.GetType().Name
+            });
+        }
+    }
+
+    return Results.Json(results);
+});
+
+// ─── 3c) Library listing ─────────────────────────────────────────────────
+app.MapGet("/api/library/books", (HttpContext context) =>
+{
+    var libraryRoot = ResolveLibraryRoot();
+    if (!Directory.Exists(libraryRoot))
+        return Results.Json(Array.Empty<LibraryBookDto>());
+
+    var metaFiles = Directory.GetFiles(libraryRoot, "*.meta.json");
+    var jsonOptions = CreateLibraryJsonOptions();
+    var books = new List<LibraryBookDto>();
+    var metaLookup = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    var baseUrl = $"{context.Request.Scheme}://{context.Request.Host}";
+
+    foreach (var metaFile in metaFiles)
+    {
+        try
+        {
+            var json = File.ReadAllText(metaFile);
+            var meta = JsonSerializer.Deserialize<LibraryBookMeta>(json, jsonOptions);
+            if (meta == null)
+                continue;
+
+            metaLookup.Add(meta.FileName);
+            var coverUrl = NormalizeLibraryCoverUrl(meta.CoverUrl, baseUrl)
+                ?? FindLocalCoverUrl(libraryRoot, meta.FileName, baseUrl);
+
+            var genres = meta.Genres ?? Array.Empty<string>();
+            var tags = meta.Tags ?? genres;
+            var primaryGenre = meta.PrimaryGenre ?? genres.FirstOrDefault() ?? tags.FirstOrDefault();
+
+        books.Add(new LibraryBookDto(
+            meta.Title ?? Path.GetFileNameWithoutExtension(meta.FileName),
+            meta.Authors ?? Array.Empty<string>(),
+            meta.Format ?? Path.GetExtension(meta.FileName).TrimStart('.').ToUpperInvariant(),
+            meta.FileSize ?? "",
+            meta.FileName,
+            coverUrl,
+            meta.Source,
+            meta.Md5,
+            meta.SavedAt,
+            primaryGenre,
+            tags,
+            meta.Series,
+            genres,
+            meta.PublishedDate,
+            meta.Pages,
+            meta.GoodreadsRating,
+            meta.PersonalRating,
+            meta.ReaderEnabled
+        ));
+    }
+        catch
+        {
+            // ignore malformed meta files
+        }
+    }
+
+    var supportedExts = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    { ".epub", ".pdf", ".mobi", ".azw3", ".azw", ".kfx", ".pobi", ".fb2" };
+
+    foreach (var filePath in Directory.GetFiles(libraryRoot))
+    {
+        try
+        {
+            var ext = Path.GetExtension(filePath);
+            if (!supportedExts.Contains(ext))
+                continue;
+
+            var fileName = Path.GetFileName(filePath);
+            if (string.IsNullOrWhiteSpace(fileName) || metaLookup.Contains(fileName))
+                continue;
+
+            var info = new FileInfo(filePath);
+            books.Add(new LibraryBookDto(
+                Path.GetFileNameWithoutExtension(fileName),
+                Array.Empty<string>(),
+                ext.TrimStart('.').ToUpperInvariant(),
+                FormatFileSize(info.Length),
+                fileName,
+                null,
+                null,
+                null,
+                info.LastWriteTimeUtc,
+                null,
+                Array.Empty<string>(),
+                null,
+                Array.Empty<string>(),
+                null,
+                null,
+                null,
+                null,
+                null
+            ));
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[library] Skipping file {filePath}: {ex.Message}");
+        }
+    }
+
+    var ordered = books
+        .OrderBy(b => b.Title, StringComparer.OrdinalIgnoreCase)
+        .ToList();
+
+    return Results.Json(ordered);
+})
+.RequireAuthorization()
+.RequireRateLimiting("api");
+
+// ─── 3d) Library cover file ──────────────────────────────────────────────
+app.MapGet("/api/library/cover/{*path}", (HttpContext context, string path) =>
+{
+    if (string.IsNullOrWhiteSpace(path))
+        return Results.NotFound();
+
+    var libraryRoot = ResolveLibraryRoot();
+    var fullPath = Path.GetFullPath(Path.Combine(libraryRoot, path));
+    if (!fullPath.StartsWith(libraryRoot, StringComparison.OrdinalIgnoreCase))
+        return Results.BadRequest(new { error = "Invalid path." });
+
+    if (!File.Exists(fullPath))
+        return Results.NotFound();
+
+    var ext = Path.GetExtension(fullPath).ToLowerInvariant();
+    var contentType = ext switch
+    {
+        ".jpg" or ".jpeg" => "image/jpeg",
+        ".png" => "image/png",
+        _ => "application/octet-stream"
+    };
+
+    return Results.File(fullPath, contentType);
+})
+.RequireRateLimiting("api");
+
+// ─── Library cover candidates ────────────────────────────────────────────
+app.MapGet("/api/library/book/cover-candidates", async (
+    [FromQuery] string title,
+    [FromQuery] string? author,
+    IHttpClientFactory httpFactory) =>
+{
+    if (string.IsNullOrWhiteSpace(title))
+        return Results.BadRequest(new { error = "title is required." });
+
+    var openLibrary = await FetchOpenLibraryCoverCandidatesAsync(title, author, httpFactory);
+    var google = await FetchGoogleBooksCoverCandidatesAsync(title, author, httpFactory);
+    var covers = openLibrary.Concat(google)
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .ToList();
+    return Results.Ok(new { covers });
+})
+.RequireAuthorization()
+.RequireRateLimiting("api");
+
+// ─── 3e) Library send-to-kindle ──────────────────────────────────────────
+app.MapPost("/api/library/book/send-to-kindle", async (
+    [FromQuery] string fileName,
+    [FromQuery] string target,
+    [FromQuery] string? title,
+    [FromQuery] bool toDropbox,
+    IEmailService emailService,
+    DropboxClient dropbox,
+    IConfiguration cfg) =>
+{
+    if (string.IsNullOrWhiteSpace(fileName))
+        return Results.BadRequest(new { error = "fileName is required." });
+
+    if (string.IsNullOrWhiteSpace(target) || (target != "dad" && target != "mom"))
+        return Results.BadRequest(new { error = "Invalid target. Must be 'dad' or 'mom'." });
+
+    var safeFileName = Path.GetFileName(fileName);
+    if (!string.Equals(fileName, safeFileName, StringComparison.Ordinal))
+        return Results.BadRequest(new { error = "Invalid fileName." });
+
+    if (!string.Equals(Path.GetExtension(safeFileName), ".epub", StringComparison.OrdinalIgnoreCase))
+        return Results.BadRequest(new { error = "Reader supports EPUB files only." });
+
+    var libraryRoot = ResolveLibraryRoot();
+    var fullPath = Path.Combine(libraryRoot, safeFileName);
+    if (!File.Exists(fullPath))
+        return Results.NotFound(new { error = "File not found." });
+
+    var kindleEmail = target == "dad"
+        ? cfg["Email:DadsKindleEmail"] ?? throw new InvalidOperationException("Email:DadsKindleEmail not configured")
+        : cfg["Email:MomsKindleEmail"] ?? throw new InvalidOperationException("Email:MomsKindleEmail not configured");
+
+    if (toDropbox)
+    {
+        var dropboxPath = $"/KindleSync/{safeFileName}";
+        await using var fileStream = File.OpenRead(fullPath);
+        await dropbox.Files.UploadAsync(
+            dropboxPath,
+            WriteMode.Overwrite.Instance,
+            body: fileStream);
+    }
+    else
+    {
+        var subject = "Book from Library";
+        var body = $"Sent from Library: {title ?? safeFileName}";
+        await emailService.SendEmailWithAttachmentAsync(kindleEmail, subject, body, fullPath, safeFileName);
+    }
+
+    return Results.Ok(new { success = true, message = toDropbox ? "Sent to Dropbox." : "Sent to Kindle." });
+})
+.RequireAuthorization()
+.RequireRateLimiting("api");
+
+// ─── 3f) Update library book metadata ────────────────────────────────────
+app.MapPatch("/api/library/book/{fileName}/metadata", async (
+    [FromRoute] string fileName,
+    [FromBody] LibraryBookMetadataUpdate update,
+    HttpContext context) =>
+{
+    var safeFileName = Path.GetFileName(fileName);
+    if (!string.Equals(fileName, safeFileName, StringComparison.Ordinal))
+        return Results.BadRequest(new { error = "Invalid fileName." });
+
+    var libraryRoot = ResolveLibraryRoot();
+    var metaPath = Path.Combine(libraryRoot, safeFileName + ".meta.json");
+
+    if (!File.Exists(metaPath))
+        return Results.NotFound(new { error = "Metadata file not found." });
+
+    try
+    {
+        var jsonOptions = CreateLibraryJsonOptions();
+        var json = await File.ReadAllTextAsync(metaPath);
+        var meta = JsonSerializer.Deserialize<LibraryBookMeta>(json, jsonOptions);
+
+        if (meta == null)
+            return Results.BadRequest(new { error = "Invalid metadata file." });
+
+        // Update fields
+        meta.PrimaryGenre = update.PrimaryGenre;
+        meta.Tags = update.Tags ?? Array.Empty<string>();
+        meta.Series = update.Series;
+        if (!string.IsNullOrWhiteSpace(update.Title))
+            meta.Title = update.Title;
+        if (update.Authors != null)
+            meta.Authors = update.Authors;
+
+        // Save back to file
+        var updatedJson = JsonSerializer.Serialize(meta, jsonOptions);
+        await File.WriteAllTextAsync(metaPath, updatedJson);
+
+        Console.WriteLine($"[library] Updated metadata for {safeFileName}: Genre={meta.PrimaryGenre}, Tags={string.Join(", ", meta.Tags)}, Series={meta.Series}");
+
+        return Results.Ok(new { success = true, message = "Metadata updated successfully." });
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"[library] Failed to update metadata for {safeFileName}: {ex.Message}");
+        return Results.Problem("Failed to update metadata.");
+    }
+})
+.RequireAuthorization()
+.RequireRateLimiting("api");
+
+// ─── 3f-1) Update library book ratings ───────────────────────────────────
+app.MapPatch("/api/library/book/{fileName}/ratings", async (
+    [FromRoute] string fileName,
+    [FromBody] LibraryBookRatingsUpdate update) =>
+{
+    var safeFileName = Path.GetFileName(fileName);
+    if (!string.Equals(fileName, safeFileName, StringComparison.Ordinal))
+        return Results.BadRequest(new { error = "Invalid fileName." });
+
+    var libraryRoot = ResolveLibraryRoot();
+    var metaPath = Path.Combine(libraryRoot, safeFileName + ".meta.json");
+
+    if (!File.Exists(metaPath))
+        return Results.NotFound(new { error = "Metadata file not found." });
+
+    try
+    {
+        var jsonOptions = CreateLibraryJsonOptions();
+        var json = await File.ReadAllTextAsync(metaPath);
+        var meta = JsonSerializer.Deserialize<LibraryBookMeta>(json, jsonOptions);
+
+        if (meta == null)
+            return Results.BadRequest(new { error = "Invalid metadata file." });
+
+        if (update.GoodreadsRating.HasValue)
+        {
+            var gr = Math.Clamp(update.GoodreadsRating.Value, 0, 5);
+            meta.GoodreadsRating = gr;
+        }
+
+        if (update.PersonalRating.HasValue)
+        {
+            var pr = Math.Clamp(update.PersonalRating.Value, 0, 5);
+            meta.PersonalRating = pr;
+        }
+
+        var updatedJson = JsonSerializer.Serialize(meta, jsonOptions);
+        await File.WriteAllTextAsync(metaPath, updatedJson);
+
+        Console.WriteLine($"[library] Updated ratings for {safeFileName}: Goodreads={meta.GoodreadsRating}, Personal={meta.PersonalRating}");
+
+        return Results.Ok(new { success = true, message = "Ratings updated successfully." });
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"[library] Failed to update ratings for {safeFileName}: {ex.Message}");
+        return Results.Problem("Failed to update ratings.");
+    }
+})
+.RequireAuthorization()
+.RequireRateLimiting("api");
+
+// ─── 3f-1) Toggle library reader inclusion ──────────────────────────────
+app.MapPost("/api/library/book/{fileName}/reader", async (
+    [FromRoute] string fileName,
+    [FromBody] LibraryBookReaderUpdate update) =>
+{
+    var safeFileName = Path.GetFileName(fileName);
+    if (!string.Equals(fileName, safeFileName, StringComparison.Ordinal))
+        return Results.BadRequest(new { error = "Invalid fileName." });
+
+    var libraryRoot = ResolveLibraryRoot();
+    var metaPath = Path.Combine(libraryRoot, safeFileName + ".meta.json");
+
+    if (!File.Exists(metaPath))
+        return Results.NotFound(new { error = "Metadata file not found." });
+
+    try
+    {
+        var jsonOptions = CreateLibraryJsonOptions();
+        var json = await File.ReadAllTextAsync(metaPath);
+        var meta = JsonSerializer.Deserialize<LibraryBookMeta>(json, jsonOptions);
+
+        if (meta == null)
+            return Results.BadRequest(new { error = "Invalid metadata file." });
+
+        var enabled = update?.Enabled ?? true;
+        var updated = meta with { ReaderEnabled = enabled };
+        var updatedJson = JsonSerializer.Serialize(updated, jsonOptions);
+        await File.WriteAllTextAsync(metaPath, updatedJson);
+
+        return Results.Ok(new { success = true, enabled });
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"[library] Failed to update reader flag for {safeFileName}: {ex.Message}");
+        return Results.Problem("Failed to update reader flag.");
+    }
+})
+.RequireAuthorization()
+.RequireRateLimiting("api");
+
+app.MapPost("/api/library/book/reader", async (
+    [FromQuery] string fileName,
+    [FromBody] LibraryBookReaderUpdate update) =>
+{
+    var safeFileName = Path.GetFileName(fileName);
+    if (string.IsNullOrWhiteSpace(fileName) || !string.Equals(fileName, safeFileName, StringComparison.Ordinal))
+        return Results.BadRequest(new { error = "Invalid fileName." });
+
+    if (!string.Equals(Path.GetExtension(safeFileName), ".epub", StringComparison.OrdinalIgnoreCase))
+        return Results.BadRequest(new { error = "Reader supports EPUB files only." });
+
+    var libraryRoot = ResolveLibraryRoot();
+    var metaPath = Path.Combine(libraryRoot, safeFileName + ".meta.json");
+
+    if (!File.Exists(metaPath))
+        return Results.NotFound(new { error = "Metadata file not found." });
+
+    try
+    {
+        var jsonOptions = CreateLibraryJsonOptions();
+        var json = await File.ReadAllTextAsync(metaPath);
+        var meta = JsonSerializer.Deserialize<LibraryBookMeta>(json, jsonOptions);
+
+        if (meta == null)
+            return Results.BadRequest(new { error = "Invalid metadata file." });
+
+        var enabled = update?.Enabled ?? true;
+        var updated = meta with { ReaderEnabled = enabled };
+        var updatedJson = JsonSerializer.Serialize(updated, jsonOptions);
+        await File.WriteAllTextAsync(metaPath, updatedJson);
+
+        return Results.Ok(new { success = true, enabled });
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"[library] Failed to update reader flag for {safeFileName}: {ex.Message}");
+        return Results.Problem("Failed to update reader flag.");
+    }
+})
+.RequireAuthorization()
+.RequireRateLimiting("api");
+
+// ─── 3f-2) Wipe all library genres ───────────────────────────────────────
+app.MapPost("/api/library/books/genres/wipe", async () =>
+{
+    var libraryRoot = ResolveLibraryRoot();
+    if (!Directory.Exists(libraryRoot))
+        return Results.Ok(new { success = true, updated = 0 });
+
+    var metaFiles = Directory.GetFiles(libraryRoot, "*.meta.json");
+    var jsonOptions = CreateLibraryJsonOptions();
+    var updatedCount = 0;
+
+    foreach (var metaPath in metaFiles)
+    {
+        try
+        {
+            var json = await File.ReadAllTextAsync(metaPath);
+            var meta = JsonSerializer.Deserialize<LibraryBookMeta>(json, jsonOptions);
+            if (meta == null)
+                continue;
+
+            var updated = meta with
+            {
+                PrimaryGenre = null,
+                Tags = Array.Empty<string>(),
+                Genres = Array.Empty<string>()
+            };
+
+            var updatedJson = JsonSerializer.Serialize(updated, jsonOptions);
+            await File.WriteAllTextAsync(metaPath, updatedJson);
+            updatedCount++;
+        }
+        catch
+        {
+            // ignore individual file failures
+        }
+    }
+
+    return Results.Ok(new { success = true, updated = updatedCount });
+})
+.RequireAuthorization()
+.RequireRateLimiting("api");
+
+// ─── 3g) Update library book cover ───────────────────────────────────────
+app.MapPost("/api/library/book/{fileName}/cover", async (
+    [FromRoute] string fileName,
+    [FromBody] LibraryBookCoverUpdate update,
+    HttpContext context,
+    IHttpClientFactory httpFactory) =>
+{
+    if (update == null || string.IsNullOrWhiteSpace(update.CoverUrl))
+        return Results.BadRequest(new { error = "coverUrl is required." });
+
+    if (!Uri.TryCreate(update.CoverUrl, UriKind.Absolute, out var coverUri) ||
+        (coverUri.Scheme != Uri.UriSchemeHttp && coverUri.Scheme != Uri.UriSchemeHttps))
+        return Results.BadRequest(new { error = "coverUrl must be an http(s) URL." });
+
+    var safeFileName = Path.GetFileName(fileName);
+    if (!string.Equals(fileName, safeFileName, StringComparison.Ordinal))
+        return Results.BadRequest(new { error = "Invalid fileName." });
+
+    var libraryRoot = ResolveLibraryRoot();
+    var metaPath = Path.Combine(libraryRoot, safeFileName + ".meta.json");
+
+    if (!File.Exists(metaPath))
+        return Results.NotFound(new { error = "Metadata file not found." });
+
+    byte[] coverBytes;
+    try
+    {
+        using var http = httpFactory.CreateClient();
+        http.Timeout = TimeSpan.FromSeconds(6);
+        using var request = new HttpRequestMessage(HttpMethod.Get, coverUri);
+        request.Headers.UserAgent.ParseAdd("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36");
+        request.Headers.Accept.ParseAdd("image/avif,image/webp,image/apng,image/*,*/*;q=0.8");
+        request.Headers.AcceptLanguage.ParseAdd("en-US,en;q=0.9");
+        request.Headers.Referrer = new Uri(coverUri.GetLeftPart(UriPartial.Authority));
+
+        using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+        response.EnsureSuccessStatusCode();
+        coverBytes = await response.Content.ReadAsByteArrayAsync();
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"[library] Failed to download cover: {ex.Message}");
+        return Results.Problem("Failed to download cover image.");
+    }
+
+    if (!TryGetImageSize(coverBytes, out var width, out var height))
+        return Results.BadRequest(new { error = "Unsupported cover image format." });
+
+    if (!IsCoverSizeValid(width, height))
+    {
+        return Results.BadRequest(new
+        {
+            error = $"Cover image must be at least {MinCoverWidth}x{MinCoverHeight} pixels and 1:{TargetCoverRatio:0.##} (width:height) ratio."
+        });
+    }
+
+    var coverExt = DetermineImageExtension(coverUri.ToString(), coverBytes);
+    var coverDir = Path.Combine(libraryRoot, "_covers");
+    Directory.CreateDirectory(coverDir);
+
+    foreach (var existing in Directory.GetFiles(coverDir, $"{safeFileName}.cover.*"))
+    {
+        try { File.Delete(existing); } catch { /* ignore */ }
+    }
+
+    var coverFileName = $"{safeFileName}.cover{coverExt}";
+    var coverDiskPath = Path.Combine(coverDir, coverFileName);
+    await File.WriteAllBytesAsync(coverDiskPath, coverBytes);
+
+    try
+    {
+        var jsonOptions = CreateLibraryJsonOptions();
+        var json = await File.ReadAllTextAsync(metaPath);
+        var meta = JsonSerializer.Deserialize<LibraryBookMeta>(json, jsonOptions);
+
+        if (meta == null)
+            return Results.BadRequest(new { error = "Invalid metadata file." });
+
+        var updated = meta with { CoverUrl = $"_covers/{coverFileName}" };
+        var updatedJson = JsonSerializer.Serialize(updated, jsonOptions);
+        await File.WriteAllTextAsync(metaPath, updatedJson);
+
+        var baseUrl = $"{context.Request.Scheme}://{context.Request.Host}";
+        var normalized = NormalizeLibraryCoverUrl(updated.CoverUrl, baseUrl);
+
+        return Results.Ok(new { success = true, coverUrl = normalized });
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"[library] Failed to update cover metadata for {safeFileName}: {ex.Message}");
+        return Results.Problem("Failed to update cover metadata.");
+    }
+})
+.RequireAuthorization()
+.RequireRateLimiting("api");
+
+// ─── 3f-4) Library reader list ──────────────────────────────────────────
+app.MapGet("/api/library/reader/books", (HttpContext context) =>
+{
+    var libraryRoot = ResolveLibraryRoot();
+    if (!Directory.Exists(libraryRoot))
+        return Results.Json(Array.Empty<ReaderBookDto>());
+
+    var metaFiles = Directory.GetFiles(libraryRoot, "*.meta.json");
+    var jsonOptions = CreateLibraryJsonOptions();
+    var results = new List<ReaderBookDto>();
+    var baseUrl = $"{context.Request.Scheme}://{context.Request.Host}";
+
+    var existingKeys = AiContentCache.GetExistingSummaryKeys();
+
+    foreach (var metaFile in metaFiles)
+    {
+        try
+        {
+            var json = File.ReadAllText(metaFile);
+            var meta = JsonSerializer.Deserialize<LibraryBookMeta>(json, jsonOptions);
+            if (meta == null)
+                continue;
+
+            var ext = Path.GetExtension(meta.FileName);
+            if (!string.Equals(ext, ".epub", StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            var readerKey = ResolveReaderKey(meta.FileName, existingKeys);
+            var hasSummaries = AiContentCache.HasAnySummaries(readerKey, existingKeys);
+            var include = meta.ReaderEnabled == true || hasSummaries;
+            if (!include)
+                continue;
+
+            var coverUrl = NormalizeLibraryCoverUrl(meta.CoverUrl, baseUrl)
+                ?? FindLocalCoverUrl(libraryRoot, meta.FileName, baseUrl);
+
+            results.Add(new ReaderBookDto(
+                meta.FileName,
+                readerKey,
+                meta.Title ?? Path.GetFileNameWithoutExtension(meta.FileName),
+                meta.Authors ?? Array.Empty<string>(),
+                meta.Format ?? Path.GetExtension(meta.FileName).TrimStart('.').ToUpperInvariant(),
+                coverUrl,
+                hasSummaries
+            ));
+        }
+        catch
+        {
+            // ignore malformed meta files
+        }
+    }
+
+    return Results.Json(results.OrderBy(r => r.Title, StringComparer.OrdinalIgnoreCase).ToList());
+})
+.RequireAuthorization()
+.RequireRateLimiting("api");
+
+// ─── 5b-alt) Library EPUB reader endpoints ───────────────────────────────
+app.MapGet("/api/library/reader/epub/chapters", async (
+    [FromQuery] string fileName,
+    IHttpClientFactory httpFactory,
+    IConfiguration cfg,
+    IOpenAiModelHelper modelHelper,
+    IAiResponseParser aiResponseParser,
+    CancellationToken cancellationToken,
+    HttpContext context) =>
+{
+    if (string.IsNullOrWhiteSpace(fileName))
+        return Results.BadRequest(new { error = "fileName is required." });
+
+    var libraryRoot = ResolveLibraryRoot();
+    var safeFileName = Path.GetFileName(fileName);
+    if (!string.Equals(Path.GetExtension(safeFileName), ".epub", StringComparison.OrdinalIgnoreCase))
+        return Results.BadRequest(new { error = "Reader supports EPUB files only." });
+    var fullPath = Path.Combine(libraryRoot, safeFileName);
+    if (!File.Exists(fullPath))
+        return Results.NotFound(new { error = "Book file not found." });
+
+    var readerKey = ResolveReaderKey(safeFileName, AiContentCache.GetExistingSummaryKeys());
+    var (index, cacheDir) = await LibraryEpubCache.GetOrBuildChapterIndexQuickAsync(fullPath, readerKey);
+    index = await ChapterLabelingHelper.EnsureGptChapterLabelsAsync(
+        index,
+        cacheDir,
+        httpFactory,
+        cfg,
+        modelHelper,
+        aiResponseParser,
+        cancellationToken);
+    var response = new DropboxEpubChaptersResponse(
+        index.Title,
+        index.Chapters.Select(ch => new DropboxChapterDto(
+            ch.Id,
+            ch.Title,
+            ch.Level,
+            ch.WordCount,
+            ch.DisplayLabel,
+            ch.IsMainChapter)).ToList());
+    return Results.Ok(response);
+})
+.RequireAuthorization()
+.RequireRateLimiting("api");
+
+app.MapGet("/api/library/reader/epub/chapter", async (
+    [FromQuery] string fileName,
+    [FromQuery] int chapterId,
+    HttpContext context) =>
+{
+    if (string.IsNullOrWhiteSpace(fileName))
+        return Results.BadRequest(new { error = "fileName is required." });
+
+    var libraryRoot = ResolveLibraryRoot();
+    var safeFileName = Path.GetFileName(fileName);
+    if (!string.Equals(Path.GetExtension(safeFileName), ".epub", StringComparison.OrdinalIgnoreCase))
+        return Results.BadRequest(new { error = "Reader supports EPUB files only." });
+    var fullPath = Path.Combine(libraryRoot, safeFileName);
+    if (!File.Exists(fullPath))
+        return Results.NotFound(new { error = "Book file not found." });
+
+    var readerKey = ResolveReaderKey(safeFileName, AiContentCache.GetExistingSummaryKeys());
+    var (index, cacheDir) = await LibraryEpubCache.GetOrBuildChapterIndexQuickAsync(fullPath, readerKey);
+    var chapter = index.Chapters.FirstOrDefault(ch => ch.Id == chapterId);
+    if (chapter == null)
+        return Results.NotFound(new { error = "Chapter not found." });
+
+    var contentPath = Path.Combine(cacheDir, chapter.FileName);
+    if (!File.Exists(contentPath))
+    {
+        _ = LibraryEpubCache.EnsureCacheBuildAsync(fullPath, readerKey, cacheDir);
+        var fallback = await LibraryEpubCache.ReadChapterContentCachedAsync(fullPath, chapterId);
+        if (fallback == null)
+            return Results.NotFound(new { error = "Chapter content not ready yet." });
+
+        try
+        {
+            Directory.CreateDirectory(cacheDir);
+            await File.WriteAllTextAsync(contentPath, fallback);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[library] Failed to persist chapter cache for {safeFileName} chapter {chapterId}: {ex.Message}");
+        }
+
+        var fallbackResponse = new DropboxChapterContentDto(
+            chapter.Id,
+            chapter.Title,
+            fallback,
+            chapter.CharacterCount,
+            chapter.WordCount);
+        return Results.Ok(fallbackResponse);
+    }
+
+    var content = await File.ReadAllTextAsync(contentPath);
+    var response = new DropboxChapterContentDto(chapter.Id, chapter.Title, content, chapter.CharacterCount, chapter.WordCount);
+    return Results.Ok(response);
+})
+.RequireAuthorization()
+.RequireRateLimiting("api");
+
+app.MapGet("/api/library/reader/epub/status", async (
+    [FromQuery] string fileName) =>
+{
+    if (string.IsNullOrWhiteSpace(fileName))
+        return Results.BadRequest(new { error = "fileName is required." });
+
+    var libraryRoot = ResolveLibraryRoot();
+    var safeFileName = Path.GetFileName(fileName);
+    if (!string.Equals(Path.GetExtension(safeFileName), ".epub", StringComparison.OrdinalIgnoreCase))
+        return Results.BadRequest(new { error = "Reader supports EPUB files only." });
+    var fullPath = Path.Combine(libraryRoot, safeFileName);
+    if (!File.Exists(fullPath))
+        return Results.NotFound(new { error = "Book file not found." });
+
+    var readerKey = ResolveReaderKey(safeFileName, AiContentCache.GetExistingSummaryKeys());
+    var status = await LibraryEpubCache.GetCacheStatusAsync(fullPath, readerKey);
+    return Results.Ok(status);
+})
+.RequireAuthorization()
+.RequireRateLimiting("api");
+
+app.MapPost("/api/library/reader/epub/index", async (
+    [FromBody] LibraryReaderIndexRequest request) =>
+{
+    if (request is null || string.IsNullOrWhiteSpace(request.FileName))
+        return Results.BadRequest(new { error = "fileName is required." });
+
+    var fileName = Path.GetFileName(request.FileName);
+    if (!string.Equals(Path.GetExtension(fileName), ".epub", StringComparison.OrdinalIgnoreCase))
+        return Results.BadRequest(new { error = "Reader supports EPUB files only." });
+    var libraryRoot = ResolveLibraryRoot();
+    var fullPath = Path.Combine(libraryRoot, fileName);
+    if (!File.Exists(fullPath))
+        return Results.NotFound(new { error = "Book file not found." });
+
+    var readerKey = ResolveReaderKey(fileName, AiContentCache.GetExistingSummaryKeys());
+    var (_, cacheDir) = await LibraryEpubCache.GetOrBuildChapterIndexAsync(fullPath, readerKey);
+    await LibraryEpubCache.EnsureCacheBuildAsync(fullPath, readerKey, cacheDir);
+    return Results.Ok(new { started = true });
+})
+.RequireAuthorization()
+.RequireRateLimiting("api");
+
+app.MapDelete("/api/library/reader/epub/index", ([FromBody] LibraryReaderIndexRequest request) =>
+{
+    if (request is null || string.IsNullOrWhiteSpace(request.FileName))
+        return Results.BadRequest(new { error = "fileName is required." });
+
+    var fileName = Path.GetFileName(request.FileName);
+    if (!string.Equals(Path.GetExtension(fileName), ".epub", StringComparison.OrdinalIgnoreCase))
+        return Results.BadRequest(new { error = "Reader supports EPUB files only." });
+    var readerKey = ResolveReaderKey(fileName, AiContentCache.GetExistingSummaryKeys());
+    var removed = LibraryEpubCache.DeleteCache(readerKey);
+    return Results.Ok(new { success = removed });
+})
+.RequireAuthorization()
+.RequireRateLimiting("api");
+
+app.MapGet("/api/library/reader/epub/search", async (
+    [FromQuery] string fileName,
+    [FromQuery] string? query,
+    [FromQuery] string? q) =>
+{
+    if (string.IsNullOrWhiteSpace(fileName))
+        return Results.BadRequest(new { error = "fileName is required." });
+
+    var libraryRoot = ResolveLibraryRoot();
+    var safeFileName = Path.GetFileName(fileName);
+    if (!string.Equals(Path.GetExtension(safeFileName), ".epub", StringComparison.OrdinalIgnoreCase))
+        return Results.BadRequest(new { error = "Reader supports EPUB files only." });
+    var fullPath = Path.Combine(libraryRoot, safeFileName);
+    if (!File.Exists(fullPath))
+        return Results.NotFound(new { error = "Book file not found." });
+
+    var normalizedQuery = (query ?? q)?.Trim();
+    if (string.IsNullOrWhiteSpace(normalizedQuery) || normalizedQuery.Length < 10)
+        return Results.BadRequest(new { error = "Search query must be at least 10 characters." });
+
+    var readerKey = ResolveReaderKey(safeFileName, AiContentCache.GetExistingSummaryKeys());
+    var results = await LibraryEpubCache.SearchAsync(fullPath, readerKey, normalizedQuery);
+    return Results.Ok(results);
+})
+.RequireAuthorization()
+.RequireRateLimiting("api");
+
+// ─── 3h) Delete library book ─────────────────────────────────────────────
+app.MapDelete("/api/library/book/{fileName}", async (
+    [FromRoute] string fileName) =>
+{
+    var safeFileName = Path.GetFileName(fileName);
+    if (!string.Equals(fileName, safeFileName, StringComparison.Ordinal))
+        return Results.BadRequest(new { error = "Invalid fileName." });
+
+    var libraryRoot = ResolveLibraryRoot();
+    var bookPath = Path.Combine(libraryRoot, safeFileName);
+    var metaPath = Path.Combine(libraryRoot, safeFileName + ".meta.json");
+    var coverDir = Path.Combine(libraryRoot, "_covers");
+    var coverMatches = Directory.Exists(coverDir)
+        ? Directory.GetFiles(coverDir, $"{safeFileName}.cover.*")
+        : Array.Empty<string>();
+
+    if (!File.Exists(bookPath) && !File.Exists(metaPath) && coverMatches.Length == 0)
+        return Results.NotFound(new { error = "Book not found." });
+
+    try
+    {
+        if (File.Exists(bookPath))
+            File.Delete(bookPath);
+
+        if (File.Exists(metaPath))
+            File.Delete(metaPath);
+
+        foreach (var cover in coverMatches)
+        {
+            try { File.Delete(cover); } catch { /* ignore */ }
+        }
+
+        return Results.Ok(new { success = true });
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"[library] Failed to delete book {safeFileName}: {ex.Message}");
+        return Results.Problem("Failed to delete book.");
     }
 })
 .RequireAuthorization()
@@ -940,7 +2537,12 @@ app.MapGet("/api/anna/dropbox/epubs", async (
 app.MapGet("/api/anna/dropbox/epub/chapters", async (
     [FromQuery] string path,
     IValidationService validation,
-    DropboxClient dropbox) =>
+    DropboxClient dropbox,
+    IHttpClientFactory httpFactory,
+    IConfiguration cfg,
+    IOpenAiModelHelper modelHelper,
+    IAiResponseParser aiResponseParser,
+    CancellationToken cancellationToken) =>
 {
     if (!validation.IsValidDropboxPath(path))
         return Results.BadRequest(new {
@@ -949,13 +2551,27 @@ app.MapGet("/api/anna/dropbox/epub/chapters", async (
 
     try
     {
-        var (index, _) = await DropboxEpubCache.GetOrBuildChapterIndexAsync(dropbox, path);
+        var (index, cacheDir) = await DropboxEpubCache.GetOrBuildChapterIndexAsync(dropbox, path);
+        index = await ChapterLabelingHelper.EnsureGptChapterLabelsAsync(
+            index,
+            cacheDir,
+            httpFactory,
+            cfg,
+            modelHelper,
+            aiResponseParser,
+            cancellationToken);
 
         var response = new DropboxEpubChaptersResponse(
             index.Title,
             index.Chapters
                 .Where(ch => ch.WordCount >= 50)
-                .Select(ch => new DropboxChapterDto(ch.Id, ch.Title, ch.Level, ch.WordCount))
+                .Select(ch => new DropboxChapterDto(
+                    ch.Id,
+                    ch.Title,
+                    ch.Level,
+                    ch.WordCount,
+                    ch.DisplayLabel,
+                    ch.IsMainChapter))
                 .ToList()
         );
 
@@ -1383,8 +2999,12 @@ app.MapPost("/api/ai/flashcards", async (
     IAiResponseParser aiResponseParser,
     IFlashcardService flashcardService) =>
 {
-    if (request is null || string.IsNullOrWhiteSpace(request.Term) || string.IsNullOrWhiteSpace(request.DropboxPath))
-        return Results.BadRequest(new { error = "Term and dropboxPath are required." });
+    if (request is null || string.IsNullOrWhiteSpace(request.Term))
+        return Results.BadRequest(new { error = "Term is required." });
+
+    var shouldSave = request.SaveToLibrary ?? true;
+    if (shouldSave && string.IsNullOrWhiteSpace(request.DropboxPath))
+        return Results.BadRequest(new { error = "dropboxPath is required when saving flashcards." });
 
     var tokenLimitResult = CheckTokenLimit(cfg, tokenUsage);
     if (tokenLimitResult is not null) return tokenLimitResult;
@@ -1540,17 +3160,20 @@ Return JSON array of flashcards for individual terms found in the passage.";
             }
         }
 
-        var list = flashcardService.LoadFlashcards(request.DropboxPath!);
-        foreach (var card in cardsParsed)
+        if (shouldSave && !string.IsNullOrWhiteSpace(request.DropboxPath))
         {
-            var existing = list.FindIndex(x => string.Equals(x.Term, card.Term, StringComparison.OrdinalIgnoreCase));
-            if (existing >= 0)
-                list[existing] = card;
-            else
-                list.Add(card);
-        }
+            var list = flashcardService.LoadFlashcards(request.DropboxPath);
+            foreach (var card in cardsParsed)
+            {
+                var existing = list.FindIndex(x => string.Equals(x.Term, card.Term, StringComparison.OrdinalIgnoreCase));
+                if (existing >= 0)
+                    list[existing] = card;
+                else
+                    list.Add(card);
+            }
 
-        flashcardService.SaveFlashcards(request.DropboxPath!, list);
+            flashcardService.SaveFlashcards(request.DropboxPath, list);
+        }
         return Results.Ok(new FlashcardResult(cardsParsed));
     }
     catch (Exception ex)
@@ -1750,6 +3373,11 @@ app.MapPost("/api/ai/summarize/chapter/stream", async (
         return;
     }
 
+    if (request.ForceRegenerate)
+    {
+        AiContentCache.DeleteChapterSummary(request.DropboxPath, request.ChapterId);
+    }
+
     // Check if cached summary exists
     var cached = AiContentCache.LoadChapterSummary<Dictionary<string, object>>(request.DropboxPath, request.ChapterId);
     if (cached != null)
@@ -1759,13 +3387,37 @@ app.MapPost("/api/ai/summarize/chapter/stream", async (
         context.Response.Headers.Append("Cache-Control", "no-cache");
         context.Response.Headers.Append("Connection", "keep-alive");
 
+        static long ToLong(object? value)
+        {
+            if (value == null) return 0L;
+            if (value is long l) return l;
+            if (value is int i) return i;
+            if (value is double d) return (long)d;
+            if (value is string s && long.TryParse(s, out var parsed)) return parsed;
+            if (value is JsonElement je)
+            {
+                if (je.ValueKind == JsonValueKind.Number && je.TryGetInt64(out var num)) return num;
+                if (je.ValueKind == JsonValueKind.String && long.TryParse(je.GetString(), out var numFromString)) return numFromString;
+            }
+            return 0L;
+        }
+
+        static DateTime ToDateTime(object? value)
+        {
+            if (value == null) return DateTime.UtcNow;
+            if (value is DateTime dt) return dt;
+            if (value is string s && DateTime.TryParse(s, out var parsed)) return parsed;
+            if (value is JsonElement je && je.ValueKind == JsonValueKind.String && DateTime.TryParse(je.GetString(), out var parsedJe)) return parsedJe;
+            return DateTime.UtcNow;
+        }
+
         var completeEvent = new
         {
             summary = cached.GetValueOrDefault("summary", ""),
-            promptTokens = cached.TryGetValue("promptTokens", out var pt) ? Convert.ToInt64(pt) : 0L,
-            completionTokens = cached.TryGetValue("completionTokens", out var ct) ? Convert.ToInt64(ct) : 0L,
-            totalTokens = cached.TryGetValue("totalTokens", out var tt) ? Convert.ToInt64(tt) : 0L,
-            cachedAt = cached.GetValueOrDefault("cachedAt", DateTime.UtcNow)
+            promptTokens = cached.TryGetValue("promptTokens", out var pt) ? ToLong(pt) : 0L,
+            completionTokens = cached.TryGetValue("completionTokens", out var ct) ? ToLong(ct) : 0L,
+            totalTokens = cached.TryGetValue("totalTokens", out var tt) ? ToLong(tt) : 0L,
+            cachedAt = cached.TryGetValue("cachedAt", out var cachedAt) ? ToDateTime(cachedAt) : DateTime.UtcNow
         };
 
         await ServerSentEventsHelper.SendEventAsync(context.Response, completeEvent, "complete");
@@ -1804,8 +3456,8 @@ app.MapPost("/api/ai/summarize/chapter/stream", async (
         }
 
         // Prepare context for AI
-        var (index, _) = await DropboxEpubCache.GetOrBuildChapterIndexAsync(dropbox, request.DropboxPath);
-        var chapter = index.Chapters.FirstOrDefault(c => c.Id == request.ChapterId);
+        var index = await LoadChapterIndexAsync(dropbox, request.DropboxPath);
+        var chapter = index?.Chapters.FirstOrDefault(c => c.Id == request.ChapterId);
 
         var contextParts = new List<string>();
         if (!string.IsNullOrWhiteSpace(request.BookTitle))
@@ -2012,8 +3664,12 @@ app.MapGet("/api/ai/chunk-boundaries", async (
     }
 
     // Load chapter content (index if needed)
-    var epubHash = DropboxEpubCache.ComputeHashPublic(dropboxPath);
-    var cacheRoot = DropboxEpubCache.GetCacheRoot();
+    var existingKeys = AiContentCache.GetExistingSummaryKeys();
+    var isLibrary = TryResolveLibraryFileForReaderKey(dropboxPath, existingKeys, out _, out var libraryPath);
+    var cacheRoot = isLibrary ? LibraryEpubCache.GetCacheRoot() : DropboxEpubCache.GetCacheRoot();
+    var epubHash = isLibrary
+        ? LibraryEpubCache.ComputeHashPublic(dropboxPath)
+        : DropboxEpubCache.ComputeHashPublic(dropboxPath);
     var chapterPath = Path.Combine(cacheRoot, epubHash, $"chapter-{chapterId:D4}.txt");
 
     if (!File.Exists(chapterPath))
@@ -2031,7 +3687,14 @@ app.MapGet("/api/ai/chunk-boundaries", async (
         try
         {
             var cacheDir = Path.Combine(cacheRoot, epubHash);
-            await DropboxEpubCache.EnsureCacheBuildAsync(dropbox, dropboxPath, cacheDir);
+            if (isLibrary)
+            {
+                await LibraryEpubCache.EnsureCacheBuildAsync(libraryPath, dropboxPath, cacheDir);
+            }
+            else
+            {
+                await DropboxEpubCache.EnsureCacheBuildAsync(dropbox, dropboxPath, cacheDir);
+            }
             await ServerSentEventsHelper.SendEventAsync(context.Response, new
             {
                 stage = "indexing",
@@ -2398,9 +4061,25 @@ app.MapPost("/api/ai/section-summary", async (
         return Results.BadRequest(new { error = "Invalid sectionIndex or chunk boundaries not detected." });
 
     // Load chapter content
-    var epubHash = DropboxEpubCache.ComputeHashPublic(request.DropboxPath);
-    var cacheRoot = DropboxEpubCache.GetCacheRoot();
+    var existingKeys = AiContentCache.GetExistingSummaryKeys();
+    var isLibrary = TryResolveLibraryFileForReaderKey(request.DropboxPath, existingKeys, out _, out var libraryPath);
+    var cacheRoot = isLibrary ? LibraryEpubCache.GetCacheRoot() : DropboxEpubCache.GetCacheRoot();
+    var epubHash = isLibrary
+        ? LibraryEpubCache.ComputeHashPublic(request.DropboxPath)
+        : DropboxEpubCache.ComputeHashPublic(request.DropboxPath);
     var chapterPath = Path.Combine(cacheRoot, epubHash, $"chapter-{request.ChapterId:D4}.txt");
+
+    if (!File.Exists(chapterPath))
+    {
+        if (isLibrary)
+        {
+            await LibraryEpubCache.EnsureCacheBuildAsync(libraryPath, request.DropboxPath, Path.Combine(cacheRoot, epubHash));
+        }
+        else
+        {
+            await DropboxEpubCache.EnsureCacheBuildAsync(dropbox, request.DropboxPath, Path.Combine(cacheRoot, epubHash));
+        }
+    }
 
     if (!File.Exists(chapterPath))
         return Results.NotFound(new { error = "Chapter not indexed." });
@@ -2918,6 +4597,247 @@ Rules:
 .RequireAuthorization()
 .RequireRateLimiting("api");
 
+// ─── 5n-2) AI book search (freeform query) ───────────────────────────────
+app.MapPost("/api/ai/book-search", async (
+    [FromBody] AiBookSearchRequest request,
+    IHttpClientFactory httpFactory,
+    IConfiguration cfg,
+    ITokenUsageService tokenUsage,
+    IOpenAiModelHelper modelHelper,
+    IAiResponseParser aiResponseParser,
+    IModelSelectionService modelSelection,
+    CancellationToken cancellationToken) =>
+{
+    if (request is null || string.IsNullOrWhiteSpace(request.Query))
+        return Results.BadRequest(new { error = "query is required." });
+
+    var tokenLimitResult = CheckTokenLimit(cfg, tokenUsage);
+    if (tokenLimitResult is not null) return tokenLimitResult;
+
+    try
+    {
+        using var http = httpFactory.CreateClient("OpenAI");
+        var model = modelSelection.GetModelDeep();
+        var hasUrl = request.Query.Contains("http://", StringComparison.OrdinalIgnoreCase)
+            || request.Query.Contains("https://", StringComparison.OrdinalIgnoreCase);
+        var extractedTitles = hasUrl
+            ? await ExtractBookTitlesFromQueryAsync(request.Query, httpFactory, cancellationToken)
+            : new List<string>();
+        var hasExtractedTitles = extractedTitles.Count > 0;
+        var maxResults = hasExtractedTitles
+            ? Math.Min(20, extractedTitles.Count)
+            : 20;
+        var perBookWordLimit = hasExtractedTitles && extractedTitles.Count >= 60 ? 24 : 45;
+
+        var systemPrompt = @"You are a book discovery assistant. Determine whether the user query is asking for books.
+If it is, return a list of relevant books with an engaging, spoiler-free summary of the search.
+Return ONLY valid JSON with no markdown or extra text.";
+
+        var extractedBlock = hasExtractedTitles
+            ? $"ExtractedTitles (from the URL):\n- {string.Join("\n- ", extractedTitles.Take(100))}\n"
+            : "ExtractedTitles: None\n";
+
+        var userPrompt = $@"Query: ""{request.Query}""
+{extractedBlock}
+
+Return ONLY this JSON structure:
+{{
+  ""isBookQuery"": boolean,
+  ""message"": string|null,
+  ""summary"": string|null,
+  ""books"": [
+    {{
+      ""title"": ""Book title"",
+      ""author"": ""Author name"",
+      ""summary"": ""Spoiler-free note on what makes this book special (2-3 sentences)"",
+      ""importance"": ""Context/impact (historical, critical acclaim, cultural influence; 1 sentence)""
+    }}
+  ]
+}}
+
+Rules:
+- If the query is NOT about books, set isBookQuery=false and return a brief message.
+- If ExtractedTitles are provided, return those titles in that order and fill in author if known; do not invent titles not present.
+- If ExtractedTitles are not provided, return up to {maxResults} books when the query includes a URL or asks for a list; otherwise return 10-25.
+- Make the summary 2-3 sentences, spoiler-free, and engaging (max 80 words).
+- The summary should briefly explain what the list represents and why it's notable (e.g., award significance, era, genre influence).
+- Keep each book summary and importance concise (max {perBookWordLimit} words each).";
+
+        var payload = modelHelper.BuildChatCompletionPayload(
+            model,
+            new[]
+            {
+                new { role = "system", content = systemPrompt },
+                new { role = "user", content = userPrompt }
+            },
+            maxCompletionTokens: hasUrl ? 6000 : 2000,
+            temperature: 0.3
+        );
+
+        var response = await http.PostAsJsonAsync("https://api.openai.com/v1/chat/completions", payload);
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = await response.Content.ReadAsStringAsync();
+            Console.WriteLine($"❌ OpenAI book-search failed status={(int)response.StatusCode} body={body}");
+            return Results.Problem($"OpenAI request failed: {(int)response.StatusCode}");
+        }
+
+        using var stream = await response.Content.ReadAsStreamAsync();
+        using var doc = await JsonDocument.ParseAsync(stream);
+        var rawText = aiResponseParser.ExtractText(doc.RootElement);
+
+        if (doc.RootElement.TryGetProperty("usage", out var usage))
+        {
+            var promptTokens = usage.GetProperty("prompt_tokens").GetInt32();
+            var completionTokens = usage.GetProperty("completion_tokens").GetInt32();
+            tokenUsage.AddUsage(promptTokens, completionTokens);
+        }
+
+        if (string.IsNullOrWhiteSpace(rawText))
+            return Results.Problem("AI search returned empty response.");
+
+        var cleaned = rawText.Trim();
+        if (cleaned.StartsWith("```"))
+        {
+            cleaned = cleaned
+                .Replace("```json", "")
+                .Replace("```", "")
+                .Trim();
+        }
+
+        JsonDocument resultDoc;
+        try
+        {
+            resultDoc = JsonDocument.Parse(cleaned);
+        }
+        catch (Exception ex)
+        {
+            var rawPreview = rawText.Length > 2000 ? rawText[..2000] + "…" : rawText;
+            var cleanPreview = cleaned.Length > 2000 ? cleaned[..2000] + "…" : cleaned;
+            Console.WriteLine($"❌ AI book-search JSON parse failed: {ex.Message}");
+            Console.WriteLine($"❌ AI book-search raw preview: {rawPreview}");
+            Console.WriteLine($"❌ AI book-search cleaned preview: {cleanPreview}");
+            return Results.BadRequest(new { error = "AI response could not be parsed. Try again or simplify the query." });
+        }
+
+        var root = resultDoc.RootElement;
+
+        var isBookQuery = root.TryGetProperty("isBookQuery", out var bookProp) && bookProp.ValueKind == JsonValueKind.True;
+        if (!isBookQuery)
+        {
+            var message = root.TryGetProperty("message", out var msgProp) ? msgProp.GetString() : "Query is not about books.";
+            return Results.BadRequest(new { error = message ?? "Query is not about books." });
+        }
+
+        var summary = root.TryGetProperty("summary", out var summaryProp) ? summaryProp.GetString() : null;
+        var books = new List<AiBookSearchItem>();
+
+        if (root.TryGetProperty("books", out var booksProp) && booksProp.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in booksProp.EnumerateArray())
+            {
+                var title = item.TryGetProperty("title", out var t) ? t.GetString() ?? "" : "";
+                var author = item.TryGetProperty("author", out var a) ? a.GetString() ?? "" : "";
+                var bookSummary = item.TryGetProperty("summary", out var s) ? s.GetString() ?? "" : "";
+                var importance = item.TryGetProperty("importance", out var i) ? i.GetString() ?? "" : "";
+
+                if (string.IsNullOrWhiteSpace(title)) continue;
+
+                var coverUrl = await FetchOpenLibraryCoverAsync(title, author, httpFactory)
+                               ?? await FetchGoogleBooksCoverAsync(title, author, httpFactory);
+
+                books.Add(new AiBookSearchItem(title, author, bookSummary, importance, coverUrl));
+            }
+        }
+
+        if (books.Count == 0 && !hasExtractedTitles)
+        {
+            var retryPrompt = $@"Query: ""{request.Query}""
+
+Return ONLY this JSON structure:
+{{
+  ""isBookQuery"": true,
+  ""message"": null,
+  ""summary"": string|null,
+  ""books"": [
+    {{
+      ""title"": ""Book title"",
+      ""author"": ""Author name"",
+      ""summary"": ""Spoiler-free note on what makes this book special (2-3 sentences)"",
+      ""importance"": ""Context/impact (historical, critical acclaim, cultural influence; 1 sentence)""
+    }}
+  ]
+}}
+
+Rules:
+- You MUST return 10-20 books. Do not return an empty list.
+- Make the summary 2-3 sentences, spoiler-free, and engaging (max 80 words).
+- Keep each book summary and importance concise (max {perBookWordLimit} words each).";
+
+            var retryPayload = modelHelper.BuildChatCompletionPayload(
+                "gpt-4o",
+                new[]
+                {
+                    new { role = "system", content = systemPrompt },
+                    new { role = "user", content = retryPrompt }
+                },
+                maxCompletionTokens: 2500,
+                temperature: 0.4
+            );
+
+            var retryResponse = await http.PostAsJsonAsync("https://api.openai.com/v1/chat/completions", retryPayload, cancellationToken);
+            if (retryResponse.IsSuccessStatusCode)
+            {
+                using var retryStream = await retryResponse.Content.ReadAsStreamAsync(cancellationToken);
+                using var retryDoc = await JsonDocument.ParseAsync(retryStream, cancellationToken: cancellationToken);
+                var retryText = aiResponseParser.ExtractText(retryDoc.RootElement);
+                if (!string.IsNullOrWhiteSpace(retryText))
+                {
+                    var retryClean = retryText.Trim();
+                    if (retryClean.StartsWith("```"))
+                    {
+                        retryClean = retryClean
+                            .Replace("```json", "")
+                            .Replace("```", "")
+                            .Trim();
+                    }
+
+                    var retryResultDoc = JsonDocument.Parse(retryClean);
+                    var retryRoot = retryResultDoc.RootElement;
+                    summary = retryRoot.TryGetProperty("summary", out var retrySummary) ? retrySummary.GetString() : summary;
+
+                    if (retryRoot.TryGetProperty("books", out var retryBooks) && retryBooks.ValueKind == JsonValueKind.Array)
+                    {
+                        foreach (var item in retryBooks.EnumerateArray())
+                        {
+                            var title = item.TryGetProperty("title", out var t) ? t.GetString() ?? "" : "";
+                            var author = item.TryGetProperty("author", out var a) ? a.GetString() ?? "" : "";
+                            var bookSummary = item.TryGetProperty("summary", out var s) ? s.GetString() ?? "" : "";
+                            var importance = item.TryGetProperty("importance", out var i) ? i.GetString() ?? "" : "";
+
+                            if (string.IsNullOrWhiteSpace(title)) continue;
+
+                            var coverUrl = await FetchOpenLibraryCoverAsync(title, author, httpFactory)
+                                           ?? await FetchGoogleBooksCoverAsync(title, author, httpFactory);
+
+                            books.Add(new AiBookSearchItem(title, author, bookSummary, importance, coverUrl));
+                        }
+                    }
+                }
+            }
+        }
+
+        return Results.Ok(new AiBookSearchResponse(summary, books));
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"❌ OpenAI book-search failed: {ex.Message}");
+        return ApiResponse.InternalError("Failed to run AI book search.");
+    }
+})
+.RequireAuthorization()
+.RequireRateLimiting("api");
+
 // ─── 5o) Match series books intelligently using GPT ─────────────────────────
 app.MapPost("/api/ai/match-series-books", async (
     [FromBody] MatchSeriesBooksRequest request,
@@ -3396,6 +5316,7 @@ app.MapPost("/api/anna/book/{md5}/send-to-kindle", async (
     AnnaArchiveService anna,
     IEmailService emailService,
     IEbookCoverService coverService,
+    DropboxClient dropbox,
     IConfiguration cfg,
     IValidationService validation,
     IDownloadTrackingService downloadTracking) =>
@@ -3469,6 +5390,48 @@ app.MapPost("/api/anna/book/{md5}/send-to-kindle", async (
                 tempFilePath,
                 fileName);
 
+            // After successful email send, also backup to Dropbox
+            bool dropboxSuccess = false;
+            string? dropboxPathResult = null;
+
+            try
+            {
+                var dropboxFolder = target.ToLower() == "dad" ? "/dad_downloads" : "/mom_downloads";
+                var dropboxPath = $"{dropboxFolder}/{fileName}";
+
+                using (var fileStream = new FileStream(tempFilePath, FileMode.Open, FileAccess.Read, FileShare.Read))
+                {
+                    Console.WriteLine($"[send-to-kindle] Uploading '{fileName}' to Dropbox: {dropboxPath}");
+
+                    var uploaded = await dropbox.Files.UploadAsync(
+                        dropboxPath,
+                        WriteMode.Overwrite.Instance,
+                        body: fileStream
+                    );
+
+                    dropboxPathResult = uploaded.PathDisplay;
+                    dropboxSuccess = true;
+                    Console.WriteLine($"✅ Dropbox backup successful! Path: {dropboxPathResult}");
+                }
+            }
+            catch (ApiException<UploadError> ex)
+            {
+                var details = ex.ErrorResponse?.ToString() ?? ex.ToString();
+                Console.WriteLine($"⚠️ Dropbox backup failed (non-critical): {ex.Message} | Details: {details}");
+            }
+            catch (HttpException ex)
+            {
+                Console.WriteLine($"⚠️ Dropbox backup failed (non-critical, HTTP {ex.StatusCode}): {ex.Message}");
+            }
+            catch (DropboxException ex)
+            {
+                Console.WriteLine($"⚠️ Dropbox backup failed (non-critical): {ex}");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"⚠️ Dropbox backup failed (non-critical): {ex.Message}");
+            }
+
             // Get user name from auth context
             var userName = context.User?.FindFirst(ClaimTypes.Email)?.Value
                 ?? context.User?.FindFirst(ClaimTypes.Name)?.Value
@@ -3485,7 +5448,10 @@ app.MapPost("/api/anna/book/{md5}/send-to-kindle", async (
             return Results.Ok(new
             {
                 success         = true,
-                message         = $"Book sent to {target}'s Kindle",
+                message         = dropboxSuccess
+                    ? $"Book sent to {target}'s Kindle and backed up to Dropbox"
+                    : $"Book sent to {target}'s Kindle (Dropbox backup failed, but email succeeded)",
+                dropboxPath     = dropboxPathResult,
                 accountFastInfo = counterInfo
             });
         }
@@ -3739,23 +5705,55 @@ app.MapPost("/api/gaming/toggle", async (
 /// Loads chapter content from Dropbox EPUB cache.
 /// </summary>
 /// <returns>Chapter content string, or null if not found/empty</returns>
+static async Task<CachedChapterIndex?> LoadChapterIndexAsync(
+    DropboxClient dropbox,
+    string dropboxPath)
+{
+    var existingKeys = AiContentCache.GetExistingSummaryKeys();
+    if (TryResolveLibraryFileForReaderKey(dropboxPath, existingKeys, out _, out var fullPath))
+    {
+        var (index, _) = await LibraryEpubCache.GetOrBuildChapterIndexAsync(fullPath, dropboxPath);
+        return index;
+    }
+
+    var (dropboxIndex, _) = await DropboxEpubCache.GetOrBuildChapterIndexAsync(dropbox, dropboxPath);
+    return dropboxIndex;
+}
+
 static async Task<string?> LoadChapterContentAsync(
     DropboxClient dropbox,
     string dropboxPath,
     int chapterId)
 {
-    var (index, cacheDir) = await DropboxEpubCache.GetOrBuildChapterIndexAsync(dropbox, dropboxPath);
-    var chapter = index.Chapters.FirstOrDefault(c => c.Id == chapterId);
+    var existingKeys = AiContentCache.GetExistingSummaryKeys();
+    if (TryResolveLibraryFileForReaderKey(dropboxPath, existingKeys, out _, out var fullPath))
+    {
+        var (index, cacheDir) = await LibraryEpubCache.GetOrBuildChapterIndexAsync(fullPath, dropboxPath);
+        var chapter = index.Chapters.FirstOrDefault(c => c.Id == chapterId);
 
-    if (chapter is null || string.IsNullOrWhiteSpace(chapter.FileName))
+        if (chapter is null || string.IsNullOrWhiteSpace(chapter.FileName))
+            return null;
+
+        var chapterPath = Path.Combine(cacheDir, chapter.FileName);
+        if (!File.Exists(chapterPath))
+            await LibraryEpubCache.EnsureCacheBuildAsync(fullPath, dropboxPath, cacheDir);
+
+        var content = await File.ReadAllTextAsync(chapterPath);
+        return string.IsNullOrWhiteSpace(content) ? null : content;
+    }
+
+    var (dropboxIndex, dropboxCacheDir) = await DropboxEpubCache.GetOrBuildChapterIndexAsync(dropbox, dropboxPath);
+    var dropboxChapter = dropboxIndex.Chapters.FirstOrDefault(c => c.Id == chapterId);
+
+    if (dropboxChapter is null || string.IsNullOrWhiteSpace(dropboxChapter.FileName))
         return null;
 
-    var chapterPath = Path.Combine(cacheDir, chapter.FileName);
-    if (!File.Exists(chapterPath))
-        await DropboxEpubCache.EnsureCacheBuildAsync(dropbox, dropboxPath, cacheDir);
+    var dropboxChapterPath = Path.Combine(dropboxCacheDir, dropboxChapter.FileName);
+    if (!File.Exists(dropboxChapterPath))
+        await DropboxEpubCache.EnsureCacheBuildAsync(dropbox, dropboxPath, dropboxCacheDir);
 
-    var content = await File.ReadAllTextAsync(chapterPath);
-    return string.IsNullOrWhiteSpace(content) ? null : content;
+    var dropboxContent = await File.ReadAllTextAsync(dropboxChapterPath);
+    return string.IsNullOrWhiteSpace(dropboxContent) ? null : dropboxContent;
 }
 
 /// <summary>
@@ -4123,6 +6121,545 @@ static async Task<(HttpResponseMessage? response, string? fileName, AccountFastD
     return (resp, fileName, acctInfo, null);
 }
 
+static string ResolveLibraryRoot()
+{
+    var envRoot = Environment.GetEnvironmentVariable("LIBRARY_ROOT");
+    if (!string.IsNullOrWhiteSpace(envRoot))
+        return envRoot;
+
+    const string synologyDefault = "/volume1/books/Library";
+    if (Directory.Exists(synologyDefault))
+        return synologyDefault;
+
+    return Path.Combine(AppContext.BaseDirectory, "library");
+}
+
+static string ResolveReaderKey(string fileName, ISet<string> existingKeys)
+{
+    if (existingKeys == null || existingKeys.Count == 0)
+        return fileName;
+
+    var sanitized = AiContentCache.SanitizeKey(fileName);
+    if (existingKeys.Contains(sanitized))
+        return sanitized;
+
+    var match = existingKeys.FirstOrDefault(key =>
+        key.EndsWith(sanitized, StringComparison.OrdinalIgnoreCase));
+    return match ?? fileName;
+}
+
+static bool TryResolveLibraryFileForReaderKey(
+    string readerKey,
+    ISet<string> existingKeys,
+    out string fileName,
+    out string fullPath)
+{
+    fileName = string.Empty;
+    fullPath = string.Empty;
+    var libraryRoot = ResolveLibraryRoot();
+    if (!Directory.Exists(libraryRoot))
+        return false;
+
+    var safeFileName = Path.GetFileName(readerKey);
+    if (!string.IsNullOrWhiteSpace(safeFileName))
+    {
+        var directPath = Path.Combine(libraryRoot, safeFileName);
+        if (File.Exists(directPath))
+        {
+            fileName = safeFileName;
+            fullPath = directPath;
+            return true;
+        }
+    }
+
+    var jsonOptions = CreateLibraryJsonOptions();
+    foreach (var metaFile in Directory.GetFiles(libraryRoot, "*.meta.json"))
+    {
+        try
+        {
+            var json = File.ReadAllText(metaFile);
+            var meta = JsonSerializer.Deserialize<LibraryBookMeta>(json, jsonOptions);
+            if (meta == null || string.IsNullOrWhiteSpace(meta.FileName))
+                continue;
+
+            var key = ResolveReaderKey(meta.FileName, existingKeys);
+            if (!string.Equals(key, readerKey, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            var candidate = Path.Combine(libraryRoot, meta.FileName);
+            if (File.Exists(candidate))
+            {
+                fileName = meta.FileName;
+                fullPath = candidate;
+                return true;
+            }
+        }
+        catch
+        {
+            // ignore malformed meta files
+        }
+    }
+
+    return false;
+}
+
+static JsonSerializerOptions CreateLibraryJsonOptions()
+{
+    return new JsonSerializerOptions
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        WriteIndented = true
+    };
+}
+
+static async Task WriteLibraryMetadataAsync(
+    string libraryRoot,
+    string fileName,
+    string md5,
+    string? title,
+    string? authors,
+    string? format,
+    string? fileSize,
+    string? coverUrl,
+    string? source,
+    string? userTag)
+{
+    var metaPath = Path.Combine(libraryRoot, $"{fileName}.meta.json");
+    var authorList = string.IsNullOrWhiteSpace(authors)
+        ? Array.Empty<string>()
+        : authors.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    var tags = string.IsNullOrWhiteSpace(userTag)
+        ? Array.Empty<string>()
+        : new[] { userTag };
+
+    var meta = new LibraryBookMeta(
+        title ?? Path.GetFileNameWithoutExtension(fileName),
+        authorList,
+        format,
+        fileSize,
+        fileName,
+        coverUrl,
+        source,
+        md5,
+        DateTime.UtcNow,
+        null,
+        tags,
+        null,
+        Array.Empty<string>(),
+        null,
+        null,
+        null,
+        null,
+        null
+    );
+
+    var jsonOptions = CreateLibraryJsonOptions();
+    await File.WriteAllTextAsync(metaPath, JsonSerializer.Serialize(meta, jsonOptions));
+}
+
+static string? ResolveUserLibraryTag(HttpContext context)
+{
+    var role = context.User?.FindFirst(ClaimTypes.Role)?.Value;
+    var accessCode = context.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+    if (string.Equals(role, "Admin", StringComparison.OrdinalIgnoreCase))
+        return "Paul's Books";
+
+    if (string.Equals(accessCode, "cffdab-233322", StringComparison.OrdinalIgnoreCase))
+        return "Mom's Books";
+
+    if (string.Equals(accessCode, "eikdab-233322", StringComparison.OrdinalIgnoreCase))
+        return "Dad's Books";
+
+    return null;
+}
+
+static string FormatFileSize(long bytes)
+{
+    if (bytes <= 0)
+        return "0B";
+
+    string[] units = { "B", "KB", "MB", "GB" };
+    var size = (double)bytes;
+    var unitIndex = 0;
+    while (size >= 1024 && unitIndex < units.Length - 1)
+    {
+        size /= 1024;
+        unitIndex++;
+    }
+
+    return $"{size:0.0}{units[unitIndex]}";
+}
+
+static async Task<List<string>> ExtractBookTitlesFromQueryAsync(
+    string query,
+    IHttpClientFactory httpFactory,
+    CancellationToken cancellationToken)
+{
+    var urls = ExtractUrls(query);
+    if (urls.Count == 0)
+        return new List<string>();
+
+    var results = new List<string>();
+    foreach (var url in urls)
+    {
+        var titles = await FetchBookTitlesFromUrlAsync(url, httpFactory, cancellationToken);
+        results.AddRange(titles);
+        if (results.Count >= 120)
+            break;
+    }
+
+    var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    var deduped = new List<string>();
+    foreach (var title in results)
+    {
+        if (seen.Add(title))
+            deduped.Add(title);
+    }
+
+    return deduped;
+}
+
+static List<string> ExtractUrls(string query)
+{
+    if (string.IsNullOrWhiteSpace(query))
+        return new List<string>();
+
+    var matches = Regex.Matches(query, @"https?://\S+");
+    return matches.Select(m => m.Value.Trim().TrimEnd(')', ']', '}', '.', ',', ';', '"', '\''))
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .ToList();
+}
+
+static async Task<List<string>> FetchBookTitlesFromUrlAsync(
+    string url,
+    IHttpClientFactory httpFactory,
+    CancellationToken cancellationToken)
+{
+    try
+    {
+        using var http = httpFactory.CreateClient();
+        http.Timeout = TimeSpan.FromSeconds(12);
+        http.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36");
+        http.DefaultRequestHeaders.Accept.ParseAdd("text/html,application/xhtml+xml");
+
+        using var resp = await http.GetAsync(url, cancellationToken);
+        if (!resp.IsSuccessStatusCode)
+            return new List<string>();
+
+        var html = await resp.Content.ReadAsStringAsync(cancellationToken);
+        if (string.IsNullOrWhiteSpace(html))
+            return new List<string>();
+
+        var doc = new HtmlDocument();
+        doc.LoadHtml(html);
+
+        var container = doc.DocumentNode.SelectSingleNode("//article")
+                        ?? doc.DocumentNode.SelectSingleNode("//main")
+                        ?? doc.DocumentNode;
+        var contentRoot = SelectBestContentRoot(container, doc, html, url) ?? container;
+
+        var titles = new List<string>();
+        var listCandidates = contentRoot.SelectNodes(".//ol|.//ul");
+        var listNode = listCandidates?
+            .Where(node => !IsNavigationNode(node) && !HasNavigationAncestor(node))
+            .Select(node => new { Node = node, Score = CountLikelyBookItems(node) })
+            .OrderByDescending(item => item.Score)
+            .ThenByDescending(item => item.Node.SelectNodes(".//li")?.Count ?? 0)
+            .FirstOrDefault()?.Node;
+
+        var listLikelyCount = listNode is null ? 0 : CountLikelyBookItems(listNode);
+        var listItems = listLikelyCount > 0 ? listNode?.SelectNodes(".//li") : null;
+        if (listItems != null && listLikelyCount > 0)
+        {
+            foreach (var item in listItems)
+            {
+                if (HasNavigationAncestor(item)) continue;
+                var emphasized = item.SelectNodes(".//em|.//i|.//cite|.//strong");
+                if (emphasized != null && emphasized.Count > 0)
+                {
+                    foreach (var node in emphasized)
+                    {
+                        if (HasNavigationAncestor(node)) continue;
+                        var candidate = CleanBookTitle(node.InnerText);
+                        if (IsReasonableTitle(candidate) && !LooksLikeNavigation(candidate))
+                            titles.Add(candidate);
+                    }
+                }
+                else
+                {
+                    var candidate = CleanBookTitle(item.InnerText);
+                    if (IsReasonableTitle(candidate) && !LooksLikeNavigation(candidate))
+                        titles.Add(candidate);
+                }
+            }
+        }
+
+        if (titles.Count == 0)
+        {
+            var headings = contentRoot.SelectNodes(".//h2|.//h3") ?? doc.DocumentNode.SelectNodes("//h2|//h3");
+            if (headings != null)
+            {
+                foreach (var node in headings)
+                {
+                    if (HasNavigationAncestor(node)) continue;
+                    var candidate = CleanBookTitle(node.InnerText);
+                    if (IsReasonableTitle(candidate) && !LooksLikeNavigation(candidate))
+                        titles.Add(candidate);
+                }
+            }
+        }
+
+        if (titles.Count == 0)
+        {
+            var emphasis = contentRoot.SelectNodes(".//p//strong|.//p//em|.//p//i|.//p//cite");
+            if (emphasis != null)
+            {
+                foreach (var node in emphasis)
+                {
+                    if (HasNavigationAncestor(node)) continue;
+                    var candidate = CleanBookTitle(node.InnerText);
+                    if (IsReasonableTitle(candidate) && !LooksLikeNavigation(candidate))
+                        titles.Add(candidate);
+                }
+            }
+        }
+
+        return titles;
+    }
+    catch
+    {
+        return new List<string>();
+    }
+}
+
+static string CleanBookTitle(string raw)
+{
+    var text = WebUtility.HtmlDecode(raw ?? string.Empty);
+    text = Regex.Replace(text, @"\s+", " ").Trim();
+    text = Regex.Replace(text, @"^\d+[\.\)\-:\s]+", "");
+    text = Regex.Replace(text, @"^[-•*]+\s*", "");
+    var bySplit = Regex.Split(text, @"\s+by\s+", RegexOptions.IgnoreCase);
+    text = bySplit.Length > 1 ? bySplit[0] : text;
+    text = Regex.Split(text, @"\s+[—–-]\s+").FirstOrDefault() ?? text;
+    text = text.Trim().Trim('"', '\'', '“', '”', '’', '‘');
+    return text;
+}
+
+static bool IsReasonableTitle(string? title)
+{
+    if (string.IsNullOrWhiteSpace(title))
+        return false;
+    if (title.Length < 2 || title.Length > 120)
+        return false;
+    var letters = title.Count(char.IsLetter);
+    return letters >= 2;
+}
+
+static bool LooksLikeNavigation(string title)
+{
+    var lower = title.ToLowerInvariant();
+    if (lower.Contains("related post") || lower.Contains("related articles"))
+        return true;
+    if (lower.Contains("listen to this article"))
+        return true;
+    if (lower.Contains("read more") || lower.Contains("comments"))
+        return true;
+    if (lower.Contains("subscribe") || lower.Contains("newsletter"))
+        return true;
+    if (lower.Contains("category") || lower.Contains("categories"))
+        return true;
+    if (lower.Contains("advertisement") || lower.Contains("sponsored"))
+        return true;
+    return false;
+}
+
+static HtmlNode? SelectBestContentRoot(HtmlNode container, HtmlDocument doc, string html, string url)
+{
+    var candidates = container.SelectNodes(".//*[contains(@class,'entry-content') or contains(@class,'post-content') or contains(@class,'article-content') or contains(@class,'post-content-inner') or contains(@class,'post-content-column')]");
+    if (candidates != null && candidates.Count > 0)
+    {
+        return candidates
+            .OrderByDescending(node => (node.InnerText ?? string.Empty).Length)
+            .FirstOrDefault();
+    }
+
+    return ExtractReadableRoot(doc, html, url);
+}
+
+static bool HasNavigationAncestor(HtmlNode node)
+{
+    var current = node.ParentNode;
+    while (current != null)
+    {
+        if (IsNavigationNode(current))
+            return true;
+        current = current.ParentNode;
+    }
+
+    return false;
+}
+
+static bool IsNavigationNode(HtmlNode node)
+{
+    var name = node.Name.ToLowerInvariant();
+    if (name is "nav" or "header" or "footer" or "aside" or "form")
+        return true;
+
+    var classId = $"{node.GetAttributeValue("class", "")} {node.GetAttributeValue("id", "")}".ToLowerInvariant();
+    string[] tokens =
+    {
+        "nav", "menu", "footer", "header", "sidebar", "widget", "breadcrumb", "related", "share",
+        "social", "subscribe", "newsletter", "category", "tag", "promo", "advert", "ads", "comment",
+        "search", "pagination", "toolbar"
+    };
+
+    return tokens.Any(token => classId.Contains(token));
+}
+
+static int CountLikelyBookItems(HtmlNode listNode)
+{
+    var listItems = listNode.SelectNodes(".//li");
+    if (listItems == null || listItems.Count == 0)
+        return 0;
+
+    var count = 0;
+    foreach (var item in listItems)
+    {
+        if (HasNavigationAncestor(item))
+            continue;
+
+        var emphasized = item.SelectNodes(".//em|.//i|.//cite|.//strong");
+        if (emphasized != null && emphasized.Count > 0)
+        {
+            foreach (var node in emphasized)
+            {
+                if (HasNavigationAncestor(node)) continue;
+                var candidate = CleanBookTitle(node.InnerText);
+                if (IsReasonableTitle(candidate) && !LooksLikeNavigation(candidate))
+                {
+                    count++;
+                    break;
+                }
+            }
+        }
+        else
+        {
+            var candidate = CleanBookTitle(item.InnerText);
+            if (IsReasonableTitle(candidate) && !LooksLikeNavigation(candidate))
+                count++;
+        }
+    }
+
+    return count;
+}
+
+static HtmlNode? ExtractReadableRoot(HtmlDocument doc, string html, string url)
+{
+    try
+    {
+        var nReadability = new NReadabilityWebTranscoder();
+        var nReadabilityResult = nReadability.Transcode(new WebTranscodingInput(html));
+        if (nReadabilityResult.ContentExtracted)
+        {
+            var readableDoc = new HtmlDocument();
+            var readableHtml = nReadabilityResult.ExtractedContent ?? string.Empty;
+            readableDoc.LoadHtml(readableHtml);
+            var readableRoot = readableDoc.DocumentNode.SelectSingleNode("//article")
+                               ?? readableDoc.DocumentNode.SelectSingleNode("//main")
+                               ?? readableDoc.DocumentNode;
+            if (readableRoot != null)
+                return readableRoot;
+        }
+
+        var candidates = doc.DocumentNode.SelectNodes("//article|//main|//section|//div");
+        if (candidates == null || candidates.Count == 0)
+            return null;
+
+        HtmlNode? best = null;
+        double bestScore = 0;
+
+        foreach (var node in candidates)
+        {
+            if (IsBoilerplateNode(node))
+                continue;
+
+            var text = HtmlEntity.DeEntitize(node.InnerText ?? string.Empty);
+            text = Regex.Replace(text, @"\s+", " ").Trim();
+            if (text.Length < 200)
+                continue;
+
+            var linkTextLength = node.SelectNodes(".//a")?
+                .Select(a => HtmlEntity.DeEntitize(a.InnerText ?? string.Empty).Trim())
+                .Where(s => s.Length > 0)
+                .Sum(s => s.Length) ?? 0;
+
+            var linkDensity = text.Length == 0 ? 1.0 : (double)linkTextLength / text.Length;
+            var score = text.Length * (1 - linkDensity);
+
+            if (score > bestScore)
+            {
+                bestScore = score;
+                best = node;
+            }
+        }
+
+        return best;
+    }
+    catch
+    {
+        return null;
+    }
+}
+
+static bool IsBoilerplateNode(HtmlNode node)
+{
+    var classId = $"{node.GetAttributeValue("class", "")} {node.GetAttributeValue("id", "")}".ToLowerInvariant();
+    if (classId.Contains("nav") || classId.Contains("menu") || classId.Contains("footer") || classId.Contains("header"))
+        return true;
+    if (classId.Contains("sidebar") || classId.Contains("widget") || classId.Contains("related"))
+        return true;
+    if (classId.Contains("promo") || classId.Contains("advert") || classId.Contains("ad-") || classId.Contains("ads"))
+        return true;
+    if (classId.Contains("newsletter") || classId.Contains("subscribe") || classId.Contains("share"))
+        return true;
+    if (classId.Contains("comment") || classId.Contains("breadcrumb"))
+        return true;
+    return false;
+}
+
+static string? NormalizeLibraryCoverUrl(string? coverValue, string baseUrl)
+{
+    if (string.IsNullOrWhiteSpace(coverValue))
+        return null;
+
+    if (coverValue.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+        return coverValue;
+
+    var normalized = coverValue.Replace("\\", "/").TrimStart('/');
+    var segments = normalized.Split('/', StringSplitOptions.RemoveEmptyEntries)
+        .Select(Uri.EscapeDataString);
+    var encodedPath = string.Join("/", segments);
+
+    return $"{baseUrl}/api/library/cover/{encodedPath}";
+}
+
+static string? FindLocalCoverUrl(string libraryRoot, string fileName, string baseUrl)
+{
+    var coverDir = Path.Combine(libraryRoot, "_covers");
+    if (!Directory.Exists(coverDir))
+        return null;
+
+    var safeName = Path.GetFileName(fileName);
+    var matches = Directory.GetFiles(coverDir, $"{safeName}.cover.*");
+    var match = matches.FirstOrDefault();
+    if (string.IsNullOrWhiteSpace(match))
+        return null;
+
+    var relative = Path.Combine("_covers", Path.GetFileName(match)).Replace("\\", "/");
+    return NormalizeLibraryCoverUrl(relative, baseUrl);
+}
+
 app.Run();
 
 // ─── Helper Classes ──────────────────────────────────────────────────────
@@ -4180,17 +6717,415 @@ record CodeLoginRequest(string Code);
 record AccessCode(string Code, string Name, bool IsAdmin);
 record DropboxEpubFileDto(string Id, string Name, string Path, long Size, DateTime ServerModified);
 record DropboxEpubChaptersResponse(string Title, List<DropboxChapterDto> Chapters);
-record DropboxChapterDto(int Id, string Title, int Level, int WordCount);
+record DropboxChapterDto(int Id, string Title, int Level, int WordCount, string? DisplayLabel, bool? IsMainChapter);
 record DropboxChapterContentDto(int Id, string Title, string Content, int CharacterCount, int WordCount);
 record FlatChapter(int Id, string Title, int Level, string PlainText, int WordCount);
-record CachedChapterMeta(int Id, string Title, int Level, int CharacterCount, int WordCount, string FileName);
-record CachedChapterIndex(string Path, string Title, DateTime CachedAt, List<CachedChapterMeta> Chapters);
+record LabeledChapter(FlatChapter Chapter, string DisplayLabel, bool IsMainChapter);
+record ChapterLabelResult(int Id, string DisplayLabel, bool IsMainChapter);
+record CachedChapterMeta(int Id, string Title, int Level, int CharacterCount, int WordCount, string FileName, string? DisplayLabel, bool? IsMainChapter);
+record CachedChapterIndex(string Path, string Title, DateTime CachedAt, List<CachedChapterMeta> Chapters, string? LabelSource = null);
 record DropboxCacheStatusDto(bool Cached, bool InProgress, int ChaptersTotal, int ChaptersCached, double Percent, DateTime? CachedAt);
 record DropboxSearchMatchDto(int ChapterId, string Title, int MatchCount, int Position, string Snippet);
+static class ChapterLabeler
+{
+    private static readonly string[] FrontMatterKeywords =
+    {
+        "table of contents",
+        "contents",
+        "toc",
+        "preface",
+        "foreword",
+        "introduction",
+        "acknowledgments",
+        "acknowledgements",
+        "about the author",
+        "author's note",
+        "authors' note",
+        "notes",
+        "endnotes",
+        "footnotes",
+        "bibliography",
+        "references",
+        "index",
+        "glossary",
+        "appendix",
+        "appendices",
+        "maps",
+        "map",
+        "list of illustrations",
+        "list of figures",
+        "list of tables",
+        "illustrations",
+        "figures",
+        "tables",
+        "dedication",
+        "copyright",
+        "imprint",
+        "credits",
+        "colophon",
+        "prologue",
+        "epilogue",
+        "afterword"
+    };
+
+    private static readonly string[] StructuralKeywords =
+    {
+        "part",
+        "book",
+        "section",
+        "volume",
+        "act",
+        "interlude"
+    };
+
+    public static List<LabeledChapter> LabelChapters(IReadOnlyList<FlatChapter> chapters)
+    {
+        var labeled = new List<LabeledChapter>(chapters.Count);
+        var mainIndex = 0;
+        var nonIndex = 0;
+
+        foreach (var chapter in chapters)
+        {
+            var title = chapter.Title?.Trim() ?? string.Empty;
+            var normalized = NormalizeTitle(title);
+            var isFrontMatter = IsFrontMatterTitle(normalized) || IsLikelyTableOfContents(chapter.PlainText);
+            var isStructural = IsStructuralHeading(normalized);
+            var isExplicitChapter = HasChapterIndicator(title);
+            var isMain = !isFrontMatter && (isExplicitChapter || (!isStructural && IsLikelyMainContent(chapter)));
+
+            string displayLabel;
+            if (isMain)
+            {
+                mainIndex++;
+                displayLabel = BuildMainLabel(mainIndex, title);
+            }
+            else
+            {
+                nonIndex++;
+                displayLabel = BuildNonMainLabel(nonIndex, title);
+            }
+
+            labeled.Add(new LabeledChapter(chapter, displayLabel, isMain));
+        }
+
+        return labeled;
+    }
+
+    private static bool IsFrontMatterTitle(string normalizedTitle)
+    {
+        if (string.IsNullOrWhiteSpace(normalizedTitle))
+            return false;
+
+        return FrontMatterKeywords.Any(keyword => normalizedTitle.Contains(keyword, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool IsStructuralHeading(string normalizedTitle)
+    {
+        if (string.IsNullOrWhiteSpace(normalizedTitle))
+            return false;
+
+        return StructuralKeywords.Any(keyword =>
+            Regex.IsMatch(normalizedTitle, $@"\b{Regex.Escape(keyword)}\b", RegexOptions.IgnoreCase));
+    }
+
+    private static bool HasChapterIndicator(string title)
+    {
+        if (string.IsNullOrWhiteSpace(title))
+            return false;
+
+        if (Regex.IsMatch(title, @"\bchapter\b", RegexOptions.IgnoreCase))
+            return true;
+
+        if (Regex.IsMatch(title, @"^\s*\d+[\.\:\-\s]", RegexOptions.IgnoreCase))
+            return true;
+
+        if (Regex.IsMatch(title, @"^\s*[ivxlcdm]+[\.\:\-\s]", RegexOptions.IgnoreCase))
+            return true;
+
+        return false;
+    }
+
+    private static bool IsLikelyMainContent(FlatChapter chapter)
+    {
+        if (chapter.WordCount >= 350)
+            return true;
+
+        return chapter.Level == 0 && chapter.WordCount >= 200;
+    }
+
+    private static bool IsLikelyTableOfContents(string content)
+    {
+        if (string.IsNullOrWhiteSpace(content))
+            return false;
+
+        if (Regex.IsMatch(content, @"\b(table of contents|contents)\b", RegexOptions.IgnoreCase))
+            return true;
+
+        var lines = content
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(l => l.Length > 2)
+            .ToList();
+
+        if (lines.Count < 5)
+            return false;
+
+        var dotLeaderLines = lines.Count(l => l.Contains("...") || Regex.IsMatch(l, @"\.{2,}\s*\d+$"));
+        var chapterLines = lines.Count(l => Regex.IsMatch(l, @"\bchapter\b", RegexOptions.IgnoreCase));
+        var numericLines = lines.Count(l => Regex.IsMatch(l, @"\b\d+\b"));
+        var shortLines = lines.Count(l => l.Length <= 60);
+
+        var score = 0;
+        if (dotLeaderLines >= Math.Max(3, lines.Count / 4)) score++;
+        if (chapterLines >= 3) score++;
+        if (numericLines >= lines.Count / 2) score++;
+        if (shortLines >= (int)(lines.Count * 0.7)) score++;
+
+        return score >= 2;
+    }
+
+    private static string BuildMainLabel(int chapterNumber, string title)
+    {
+        var cleaned = CleanChapterTitle(title);
+        if (string.IsNullOrWhiteSpace(cleaned))
+            return $"Chapter {chapterNumber}";
+
+        return $"Chapter {chapterNumber}: {cleaned}";
+    }
+
+    private static string BuildNonMainLabel(int index, string title)
+    {
+        var cleaned = CleanNonChapterTitle(title);
+        if (string.IsNullOrWhiteSpace(cleaned))
+            cleaned = "Front matter";
+
+        return $"{ToRoman(index).ToLowerInvariant()}. {cleaned}";
+    }
+
+    private static string CleanChapterTitle(string title)
+    {
+        if (string.IsNullOrWhiteSpace(title))
+            return string.Empty;
+
+        var cleaned = title.Trim();
+        cleaned = Regex.Replace(cleaned, @"^(chapter|chap\.?)\s+\d+[\.\:\-\s]*", "", RegexOptions.IgnoreCase).Trim();
+        cleaned = Regex.Replace(cleaned, @"^(chapter|chap\.?)\s+[ivxlcdm]+[\.\:\-\s]*", "", RegexOptions.IgnoreCase).Trim();
+        cleaned = Regex.Replace(cleaned, @"^\d+[\.\:\-\s]+", "", RegexOptions.IgnoreCase).Trim();
+        cleaned = Regex.Replace(cleaned, @"^[ivxlcdm]+[\.\:\-\s]+", "", RegexOptions.IgnoreCase).Trim();
+        cleaned = Regex.Replace(cleaned, @"^(book|part|section)\s+[ivxlcdm\d]+[\.\:\-\s]*", "", RegexOptions.IgnoreCase).Trim();
+        return cleaned;
+    }
+
+    private static string CleanNonChapterTitle(string title)
+    {
+        if (string.IsNullOrWhiteSpace(title))
+            return string.Empty;
+
+        return Regex.Replace(title.Trim(), @"\s+", " ");
+    }
+
+    private static string NormalizeTitle(string title) =>
+        Regex.Replace(title.Trim().ToLowerInvariant(), @"\s+", " ");
+
+    private static string ToRoman(int number)
+    {
+        if (number <= 0)
+            return "i";
+
+        var map = new[]
+        {
+            (1000, "M"), (900, "CM"), (500, "D"), (400, "CD"),
+            (100, "C"), (90, "XC"), (50, "L"), (40, "XL"),
+            (10, "X"), (9, "IX"), (5, "V"), (4, "IV"), (1, "I")
+        };
+
+        var result = new StringBuilder();
+        var remaining = number;
+
+        foreach (var (value, symbol) in map)
+        {
+            while (remaining >= value)
+            {
+                result.Append(symbol);
+                remaining -= value;
+            }
+        }
+
+        return result.ToString();
+    }
+}
+
+static class ChapterLabelingHelper
+{
+    private static readonly ConcurrentDictionary<string, SemaphoreSlim> LabelLocks = new();
+    private static readonly JsonSerializerOptions CacheJsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        WriteIndented = false
+    };
+
+    public static async Task<CachedChapterIndex> EnsureGptChapterLabelsAsync(
+        CachedChapterIndex index,
+        string cacheDir,
+        IHttpClientFactory httpFactory,
+        IConfiguration cfg,
+        IOpenAiModelHelper modelHelper,
+        IAiResponseParser aiResponseParser,
+        CancellationToken cancellationToken)
+    {
+        var model = cfg["OpenAI:ChapterLabelModel"] ?? "gpt-4o";
+        if (string.Equals(index.LabelSource, model, StringComparison.OrdinalIgnoreCase) &&
+            index.Chapters.All(ch => !string.IsNullOrWhiteSpace(ch.DisplayLabel) && ch.IsMainChapter != null))
+        {
+            return index;
+        }
+
+        var gate = LabelLocks.GetOrAdd(cacheDir, _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(cancellationToken);
+        try
+        {
+            var metaPath = Path.Combine(cacheDir, "metadata.json");
+            if (File.Exists(metaPath))
+            {
+                var existingJson = await File.ReadAllTextAsync(metaPath, cancellationToken);
+                var cached = JsonSerializer.Deserialize<CachedChapterIndex>(existingJson, CacheJsonOptions);
+                if (cached != null &&
+                    string.Equals(cached.LabelSource, model, StringComparison.OrdinalIgnoreCase) &&
+                    cached.Chapters.All(ch => !string.IsNullOrWhiteSpace(ch.DisplayLabel) && ch.IsMainChapter != null))
+                {
+                    return cached;
+                }
+            }
+
+            var labeled = await RequestGptLabelsAsync(index.Chapters, model, httpFactory, cfg, modelHelper, aiResponseParser, cancellationToken);
+            if (labeled == null || labeled.Count == 0)
+            {
+                // Fallback to heuristic labeling when GPT fails
+                var fallback = ChapterLabeler.LabelChapters(index.Chapters
+                    .Select(ch => new FlatChapter(ch.Id, ch.Title, ch.Level, string.Empty, ch.WordCount))
+                    .ToList());
+
+                labeled = fallback.ToDictionary(ch => ch.Chapter.Id, ch => new ChapterLabelResult(
+                    ch.Chapter.Id,
+                    ch.DisplayLabel,
+                    ch.IsMainChapter));
+            }
+
+            var updatedChapters = index.Chapters.Select(ch =>
+            {
+                if (labeled.TryGetValue(ch.Id, out var label) && !string.IsNullOrWhiteSpace(label.DisplayLabel))
+                {
+                    return ch with { DisplayLabel = label.DisplayLabel, IsMainChapter = label.IsMainChapter };
+                }
+                return ch;
+            }).ToList();
+
+            var updatedIndex = index with { Chapters = updatedChapters, LabelSource = model };
+            var metaJson = JsonSerializer.Serialize(updatedIndex, CacheJsonOptions);
+            await File.WriteAllTextAsync(metaPath, metaJson, cancellationToken);
+            return updatedIndex;
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    private static async Task<Dictionary<int, ChapterLabelResult>?> RequestGptLabelsAsync(
+        IReadOnlyList<CachedChapterMeta> chapters,
+        string model,
+        IHttpClientFactory httpFactory,
+        IConfiguration cfg,
+        IOpenAiModelHelper modelHelper,
+        IAiResponseParser aiResponseParser,
+        CancellationToken cancellationToken)
+    {
+        var apiKey = cfg["OpenAI:ApiKey"] ?? Environment.GetEnvironmentVariable("OPENAI_API_KEY");
+        if (string.IsNullOrWhiteSpace(apiKey))
+        {
+            Console.WriteLine("❌ OpenAI API key not configured for chapter labeling.");
+            return null;
+        }
+
+        using var http = httpFactory.CreateClient("OpenAI");
+
+        var chapterPayload = chapters.Select(ch => new
+        {
+            id = ch.Id,
+            title = ch.Title,
+            wordCount = ch.WordCount
+        }).ToList();
+
+        var systemPrompt = @"You label ebook chapter lists. Return ONLY valid JSON, no markdown.
+Use the provided chapter titles and word counts to produce a clean display label and whether it's a main chapter.";
+
+        var userPrompt = $@"Input chapters (in reading order):
+{JsonSerializer.Serialize(chapterPayload)}
+
+Rules:
+- Preserve ids exactly; do not reorder.
+- Main chapters should be numbered sequentially: ""Chapter 1: Title"", ""Chapter 2: Title"".
+- If no title is provided, use ""Chapter N"" for main chapters.
+- Non-chapters (contents, preface, index, maps, acknowledgments, etc.) should use lowercase roman numerals: ""i. Preface"", ""ii. Table of Contents"".
+- If a title already contains a chapter number, remove the number and keep the clean title.
+- Use wordCount as a hint: very short sections are likely non-chapters.
+
+Return ONLY this JSON array:
+[
+  {{
+    ""id"": 1,
+    ""displayLabel"": ""Chapter 1: Title"",
+    ""isMainChapter"": true
+  }}
+]";
+
+        var payload = modelHelper.BuildChatCompletionPayload(
+            model,
+            new object[]
+            {
+                new { role = "system", content = systemPrompt },
+                new { role = "user", content = userPrompt }
+            },
+            maxCompletionTokens: 2000,
+            temperature: 0.2
+        );
+
+        var response = await http.PostAsJsonAsync("https://api.openai.com/v1/chat/completions", payload, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            Console.WriteLine($"❌ OpenAI chapter-labeling failed status={(int)response.StatusCode} body={body}");
+            return null;
+        }
+
+        using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+        var rawText = aiResponseParser.ExtractText(doc.RootElement);
+
+        if (string.IsNullOrWhiteSpace(rawText))
+            return null;
+
+        try
+        {
+            var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            var parsed = JsonSerializer.Deserialize<List<ChapterLabelResult>>(rawText, options);
+            if (parsed == null || parsed.Count == 0)
+                return null;
+
+            return parsed
+                .GroupBy(p => p.Id)
+                .ToDictionary(g => g.Key, g => g.First());
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"❌ Failed to parse chapter labels JSON: {ex.Message}");
+            return null;
+        }
+    }
+}
 record SummarizeRequest(string Text, string? BookTitle, string? Author, int? Year, string? Premise, string? DropboxPath, int? ChapterId, int? WordOffset, List<string>? KnownWords);
 record LearnMoreRequest(string Term, string? Definition, string? DropboxPath, string? BookTitle, string? Context);
 record LearnMoreResponse(string Detail);
-record FlashcardRequest(string Term, string? Definition, string? DropboxPath, string? BookTitle, string? Context, List<string>? KnownWords);
+record FlashcardRequest(string Term, string? Definition, string? DropboxPath, string? BookTitle, string? Context, List<string>? KnownWords, bool? SaveToLibrary);
 // FlashcardItem is now defined in AnnasArchive.Core.Services.IFlashcardService
 public record FlashcardResult(List<FlashcardItem> Cards);
 record WikiImagesResponse(List<string> Images);
@@ -4202,12 +7137,86 @@ record RelatedBooksRequest(string BookTitle, string Author);
 record RelatedBooksResponse(List<SeriesBook> SameSeries, List<AuthorSeries> OtherSeries, string? SeriesSummary);
 record SeriesBook(string Title, int Order, string Description, string? CoverUrl);
 record AuthorSeries(string SeriesName, int BookCount, List<SeriesBook> Books, string Description, string Summary);
+record AiBookSearchRequest(string Query);
+record AiBookSearchItem(string Title, string Author, string Summary, string Importance, string? CoverUrl);
+record AiBookSearchResponse(string? Summary, List<AiBookSearchItem> Books);
+record LibraryBookMeta(
+    string? Title,
+    string[]? Authors,
+    string? Format,
+    string? FileSize,
+    string FileName,
+    string? CoverUrl,
+    string? Source,
+    string? Md5,
+    DateTime? SavedAt,
+    string? PrimaryGenre,
+    string[]? Tags,
+    string? Series,
+    string[]? Genres,
+    string? PublishedDate,
+    string? Pages,
+    double? GoodreadsRating,
+    int? PersonalRating,
+    bool? ReaderEnabled)
+{
+    public string? Title { get; set; } = Title;
+    public string[]? Authors { get; set; } = Authors;
+    public string? PrimaryGenre { get; set; } = PrimaryGenre;
+    public string[]? Tags { get; set; } = Tags;
+    public string? Series { get; set; } = Series;
+    public double? GoodreadsRating { get; set; } = GoodreadsRating;
+    public int? PersonalRating { get; set; } = PersonalRating;
+    public bool? ReaderEnabled { get; set; } = ReaderEnabled;
+}
+record LibraryBookMetadataUpdate(
+    string PrimaryGenre,
+    string[]? Tags,
+    string? Series,
+    string? Title,
+    string[]? Authors);
+record LibraryBookRatingsUpdate(
+    double? GoodreadsRating,
+    int? PersonalRating);
+record LibraryBookReaderUpdate(
+    bool? Enabled);
+record LibraryBookCoverUpdate(
+    string CoverUrl);
+record ReaderBookDto(
+    string FileName,
+    string ReaderKey,
+    string Title,
+    string[] Authors,
+    string Format,
+    string? CoverUrl,
+    bool HasSummaries);
+record LibraryReaderIndexRequest(
+    string FileName);
+record LibraryBookDto(
+    string Title,
+    string[] Authors,
+    string Format,
+    string FileSize,
+    string FileName,
+    string? CoverUrl,
+    string? Source,
+    string? Md5,
+    DateTime? SavedAt,
+    string? PrimaryGenre,
+    string[] Tags,
+    string? Series,
+    string[] Genres,
+    string? PublishedDate,
+    string? Pages,
+    double? GoodreadsRating,
+    int? PersonalRating,
+    bool? ReaderEnabled);
 record MatchSeriesBooksRequest(string? SeriesName, string Author, string? PreferredFormat, List<BookWithCandidates> Books);
 record BookWithCandidates(string Title, int Order, List<CandidateBook> Candidates);
 record CandidateBook(string Md5, string Title, List<string> Authors, string Format, string FileSize);
 record SeriesBookMatch(string BookTitle, int Order, string Status, string? SelectedMd5, string? SelectedTitle, string Confidence, string Reason);
 record MatchSeriesBooksResponse(List<SeriesBookMatch> Matches);
-record FullChapterSummaryRequest(string DropboxPath, int ChapterId, string? BookTitle, string? Author, int? Year, string? Premise);
+record FullChapterSummaryRequest(string DropboxPath, int ChapterId, string? BookTitle, string? Author, int? Year, string? Premise, bool ForceRegenerate = false);
 record FullChapterSummaryResponse(string Summary, int PromptTokens, int CompletionTokens, int TotalTokens, double? AllowanceUsedPercent, long? TokensRemaining, DateTime CachedAt, List<ProcessingStep> Steps);
 record ProcessingStep(string Stage, int StepNumber, int TotalSteps, string Message, bool Success, string? Error);
 record ChapterSummaryCacheResponse(string Summary, int PromptTokens, int CompletionTokens, int TotalTokens, DateTime CachedAt);
@@ -4443,7 +7452,9 @@ static class DropboxEpubCache
                     ch.Level,
                     ch.PlainText.Length,
                     ch.WordCount,
-                    fileName));
+                    fileName,
+                    null,
+                    null));
             }
 
             var meta = new CachedChapterIndex(
@@ -4576,6 +7587,404 @@ static class DropboxEpubCache
     public static string ComputeHashPublic(string value) => ComputeHash(value);
 }
 
+// ─── Helper class for Library EPUB caching ──────────────────────────────
+static class LibraryEpubCache
+{
+    private static readonly string EpubCacheRoot = ResolveCacheRoot();
+    private static readonly ConcurrentDictionary<string, Task> CacheBuildTasks = new();
+    private static readonly MemoryCache ChapterContentCache = new(new MemoryCacheOptions());
+    private static readonly JsonSerializerOptions CacheJsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        WriteIndented = false
+    };
+
+    private static string ResolveCacheRoot()
+    {
+        var env = Environment.GetEnvironmentVariable("EPUB_CACHE_ROOT");
+        if (!string.IsNullOrWhiteSpace(env))
+        {
+            Directory.CreateDirectory(env);
+            return env;
+        }
+
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var fallback = Path.Combine(home, ".annas-archive", "epub-cache");
+        Directory.CreateDirectory(fallback);
+        return fallback;
+    }
+
+    public static async Task<(CachedChapterIndex Index, string CacheDir)> GetOrBuildChapterIndexAsync(
+        string filePath,
+        string readerKey)
+    {
+        Directory.CreateDirectory(EpubCacheRoot);
+        var cacheDir = Path.Combine(EpubCacheRoot, ComputeHash(readerKey));
+        Directory.CreateDirectory(cacheDir);
+
+        var metaPath = Path.Combine(cacheDir, "metadata.json");
+
+        if (File.Exists(metaPath))
+        {
+            var cached = await TryReadIndex(metaPath);
+            if (cached != null)
+            {
+                _ = CacheBuildTasks.GetOrAdd(cacheDir, _ => BuildCacheInternalAsync(filePath, readerKey, cacheDir));
+                return (cached, cacheDir);
+            }
+        }
+
+        await CacheBuildTasks.GetOrAdd(cacheDir, _ => BuildCacheInternalAsync(filePath, readerKey, cacheDir));
+        var fresh = await TryReadIndex(metaPath)
+            ?? throw new InvalidOperationException("Failed to read chapter index after build.");
+
+        CacheBuildTasks.TryRemove(cacheDir, out _);
+        return (fresh, cacheDir);
+    }
+
+    public static async Task<(CachedChapterIndex Index, string CacheDir)> GetOrBuildChapterIndexQuickAsync(
+        string filePath,
+        string readerKey)
+    {
+        Directory.CreateDirectory(EpubCacheRoot);
+        var cacheDir = Path.Combine(EpubCacheRoot, ComputeHash(readerKey));
+        Directory.CreateDirectory(cacheDir);
+
+        var metaPath = Path.Combine(cacheDir, "metadata.json");
+        if (File.Exists(metaPath))
+        {
+            var cached = await TryReadIndex(metaPath);
+            if (cached != null)
+                return (cached, cacheDir);
+        }
+
+        await BuildIndexOnlyAsync(filePath, readerKey, cacheDir);
+        var fresh = await TryReadIndex(metaPath)
+            ?? throw new InvalidOperationException("Failed to read chapter index after quick build.");
+        return (fresh, cacheDir);
+    }
+
+    public static Task EnsureCacheBuildAsync(string filePath, string readerKey, string cacheDir) =>
+        CacheBuildTasks.GetOrAdd(cacheDir, _ => BuildCacheInternalAsync(filePath, readerKey, cacheDir));
+
+    public static async Task<DropboxCacheStatusDto> GetCacheStatusAsync(
+        string filePath,
+        string readerKey)
+    {
+        Directory.CreateDirectory(EpubCacheRoot);
+        var cacheDir = Path.Combine(EpubCacheRoot, ComputeHash(readerKey));
+        var metaPath = Path.Combine(cacheDir, "metadata.json");
+        var inProgress = CacheBuildTasks.ContainsKey(cacheDir);
+
+        if (!File.Exists(metaPath))
+        {
+            _ = CacheBuildTasks.GetOrAdd(cacheDir, _ => BuildCacheInternalAsync(filePath, readerKey, cacheDir));
+            return new DropboxCacheStatusDto(false, true, 0, 0, 0, null);
+        }
+
+        var meta = await TryReadIndex(metaPath);
+        if (meta == null)
+            return new DropboxCacheStatusDto(false, inProgress, 0, 0, 0, null);
+
+        var total = meta.Chapters.Count;
+        var cached = meta.Chapters.Count(ch => File.Exists(Path.Combine(cacheDir, ch.FileName)));
+        var percent = total == 0 ? 0 : Math.Round((double)cached / total * 100, 2);
+
+        return new DropboxCacheStatusDto(true, inProgress, total, cached, percent, meta.CachedAt);
+    }
+
+    public static bool DeleteCache(string readerKey)
+    {
+        Directory.CreateDirectory(EpubCacheRoot);
+        var cacheDir = Path.Combine(EpubCacheRoot, ComputeHash(readerKey));
+        try
+        {
+            if (Directory.Exists(cacheDir))
+            {
+                Directory.Delete(cacheDir, recursive: true);
+                CacheBuildTasks.TryRemove(cacheDir, out _);
+                return true;
+            }
+            return false;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    public static async Task<List<DropboxSearchMatchDto>> SearchAsync(
+        string filePath,
+        string readerKey,
+        string query)
+    {
+        var (index, cacheDir) = await GetOrBuildChapterIndexAsync(filePath, readerKey);
+        await EnsureCacheBuildAsync(filePath, readerKey, cacheDir);
+
+        var normalizedQuery = query.Trim();
+        var results = new List<DropboxSearchMatchDto>();
+
+        foreach (var chapter in index.Chapters)
+        {
+            var chapterPath = Path.Combine(cacheDir, chapter.FileName);
+            if (!File.Exists(chapterPath)) continue;
+
+            var content = await File.ReadAllTextAsync(chapterPath);
+            var matches = Regex.Matches(content, Regex.Escape(normalizedQuery), RegexOptions.IgnoreCase);
+            if (matches.Count == 0) continue;
+
+            var first = matches[0];
+            var start = Math.Max(0, first.Index - 80);
+            var end = Math.Min(content.Length, first.Index + normalizedQuery.Length + 120);
+            var snippet = content[start..end];
+            snippet = Regex.Replace(snippet, @"\s+", " ").Trim();
+
+            results.Add(new DropboxSearchMatchDto(
+                chapter.Id,
+                chapter.Title,
+                matches.Count,
+                first.Index,
+                snippet));
+        }
+
+        return results
+            .OrderByDescending(r => r.MatchCount)
+            .ThenBy(r => r.ChapterId)
+            .ToList();
+    }
+
+    private static async Task BuildCacheInternalAsync(string filePath, string readerKey, string cacheDir)
+    {
+        try
+        {
+            await using var fileStream = File.OpenRead(filePath);
+            using var ms = new MemoryStream();
+            await fileStream.CopyToAsync(ms);
+            ms.Position = 0;
+
+            var book = await EpubReader.ReadBookAsync(ms);
+            var flatChapters = FlattenChapters(book)
+                .Where(ch => ch.WordCount >= 50)
+                .ToList();
+
+            var chapterMetas = new List<CachedChapterMeta>();
+            foreach (var ch in flatChapters)
+            {
+                var fileName = $"chapter-{ch.Id:D4}.txt";
+                var chapterPath = Path.Combine(cacheDir, fileName);
+                await File.WriteAllTextAsync(chapterPath, ch.PlainText);
+
+                chapterMetas.Add(new CachedChapterMeta(
+                    ch.Id,
+                    ch.Title,
+                    ch.Level,
+                    ch.PlainText.Length,
+                    ch.WordCount,
+                    fileName,
+                    null,
+                    null));
+            }
+
+            var meta = new CachedChapterIndex(
+                readerKey,
+                string.IsNullOrWhiteSpace(book.Title)
+                    ? Path.GetFileNameWithoutExtension(filePath)
+                    : book.Title,
+                DateTime.UtcNow,
+                chapterMetas);
+
+            var metaJson = JsonSerializer.Serialize(meta, CacheJsonOptions);
+            await File.WriteAllTextAsync(Path.Combine(cacheDir, "metadata.json"), metaJson);
+        }
+        finally
+        {
+            CacheBuildTasks.TryRemove(cacheDir, out _);
+        }
+    }
+
+    private static async Task BuildIndexOnlyAsync(string filePath, string readerKey, string cacheDir)
+    {
+        await using var fileStream = File.OpenRead(filePath);
+        using var ms = new MemoryStream();
+        await fileStream.CopyToAsync(ms);
+        ms.Position = 0;
+
+        var book = await EpubReader.ReadBookAsync(ms);
+        var flatChapters = FlattenChapters(book)
+            .Where(ch => ch.WordCount >= 50)
+            .ToList();
+
+        var chapterMetas = flatChapters
+            .Select(ch => new CachedChapterMeta(
+                ch.Id,
+                ch.Title,
+                ch.Level,
+                ch.PlainText.Length,
+                ch.WordCount,
+                $"chapter-{ch.Id:D4}.txt",
+                null,
+                null))
+            .ToList();
+
+        var meta = new CachedChapterIndex(
+            readerKey,
+            string.IsNullOrWhiteSpace(book.Title)
+                ? Path.GetFileNameWithoutExtension(filePath)
+                : book.Title,
+            DateTime.UtcNow,
+            chapterMetas);
+
+        var metaJson = JsonSerializer.Serialize(meta, CacheJsonOptions);
+        await File.WriteAllTextAsync(Path.Combine(cacheDir, "metadata.json"), metaJson);
+    }
+
+    private static async Task<CachedChapterIndex?> TryReadIndex(string metaPath)
+    {
+        try
+        {
+            var json = await File.ReadAllTextAsync(metaPath);
+            return JsonSerializer.Deserialize<CachedChapterIndex>(json, CacheJsonOptions);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static IEnumerable<FlatChapter> FlattenChapters(EpubBook book)
+    {
+        var results = new List<FlatChapter>();
+        var index = 0;
+
+        if (book.Navigation != null && book.Navigation.Any())
+        {
+            void Walk(IEnumerable<EpubNavigationItem> items, int level)
+            {
+                foreach (var nav in items)
+                {
+                    if (nav.Type == EpubNavigationItemType.LINK && nav.HtmlContentFile != null)
+                    {
+                        var currentId = index++;
+                        var title = string.IsNullOrWhiteSpace(nav.Title)
+                            ? $"Chapter {currentId + 1}"
+                            : nav.Title.Trim();
+
+                        var text = HtmlToPlainText(nav.HtmlContentFile.Content);
+                        var words = CountWords(text);
+
+                        results.Add(new FlatChapter(currentId, title, level, text, words));
+                    }
+
+                    if (nav.NestedItems?.Any() == true)
+                        Walk(nav.NestedItems, level + 1);
+                }
+            }
+
+            Walk(book.Navigation, 0);
+        }
+
+        if (results.Count == 0 && book.ReadingOrder != null && book.ReadingOrder.Any())
+        {
+            foreach (var file in book.ReadingOrder)
+            {
+                var currentId = index++;
+                var title = string.IsNullOrWhiteSpace(file.FilePath)
+                    ? $"Section {currentId + 1}"
+                    : Path.GetFileNameWithoutExtension(file.FilePath);
+
+                var text = HtmlToPlainText(file.Content);
+                var words = CountWords(text);
+
+                results.Add(new FlatChapter(currentId, title, 0, text, words));
+            }
+        }
+
+        return results;
+    }
+
+    private static string HtmlToPlainText(string? html)
+    {
+        if (string.IsNullOrWhiteSpace(html))
+            return string.Empty;
+
+        var cleaned = Regex.Replace(
+            html,
+            "<(script|style)[^>]*?>.*?</\\1>",
+            string.Empty,
+            RegexOptions.Singleline | RegexOptions.IgnoreCase);
+
+        cleaned = Regex.Replace(
+            cleaned,
+            @"<(br|p|div|h[1-6]|li)[^>]*>",
+            "\n\n",
+            RegexOptions.IgnoreCase);
+
+        cleaned = Regex.Replace(cleaned, "<[^>]+>", " ");
+
+        var decoded = WebUtility.HtmlDecode(cleaned);
+        decoded = decoded.Replace("\r", "");
+
+        decoded = Regex.Replace(decoded, @"[ \t]+", " ");
+        decoded = Regex.Replace(decoded, @"(\n\s*){3,}", "\n\n");
+        decoded = decoded.Trim();
+
+        return decoded.Trim();
+    }
+
+    private static string ComputeHash(string value)
+    {
+        using var sha = SHA256.Create();
+        var bytes = Encoding.UTF8.GetBytes(value);
+        var hashBytes = sha.ComputeHash(bytes);
+        return Convert.ToHexString(hashBytes).ToLowerInvariant();
+    }
+
+    private static int CountWords(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return 0;
+
+        return Regex.Matches(text, @"\b\w+\b").Count;
+    }
+
+    public static string GetCacheRoot() => EpubCacheRoot;
+    public static string ComputeHashPublic(string value) => ComputeHash(value);
+
+    public static async Task<string?> ReadChapterContentAsync(string filePath, int chapterId)
+    {
+        try
+        {
+            await using var stream = File.OpenRead(filePath);
+            var book = await EpubReader.ReadBookAsync(stream);
+            var flatChapters = FlattenChapters(book).ToList();
+            var target = flatChapters.FirstOrDefault(ch => ch.Id == chapterId);
+            return target?.PlainText;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[library] Failed to read chapter {chapterId} from {filePath}: {ex.Message}");
+            return null;
+        }
+    }
+
+    public static async Task<string?> ReadChapterContentCachedAsync(string filePath, int chapterId)
+    {
+        var cacheKey = $"{filePath}::{chapterId}";
+        if (ChapterContentCache.TryGetValue(cacheKey, out string cached))
+            return cached;
+
+        var content = await ReadChapterContentAsync(filePath, chapterId);
+        if (content != null)
+        {
+            ChapterContentCache.Set(cacheKey, content, new MemoryCacheEntryOptions
+            {
+                SlidingExpiration = TimeSpan.FromMinutes(30)
+            });
+        }
+        return content;
+    }
+}
+
 // ========================================
 // AI Content Cache System
 // ========================================
@@ -4593,6 +8002,46 @@ public static class AiContentCache
         var sanitized = new string(input.Select(c => invalid.Contains(c) ? '_' : c).ToArray());
         if (sanitized.Length > 200) sanitized = sanitized.Substring(0, 200);
         return sanitized;
+    }
+
+    public static string SanitizeKey(string input) => SanitizeForFilename(input);
+
+    public static HashSet<string> GetExistingSummaryKeys()
+    {
+        var root = GetCacheRoot();
+        var keys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var subDirs = new[]
+        {
+            "chapter-summaries",
+            "section-summaries",
+            "chunk-boundaries",
+            "character-graphs"
+        };
+
+        foreach (var subDir in subDirs)
+        {
+            var path = Path.Combine(root, subDir);
+            if (!Directory.Exists(path))
+                continue;
+
+            foreach (var dir in Directory.GetDirectories(path))
+            {
+                var name = Path.GetFileName(dir);
+                if (!string.IsNullOrWhiteSpace(name))
+                    keys.Add(name);
+            }
+        }
+
+        return keys;
+    }
+
+    public static bool HasAnySummaries(string key, ISet<string> existingKeys)
+    {
+        if (string.IsNullOrWhiteSpace(key))
+            return false;
+
+        var sanitized = SanitizeKey(key);
+        return existingKeys.Contains(sanitized) || existingKeys.Contains(key);
     }
 
     public static string GetChapterSummaryCachePath(string dropboxPath, int chapterId)

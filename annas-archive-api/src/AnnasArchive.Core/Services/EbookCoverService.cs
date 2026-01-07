@@ -47,6 +47,14 @@ public class EbookCoverService : IEbookCoverService
 
         try
         {
+            if (!ebookStream.CanSeek)
+            {
+                var buffered = new MemoryStream();
+                await ebookStream.CopyToAsync(buffered);
+                buffered.Position = 0;
+                ebookStream = buffered;
+            }
+
             if (normalizedFormat == "epub")
             {
                 return await ReplaceEpubCoverAsync(ebookStream, coverUrl);

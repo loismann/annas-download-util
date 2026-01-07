@@ -25,7 +25,9 @@ public class AnnaArchiveService
     {
         "https://annas-archive.org",
         "https://annas-archive.li",
-        "https://annas-archive.se"
+        "https://annas-archive.se",
+        "https://annas-archive.pm",
+        "https://annas-archive.in"
     };
 
     private const int MaxDetailFetches = 5;
@@ -111,12 +113,21 @@ public class AnnaArchiveService
                         var (isbn, cover) = await GetIsbnAndCoverAsync(md5);
                         dto.Isbn = isbn;
 
-                        if (!string.IsNullOrEmpty(cover))
-                            dto.CoverCandidates.Insert(0, cover);
-
+                        // Prioritize Open Library covers - they typically have proper 2:3 aspect ratio
+                        // Standard ebook cover size is 1600×2560px (2:3 ratio)
                         if (!string.IsNullOrEmpty(isbn))
-                            dto.CoverCandidates.Add(
+                        {
+                            // Insert Open Library cover at the front - most likely to have correct dimensions
+                            dto.CoverCandidates.Insert(0,
                                 $"https://covers.openlibrary.org/b/isbn/{isbn}-L.jpg?default=false");
+                        }
+
+                        if (!string.IsNullOrEmpty(cover))
+                        {
+                            // Anna's Archive detail page cover as second priority
+                            var insertPosition = string.IsNullOrEmpty(isbn) ? 0 : 1;
+                            dto.CoverCandidates.Insert(insertPosition, cover);
+                        }
                     }
                     finally { sem.Release(); }
                 }
@@ -515,7 +526,9 @@ public class AnnaArchiveService
     {
         return host.EndsWith("annas-archive.org", StringComparison.OrdinalIgnoreCase)
             || host.EndsWith("annas-archive.li", StringComparison.OrdinalIgnoreCase)
-            || host.EndsWith("annas-archive.se", StringComparison.OrdinalIgnoreCase);
+            || host.EndsWith("annas-archive.se", StringComparison.OrdinalIgnoreCase)
+            || host.EndsWith("annas-archive.pm", StringComparison.OrdinalIgnoreCase)
+            || host.EndsWith("annas-archive.in", StringComparison.OrdinalIgnoreCase);
     }
 
     private async Task<string> GetStringWithFallbackAsync(string pathAndQuery)

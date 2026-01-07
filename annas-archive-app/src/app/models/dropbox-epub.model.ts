@@ -6,11 +6,23 @@ export interface DropboxEpubFile {
   serverModified: string;
 }
 
+export interface LibraryReaderBook {
+  fileName: string;
+  readerKey: string;
+  title: string;
+  authors: string[];
+  format: string;
+  coverUrl?: string | null;
+  hasSummaries: boolean;
+}
+
 export interface DropboxEpubChapter {
   id: number;
   title: string;
   level: number;
   wordCount: number;
+  displayLabel?: string | null;
+  isMainChapter?: boolean | null;
 }
 
 export interface DropboxEpubChaptersResponse {
@@ -117,6 +129,7 @@ export interface FlashcardRequestPayload {
   bookTitle?: string;
   context?: string;
   knownWords?: string[];
+  saveToLibrary?: boolean;
 }
 
 export interface FlashcardItem {

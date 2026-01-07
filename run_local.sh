@@ -6,7 +6,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 API_DIR="$ROOT_DIR/annas-archive-api/src/AnnasArchive.API"
 APP_DIR="$ROOT_DIR/annas-archive-app"
 
-API_PORT=5050
+API_PORT=5001
 APP_PORT=4200
 
 LOG_DIR="$ROOT_DIR/local-logs"
@@ -39,7 +39,7 @@ cleanup() {
         sleep 1
     fi
 
-    # Force kill any remaining dotnet processes on port 5050
+    # Force kill any remaining dotnet processes on the API port
     lsof -ti:$API_PORT | xargs kill -9 2>/dev/null || true
 
     # Force kill any remaining node processes on port 4200
@@ -49,6 +49,12 @@ cleanup() {
 }
 
 trap cleanup EXIT INT TERM
+
+# Kill any existing processes on the ports before starting
+echo "Checking for existing processes on ports ${API_PORT} and ${APP_PORT}..."
+lsof -ti:$API_PORT | xargs kill -9 2>/dev/null && echo "Killed existing process on port ${API_PORT}" || echo "No process found on port ${API_PORT}"
+lsof -ti:$APP_PORT | xargs kill -9 2>/dev/null && echo "Killed existing process on port ${APP_PORT}" || echo "No process found on port ${APP_PORT}"
+sleep 1
 
 mkdir -p "$LOG_DIR"
 echo "" > "$API_LOG"
@@ -63,7 +69,7 @@ echo ""
 
 echo "Starting API..."
 cd "$API_DIR"
-ASPNETCORE_URLS="http://0.0.0.0:${API_PORT}" dotnet run >>"$API_LOG" 2>&1 &
+ASPNETCORE_URLS="http://0.0.0.0:${API_PORT}" dotnet watch run >>"$API_LOG" 2>&1 &
 API_PID=$!
 cd "$ROOT_DIR"
 

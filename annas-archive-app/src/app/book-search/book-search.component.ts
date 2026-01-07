@@ -1,4 +1,4 @@
-import { Component, OnDestroy } from '@angular/core';
+import { Component, HostListener, OnDestroy, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 
@@ -11,20 +11,28 @@ import { MatCardModule }      from '@angular/material/card';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import { MatIconModule } from '@angular/material/icon';
+import { MatSlideToggleModule } from '@angular/material/slide-toggle';
 
 import {
   AnnaArchiveApiService,
   DownloadMemberResponse,
   SendToBooxResponse,
-  AuthorSuggestion
+  AuthorSuggestion,
+  AiBookSearchResult
 } from '../services/anna-archive-api.service';
 
 import { AuthService } from '../services/auth.service';
 import { BookDto } from '../models/book-dto.model';
-import { VERSION } from '../version';
 import { Subject } from 'rxjs';
-import { debounceTime, distinctUntilChanged, takeUntil } from 'rxjs/operators';
+import { debounceTime, distinctUntilChanged, takeUntil, tap } from 'rxjs/operators';
 import { RelatedBooksModalComponent } from '../related-books-modal/related-books-modal.component';
+
+interface DomainHealth {
+  name: string;
+  extension: string;
+  health: number | null;
+  certExpDays: number | null;
+}
 
 @Component({
   selector: 'app-book-search',
@@ -41,28 +49,39 @@ import { RelatedBooksModalComponent } from '../related-books-modal/related-books
     MatProgressSpinnerModule,
     MatDialogModule,
     MatIconModule,
+    MatSlideToggleModule,
   ],
   templateUrl: './book-search.component.html',
   styleUrls: ['./book-search.component.css'],
 })
-export class BookSearchComponent implements OnDestroy {
+export class BookSearchComponent implements OnInit, OnDestroy {
   placeholderUrl = '/assets/placeholder.jpg';
-  buildTime = VERSION.buildTime;
-
   /* ───────── search form state ───────── */
   searchTerm = '';
+  aiSearchQuery = '';
+  aiSearchExpanded = false;
 
   /* ───────── ui state ───────── */
   loading = false;
   error: string | null = null;
   searchPerformed = false;
   searchPanelCollapsed = false;
+  useLibGen = false; // Toggle between Anna's Archive and LibGen
 
   books: BookDto[] = [];
   selectedFormat = '';
 
   downloadsLeft: number | null = null;
   downloadsPerDay: number | null = null;
+
+  /* ───────── Anna's Archive domain health ───────── */
+  annaDomains: DomainHealth[] = [
+    { name: "Anna's Archive ORG", extension: 'org', health: null, certExpDays: null },
+    { name: "Anna's Archive SE", extension: 'se', health: null, certExpDays: null },
+    { name: "Anna's Archive LI", extension: 'li', health: null, certExpDays: null },
+    { name: "Anna's Archive PM", extension: 'pm', health: null, certExpDays: null },
+    { name: "Anna's Archive IN", extension: 'in', health: null, certExpDays: null }
+  ];
 
   /* ───────── author suggestion state ───────── */
   authorSuggestions: AuthorSuggestion[] = [];
@@ -93,9 +112,117 @@ export class BookSearchComponent implements OnDestroy {
     }
   }
 
+  @HostListener('document:keydown.enter', ['$event'])
+  handleEnterKey(event: KeyboardEvent): void {
+    if (this.dialog.openDialogs.length > 0) return;
+    const target = event.target as HTMLElement | null;
+    if (!target || !target.closest('.search-form')) return;
+    if (this.aiSearchExpanded && event.shiftKey) return;
+    event.preventDefault();
+    this.onSearch();
+  }
+
+  ngOnInit(): void {
+    // Fetch domain health status once on page load
+    this.fetchDomainHealth();
+    this.fetchMirrorHealth();
+  }
+
   ngOnDestroy(): void {
     this.destroy$.next();
     this.destroy$.complete();
+  }
+
+  /* ───────── domain health management ───────── */
+  private fetchDomainHealth(): void {
+    this.api.getSlumHealth().subscribe({
+      next: (data) => {
+        this.parseDomainHealth(data);
+      },
+      error: (err) => {
+        console.error('[domain-health] Failed to fetch SLUM data', err);
+      }
+    });
+  }
+
+  private fetchDomainHealthObservable() {
+    return this.api.getSlumHealth().pipe(
+      tap((data: any) => this.parseDomainHealth(data))
+    );
+  }
+
+  private fetchMirrorHealth(): void {
+    this.api.getMirrorHealth().subscribe({
+      next: (data) => {
+        this.parseMirrorHealth(data);
+      },
+      error: (err) => {
+        console.error('[domain-health] Failed to fetch mirror health data', err);
+      }
+    });
+  }
+
+  private parseMirrorHealth(data: any): void {
+    if (!data || !Array.isArray(data)) return;
+
+    data.forEach((entry: any) => {
+      if (!entry?.extension) return;
+      const domain = this.annaDomains.find(d => d.extension === entry.extension);
+      if (!domain) return;
+
+      if (domain.health === null || entry.extension === 'pm' || entry.extension === 'in') {
+        domain.health = typeof entry.health === 'number' ? entry.health : null;
+      }
+    });
+  }
+
+  private parseDomainHealth(data: any): void {
+    if (!data || !Array.isArray(data)) return;
+
+    // Find the entries for Anna's Archive domains
+    const orgEntry = data.find((entry: any) => entry.name === "Anna's Archive ORG");
+    const seEntry = data.find((entry: any) => entry.name === "Anna's Archive SE");
+    const liEntry = data.find((entry: any) => entry.name === "Anna's Archive LI");
+
+    if (orgEntry) {
+      this.updateDomainHealth('org', orgEntry);
+    }
+
+    if (seEntry) {
+      this.updateDomainHealth('se', seEntry);
+    }
+
+    if (liEntry) {
+      this.updateDomainHealth('li', liEntry);
+    }
+  }
+
+  private parseHealthPercentage(healthString: string): number | null {
+    if (!healthString) return null;
+    const match = healthString.match(/(\d+\.?\d*)%/);
+    return match ? parseFloat(match[1]) : null;
+  }
+
+  private parseCertExpiry(certExp: string): number | null {
+    if (!certExp) return null;
+    const match = certExp.match(/(\d+)\s*days?/);
+    return match ? parseInt(match[1], 10) : null;
+  }
+
+  private updateDomainHealth(extension: string, entry: any): void {
+    const domain = this.annaDomains.find(d => d.extension === extension);
+    if (!domain) return;
+
+    domain.health = this.parseHealthPercentage(entry.health);
+    domain.certExpDays = this.parseCertExpiry(entry.cert_exp);
+  }
+
+  getHealthColorClass(health: number | null): string {
+    if (health === null) return 'health-unknown';
+    if (health >= 90) return 'health-green';
+    if (health >= 70) return 'health-yellow';
+    if (health >= 50) return 'health-orange';
+    return 'health-red';
   }
 
   /* ───────── download counter management ───────── */
@@ -146,9 +273,7 @@ export class BookSearchComponent implements OnDestroy {
     // Filter by author (fuzzy match)
     if (this.selectedAuthor) {
       filtered = filtered.filter(b =>
-        b.authors.some(author =>
-          author.toLowerCase().includes(this.selectedAuthor.toLowerCase())
-        )
+        b.authors.some(author => this.authorMatches(author, this.selectedAuthor))
       );
     }
 
@@ -157,6 +282,10 @@ export class BookSearchComponent implements OnDestroy {
 
   /* ───────── search submit ───────── */
   onSearch(): void {
+    if (this.aiSearchExpanded) {
+      this.runAiSearch();
+      return;
+    }
     this.error = null;
     if (!this.searchTerm.trim()) {
       this.error = 'Please enter a search term.';
@@ -180,11 +309,16 @@ export class BookSearchComponent implements OnDestroy {
     this.searchPerformed = true;
     // Keep selectedFormat so it persists across searches
 
-    this.api.searchBooks(searchQuery, false).subscribe({
+    const searchObservable = this.useLibGen
+      ? this.api.searchBooksLibGen(searchQuery, false)
+      : this.api.searchBooks(searchQuery, false);
+
+    searchObservable.subscribe({
       next: books => {
         this.books = books;
         this.books.forEach(b => {
           b.sendState = 'idle';
+          b.libraryState = 'idle';
           b.dadsKindleState = 'idle';
           b.momsKindleState = 'idle';
         });
@@ -192,7 +326,16 @@ export class BookSearchComponent implements OnDestroy {
         this.queueCoverLookups();
       },
       error: err => {
-        this.error = 'Error fetching books.';
+        console.error('[Book Search] Error:', err);
+        if (err.name === 'TimeoutError') {
+          this.error = `Search timed out. ${this.useLibGen ? 'LibGen' : "Anna's Archive"} may be slow or unavailable.`;
+        } else if (err.status === 404) {
+          this.error = 'No books found.';
+        } else if (err.status === 0) {
+          this.error = 'Cannot connect to server. Please check your connection.';
+        } else {
+          this.error = `Error fetching books from ${this.useLibGen ? 'LibGen' : "Anna's Archive"}: ${err.message || err.statusText || 'Unknown error'}`;
+        }
         console.error(err);
         this.loading = false;
       },
@@ -200,29 +343,78 @@ export class BookSearchComponent implements OnDestroy {
   }
 
   /* ───────── download button ───────── */
-  download(book: BookDto): void {
+  sendToLibrary(book: BookDto): void {
+    if (book.libraryState === 'sending') return;
+    book.libraryState = 'sending';
+
     // Get the cover URL if available
     const coverUrl = book.coverCandidates && book.coverCandidates.length > 0
       ? book.coverCandidates[0]
       : undefined;
 
-    this.api.downloadMember(book.md5, book.title, coverUrl).subscribe({
-      next: (blob: Blob) => {
-        // Create a download link and trigger it
-        const url = window.URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        // Sanitize filename to remove invalid characters
-        const sanitizedTitle = book.title.replace(/[<>:"/\\|?*]/g, '_');
-        link.download = `${sanitizedTitle}.${book.format.toLowerCase()}`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        window.URL.revokeObjectURL(url);
+    const authorString = book.authors?.join(';');
+
+    const libraryObservable = this.useLibGen
+      ? this.api.sendToLibraryLibGen(
+          book.md5,
+          book.title,
+          coverUrl,
+          authorString,
+          book.format,
+          book.fileSize,
+          book.source
+        )
+      : this.api.sendToLibrary(
+          book.md5,
+          book.title,
+          coverUrl,
+          authorString,
+          book.format,
+          book.fileSize,
+          book.source
+        );
+
+    libraryObservable.subscribe({
+      next: () => {
+        book.libraryState = 'success';
       },
       error: err => {
-        console.error('Download failed', err);
-        this.error = 'Download failed.';
+        console.error('Send-to-library failed', err);
+        book.libraryState = 'error';
+        this.error = 'Send to library failed.';
+      }
+    });
+  }
+
+  private sendToLibrarySilently(book: BookDto, coverUrl?: string): void {
+    const authorString = book.authors?.join(';');
+    const libraryObservable = this.useLibGen
+      ? this.api.sendToLibraryLibGen(
+          book.md5,
+          book.title,
+          coverUrl,
+          authorString,
+          book.format,
+          book.fileSize,
+          book.source
+        )
+      : this.api.sendToLibrary(
+          book.md5,
+          book.title,
+          coverUrl,
+          authorString,
+          book.format,
+          book.fileSize,
+          book.source
+        );
+
+    libraryObservable.subscribe({
+      next: () => {
+        book.libraryState = 'success';
+      },
+      error: err => {
+        console.error('Send-to-library failed', err);
+        book.libraryState = 'error';
       }
     });
   }
@@ -236,6 +428,8 @@ export class BookSearchComponent implements OnDestroy {
     const coverUrl = book.coverCandidates && book.coverCandidates.length > 0
       ? book.coverCandidates[0]
       : undefined;
+
+    this.sendToLibrarySilently(book, coverUrl);
 
     this.api.sendToBoox(book.md5, book.title, coverUrl).subscribe({
       next: (resp: SendToBooxResponse) => {
@@ -261,6 +455,8 @@ export class BookSearchComponent implements OnDestroy {
       ? book.coverCandidates[0]
       : undefined;
 
+    this.sendToLibrarySilently(book, coverUrl);
+
     this.api.sendToKindle(book.md5, book.title, 'dad', coverUrl).subscribe({
       next: (resp: SendToBooxResponse) => {
         if (resp.accountFastInfo) {
@@ -284,6 +480,8 @@ export class BookSearchComponent implements OnDestroy {
     const coverUrl = book.coverCandidates && book.coverCandidates.length > 0
       ? book.coverCandidates[0]
       : undefined;
+
+    this.sendToLibrarySilently(book, coverUrl);
 
     this.api.sendToKindle(book.md5, book.title, 'mom', coverUrl).subscribe({
       next: (resp: SendToBooxResponse) => {
@@ -320,14 +518,14 @@ export class BookSearchComponent implements OnDestroy {
     }
 
   private queueCoverLookups(): void {
-    const missing = this.books.filter(b => !b.coverCandidates || b.coverCandidates.length === 0);
+    const missing = this.books.filter(b => this.needsExternalCoverLookup(b));
     missing.slice(0, 50).forEach((book, index) => {
       setTimeout(() => this.lookupCoverForBook(book), index * 200);
     });
   }
 
   private lookupCoverForBook(book: BookDto): void {
-    if (book.coverCandidates && book.coverCandidates.length > 0) {
+    if (!this.needsExternalCoverLookup(book)) {
       return;
     }
 
@@ -354,8 +552,29 @@ export class BookSearchComponent implements OnDestroy {
     });
   }
 
+  private needsExternalCoverLookup(book: BookDto): boolean {
+    if (!book.coverCandidates || book.coverCandidates.length === 0) {
+      return true;
+    }
+
+    if (!this.useLibGen && !book.source?.startsWith('libgen')) {
+      return false;
+    }
+
+    const hasNonLibGenCover = book.coverCandidates.some(url => !this.isLibGenCoverUrl(url));
+    return !hasNonLibGenCover;
+  }
+
+  private isLibGenCoverUrl(url: string): boolean {
+    const normalized = url.toLowerCase();
+    return normalized.includes('libgen.') && normalized.includes('/covers');
+  }
+
   /* ───────── author suggestion methods ───────── */
   onSearchTermChange(newTerm: string): void {
+    if (this.aiSearchExpanded) {
+      return;
+    }
     this.searchTerm = newTerm;
 
     // Clear author suggestions if search term is too short
@@ -395,6 +614,32 @@ export class BookSearchComponent implements OnDestroy {
         this.loadingAuthors = false;
       }
     });
+  }
+
+  private authorMatches(author: string, selectedAuthor: string): boolean {
+    const normalizedAuthor = this.normalizeName(author);
+    const normalizedSelected = this.normalizeName(selectedAuthor);
+
+    if (!normalizedAuthor || !normalizedSelected) {
+      return false;
+    }
+
+    if (normalizedAuthor.includes(normalizedSelected)) {
+      return true;
+    }
+
+    const authorTokens = normalizedAuthor.split(' ').filter(Boolean);
+    const selectedTokens = normalizedSelected.split(' ').filter(Boolean);
+
+    return selectedTokens.every(token => authorTokens.includes(token));
+  }
+
+  private normalizeName(value: string): string {
+    return value
+      .toLowerCase()
+      .replace(/[^a-z0-9 ]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
   }
 
   /* ───────── related books modal ───────── */
@@ -448,6 +693,80 @@ export class BookSearchComponent implements OnDestroy {
         if (result.author) {
           this.selectedAuthor = result.author;
         }
+        this.onSearch();
+      }
+    });
+  }
+
+  toggleAiSearch(): void {
+    this.aiSearchExpanded = !this.aiSearchExpanded;
+    if (this.aiSearchExpanded) {
+      this.aiSearchQuery = this.searchTerm.trim();
+    } else {
+      this.aiSearchQuery = '';
+      this.error = null;
+    }
+  }
+
+  private runAiSearch(): void {
+    this.error = null;
+    const query = this.aiSearchQuery.trim();
+    if (!query) {
+      this.error = 'Ask a book-related question to start AI search.';
+      return;
+    }
+
+    this.loading = true;
+    this.searchPerformed = true;
+
+    const dialogRef = this.dialog.open(RelatedBooksModalComponent, {
+      width: '1100px',
+      maxWidth: '90vw',
+      data: {
+        bookTitle: query,
+        author: 'AI Search',
+        sameSeries: [],
+        otherSeries: [],
+        seriesSummary: null,
+        loading: true,
+        mode: 'ai',
+        query
+      }
+    });
+
+    dialogRef.componentInstance.clearStatus();
+    dialogRef.componentInstance.addStatus('Thinking…');
+
+    this.api.aiBookSearch(query).subscribe({
+      next: (resp: AiBookSearchResult) => {
+        const results = (resp.books ?? []).map((book, index) => ({
+          title: book.title,
+          order: index + 1,
+          description: [book.summary, book.importance].filter(Boolean).join(' • '),
+          coverUrl: book.coverUrl || undefined
+        }));
+
+        dialogRef.componentInstance.data.sameSeries = results;
+        dialogRef.componentInstance.data.otherSeries = [];
+        dialogRef.componentInstance.data.seriesSummary = resp.summary ?? null;
+        dialogRef.componentInstance.data.loading = false;
+        dialogRef.componentInstance.clearStatus();
+        dialogRef.componentInstance.addStatus(`Found ${results.length} book${results.length === 1 ? '' : 's'}.`);
+
+        this.loading = false;
+      },
+      error: (err) => {
+        this.loading = false;
+        dialogRef.componentInstance.data.loading = false;
+        const message = err?.error?.error || 'AI search failed.';
+        dialogRef.componentInstance.addStatus(message);
+        this.error = message;
+      }
+    });
+
+    dialogRef.afterClosed().subscribe(result => {
+      if (result && result.searchBook) {
+        this.searchTerm = result.searchBook;
         this.onSearch();
       }
     });

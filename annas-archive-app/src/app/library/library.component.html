@@ -1,0 +1,216 @@
+<div class="library-wrapper">
+  <div class="library-layout">
+    <aside class="library-sidebar">
+      <div class="sidebar-header">
+        <h2>Ebook Library</h2>
+        <p>Browse your saved books.</p>
+      </div>
+
+      <mat-form-field appearance="outline" class="w-100">
+        <mat-label>Search</mat-label>
+        <input matInput [(ngModel)]="searchTerm" placeholder="Title, author, series, tags" />
+      </mat-form-field>
+
+      <mat-form-field appearance="outline" class="w-100">
+        <mat-label>Genre</mat-label>
+        <mat-select [(ngModel)]="selectedGenre">
+          <mat-option value="">All Genres</mat-option>
+          <mat-option *ngFor="let genre of genres" [value]="genre">{{ genre }}</mat-option>
+        </mat-select>
+      </mat-form-field>
+
+      <div class="rating-filter">
+        <div class="rating-label">Minimum Star Rating:</div>
+        <div class="rating-control">
+          <input
+            type="range"
+            min="0"
+            max="5"
+            step="1"
+            [(ngModel)]="minPersonalRating"
+          />
+          <span class="rating-value">{{ minPersonalRating }}</span>
+        </div>
+      </div>
+
+      <div class="rating-filter">
+        <div class="rating-label">Minimum Goodreads Rating:</div>
+        <div class="rating-control">
+          <input
+            type="range"
+            min="0"
+            max="5"
+            step="0.1"
+            [(ngModel)]="minGoodreadsRating"
+          />
+          <span class="rating-value">{{ minGoodreadsRating | number:'1.1-1' }}</span>
+        </div>
+      </div>
+
+      <div class="sidebar-meta">
+        <div class="meta-label">Total books</div>
+        <div class="meta-value">{{ filteredBooks.length }}</div>
+      </div>
+
+      <div class="admin-section" *ngIf="authService.isAdmin()">
+        <button type="button" class="admin-toggle" (click)="toggleAdmin()">
+          <span>Admin</span>
+          <span class="admin-caret">{{ adminOpen ? '▾' : '▸' }}</span>
+        </button>
+
+        <div class="admin-panel" *ngIf="adminOpen">
+          <label class="admin-row">
+            <input type="checkbox" [(ngModel)]="filterMissingAuthor" [ngModelOptions]="{ standalone: true }" />
+            <span>Book has no author</span>
+          </label>
+
+          <label class="admin-row">
+            <input type="checkbox" [(ngModel)]="filterMissingCover" [ngModelOptions]="{ standalone: true }" />
+            <span>Book cover image is missing</span>
+          </label>
+
+          <label class="admin-row">
+            <input type="checkbox" [(ngModel)]="filterGenreCountEnabled" [ngModelOptions]="{ standalone: true }" />
+            <span class="admin-label">Book has</span>
+            <select [(ngModel)]="filterGenreComparison" [ngModelOptions]="{ standalone: true }">
+              <option value="less">less than</option>
+              <option value="more">more than</option>
+            </select>
+            <input type="number" min="0" [(ngModel)]="filterGenreCount" [ngModelOptions]="{ standalone: true }" />
+            <span>genres</span>
+          </label>
+
+          <button type="button" class="admin-danger" (click)="wipeAllGenres()">
+            Wipe all genres
+          </button>
+        </div>
+      </div>
+    </aside>
+
+    <section class="library-panel">
+      <div class="library-controls">
+        <div class="owner-filters">
+          <button
+            *ngFor="let owner of ownerTags"
+            type="button"
+            class="owner-filter"
+            [class.active]="selectedOwnerTags.has(owner)"
+            (click)="toggleOwnerTag(owner)"
+          >
+            {{ owner }}
+          </button>
+        </div>
+        <div class="sort-combo">
+          <mat-form-field appearance="outline" class="sort-field">
+            <mat-label>Sort by</mat-label>
+            <mat-select [(ngModel)]="sortOrder" (selectionChange)="onSortChange()">
+              <mat-option value="title">Title</mat-option>
+              <mat-option value="author">Author</mat-option>
+              <mat-option value="series">Series</mat-option>
+              <mat-option value="stars">Stars</mat-option>
+              <mat-option value="goodreads">Goodreads</mat-option>
+              <mat-option value="recent">Most recent</mat-option>
+            </mat-select>
+          </mat-form-field>
+          <button
+            mat-icon-button
+            type="button"
+            class="sort-direction-toggle"
+            (click)="toggleSortDirection()"
+            aria-label="Toggle sort direction"
+          >
+            <mat-icon>{{ sortDirection === 'down' ? 'arrow_downward' : 'arrow_upward' }}</mat-icon>
+          </button>
+        </div>
+      </div>
+
+      <div *ngIf="loading" class="library-loading">
+        <mat-spinner diameter="36"></mat-spinner>
+      </div>
+
+      <div *ngIf="error" class="library-error">{{ error }}</div>
+
+      <div *ngIf="!loading && !error" class="library-grid-scroll" #libraryGrid (scroll)="onGridScroll()">
+        <div class="library-grid">
+          <ng-container *ngFor="let book of filteredBooks; let i = index; trackBy: trackByFileName">
+            <mat-card class="library-card" [attr.data-index]="i">
+              <div class="cover-frame" (click)="onCoverClick(book)" style="cursor: pointer;">
+                <img
+                  class="cover"
+                  [src]="book.coverUrl || placeholderUrl"
+                  (error)="onCoverError($event)"
+                  [alt]="book.title + ' cover'"
+                />
+              </div>
+              <div class="info">
+                <div class="title">{{ book.title }}</div>
+                <div class="author" [class.author-missing]="book.authors.length === 0">
+                  {{ book.authors.length ? book.authors.join(', ') : '' }}
+                </div>
+                <div class="meta">{{ book.format }} &nbsp;|&nbsp; {{ book.fileSize }}</div>
+                <div class="goodreads">
+                  Goodreads
+                  <span class="goodreads-value">
+                    {{ book.goodreadsRating !== null && book.goodreadsRating !== undefined
+                      ? (book.goodreadsRating | number:'1.1-1')
+                      : 'NA' }}
+                  </span>
+                </div>
+                <div class="personal-stars" aria-label="Personal rating">
+                  <button
+                    *ngFor="let star of starRange"
+                    type="button"
+                    class="star-button"
+                    [class.filled]="(book.personalRating ?? 0) >= star"
+                    (click)="setPersonalRating(book, star)"
+                  >
+                    ★
+                  </button>
+                </div>
+              </div>
+              <div class="card-actions">
+                  <button
+                  mat-raised-button
+                  color="primary"
+                  (click)="sendToKindle(book, 'dad')"
+                  [disabled]="!book.fileName || !canSendToKindle(book) || book.dadsKindleState === 'sending'">
+                  <ng-container [ngSwitch]="book.dadsKindleState">
+                    <span *ngSwitchCase="'sending'">Sending…</span>
+                    <span *ngSwitchCase="'success'">✔ Sent</span>
+                    <span *ngSwitchCase="'error'">✖ Retry</span>
+                    <span *ngSwitchDefault>Dad's Kindle</span>
+                  </ng-container>
+                </button>
+                  <button
+                  mat-raised-button
+                  color="primary"
+                  (click)="sendToKindle(book, 'mom')"
+                  [disabled]="!book.fileName || !canSendToKindle(book) || book.momsKindleState === 'sending'">
+                  <ng-container [ngSwitch]="book.momsKindleState">
+                    <span *ngSwitchCase="'sending'">Sending…</span>
+                    <span *ngSwitchCase="'success'">✔ Sent</span>
+                    <span *ngSwitchCase="'error'">✖ Retry</span>
+                    <span *ngSwitchDefault>Mom's Kindle</span>
+                  </ng-container>
+                </button>
+              </div>
+            </mat-card>
+          </ng-container>
+        </div>
+      </div>
+
+      <div *ngIf="!loading && !error && showAlphabetIndex" class="alphabet-index">
+        <button
+          *ngFor="let letter of alphabetIndex"
+          type="button"
+          class="alphabet-letter"
+          [class.active]="letter === activeLetter"
+          [class.disabled]="availableLetters.indexOf(letter) === -1"
+          (click)="scrollToLetter(letter)"
+        >
+          {{ letter }}
+        </button>
+      </div>
+    </section>
+  </div>
+</div>

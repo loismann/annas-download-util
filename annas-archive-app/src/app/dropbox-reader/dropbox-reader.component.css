@@ -48,6 +48,31 @@
   width: 100%;
 }
 
+.reader-select-row {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.reader-select {
+  flex: 1 1 auto;
+}
+
+.reader-add-button {
+  height: 56px;
+  width: 56px;
+  min-width: 56px;
+  padding: 0;
+  align-self: stretch;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.reader-add-button .mat-icon {
+  margin: 0;
+}
+
 .book-path {
   font-size: 12px;
   color: #6b7280;
@@ -116,6 +141,7 @@
 }
 
 .reader-controls {
+  --control-height: 36px;
   margin-top: 16px;
   padding: 14px 18px;
   background: #ffffff;
@@ -139,11 +165,187 @@
   color: #0f172a;
 }
 
+.reader-controls .page-indicator-muted {
+  color: #9ca3af;
+}
 .reader-controls-right {
   display: flex;
   align-items: center;
   gap: 18px;
   flex-wrap: wrap;
+}
+
+.reader-controls .mat-button-toggle-group,
+.reader-controls .size-stepper,
+.reader-controls .selection-btn,
+.reader-controls .bookmark-square,
+.reader-controls .bookmark-select .mat-mdc-text-field-wrapper,
+.reader-controls-section .size-stepper {
+  height: var(--control-height);
+  min-height: var(--control-height);
+  display: flex;
+  align-items: center;
+}
+
+.reader-controls .segmented-control,
+.reader-controls-section .segmented-control {
+  height: var(--control-height);
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #ffffff;
+}
+
+.reader-controls .segmented-button,
+.reader-controls-section .segmented-button {
+  height: 100%;
+  padding: 0 14px;
+  border: 0;
+  background: transparent;
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.reader-controls .segmented-button + .segmented-button,
+.reader-controls-section .segmented-button + .segmented-button {
+  border-left: 1px solid #e5e7eb;
+}
+
+.reader-controls .segmented-button.active,
+.reader-controls-section .segmented-button.active {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+.reader-controls .segmented-button:focus-visible,
+.reader-controls-section .segmented-button:focus-visible {
+  outline: 2px solid #4f46e5;
+  outline-offset: -2px;
+}
+
+.reader-controls .bookmark-square {
+  width: var(--control-height);
+  height: var(--control-height);
+  border: 1px solid #d1d5db;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #4f46e5;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.reader-controls .bookmark-square.active {
+  background: #e0e7ff;
+  border-color: #4f46e5;
+  color: #4338ca;
+}
+
+.reader-controls .bookmark-square:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.reader-controls .bookmark-square .mat-icon {
+  margin: 0;
+  line-height: 1;
+}
+
+.reader-controls .bookmark-dropdown {
+  position: relative;
+  width: 180px;
+  height: var(--control-height);
+}
+
+.reader-controls .bookmark-dropdown-trigger {
+  width: 100%;
+  height: 100%;
+  border: 1px solid #d1d5db;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 32px 0 12px;
+  cursor: pointer;
+  position: relative;
+}
+
+.reader-controls .bookmark-dropdown-trigger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.reader-controls .bookmark-dropdown-label {
+  width: 100%;
+  text-align: center;
+  line-height: var(--control-height);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.reader-controls .bookmark-dropdown-arrow {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 18px;
+}
+
+.reader-controls .bookmark-dropdown-menu {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.12);
+  z-index: 20;
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 6px 0;
+}
+
+.reader-controls .bookmark-dropdown-item {
+  width: 100%;
+  background: transparent;
+  border: 0;
+  text-align: left;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: #0f172a;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.reader-controls .bookmark-dropdown-item:hover {
+  background: #eef2ff;
+}
+
+.reader-controls ::ng-deep .mat-button-toggle-checkbox-wrapper,
+.reader-controls ::ng-deep .mat-button-toggle-checkmark,
+.reader-controls ::ng-deep .mat-button-toggle-checkmark-path {
+  display: none !important;
+  width: 0 !important;
+  margin: 0 !important;
 }
 
 .control-group {
@@ -164,7 +366,15 @@
   background: #f8fafc;
   border: 1px solid #e5e7eb;
   border-radius: 10px;
-  padding: 4px 8px;
+  padding: 0 8px;
+  height: var(--control-height);
+}
+
+.size-stepper button {
+  height: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .size-value {
@@ -172,6 +382,10 @@
   color: #0f172a;
   min-width: 50px;
   text-align: center;
+}
+
+.size-stepper .mat-icon {
+  line-height: 1;
 }
 
 .content-stack {
@@ -446,7 +660,7 @@
   height: 48px;
   min-height: 48px;
   line-height: 1;
-  padding: 0 16px;
+  padding: 0 20px;
   font-size: 14px;
   border-radius: 0 12px 12px 0;
   display: inline-flex;
@@ -458,6 +672,9 @@
   border: 1px solid rgba(144, 180, 255, 0.8);
   background: rgba(255, 255, 255, 0.06);
   color: #a5b4fc;
+  max-width: none;
+  min-width: 260px;
+  overflow: hidden;
 }
 
 .summary-btn mat-icon {
@@ -466,6 +683,16 @@
   height: 24px;
   font-size: 24px;
   line-height: 24px;
+}
+
+:host ::ng-deep .summary-btn .mdc-button__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .token-chip {
@@ -487,6 +714,45 @@
 .reader-theme-sepia .token-chip {
   background: #e8dcc3;
   color: #4b3b2c;
+}
+
+.confirm-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+}
+
+.confirm-modal {
+  width: 100%;
+  max-width: 520px;
+  background: #ffffff;
+  border-radius: 14px;
+  padding: 20px 22px;
+  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.3);
+  color: #0f172a;
+}
+
+.confirm-header h3 {
+  margin: 0 0 8px;
+  font-size: 18px;
+}
+
+.confirm-modal p {
+  margin: 0;
+  color: #475569;
+  line-height: 1.5;
+}
+
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 18px;
 }
 
 .selection-btn {
@@ -875,7 +1141,9 @@
 }
 
 .ai-usage-section,
-.cache-section {
+.cache-section,
+.reader-controls-section {
+  --control-height: 36px;
   margin-bottom: 16px;
   border: 1px solid #e5e7eb;
   border-radius: 8px;
@@ -913,8 +1181,38 @@
 }
 
 .ai-usage-content,
-.cache-content {
+.cache-content,
+.reader-controls-content {
   padding: 0 12px 12px;
+}
+
+.reader-controls-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.reader-controls-content .control-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.reader-controls-content .font-row {
+  padding-top: 6px;
+}
+
+.reader-controls-content .control-label {
+  min-width: 52px;
+}
+
+.dropdown-disabled {
+  opacity: 0.6;
+}
+
+.reader-controls-section.dropdown-disabled .reader-controls-content {
+  pointer-events: none;
 }
 
 .ai-usage-content .token-usage-block {

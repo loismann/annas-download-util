@@ -28,6 +28,8 @@ export interface RelatedBooksModalData {
   otherSeries: AuthorSeriesInfo[];
   seriesSummary: string | null;
   loading: boolean;
+  mode?: 'related' | 'ai';
+  query?: string;
 }
 
 type MatchStatus = 'pending' | 'matched' | 'ambiguous' | 'missing';
@@ -167,7 +169,7 @@ export class RelatedBooksModalComponent {
     this.matchResults = [];
 
     const format = this.selectedFormat;
-    const author = this.data.author;
+    const author = this.data.mode === 'ai' ? 'Unknown' : this.data.author;
 
     // Step 1: Search for all books and collect candidates
     const booksWithCandidates: BookWithCandidates[] = [];
@@ -297,7 +299,7 @@ export class RelatedBooksModalComponent {
     this.preparingMatches = false;
   }
 
-  async sendSelected(action: 'download' | 'dropbox' | 'kindle-dad' | 'kindle-mom'): Promise<void> {
+  async sendSelected(action: 'library' | 'dropbox' | 'kindle-dad' | 'kindle-mom'): Promise<void> {
     if (this.sending) return;
     const ready = this.matchResults.filter(result => result.selected);
     if (ready.length === 0) return;
@@ -317,31 +319,46 @@ export class RelatedBooksModalComponent {
           ? selected.coverCandidates[0]
           : undefined;
 
-        if (action === 'download') {
-          const blob = await firstValueFrom(this.api.downloadMember(selected.md5, selected.title, coverUrl));
-          // Create a download link and trigger it
-          const url = window.URL.createObjectURL(blob);
-          const link = document.createElement('a');
-          link.href = url;
-          // Sanitize filename to remove invalid characters
-          const sanitizedTitle = selected.title.replace(/[<>:"/\\|?*]/g, '_');
-          link.download = `${sanitizedTitle}.${selected.format.toLowerCase()}`;
-          document.body.appendChild(link);
-          link.click();
-          document.body.removeChild(link);
-          window.URL.revokeObjectURL(url);
-          this.sendLog[this.sendLog.length - 1] = `✓ Downloaded: ${selected.title}`;
+        const authorString = selected.authors?.join(';');
+
+        const trySaveToLibrary = async (): Promise<boolean> => {
+          try {
+            await firstValueFrom(
+              this.api.sendToLibrary(
+                selected.md5,
+                selected.title,
+                coverUrl,
+                authorString,
+                selected.format,
+                selected.fileSize,
+                selected.source
+              )
+            );
+            return true;
+          } catch {
+            return false;
+          }
+        };
+
+        if (action === 'library') {
+          const saved = await trySaveToLibrary();
+          this.sendLog[this.sendLog.length - 1] = saved
+            ? `✓ Saved to Library: ${selected.title}`
+            : `✗ Library failed: ${selected.title}`;
         } else if (action === 'dropbox') {
+          await trySaveToLibrary();
           const resp = await firstValueFrom(this.api.sendToBoox(selected.md5, selected.title, coverUrl));
           this.sendLog[this.sendLog.length - 1] = resp?.success
             ? `✓ Sent to Dropbox: ${selected.title}`
             : `✗ Dropbox failed: ${selected.title}`;
         } else if (action === 'kindle-dad') {
+          await trySaveToLibrary();
           const resp = await firstValueFrom(this.api.sendToKindle(selected.md5, selected.title, 'dad', coverUrl));
           this.sendLog[this.sendLog.length - 1] = resp?.success
             ? `✓ Sent to Dad's Kindle: ${selected.title}`
             : `✗ Dad's Kindle failed: ${selected.title} - ${resp?.message || 'Unknown error'}`;
         } else {
+          await trySaveToLibrary();
           const resp = await firstValueFrom(this.api.sendToKindle(selected.md5, selected.title, 'mom', coverUrl));
           this.sendLog[this.sendLog.length - 1] = resp?.success
             ? `✓ Sent to Mom's Kindle: ${selected.title}`
@@ -353,8 +370,8 @@ export class RelatedBooksModalComponent {
 
       // Add delay between sends to avoid rate limiting (except after last book)
       if (i < ready.length - 1) {
-        this.sendLog.push(`⏱️ Waiting 15 seconds to avoid rate limiting...`);
-        await this.delay(15000);
+        this.sendLog.push(`⏱️ Waiting 5 seconds to avoid rate limiting...`);
+        await this.delay(5000);
         this.sendLog.pop(); // Remove the waiting message
       }
     }
@@ -402,6 +419,62 @@ export class RelatedBooksModalComponent {
     }
     this.matchResults = [];
     this.sendLog = [];
+  }
+
+  getFilteredCandidates(result: MatchResult): BookDto[] {
+    const preferredFormat = this.selectedFormat?.toUpperCase();
+    const normalizedAuthor = this.getNormalizedAuthorQuery();
+
+    let candidates = result.candidates;
+    if (preferredFormat && preferredFormat !== 'ALL') {
+      candidates = candidates.filter(candidate => candidate.format?.toUpperCase() === preferredFormat);
+    }
+
+    if (normalizedAuthor) {
+      const authorMatches = candidates.filter(candidate =>
+        candidate.authors?.some(author => this.normalizeText(author).includes(normalizedAuthor))
+      );
+      if (authorMatches.length > 0) {
+        candidates = authorMatches;
+      }
+    }
+
+    const targetTitle = result.title;
+    return [...candidates].sort((a, b) =>
+      this.scoreCandidate(targetTitle, b, normalizedAuthor) - this.scoreCandidate(targetTitle, a, normalizedAuthor)
+    );
+  }
+
+  private scoreCandidate(targetTitle: string, candidate: BookDto, normalizedAuthor: string): number {
+    const candidateTitle = this.normalizeText(candidate.title || '');
+    const target = this.normalizeText(targetTitle || '');
+    let score = 0;
+
+    if (candidateTitle === target) score += 50;
+    if (candidateTitle.startsWith(target) || target.startsWith(candidateTitle)) score += 25;
+    if (candidateTitle.includes(target) || target.includes(candidateTitle)) score += 20;
+
+    if (normalizedAuthor) {
+      const hasAuthorMatch = candidate.authors?.some(author =>
+        this.normalizeText(author).includes(normalizedAuthor)
+      );
+      if (hasAuthorMatch) score += 30;
+    }
+
+    return score;
+  }
+
+  private getNormalizedAuthorQuery(): string {
+    const authorQuery = (this.data?.author || '').trim();
+    if (!authorQuery || authorQuery.toLowerCase() === 'ai search') return '';
+    return this.normalizeText(authorQuery);
+  }
+
+  private normalizeText(value: string): string {
+    return value
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim();
   }
 
   queueCoverLookupsForSeries(seriesName: string): void {

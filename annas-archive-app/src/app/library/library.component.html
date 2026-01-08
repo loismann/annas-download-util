@@ -144,6 +144,17 @@
               </div>
               <div class="info">
                 <div class="title">{{ book.title }}</div>
+                <div class="personal-stars" aria-label="Personal rating">
+                  <button
+                    *ngFor="let star of starRange"
+                    type="button"
+                    class="star-button"
+                    [class.filled]="(book.personalRating ?? 0) >= star"
+                    (click)="setPersonalRating(book, star)"
+                  >
+                    ★
+                  </button>
+                </div>
                 <div class="author" [class.author-missing]="book.authors.length === 0">
                   {{ book.authors.length ? book.authors.join(', ') : '' }}
                 </div>
@@ -155,17 +166,6 @@
                       ? (book.goodreadsRating | number:'1.1-1')
                       : 'NA' }}
                   </span>
-                </div>
-                <div class="personal-stars" aria-label="Personal rating">
-                  <button
-                    *ngFor="let star of starRange"
-                    type="button"
-                    class="star-button"
-                    [class.filled]="(book.personalRating ?? 0) >= star"
-                    (click)="setPersonalRating(book, star)"
-                  >
-                    ★
-                  </button>
                 </div>
               </div>
               <div class="card-actions">

@@ -448,6 +448,27 @@
                 <h4>Full chapter summary</h4>
               </div>
               <div class="full-summary-body markdown-content" [innerHTML]="fullChapterSummaryHtml"></div>
+              <div class="dummy-summary-actions">
+                <button
+                  mat-stroked-button
+                  color="primary"
+                  class="dummy-summary-btn"
+                  (click)="handleUltraSummaryAction()"
+                  [disabled]="loadingUltraChapterSummary">
+                  <mat-icon *ngIf="loadingUltraChapterSummary" class="spinning">hourglass_empty</mat-icon>
+                  {{ ultraChapterSummary ? "Regenerate I'm a Dummy" : "I'm a Dummy" }}
+                </button>
+              </div>
+              <div class="dummy-summary-progress" *ngIf="loadingUltraChapterSummary">
+                <mat-icon class="pulse">auto_awesome</mat-icon>
+                <span>Translating this chapter into plain language...</span>
+              </div>
+              <div class="dummy-summary-container" *ngIf="ultraChapterSummary">
+                <div class="dummy-summary-header">
+                  <h4>Plain-English breakdown</h4>
+                </div>
+                <div class="dummy-summary-body markdown-content" [innerHTML]="ultraChapterSummaryHtml"></div>
+              </div>
             </div>
             <ng-template #chapterPlaceholder>
               <div class="analysis-placeholder">

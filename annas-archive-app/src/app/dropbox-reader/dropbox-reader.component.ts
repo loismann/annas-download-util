@@ -19,7 +19,7 @@ import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatSliderModule } from '@angular/material/slider';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatDialog } from '@angular/material/dialog';
-import { Router } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { CharacterGraphModalComponent } from '../character-graph-modal/character-graph-modal.component';
 
 import {
@@ -175,6 +175,10 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
   loadingSectionSummary = false;
   currentSectionIndex: number | null = null;
   private chapterContentCache = new Map<string, DropboxChapterContent>();
+  private pendingFileName: string | null = null;
+  private pendingChapterId: number | null = null;
+  private autoSelectFirstChapter = false;
+  private autoSelectChapterId: number | null = null;
 
   get readerTextStyles(): any {
     return {
@@ -200,12 +204,14 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
     private authService: AuthService,
     private ngZone: NgZone,
     private dialog: MatDialog,
-    private router: Router
+    private router: Router,
+    private route: ActivatedRoute
   ) {}
 
   ngOnInit(): void {
     this.loadPreviouslyViewed();
     this.loadBookmarks();
+    this.subscribeToReaderParams();
     this.loadBooks();
     this.vocabFilters = this.vocabularyService.getBookFilters();
     this.timeoutIds.push(setTimeout(() => this.recalcPageSize(), 0));
@@ -1096,6 +1102,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
         this.readerBooks = books;
         this.reconcilePreviouslyViewed();
         this.loadingBooks = false;
+        this.applyPendingSelection();
       },
       error: err => {
         console.error('Failed to load reader library books', err);
@@ -1123,6 +1130,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
         if (!this.chapters.length) {
           this.error = 'No chapters found in this EPUB.';
         }
+        this.applyPendingChapterSelection();
       },
       error: err => {
         console.error('Failed to load EPUB chapters', err);
@@ -1170,6 +1178,60 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
         this.loadingContent = false;
       }
     });
+  }
+
+  private subscribeToReaderParams(): void {
+    this.route.queryParamMap
+      .pipe(takeUntil(this.destroy$))
+      .subscribe(params => {
+        const fileName = params.get('fileName');
+        if (!fileName) {
+          this.pendingFileName = null;
+          this.pendingChapterId = null;
+          this.autoSelectFirstChapter = false;
+          this.autoSelectChapterId = null;
+          return;
+        }
+
+        const chapterParam = params.get('chapterId');
+        const chapterId = chapterParam != null ? Number(chapterParam) : null;
+        this.pendingFileName = fileName;
+        this.pendingChapterId = Number.isFinite(chapterId) ? chapterId : null;
+        this.applyPendingSelection();
+      });
+  }
+
+  private applyPendingSelection(): void {
+    if (!this.pendingFileName || !this.readerBooks.length) return;
+
+    const match = this.readerBooks.find(book => book.fileName === this.pendingFileName);
+    if (!match) return;
+
+    this.autoSelectFirstChapter = this.pendingChapterId == null;
+    this.autoSelectChapterId = this.pendingChapterId;
+    this.pendingFileName = null;
+    this.pendingChapterId = null;
+
+    this.onBookSelected(match.fileName);
+  }
+
+  private applyPendingChapterSelection(): void {
+    if (!this.chapters.length) return;
+
+    if (this.autoSelectChapterId != null) {
+      const match = this.chapters.find(ch => ch.id === this.autoSelectChapterId);
+      if (match) {
+        this.onChapterSelected(match.id);
+      }
+      this.autoSelectChapterId = null;
+      this.autoSelectFirstChapter = false;
+      return;
+    }
+
+    if (this.autoSelectFirstChapter) {
+      this.onChapterSelected(this.chapters[0].id);
+      this.autoSelectFirstChapter = false;
+    }
   }
 
   private getChapterCacheKey(fileName: string, chapterId: number): string {

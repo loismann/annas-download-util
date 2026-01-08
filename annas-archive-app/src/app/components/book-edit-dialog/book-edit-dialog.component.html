@@ -40,13 +40,12 @@
         </button>
       </div>
       <div class="reader-action">
-        <button mat-stroked-button color="primary" type="button" (click)="enableReader()"
-          [disabled]="!data.fileName || data.readerEnabled || readerState === 'sending'">
+        <button mat-stroked-button color="primary" type="button" (click)="readerAction()"
+          [disabled]="!data.fileName || readerState === 'sending'">
           <ng-container [ngSwitch]="readerState">
             <span *ngSwitchCase="'sending'">Adding…</span>
-            <span *ngSwitchCase="'success'">✔ Added to reader</span>
             <span *ngSwitchCase="'error'">✖ Retry</span>
-            <span *ngSwitchDefault>{{ data.readerEnabled ? 'In ebook reader' : 'Add to ebook reader' }}</span>
+            <span *ngSwitchDefault>{{ data.readerEnabled ? 'View in ereader' : 'Add to ebook reader' }}</span>
           </ng-container>
         </button>
       </div>

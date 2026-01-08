@@ -7203,7 +7203,11 @@ Return ONLY this JSON array:
         try
         {
             var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-            var parsed = JsonSerializer.Deserialize<List<ChapterLabelResult>>(rawText, options);
+            var sanitized = SanitizeChapterLabelJson(rawText);
+            if (string.IsNullOrWhiteSpace(sanitized))
+                return null;
+
+            var parsed = JsonSerializer.Deserialize<List<ChapterLabelResult>>(sanitized, options);
             if (parsed == null || parsed.Count == 0)
                 return null;
 
@@ -7216,6 +7220,30 @@ Return ONLY this JSON array:
             Console.WriteLine($"❌ Failed to parse chapter labels JSON: {ex.Message}");
             return null;
         }
+    }
+
+    private static string? SanitizeChapterLabelJson(string rawText)
+    {
+        if (string.IsNullOrWhiteSpace(rawText))
+            return null;
+
+        var trimmed = rawText.Trim();
+        if (trimmed.StartsWith("```", StringComparison.Ordinal))
+        {
+            var firstBreak = trimmed.IndexOf('\n');
+            if (firstBreak >= 0)
+                trimmed = trimmed[(firstBreak + 1)..];
+            if (trimmed.EndsWith("```", StringComparison.Ordinal))
+                trimmed = trimmed[..^3];
+            trimmed = trimmed.Trim();
+        }
+
+        var start = trimmed.IndexOf('[');
+        var end = trimmed.LastIndexOf(']');
+        if (start >= 0 && end > start)
+            return trimmed[start..(end + 1)].Trim();
+
+        return trimmed;
     }
 }
 record SummarizeRequest(string Text, string? BookTitle, string? Author, int? Year, string? Premise, string? DropboxPath, int? ChapterId, int? WordOffset, List<string>? KnownWords);
@@ -7943,8 +7971,29 @@ static class LibraryEpubCache
                 return (cached, cacheDir);
         }
 
-        await BuildIndexOnlyAsync(filePath, readerKey, cacheDir);
-        var fresh = await TryReadIndex(metaPath)
+        if (CacheBuildTasks.TryGetValue(cacheDir, out var buildTask))
+        {
+            await buildTask;
+            var cached = await TryReadIndex(metaPath);
+            if (cached != null)
+                return (cached, cacheDir);
+        }
+
+        try
+        {
+            await BuildIndexOnlyAsync(filePath, readerKey, cacheDir);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[library] Quick index build failed for {filePath}: {ex.Message}");
+        }
+
+        var fresh = await TryReadIndex(metaPath);
+        if (fresh != null)
+            return (fresh, cacheDir);
+
+        await CacheBuildTasks.GetOrAdd(cacheDir, _ => BuildCacheInternalAsync(filePath, readerKey, cacheDir));
+        fresh = await TryReadIndex(metaPath)
             ?? throw new InvalidOperationException("Failed to read chapter index after quick build.");
         return (fresh, cacheDir);
     }
@@ -8080,7 +8129,7 @@ static class LibraryEpubCache
                 chapterMetas);
 
             var metaJson = JsonSerializer.Serialize(meta, CacheJsonOptions);
-            await File.WriteAllTextAsync(Path.Combine(cacheDir, "metadata.json"), metaJson);
+            await WriteMetadataAtomicAsync(Path.Combine(cacheDir, "metadata.json"), metaJson);
             if (File.Exists(errorPath))
                 File.Delete(errorPath);
         }
@@ -8228,7 +8277,7 @@ static class LibraryEpubCache
             chapterMetas);
 
         var metaJson = JsonSerializer.Serialize(meta, CacheJsonOptions);
-        await File.WriteAllTextAsync(Path.Combine(cacheDir, "metadata.json"), metaJson);
+        await WriteMetadataAtomicAsync(Path.Combine(cacheDir, "metadata.json"), metaJson);
     }
 
     private static async Task<CachedChapterIndex?> TryReadIndex(string metaPath)
@@ -8242,6 +8291,13 @@ static class LibraryEpubCache
         {
             return null;
         }
+    }
+
+    private static async Task WriteMetadataAtomicAsync(string metaPath, string metaJson)
+    {
+        var tmpPath = $"{metaPath}.{Guid.NewGuid():N}.tmp";
+        await File.WriteAllTextAsync(tmpPath, metaJson);
+        File.Move(tmpPath, metaPath, overwrite: true);
     }
 
     private static IEnumerable<FlatChapter> FlattenChapters(EpubBook book)

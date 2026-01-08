@@ -11,6 +11,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.OpenApi.Models;
 using AnnasArchive.API.Services;
+using AnnasArchive.API.Models;
 using AnnasArchive.Core.Models;
 using AnnasArchive.Core.Services;
 using Dropbox.Api;
@@ -28,6 +29,9 @@ using System.Diagnostics;
 using VersOne.Epub;
 using System.Collections.Concurrent;
 using System.Security.Cryptography;
+using System.IO.Compression;
+using ICSharpCode.SharpZipLib.Zip;
+using ICSharpCode.SharpZipLib.Checksum;
 using System.Net.Http.Headers;
 using HtmlAgilityPack;
 using NReadability;
@@ -177,6 +181,10 @@ builder.Services.AddSingleton<IModelSelectionService, ModelSelectionService>();
 // ─── Validation Service ──────────────────────────────────────────────────────
 builder.Services.AddSingleton<IValidationService, ValidationService>();
 
+// ─── Quiz Services ───────────────────────────────────────────────────────────
+builder.Services.AddSingleton<IQuizValidationService, QuizValidationService>();
+builder.Services.AddSingleton<IQuizStorageService, QuizStorageService>();
+
 // ─── Text Processing Service ─────────────────────────────────────────────────
 builder.Services.AddSingleton<ITextProcessingService, TextProcessingService>();
 
@@ -213,6 +221,12 @@ builder.Services.ConfigureHttpJsonOptions(o =>
 builder.Services.AddCors();
 
 var app = builder.Build();
+
+// ─── AI job locks ───────────────────────────────────────────────────────────
+var aiJobLocks = new ConcurrentDictionary<string, byte>();
+
+bool TryStartAiJob(string key) => aiJobLocks.TryAdd(key, 0);
+void EndAiJob(string key) => aiJobLocks.TryRemove(key, out _);
 
 if (app.Environment.IsDevelopment())
 {
@@ -3424,29 +3438,37 @@ app.MapPost("/api/ai/summarize/chapter/stream", async (
         return;
     }
 
-    // Check token limit
-    var tokenLimitResult = CheckTokenLimit(cfg, tokenUsage);
-    if (tokenLimitResult is not null)
+    var chapterSummaryLockKey = $"chapter-summary:{request.DropboxPath}:{request.ChapterId}";
+    if (!TryStartAiJob(chapterSummaryLockKey))
     {
-        await tokenLimitResult.ExecuteAsync(context);
+        context.Response.StatusCode = 409;
+        await context.Response.WriteAsJsonAsync(new { error = "Chapter summary already in progress." });
         return;
     }
-
-    var apiKey = cfg["OpenAI:ApiKey"] ?? Environment.GetEnvironmentVariable("OPENAI_API_KEY");
-    if (string.IsNullOrWhiteSpace(apiKey))
-    {
-        context.Response.StatusCode = 500;
-        await context.Response.WriteAsJsonAsync(new { error = "OpenAI API key not configured." });
-        return;
-    }
-
-    // Set up SSE headers
-    context.Response.Headers.Append("Content-Type", "text/event-stream");
-    context.Response.Headers.Append("Cache-Control", "no-cache");
-    context.Response.Headers.Append("Connection", "keep-alive");
 
     try
     {
+        // Check token limit
+        var tokenLimitResult = CheckTokenLimit(cfg, tokenUsage);
+        if (tokenLimitResult is not null)
+        {
+            await tokenLimitResult.ExecuteAsync(context);
+            return;
+        }
+
+        var apiKey = cfg["OpenAI:ApiKey"] ?? Environment.GetEnvironmentVariable("OPENAI_API_KEY");
+        if (string.IsNullOrWhiteSpace(apiKey))
+        {
+            context.Response.StatusCode = 500;
+            await context.Response.WriteAsJsonAsync(new { error = "OpenAI API key not configured." });
+            return;
+        }
+
+        // Set up SSE headers
+        context.Response.Headers.Append("Content-Type", "text/event-stream");
+        context.Response.Headers.Append("Cache-Control", "no-cache");
+        context.Response.Headers.Append("Connection", "keep-alive");
+
         // Load chapter content using helper
         var content = await LoadChapterContentAsync(dropbox, request.DropboxPath, request.ChapterId);
         if (content is null)
@@ -3524,6 +3546,10 @@ app.MapPost("/api/ai/summarize/chapter/stream", async (
     {
         Console.WriteLine($"❌ Full-chapter summary failed: {ex.Message}");
         await ServerSentEventsHelper.SendEventAsync(context.Response, new { message = "Failed to summarize chapter.", error = ex.Message }, "error");
+    }
+    finally
+    {
+        EndAiJob(chapterSummaryLockKey);
     }
 })
 .RequireAuthorization()
@@ -3642,8 +3668,18 @@ app.MapGet("/api/ai/chunk-boundaries", async (
         return;
     }
 
-    // Not cached - detect boundaries with SSE progress
-    Console.WriteLine($"🔍 Detecting chunk boundaries for chapter {chapterId}...");
+    var chunkBoundaryLockKey = $"chunk-boundaries:{dropboxPath}:{chapterId}";
+    if (!TryStartAiJob(chunkBoundaryLockKey))
+    {
+        context.Response.StatusCode = 409;
+        await context.Response.WriteAsJsonAsync(new { error = "Chunk boundary detection already in progress." });
+        return;
+    }
+
+    try
+    {
+        // Not cached - detect boundaries with SSE progress
+        Console.WriteLine($"🔍 Detecting chunk boundaries for chapter {chapterId}...");
 
     // Set up SSE
     context.Response.Headers["Content-Type"] = "text/event-stream";
@@ -3766,9 +3802,7 @@ app.MapGet("/api/ai/chunk-boundaries", async (
     var targetChunkSize = 500;
     var maxChunkSize = 600;
 
-    try
-    {
-        using var http = httpFactory.CreateClient("OpenAI");
+    using var http = httpFactory.CreateClient("OpenAI");
         var model = "gpt-4o"; // Use GPT-4o for cost-effective chunking
 
         Console.WriteLine($"🤖 Using model for chunk detection: {model}");
@@ -3997,6 +4031,10 @@ Return format (JSON only, no explanation):
             message = $"Detection failed: {ex.Message}"
         });
     }
+    finally
+    {
+        EndAiJob(chunkBoundaryLockKey);
+    }
 })
 .RequireAuthorization()
 .RequireRateLimiting("api");
@@ -4051,9 +4089,17 @@ app.MapPost("/api/ai/section-summary", async (
         return Results.Ok(cached);
     }
 
-    // Check token limit
-    var tokenLimitResult = CheckTokenLimit(cfg, tokenUsage);
-    if (tokenLimitResult is not null) return tokenLimitResult;
+    var sectionSummaryLockKey = $"section-summary:{request.DropboxPath}:{request.ChapterId}:{request.SectionIndex}";
+    if (!TryStartAiJob(sectionSummaryLockKey))
+    {
+        return Results.Conflict(new { error = "Section summary already in progress." });
+    }
+
+    try
+    {
+        // Check token limit
+        var tokenLimitResult = CheckTokenLimit(cfg, tokenUsage);
+        if (tokenLimitResult is not null) return tokenLimitResult;
 
     // Load chunk boundaries
     var boundaries = AiContentCache.LoadChunkBoundaries(request.DropboxPath, request.ChapterId);
@@ -4101,9 +4147,7 @@ app.MapPost("/api/ai/section-summary", async (
         return Results.Problem("OpenAI API key not configured.");
     }
 
-    try
-    {
-        using var http = httpFactory.CreateClient("OpenAI");
+    using var http = httpFactory.CreateClient("OpenAI");
         var model = modelSelection.GetModelDeep();
 
         Console.WriteLine($"🤖 Using model: {model}");
@@ -4196,6 +4240,10 @@ Text to summarize:
         Console.WriteLine($"❌ Section summary generation failed: {ex.Message}");
         Console.WriteLine($"   Stack trace: {ex.StackTrace}");
         return Results.Problem("Failed to generate section summary.");
+    }
+    finally
+    {
+        EndAiJob(sectionSummaryLockKey);
     }
 })
 .RequireAuthorization()
@@ -5552,6 +5600,54 @@ app.MapPost("/api/auth/login", (CodeLoginRequest request, IConfiguration cfg) =>
 })
 .RequireRateLimiting("login");
 
+// ─── 6b) Quiz endpoints (admin only) ─────────────────────────────────────
+var quizGroup = app.MapGroup("/api/quiz")
+    .RequireAuthorization("AdminOnly")
+    .RequireRateLimiting("api");
+
+quizGroup.MapGet("/subjects", async (IQuizStorageService storage, CancellationToken token) =>
+{
+    var index = await storage.GetIndexAsync(token);
+    return Results.Ok(index);
+});
+
+quizGroup.MapGet("/subjects/{subjectId}", async (string subjectId, IQuizStorageService storage, CancellationToken token) =>
+{
+    var subject = await storage.GetSubjectAsync(subjectId, token);
+    return subject == null ? Results.NotFound() : Results.Ok(subject);
+});
+
+quizGroup.MapPut("/subjects/{subjectId}", async (
+    string subjectId,
+    QuizSubject subject,
+    IQuizStorageService storage,
+    IQuizValidationService validator,
+    CancellationToken token) =>
+{
+    if (!string.Equals(subjectId, subject.Id, StringComparison.OrdinalIgnoreCase))
+        return Results.BadRequest(new { error = "Subject id in route must match payload id." });
+
+    var validation = validator.ValidateSubject(subject);
+    if (!validation.IsValid)
+        return Results.BadRequest(new { errors = validation.Errors });
+
+    try
+    {
+        var saved = await storage.SaveSubjectAsync(subjectId, subject, token);
+        return Results.Ok(saved);
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+});
+
+quizGroup.MapDelete("/subjects/{subjectId}", async (string subjectId, IQuizStorageService storage, CancellationToken token) =>
+{
+    var deleted = await storage.DeleteSubjectAsync(subjectId, token);
+    return deleted ? Results.Ok(new { removed = true }) : Results.NotFound();
+});
+
 // ─── 7) Development helper: Generate BCrypt hashes ───────────────────────
 #if DEBUG
 app.MapGet("/api/dev/hash", (string? code) =>
@@ -6724,7 +6820,7 @@ record LabeledChapter(FlatChapter Chapter, string DisplayLabel, bool IsMainChapt
 record ChapterLabelResult(int Id, string DisplayLabel, bool IsMainChapter);
 record CachedChapterMeta(int Id, string Title, int Level, int CharacterCount, int WordCount, string FileName, string? DisplayLabel, bool? IsMainChapter);
 record CachedChapterIndex(string Path, string Title, DateTime CachedAt, List<CachedChapterMeta> Chapters, string? LabelSource = null);
-record DropboxCacheStatusDto(bool Cached, bool InProgress, int ChaptersTotal, int ChaptersCached, double Percent, DateTime? CachedAt);
+record DropboxCacheStatusDto(bool Cached, bool InProgress, int ChaptersTotal, int ChaptersCached, double Percent, DateTime? CachedAt, string? Error);
 record DropboxSearchMatchDto(int ChapterId, string Title, int MatchCount, int Position, string Snippet);
 static class ChapterLabeler
 {
@@ -7344,24 +7440,26 @@ static class DropboxEpubCache
         Directory.CreateDirectory(EpubCacheRoot);
         var cacheDir = Path.Combine(EpubCacheRoot, ComputeHash(dropboxPath));
         var metaPath = Path.Combine(cacheDir, "metadata.json");
+        var errorPath = Path.Combine(cacheDir, "error.txt");
         var inProgress = CacheBuildTasks.ContainsKey(cacheDir);
+        var error = File.Exists(errorPath) ? await File.ReadAllTextAsync(errorPath) : null;
 
         if (!File.Exists(metaPath))
         {
             // Kick off background build if not present
             _ = CacheBuildTasks.GetOrAdd(cacheDir, _ => BuildCacheInternalAsync(dropbox, dropboxPath, cacheDir));
-            return new DropboxCacheStatusDto(false, true, 0, 0, 0, null);
+            return new DropboxCacheStatusDto(false, true, 0, 0, 0, null, error);
         }
 
         var meta = await TryReadIndex(metaPath);
         if (meta == null)
-            return new DropboxCacheStatusDto(false, inProgress, 0, 0, 0, null);
+            return new DropboxCacheStatusDto(false, inProgress, 0, 0, 0, null, error);
 
         var total = meta.Chapters.Count;
         var cached = meta.Chapters.Count(ch => File.Exists(Path.Combine(cacheDir, ch.FileName)));
         var percent = total == 0 ? 0 : Math.Round((double)cached / total * 100, 2);
 
-        return new DropboxCacheStatusDto(true, inProgress, total, cached, percent, meta.CachedAt);
+        return new DropboxCacheStatusDto(true, inProgress, total, cached, percent, meta.CachedAt, error);
     }
 
     public static bool DeleteCache(string dropboxPath)
@@ -7426,15 +7524,14 @@ static class DropboxEpubCache
 
     private static async Task BuildCacheInternalAsync(DropboxClient dropbox, string dropboxPath, string cacheDir)
     {
+        var errorPath = Path.Combine(cacheDir, "error.txt");
         try
         {
             var download = await dropbox.Files.DownloadAsync(dropboxPath);
             await using var dropboxStream = await download.GetContentAsStreamAsync();
             using var ms = new MemoryStream();
             await dropboxStream.CopyToAsync(ms);
-            ms.Position = 0;
-
-            var book = await EpubReader.ReadBookAsync(ms);
+            var book = await ReadBookWithFallbackAsync(ms.ToArray(), $"dropbox:{dropboxPath}");
             var flatChapters = FlattenChapters(book)
                 .Where(ch => ch.WordCount >= 50)
                 .ToList();
@@ -7467,10 +7564,198 @@ static class DropboxEpubCache
 
             var metaJson = JsonSerializer.Serialize(meta, CacheJsonOptions);
             await File.WriteAllTextAsync(Path.Combine(cacheDir, "metadata.json"), metaJson);
+            if (File.Exists(errorPath))
+                File.Delete(errorPath);
+        }
+        catch (Exception ex)
+        {
+            var message = $"[dropbox] Failed to build EPUB cache for {dropboxPath}: {ex}";
+            Console.WriteLine(message);
+            await File.WriteAllTextAsync(errorPath, message);
+            throw;
         }
         finally
         {
             CacheBuildTasks.TryRemove(cacheDir, out _);
+        }
+    }
+
+    private static async Task<EpubBook> ReadBookWithFallbackAsync(byte[] sourceBytes, string label)
+    {
+        var workingBytes = sourceBytes;
+        var added = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var coverFallbackApplied = false;
+        var zipRepairAttempted = false;
+
+        for (var attempt = 0; attempt < 3; attempt += 1)
+        {
+            using var source = new MemoryStream(workingBytes);
+            try
+            {
+                return await EpubReader.ReadBookAsync(source);
+            }
+            catch (InvalidDataException)
+            {
+                if (!zipRepairAttempted)
+                {
+                    var repaired = TryRepairZip(workingBytes);
+                    if (repaired != null)
+                    {
+                        Console.WriteLine($"[epub] Repaired zip structure for {label}");
+                        workingBytes = repaired;
+                        zipRepairAttempted = true;
+                        continue;
+                    }
+                }
+                throw;
+            }
+            catch (EpubContentException ex)
+            {
+                var missingPath = ExtractMissingEpubPath(ex.Message);
+                if (string.IsNullOrWhiteSpace(missingPath) || added.Contains(missingPath))
+                {
+                    if (!coverFallbackApplied)
+                    {
+                        workingBytes = EnsureCommonCoverEntries(workingBytes);
+                        coverFallbackApplied = true;
+                        continue;
+                    }
+                    throw;
+                }
+
+                Console.WriteLine($"[epub] Missing content '{missingPath}' in {label}. Injecting placeholder.");
+                workingBytes = EnsureZipEntry(workingBytes, missingPath);
+                added.Add(missingPath);
+            }
+        }
+
+        throw new InvalidOperationException($"Failed to parse EPUB after fallback attempts: {label}");
+    }
+
+    private static byte[]? TryRepairZip(byte[] sourceBytes)
+    {
+        try
+        {
+            using var inputStream = new MemoryStream(sourceBytes);
+            using var zipInput = new ZipInputStream(inputStream);
+            var entries = new List<(string Name, byte[] Data)>();
+            ZipEntry? entry;
+            while ((entry = zipInput.GetNextEntry()) != null)
+            {
+                if (!entry.IsFile) continue;
+                using var buffer = new MemoryStream();
+                zipInput.CopyTo(buffer);
+                entries.Add((entry.Name, buffer.ToArray()));
+            }
+
+            if (entries.Count == 0)
+                return null;
+
+            var mimeEntry = entries.FirstOrDefault(e => string.Equals(e.Name, "mimetype", StringComparison.OrdinalIgnoreCase));
+            var others = entries.Where(e => !string.Equals(e.Name, "mimetype", StringComparison.OrdinalIgnoreCase)).ToList();
+
+            using var outputStream = new MemoryStream();
+            using var zipOutput = new ZipOutputStream(outputStream);
+            zipOutput.SetLevel(6);
+
+            if (!string.IsNullOrEmpty(mimeEntry.Name))
+            {
+                var crc32 = new ICSharpCode.SharpZipLib.Checksum.Crc32();
+                crc32.Update(mimeEntry.Data);
+                var mimeZipEntry = new ZipEntry("mimetype")
+                {
+                    CompressionMethod = CompressionMethod.Stored,
+                    Size = mimeEntry.Data.Length,
+                    CompressedSize = mimeEntry.Data.Length,
+                    Crc = crc32.Value
+                };
+                zipOutput.PutNextEntry(mimeZipEntry);
+                zipOutput.Write(mimeEntry.Data, 0, mimeEntry.Data.Length);
+                zipOutput.CloseEntry();
+            }
+
+            foreach (var item in others)
+            {
+                var newEntry = new ZipEntry(item.Name)
+                {
+                    CompressionMethod = CompressionMethod.Deflated
+                };
+                zipOutput.PutNextEntry(newEntry);
+                zipOutput.Write(item.Data, 0, item.Data.Length);
+                zipOutput.CloseEntry();
+            }
+
+            zipOutput.Finish();
+            return outputStream.ToArray();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[epub] Zip repair failed: {ex.Message}");
+            return null;
+        }
+    }
+
+    private static byte[] EnsureCommonCoverEntries(byte[] sourceBytes)
+    {
+        var paths = new[]
+        {
+            "OEBPS/Images/Cover.png",
+            "OEBPS/Images/cover.png",
+            "OEBPS/Images/cover.jpg",
+            "OEBPS/Cover.png",
+            "OEBPS/cover.jpg",
+            "cover.png",
+            "cover.jpg"
+        };
+
+        var updated = sourceBytes;
+        foreach (var path in paths)
+        {
+            updated = EnsureZipEntry(updated, path);
+        }
+        return updated;
+    }
+
+    private static string? ExtractMissingEpubPath(string message)
+    {
+        if (string.IsNullOrWhiteSpace(message))
+            return null;
+
+        var patterns = new[]
+        {
+            "file\\s+[\"“”'](?<path>[^\"“”']+)[\"“”']\\s+was not found",
+            "file\\s+(?<path>[^\\s]+)\\s+was not found"
+        };
+
+        foreach (var pattern in patterns)
+        {
+            var match = Regex.Match(message, pattern, RegexOptions.IgnoreCase);
+            if (match.Success)
+                return match.Groups["path"].Value;
+        }
+
+        var fallback = Regex.Match(message, @"(?<path>OEBPS/[^""\s]+)", RegexOptions.IgnoreCase);
+        return fallback.Success ? fallback.Groups["path"].Value : null;
+    }
+
+    private static byte[] EnsureZipEntry(byte[] sourceBytes, string entryPath)
+    {
+        try
+        {
+            using var stream = new MemoryStream(sourceBytes);
+            using var archive = new ZipArchive(stream, ZipArchiveMode.Update, leaveOpen: true);
+            if (archive.GetEntry(entryPath) != null)
+                return sourceBytes;
+
+            var entry = archive.CreateEntry(entryPath);
+            using var entryStream = entry.Open();
+            entryStream.Flush();
+            return stream.ToArray();
+        }
+        catch (InvalidDataException ex)
+        {
+            Console.WriteLine($"[epub] Invalid zip structure while adding '{entryPath}': {ex.Message}");
+            return sourceBytes;
         }
     }
 
@@ -7674,23 +7959,25 @@ static class LibraryEpubCache
         Directory.CreateDirectory(EpubCacheRoot);
         var cacheDir = Path.Combine(EpubCacheRoot, ComputeHash(readerKey));
         var metaPath = Path.Combine(cacheDir, "metadata.json");
+        var errorPath = Path.Combine(cacheDir, "error.txt");
         var inProgress = CacheBuildTasks.ContainsKey(cacheDir);
+        var error = File.Exists(errorPath) ? await File.ReadAllTextAsync(errorPath) : null;
 
         if (!File.Exists(metaPath))
         {
             _ = CacheBuildTasks.GetOrAdd(cacheDir, _ => BuildCacheInternalAsync(filePath, readerKey, cacheDir));
-            return new DropboxCacheStatusDto(false, true, 0, 0, 0, null);
+            return new DropboxCacheStatusDto(false, true, 0, 0, 0, null, error);
         }
 
         var meta = await TryReadIndex(metaPath);
         if (meta == null)
-            return new DropboxCacheStatusDto(false, inProgress, 0, 0, 0, null);
+            return new DropboxCacheStatusDto(false, inProgress, 0, 0, 0, null, error);
 
         var total = meta.Chapters.Count;
         var cached = meta.Chapters.Count(ch => File.Exists(Path.Combine(cacheDir, ch.FileName)));
         var percent = total == 0 ? 0 : Math.Round((double)cached / total * 100, 2);
 
-        return new DropboxCacheStatusDto(true, inProgress, total, cached, percent, meta.CachedAt);
+        return new DropboxCacheStatusDto(true, inProgress, total, cached, percent, meta.CachedAt, error);
     }
 
     public static bool DeleteCache(string readerKey)
@@ -7755,14 +8042,13 @@ static class LibraryEpubCache
 
     private static async Task BuildCacheInternalAsync(string filePath, string readerKey, string cacheDir)
     {
+        var errorPath = Path.Combine(cacheDir, "error.txt");
         try
         {
             await using var fileStream = File.OpenRead(filePath);
             using var ms = new MemoryStream();
             await fileStream.CopyToAsync(ms);
-            ms.Position = 0;
-
-            var book = await EpubReader.ReadBookAsync(ms);
+            var book = await ReadBookWithFallbackAsync(ms.ToArray(), $"library:{filePath}");
             var flatChapters = FlattenChapters(book)
                 .Where(ch => ch.WordCount >= 50)
                 .ToList();
@@ -7795,10 +8081,119 @@ static class LibraryEpubCache
 
             var metaJson = JsonSerializer.Serialize(meta, CacheJsonOptions);
             await File.WriteAllTextAsync(Path.Combine(cacheDir, "metadata.json"), metaJson);
+            if (File.Exists(errorPath))
+                File.Delete(errorPath);
+        }
+        catch (Exception ex)
+        {
+            var message = $"[library] Failed to build EPUB cache for {filePath}: {ex}";
+            Console.WriteLine(message);
+            await File.WriteAllTextAsync(errorPath, message);
+            throw;
         }
         finally
         {
             CacheBuildTasks.TryRemove(cacheDir, out _);
+        }
+    }
+
+    private static async Task<EpubBook> ReadBookWithFallbackAsync(byte[] sourceBytes, string label)
+    {
+        var workingBytes = sourceBytes;
+        var added = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var coverFallbackApplied = false;
+
+        for (var attempt = 0; attempt < 3; attempt += 1)
+        {
+            using var source = new MemoryStream(workingBytes);
+            try
+            {
+                return await EpubReader.ReadBookAsync(source);
+            }
+            catch (EpubContentException ex)
+            {
+                var missingPath = ExtractMissingEpubPath(ex.Message);
+                if (string.IsNullOrWhiteSpace(missingPath) || added.Contains(missingPath))
+                {
+                    if (!coverFallbackApplied)
+                    {
+                        workingBytes = EnsureCommonCoverEntries(workingBytes);
+                        coverFallbackApplied = true;
+                        continue;
+                    }
+                    throw;
+                }
+
+                Console.WriteLine($"[epub] Missing content '{missingPath}' in {label}. Injecting placeholder.");
+                workingBytes = EnsureZipEntry(workingBytes, missingPath);
+                added.Add(missingPath);
+            }
+        }
+
+        throw new InvalidOperationException($"Failed to parse EPUB after fallback attempts: {label}");
+    }
+
+    private static byte[] EnsureCommonCoverEntries(byte[] sourceBytes)
+    {
+        var paths = new[]
+        {
+            "OEBPS/Images/Cover.png",
+            "OEBPS/Images/cover.png",
+            "OEBPS/Images/cover.jpg",
+            "OEBPS/Cover.png",
+            "OEBPS/cover.jpg",
+            "cover.png",
+            "cover.jpg"
+        };
+
+        var updated = sourceBytes;
+        foreach (var path in paths)
+        {
+            updated = EnsureZipEntry(updated, path);
+        }
+        return updated;
+    }
+
+    private static string? ExtractMissingEpubPath(string message)
+    {
+        if (string.IsNullOrWhiteSpace(message))
+            return null;
+
+        var patterns = new[]
+        {
+            "file\\s+[\"“”'](?<path>[^\"“”']+)[\"“”']\\s+was not found",
+            "file\\s+(?<path>[^\\s]+)\\s+was not found"
+        };
+
+        foreach (var pattern in patterns)
+        {
+            var match = Regex.Match(message, pattern, RegexOptions.IgnoreCase);
+            if (match.Success)
+                return match.Groups["path"].Value;
+        }
+
+        var fallback = Regex.Match(message, @"(?<path>OEBPS/[^""\s]+)", RegexOptions.IgnoreCase);
+        return fallback.Success ? fallback.Groups["path"].Value : null;
+    }
+
+    private static byte[] EnsureZipEntry(byte[] sourceBytes, string entryPath)
+    {
+        try
+        {
+            using var stream = new MemoryStream(sourceBytes);
+            using var archive = new ZipArchive(stream, ZipArchiveMode.Update, leaveOpen: true);
+            if (archive.GetEntry(entryPath) != null)
+                return sourceBytes;
+
+            var entry = archive.CreateEntry(entryPath);
+            using var entryStream = entry.Open();
+            entryStream.Flush();
+            return stream.ToArray();
+        }
+        catch (InvalidDataException ex)
+        {
+            Console.WriteLine($"[epub] Invalid zip structure while adding '{entryPath}': {ex.Message}");
+            return sourceBytes;
         }
     }
 
@@ -7807,9 +8202,7 @@ static class LibraryEpubCache
         await using var fileStream = File.OpenRead(filePath);
         using var ms = new MemoryStream();
         await fileStream.CopyToAsync(ms);
-        ms.Position = 0;
-
-        var book = await EpubReader.ReadBookAsync(ms);
+        var book = await ReadBookWithFallbackAsync(ms.ToArray(), $"library:{filePath}");
         var flatChapters = FlattenChapters(book)
             .Where(ch => ch.WordCount >= 50)
             .ToList();
@@ -7955,7 +8348,9 @@ static class LibraryEpubCache
         try
         {
             await using var stream = File.OpenRead(filePath);
-            var book = await EpubReader.ReadBookAsync(stream);
+            using var ms = new MemoryStream();
+            await stream.CopyToAsync(ms);
+            var book = await ReadBookWithFallbackAsync(ms.ToArray(), $"library:{filePath}");
             var flatChapters = FlattenChapters(book).ToList();
             var target = flatChapters.FirstOrDefault(ch => ch.Id == chapterId);
             return target?.PlainText;

@@ -69,6 +69,21 @@
   justify-content: center;
 }
 
+.reader-clear-button {
+  height: 56px;
+  width: 56px;
+  min-width: 56px;
+  padding: 0;
+  align-self: stretch;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.reader-clear-button .mat-icon {
+  margin: 0;
+}
+
 .reader-add-button .mat-icon {
   margin: 0;
 }
@@ -1084,6 +1099,16 @@
   font-size: 11px;
 }
 
+.status-row.error {
+  color: #b91c1c;
+  gap: 8px;
+}
+
+.status-row.error span:last-child {
+  text-align: right;
+  word-break: break-word;
+}
+
 .status-actions {
   display: flex;
   gap: 14px;
@@ -1133,6 +1158,10 @@
   height: 48px;
   font-size: 16px;
   font-weight: 600;
+}
+
+.reader-remove-button {
+  margin: 12px 0 16px;
 }
 
 .vocab-btn-main mat-icon,

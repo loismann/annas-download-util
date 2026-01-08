@@ -98,6 +98,8 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
   previouslyViewed: ViewedBook[] = [];
   status: DropboxEpubStatus | null = null;
   private statusPoll: any;
+  private statusPollAttempts = 0;
+  private lastStatusPercent: number | null = null;
   private timeoutIds: any[] = [];
 
   bookSearchTerm = '';
@@ -211,7 +213,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
-    if (this.statusPoll) clearInterval(this.statusPoll);
+    this.stopStatusPolling();
 
     // Clear all pending timeouts
     this.timeoutIds.forEach(id => clearTimeout(id));
@@ -549,10 +551,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
     this.pendingWordOffset = null;
     this.chunkBoundariesProgress = null;
     this.loadingChunkBoundaries = false;
-    if (this.statusPoll) {
-      clearInterval(this.statusPoll);
-      this.statusPoll = null;
-    }
+    this.stopStatusPolling();
 
     // Note: Preloading disabled for performance - cached summaries are loaded on-demand instead
     // Previously supported offline preload; intentionally no-op for lean runtime.
@@ -699,7 +698,10 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
     this.api.startLibraryReaderIndex(this.selectedBookFileName)
       .pipe(takeUntil(this.destroy$))
       .subscribe({
-      next: () => this.fetchStatus(this.selectedBookFileName!, true),
+      next: () => {
+        this.stopStatusPolling();
+        this.fetchStatus(this.selectedBookFileName!, true);
+      },
       error: err => {
         console.error('Failed to start indexing', err);
         this.error = 'Unable to start indexing.';
@@ -716,7 +718,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
         this.status = null;
         this.bookSearchResults = [];
         this.summary = null;
-        if (this.statusPoll) clearInterval(this.statusPoll);
+        this.stopStatusPolling();
       },
       error: err => {
         console.error('Failed to delete cache', err);
@@ -931,6 +933,17 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
       headers: headers,
       body: JSON.stringify(payload)
     }).then(response => {
+      if (response.status === 409) {
+        this.chapterSummaryProgress = {
+          stage: 'error',
+          currentStep: 0,
+          totalSteps: 1,
+          message: 'Summary already in progress',
+          error: 'Please wait for the current summary to finish.'
+        };
+        this.loadingFullChapterSummary = false;
+        return;
+      }
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
       }
@@ -1081,6 +1094,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
       .subscribe({
       next: books => {
         this.readerBooks = books;
+        this.reconcilePreviouslyViewed();
         this.loadingBooks = false;
       },
       error: err => {
@@ -1116,6 +1130,15 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
         this.loadingChapters = false;
       }
     });
+  }
+
+  private stopStatusPolling(): void {
+    if (this.statusPoll) {
+      clearInterval(this.statusPoll);
+      this.statusPoll = null;
+    }
+    this.statusPollAttempts = 0;
+    this.lastStatusPercent = null;
   }
 
   private loadChapterContent(fileName: string, chapterId: number): void {
@@ -1196,20 +1219,33 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
       .pipe(takeUntil(this.destroy$))
       .subscribe({
       next: status => {
+        const percent = status?.percent ?? null;
+        const progressed = percent !== null && percent !== this.lastStatusPercent;
+        if (progressed) {
+          this.lastStatusPercent = percent;
+          this.statusPollAttempts = 0;
+        } else if (keepPolling) {
+          this.statusPollAttempts += 1;
+        }
+
         this.status = status;
         if (keepPolling && status.inProgress) {
-          if (this.statusPoll) clearInterval(this.statusPoll);
-          this.statusPoll = setInterval(() => this.fetchStatus(fileName, false), 2000);
+          if (this.statusPoll) {
+            clearInterval(this.statusPoll);
+            this.statusPoll = null;
+          }
+          if (this.statusPollAttempts >= 30) {
+            this.stopStatusPolling();
+            return;
+          }
+          this.statusPoll = setInterval(() => this.fetchStatus(fileName, false), 3000);
         } else if (this.statusPoll && !status.inProgress) {
-          clearInterval(this.statusPoll);
+          this.stopStatusPolling();
         }
       },
       error: err => {
         console.error('Failed to fetch status', err);
-        if (this.statusPoll) {
-          clearInterval(this.statusPoll);
-          this.statusPoll = null;
-        }
+        this.stopStatusPolling();
       }
     });
   }
@@ -1237,6 +1273,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
           updatedAt: item.serverModified ?? undefined
         } as ViewedBook;
       }).filter(entry => entry.fileName && entry.readerKey);
+      this.reconcilePreviouslyViewed();
     } catch {
       this.previouslyViewed = [];
     }
@@ -1277,7 +1314,80 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
       ...this.previouslyViewed.filter(b => b.readerKey !== book.readerKey)
     ].slice(0, 8);
 
+    this.persistPreviouslyViewed();
+  }
+
+  clearPreviouslyViewed(): void {
+    if (typeof localStorage === 'undefined') return;
+    this.previouslyViewed = [];
+    localStorage.removeItem('epub_recent');
+  }
+
+  removeFromReader(): void {
+    if (!this.selectedBookFileName) return;
+    const confirmRemove = typeof window !== 'undefined'
+      ? window.confirm('Remove this book from the reader list?')
+      : true;
+    if (!confirmRemove) return;
+
+    const fileName = this.selectedBookFileName;
+    this.api.updateLibraryBookReaderEnabled(fileName, false)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: () => {
+          this.readerBooks = this.readerBooks.filter(book => book.fileName !== fileName);
+          this.removePreviouslyViewedEntry(fileName);
+          this.resetSelectedBookState();
+        },
+        error: err => {
+          console.error('Failed to remove book from reader', err);
+          this.error = 'Unable to remove book from reader.';
+        }
+      });
+  }
+
+  private reconcilePreviouslyViewed(): void {
+    if (!this.readerBooks.length) return;
+    const allowed = new Set(this.readerBooks.map(book => book.fileName));
+    const filtered = this.previouslyViewed.filter(entry => allowed.has(entry.fileName));
+    if (filtered.length === this.previouslyViewed.length) return;
+    this.previouslyViewed = filtered;
+    this.persistPreviouslyViewed();
+  }
+
+  private persistPreviouslyViewed(): void {
+    if (typeof localStorage === 'undefined') return;
     localStorage.setItem('epub_recent', JSON.stringify(this.previouslyViewed));
+  }
+
+  private removePreviouslyViewedEntry(fileName: string): void {
+    const next = this.previouslyViewed.filter(entry => entry.fileName !== fileName);
+    if (next.length === this.previouslyViewed.length) return;
+    this.previouslyViewed = next;
+    this.persistPreviouslyViewed();
+  }
+
+  private resetSelectedBookState(): void {
+    this.selectedBookFileName = null;
+    this.selectedBookPath = null;
+    this.selectedChapterId = null;
+    this.chapterContent = null;
+    this.chapters = [];
+    this.status = null;
+    this.searchTerm = '';
+    this.wordOffset = 0;
+    this.error = null;
+    this.summary = null;
+    this.formattedAnalysis = null;
+    this.vocabularyWords = [];
+    this.analysisText = null;
+    this.bookmarkSelectValue = null;
+    this.pendingCharOffset = null;
+    this.pendingWordOffset = null;
+    this.chunkBoundaries = null;
+    this.sectionSummaries.clear();
+    this.currentSectionIndex = null;
+    this.stopStatusPolling();
   }
 
   // preloadCachedSummaries removed (offline preload deprecated for lean runtime).
@@ -1949,6 +2059,19 @@ DO NOT create a card for every word. Only create cards for terms that add educat
       method: 'GET',
       headers: headers
     }).then(response => {
+      if (response.status === 409) {
+        this.ngZone.run(() => {
+          this.chunkBoundariesProgress = {
+            stage: 'error',
+            currentStep: 0,
+            totalSteps: 1,
+            message: 'Section detection already in progress',
+            error: 'Please wait for the current detection to finish.'
+          };
+          this.loadingChunkBoundaries = false;
+        });
+        return;
+      }
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
       }

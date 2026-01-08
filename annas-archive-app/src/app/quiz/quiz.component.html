@@ -1,0 +1,168 @@
+<div class="quiz-root">
+  <div class="container">
+    <div class="celebration-overlay" [class.show]="celebration.level" [class.all]="celebration.level === 'all'">
+      <ng-container *ngIf="celebration.level">
+        <div class="celebration-banner">{{ celebration.message }}</div>
+        <div class="confetti-stage">
+          <span
+            *ngFor="let piece of confettiPieces"
+            class="confetti-piece"
+            [style.left.%]="piece.left"
+            [style.backgroundColor]="piece.color"
+            [style.--dur]="piece.duration + 'ms'"
+            [style.--delay]="piece.delay + 'ms'"
+            [style.--rot]="piece.rotate + 'deg'"></span>
+        </div>
+      </ng-container>
+    </div>
+
+    <ng-container [ngSwitch]="status">
+      <div *ngSwitchCase="'loading'">
+        <h1>Loading...</h1>
+        <div class="loading">Loading questions...</div>
+      </div>
+
+      <div *ngSwitchCase="'error'">
+        <h1>Error</h1>
+        <div class="loading">Error loading questions. Check files.</div>
+      </div>
+
+      <div *ngSwitchCase="'start'">
+        <h1>{{ subjectDisplay }}</h1>
+        <div class="screen active">
+          <div class="start-screen">
+            <p>Test your knowledge with randomized questions!</p>
+            <p><strong>Available questions: {{ availableQuestions.length }}</strong></p>
+            <p>Mastered: {{ masteredSet.size }} | Flagged: {{ flaggedSet.size }}</p>
+
+            <label for="subjectSelect">Subject</label>
+            <select id="subjectSelect" [ngModel]="subjectId" (ngModelChange)="selectSubject($event)">
+              <option *ngFor="let item of index?.subjects ?? []" [value]="item.id">{{ item.title }}</option>
+            </select>
+
+            <label for="numQuestions">How many questions?</label>
+            <input
+              id="numQuestions"
+              type="number"
+              min="1"
+              [max]="maxAvailableQuestions"
+              [value]="numQuestions"
+              (input)="updateNumQuestions($any($event.target).value)" />
+
+            <div style="margin-top: 10px;">
+              <button class="btn" (click)="handleStart()">Start Quiz</button>
+              <button class="btn" style="margin-left: 10px;" (click)="resetProgressCurrent()">Reset Progress</button>
+              <button class="btn" style="margin-left: 10px;" (click)="resetAll()">Reset All Subjects</button>
+            </div>
+
+            <div style="margin-top: 20px; text-align: left;">
+              <h3>Flagged questions (need review)</h3>
+              <div id="flaggedList">
+                <p *ngIf="flaggedList.length === 0" style="color: #666;">No flagged questions.</p>
+                <ul *ngIf="flaggedList.length > 0">
+                  <li *ngFor="let num of flaggedList">Question {{ num }}</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div *ngSwitchCase="'quiz'">
+        <h1>{{ subjectDisplay }}</h1>
+        <div class="screen active" *ngIf="currentQuestion">
+          <div class="quiz-screen">
+            <div class="progress">
+              Question <span>{{ progressLabel }}</span> of <span>{{ progressTotal }}</span>
+            </div>
+
+            <div class="question-box">
+              <div class="question-text">
+                {{ currentQuestion.text }}
+                <span *ngIf="currentQuestion.multiSelect && !questionAnswered[currentIndex]"> (Select all that apply, then click Submit)</span>
+              </div>
+              <div id="answerArea">
+                <div class="mc-options" [class.answered]="questionAnswered[currentIndex]">
+                  <div
+                    *ngFor="let option of currentQuestion.options"
+                    [class]="getOptionClasses(option)"
+                    (click)="currentQuestion.multiSelect ? handleToggleMulti(option) : handleSelect(option)">
+                    {{ option.label }}
+                  </div>
+                  <button
+                    *ngIf="currentQuestion.multiSelect && !questionAnswered[currentIndex]"
+                    class="btn"
+                    style="margin-top: 10px;"
+                    (click)="submitMulti()">
+                    Submit Answer
+                  </button>
+                </div>
+              </div>
+              <div id="feedback">
+                <ng-container *ngIf="questionAnswered[currentIndex]">
+                  <ng-container *ngIf="currentQuestion as question">
+                    <ng-container *ngIf="handleGrading(question, currentIndex) as grading">
+                      <div class="feedback" [class.correct]="grading.isCorrect" [class.incorrect]="!grading.isCorrect">
+                        {{ grading.isCorrect ? '✓ Correct!' : '✗ Incorrect. The correct answer' + (question.multiSelect ? 's are' : ' is') + ': ' + grading.correctAnswer }}
+                      </div>
+                      <button
+                        *ngIf="!grading.isCorrect"
+                        class="btn"
+                        style="margin-top: 10px;"
+                        (click)="handleFlag(question.number)">
+                        Mark question/answer as incorrect
+                      </button>
+                    </ng-container>
+                  </ng-container>
+                </ng-container>
+              </div>
+            </div>
+
+            <div class="navigation">
+              <button class="btn" (click)="prevQuestion()" [disabled]="currentIndex === 0">Previous</button>
+              <button class="btn" (click)="nextQuestion()">
+                {{ currentIndex === questionCount - 1 ? 'Finish Quiz' : (questionAnswered[currentIndex] ? 'Next Question' : 'Skip') }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div *ngSwitchCase="'results'">
+        <h1>{{ subjectDisplay }}</h1>
+        <div class="screen active">
+          <div class="results-screen">
+            <h2>Quiz Complete!</h2>
+            <ng-container *ngIf="getResultsSummary() as results">
+              <div class="score-display"><span>{{ results.correct }}</span> / <span>{{ results.total }}</span></div>
+              <div class="percentage"><span>{{ results.percent }}</span>%</div>
+            </ng-container>
+
+            <div id="reviewSection">
+              <div
+                *ngFor="let question of quizQuestions; let idx = index"
+                class="review-item"
+                [class.correct]="isAnswerCorrect(question, userAnswers[idx])"
+                [class.incorrect]="!isAnswerCorrect(question, userAnswers[idx])">
+                <div class="review-question">Q{{ idx + 1 }}: {{ question.text }}</div>
+                <div class="review-answer your-answer">Your answer: {{ formatUserAnswer(question, userAnswers[idx]) }}</div>
+                <div class="review-answer correct-answer" *ngIf="!isAnswerCorrect(question, userAnswers[idx])">
+                  Correct answer: {{ getCorrectAnswerText(question) }}
+                </div>
+              </div>
+            </div>
+
+            <button class="btn" (click)="status = 'start'">Take Another Quiz</button>
+          </div>
+        </div>
+      </div>
+    </ng-container>
+
+    <div class="test-panel">
+      <span>Test celebrations:</span>
+      <button class="btn" (click)="celebrate('quiz', 'Test: Quiz complete!')">Quiz</button>
+      <button class="btn" (click)="celebrate('milestone', 'Test: Milestone!')">Milestone</button>
+      <button class="btn" (click)="celebrate('all', 'Test: All mastered!')">All Mastered</button>
+    </div>
+  </div>
+</div>

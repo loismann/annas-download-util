@@ -18,8 +18,11 @@
   </ItemGroup>
 
   <ItemGroup>
-  <None Include="appsettings.json">
-    <CopyToOutputDirectory>IfNewer</CopyToOutputDirectory>
-  </None>
-</ItemGroup>
+    <None Include="appsettings.json">
+      <CopyToOutputDirectory>IfNewer</CopyToOutputDirectory>
+    </None>
+    <None Include="quiz-data/**">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
 </Project>

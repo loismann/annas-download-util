@@ -52,6 +52,10 @@ import { VERSION } from './version';
           <mat-icon>videogame_asset</mat-icon>
           <span>Gaming PC</span>
         </button>
+        <button *ngIf="authService.isAdmin()" mat-menu-item routerLink="/quiz">
+          <mat-icon>quiz</mat-icon>
+          <span>Lucy Quiz</span>
+        </button>
       </mat-menu>
 
           <span style="flex: 1"></span>

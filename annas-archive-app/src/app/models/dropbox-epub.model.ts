@@ -45,6 +45,7 @@ export interface DropboxEpubStatus {
   chaptersCached: number;
   percent: number;
   cachedAt?: string;
+  error?: string;
 }
 
 export interface DropboxBookSearchResult {

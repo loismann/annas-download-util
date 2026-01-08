@@ -35,27 +35,45 @@
       </button>
     </div>
 
-    <mat-form-field
-      appearance="outline"
-      class="w-100"
-      [class.dropdown-disabled]="!previouslyViewed.length">
-      <mat-label>Previously viewed</mat-label>
-      <mat-select
+    <div class="reader-select-row">
+      <mat-form-field
+        appearance="outline"
+        class="w-100 reader-select"
+        [class.dropdown-disabled]="!previouslyViewed.length">
+        <mat-label>Previously viewed</mat-label>
+        <mat-select
+          [disabled]="!previouslyViewed.length"
+          [value]="null"
+          (selectionChange)="onBookSelected($event.value)"
+          panelClass="reader-select-panel"
+          [panelWidth]="'fit-content'">
+          <mat-option *ngFor="let prev of previouslyViewed" [value]="prev.fileName">
+            {{ prev.title }}
+          </mat-option>
+        </mat-select>
+      </mat-form-field>
+      <button
+        mat-stroked-button
+        color="primary"
+        type="button"
+        class="reader-clear-button"
+        (click)="clearPreviouslyViewed()"
         [disabled]="!previouslyViewed.length"
-        [value]="null"
-        (selectionChange)="onBookSelected($event.value)"
-        panelClass="reader-select-panel"
-        [panelWidth]="'fit-content'">
-        <mat-option *ngFor="let prev of previouslyViewed" [value]="prev.fileName">
-          {{ prev.title }}
-        </mat-option>
-      </mat-select>
-    </mat-form-field>
+        aria-label="Clear previously viewed">
+        <mat-icon>delete</mat-icon>
+      </button>
+    </div>
 
     <div class="book-path" *ngIf="selectedBook">
       <div>File: {{ selectedBook.fileName }}</div>
       <div *ngIf="selectedBook.authors?.length">Author: {{ selectedBook.authors.join(', ') }}</div>
     </div>
+
+    <button mat-stroked-button color="warn" class="w-100 reader-remove-button"
+      (click)="removeFromReader()" [disabled]="!selectedBook">
+      <mat-icon>remove_circle</mat-icon>
+      Remove from Reader
+    </button>
 
     <button mat-flat-button color="accent" class="w-100 vocab-btn-main"
       (click)="openVocabModal()">
@@ -118,6 +136,10 @@
         <div class="status-row small">
           <span>{{ status.chaptersCached }}/{{ status.chaptersTotal }} chapters cached</span>
           <span *ngIf="status.inProgress">Building…</span>
+        </div>
+        <div class="status-row small error" *ngIf="status.error">
+          <span>Cache error</span>
+          <span>{{ status.error }}</span>
         </div>
         <div class="status-actions">
           <button mat-flat-button color="primary" class="status-btn status-btn-primary"

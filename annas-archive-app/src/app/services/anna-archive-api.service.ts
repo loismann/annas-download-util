@@ -21,6 +21,8 @@ import {
   WikiImagesResponse,
   FullChapterSummaryRequest,
   FullChapterSummaryResponse,
+  UltraChapterSummaryRequest,
+  UltraChapterSummaryResponse,
   TokenUsageResponse,
   ChunkBoundariesResponse,
   SectionSummaryRequest,
@@ -635,6 +637,23 @@ export class AnnaArchiveApiService {
     return this.http.get<FullChapterSummaryResponse>(
       `${this.aiBaseUrl}/summarize/chapter`,
       { params }
+    );
+  }
+
+  getUltraChapterSummary(dropboxPath: string, chapterId: number): Observable<UltraChapterSummaryResponse> {
+    const params = new HttpParams()
+      .set('dropboxPath', dropboxPath)
+      .set('chapterId', chapterId.toString());
+    return this.http.get<UltraChapterSummaryResponse>(
+      `${this.aiBaseUrl}/summarize/chapter/dummy`,
+      { params }
+    );
+  }
+
+  generateUltraChapterSummary(payload: UltraChapterSummaryRequest): Observable<UltraChapterSummaryResponse> {
+    return this.http.post<UltraChapterSummaryResponse>(
+      `${this.aiBaseUrl}/summarize/chapter/dummy`,
+      payload
     );
   }
 

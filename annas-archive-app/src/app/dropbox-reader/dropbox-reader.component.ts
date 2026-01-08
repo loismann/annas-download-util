@@ -56,6 +56,12 @@ interface BookmarkEntry {
   createdAt: string;
 }
 
+interface ReadingPosition {
+  chapterId: number;
+  wordOffset: number;
+  updatedAt?: string;
+}
+
 @Component({
   selector: 'app-dropbox-reader',
   standalone: true,
@@ -101,6 +107,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
   private statusPollAttempts = 0;
   private lastStatusPercent: number | null = null;
   private timeoutIds: any[] = [];
+  private pendingRestorePosition: { readerKey: string; chapterId: number; wordOffset: number } | null = null;
 
   bookSearchTerm = '';
   bookSearchResults: DropboxBookSearchResult[] = [];
@@ -118,8 +125,11 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
   summary: string | null = null;
   loadingSummary = false;
   loadingFullChapterSummary = false;
+  loadingUltraChapterSummary = false;
   fullChapterSummary: string | null = null;
   fullSummaryTokens: { total: number; prompt: number; completion: number; allowancePercent?: number | null; remaining?: number | null } | null = null;
+  ultraChapterSummary: string | null = null;
+  ultraSummaryTokens: { total: number; prompt: number; completion: number; allowancePercent?: number | null; remaining?: number | null } | null = null;
   chapterSummaryProgress: {
     stage: 'chunks' | 'sections' | 'final' | 'complete' | 'error';
     currentStep: number;
@@ -160,6 +170,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
   bookmarks: BookmarkEntry[] = [];
   bookmarkSelectValue: string | null = null;
   showBookmarksDropdown = false;
+  lastPositions = new Map<string, ReadingPosition>();
 
   // Section/chunk boundary state
   chunkBoundaries: ChunkBoundariesResponse | null = null;
@@ -193,6 +204,12 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
     return this.sanitizer.sanitize(1, html) ? this.sanitizer.bypassSecurityTrustHtml(html as string) : null;
   }
 
+  get ultraChapterSummaryHtml(): SafeHtml | null {
+    if (!this.ultraChapterSummary) return null;
+    const html = marked(this.ultraChapterSummary);
+    return this.sanitizer.sanitize(1, html) ? this.sanitizer.bypassSecurityTrustHtml(html as string) : null;
+  }
+
   constructor(
     private api: AnnaArchiveApiService,
     private vocabularyService: VocabularyService,
@@ -205,6 +222,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     this.loadPreviouslyViewed();
+    this.loadLastPositions();
     this.loadBookmarks();
     this.loadBooks();
     this.vocabFilters = this.vocabularyService.getBookFilters();
@@ -289,9 +307,8 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
 
     let processedText = this.escapeHtml(text);
 
-    // Apply section highlighting if section mode is enabled
-    if (this.analysisMode === 'section' && this.chunkBoundaries && this.currentSectionIndex !== null) {
-      processedText = this.applySectionHighlighting(processedText);
+    if (this.chunkBoundaries) {
+      processedText = this.applySectionAnnotations(processedText);
     }
 
     // Apply search highlighting
@@ -303,26 +320,37 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
     return processedText.replace(/\n/g, '<br/>');
   }
 
-  private applySectionHighlighting(escapedText: string): string {
-    if (!this.chunkBoundaries || this.currentSectionIndex === null || !this.chapterContent) {
+  private applySectionAnnotations(escapedText: string): string {
+    if (!this.chunkBoundaries || !this.chapterContent) {
       return escapedText;
     }
 
-    const chunk = this.chunkBoundaries.chunks[this.currentSectionIndex];
     const visibleStart = this.wordOffset;
     const visibleEnd = this.wordOffset + this.pageSizeWords;
+    const boundaryMarkers = new Map<number, string>();
 
-    // Check if current section overlaps with visible text
-    if (chunk.end <= visibleStart || chunk.start >= visibleEnd) {
-      // No overlap - no highlighting needed
-      return escapedText;
+    if (this.chunkBoundaries.chunks.length > 1) {
+      this.chunkBoundaries.chunks.slice(0, -1).forEach((chunk, index) => {
+        const boundary = chunk.end;
+        if (boundary < visibleStart || boundary > visibleEnd) return;
+        const boundaryInVisible = boundary - visibleStart;
+        boundaryMarkers.set(
+          boundaryInVisible,
+          `${index + 1} <span class="section-marker-icon">&#9660;</span> ${index + 2}`
+        );
+      });
     }
 
-    // Calculate word positions within the visible window
-    const sectionStartInVisible = Math.max(0, chunk.start - visibleStart);
-    const sectionEndInVisible = Math.min(this.pageSizeWords, chunk.end - visibleStart);
+    let sectionStartInVisible: number | null = null;
+    let sectionEndInVisible: number | null = null;
+    if (this.analysisMode === 'section' && this.currentSectionIndex !== null) {
+      const chunk = this.chunkBoundaries.chunks[this.currentSectionIndex];
+      if (chunk && !(chunk.end <= visibleStart || chunk.start >= visibleEnd)) {
+        sectionStartInVisible = Math.max(0, chunk.start - visibleStart);
+        sectionEndInVisible = Math.min(this.pageSizeWords, chunk.end - visibleStart);
+      }
+    }
 
-    // Split the escaped text into words (preserving spaces and newlines)
     const words = escapedText.split(/(\s+)/);
     let wordCount = 0;
     let result = '';
@@ -332,17 +360,30 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
       const isWhitespace = /^\s+$/.test(word);
 
       if (!isWhitespace) {
-        // This is an actual word
-        if (wordCount >= sectionStartInVisible && wordCount < sectionEndInVisible) {
-          // Word is within the highlighted section
+        if (boundaryMarkers.has(wordCount)) {
+          const marker = boundaryMarkers.get(wordCount);
+          if (marker) {
+            result += ` <span class="section-marker">${marker}</span> `;
+            boundaryMarkers.delete(wordCount);
+          }
+        }
+
+        if (sectionStartInVisible !== null && sectionEndInVisible !== null &&
+            wordCount >= sectionStartInVisible && wordCount < sectionEndInVisible) {
           result += `<span class="section-highlight">${word}</span>`;
         } else {
           result += word;
         }
         wordCount++;
       } else {
-        // Whitespace - keep as is
         result += word;
+      }
+    }
+
+    if (boundaryMarkers.has(wordCount)) {
+      const marker = boundaryMarkers.get(wordCount);
+      if (marker) {
+        result += ` <span class="section-marker">${marker}</span> `;
       }
     }
 
@@ -546,17 +587,24 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
     this.formattedAnalysis = null;
     this.vocabularyWords = [];
     this.analysisText = null;
+    this.fullChapterSummary = null;
+    this.fullSummaryTokens = null;
+    this.ultraChapterSummary = null;
+    this.ultraSummaryTokens = null;
+    this.loadingUltraChapterSummary = false;
     this.status = null;
     this.bookmarkSelectValue = null;
     this.pendingWordOffset = null;
     this.chunkBoundariesProgress = null;
     this.loadingChunkBoundaries = false;
     this.stopStatusPolling();
+    this.pendingRestorePosition = null;
 
     // Note: Preloading disabled for performance - cached summaries are loaded on-demand instead
     // Previously supported offline preload; intentionally no-op for lean runtime.
 
     this.recordViewed(selected);
+    this.queueRestorePosition(selected.readerKey);
     if (this.selectedBook) {
       this.vocabularyService.registerBook(this.selectedBookPath ?? '', this.selectedBook.title);
       this.vocabFilters = this.vocabularyService.getBookFilters();
@@ -585,6 +633,9 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
     this.analysisText = null;
     this.fullChapterSummary = null;
     this.fullSummaryTokens = null;
+    this.ultraChapterSummary = null;
+    this.ultraSummaryTokens = null;
+    this.loadingUltraChapterSummary = false;
     this.chunkBoundaries = null;
     this.sectionSummaries.clear();
     this.currentSectionIndex = null;
@@ -669,6 +720,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
 
     // Normal page forward within same chapter
     this.wordOffset = Math.min(newOffset, maxStart);
+    this.updateReadingPosition();
   }
 
   pageBack(): void {
@@ -691,6 +743,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
 
     // Normal page back within same chapter
     this.wordOffset = Math.max(0, newOffset);
+    this.updateReadingPosition();
   }
 
   startIndexing(): void {
@@ -815,6 +868,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
       const totalWords = this.chapterContent.wordCount ?? this.countWords(this.chapterContent.content);
       this.wordOffset = Math.max(0, Math.min(entry.wordOffset, totalWords));
       this.pendingWordOffset = null;
+      this.updateReadingPosition();
       this.updateCurrentSection();
       return;
     }
@@ -902,6 +956,8 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
     this.loadingFullChapterSummary = true;
     this.fullChapterSummary = null;
     this.fullSummaryTokens = null;
+    this.ultraChapterSummary = null;
+    this.ultraSummaryTokens = null;
     this.selectedText = null;
     this.chapterSummaryProgress = {
       stage: 'chunks',
@@ -1002,6 +1058,39 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
       };
       this.loadingFullChapterSummary = false;
       this.refreshTokenUsage();
+    });
+  }
+
+  handleUltraSummaryAction(): void {
+    if (!this.selectedBookPath || this.selectedChapterId === null || !this.fullChapterSummary) return;
+    if (this.loadingUltraChapterSummary) return;
+
+    this.loadingUltraChapterSummary = true;
+    const payload = {
+      dropboxPath: this.selectedBookPath,
+      chapterId: this.selectedChapterId,
+      bookTitle: this.selectedBook?.title,
+      forceRegenerate: !!this.ultraChapterSummary
+    };
+
+    this.api.generateUltraChapterSummary(payload)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+      next: resp => {
+        this.ultraChapterSummary = resp.summary;
+        this.ultraSummaryTokens = {
+          total: resp.totalTokens,
+          prompt: resp.promptTokens,
+          completion: resp.completionTokens,
+          allowancePercent: resp.allowanceUsedPercent ?? undefined,
+          remaining: resp.tokensRemaining ?? undefined
+        };
+        this.loadingUltraChapterSummary = false;
+      },
+      error: err => {
+        console.error('Ultra summary failed', err);
+        this.loadingUltraChapterSummary = false;
+      }
     });
   }
 
@@ -1122,6 +1211,17 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
         this.loadingChapters = false;
         if (!this.chapters.length) {
           this.error = 'No chapters found in this EPUB.';
+          this.pendingRestorePosition = null;
+          return;
+        }
+
+        if (this.pendingRestorePosition && this.selectedBookPath === this.pendingRestorePosition.readerKey) {
+          const targetChapter = this.chapters.find(ch => ch.id === this.pendingRestorePosition!.chapterId);
+          if (targetChapter) {
+            this.pendingWordOffset = this.pendingRestorePosition.wordOffset;
+            this.onChapterSelected(targetChapter.id, true);
+          }
+          this.pendingRestorePosition = null;
         }
       },
       error: err => {
@@ -1211,6 +1311,10 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
     }
     this.pendingCharOffset = null;
     this.loadCachedFullChapterSummary();
+    this.updateReadingPosition();
+    if (this.selectedBookPath && this.selectedChapterId !== null && !this.chunkBoundaries && !this.loadingChunkBoundaries) {
+      this.loadChunkBoundaries(this.selectedBookPath, this.selectedChapterId);
+    }
     this.timeoutIds.push(setTimeout(() => this.recalcPageSize(), 0));
   }
 
@@ -1299,6 +1403,54 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
     localStorage.setItem('epub_bookmarks', JSON.stringify(this.bookmarks));
   }
 
+  private loadLastPositions(): void {
+    if (typeof localStorage === 'undefined') return;
+    try {
+      const raw = localStorage.getItem('epub_last_positions');
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as Record<string, ReadingPosition>;
+      if (!parsed || typeof parsed !== 'object') return;
+      Object.entries(parsed).forEach(([key, value]) => {
+        if (value && typeof value.chapterId === 'number' && typeof value.wordOffset === 'number') {
+          this.lastPositions.set(key, value);
+        }
+      });
+    } catch {
+      this.lastPositions.clear();
+    }
+  }
+
+  private persistLastPositions(): void {
+    if (typeof localStorage === 'undefined') return;
+    const payload: Record<string, ReadingPosition> = {};
+    this.lastPositions.forEach((value, key) => {
+      payload[key] = value;
+    });
+    localStorage.setItem('epub_last_positions', JSON.stringify(payload));
+  }
+
+  private updateReadingPosition(): void {
+    if (!this.selectedBookPath || this.selectedChapterId === null) return;
+    const entry: ReadingPosition = {
+      chapterId: this.selectedChapterId,
+      wordOffset: this.wordOffset,
+      updatedAt: new Date().toISOString()
+    };
+    this.lastPositions.set(this.selectedBookPath, entry);
+    this.persistLastPositions();
+  }
+
+  private queueRestorePosition(readerKey: string): void {
+    if (!readerKey) return;
+    const last = this.lastPositions.get(readerKey);
+    if (!last) return;
+    this.pendingRestorePosition = {
+      readerKey,
+      chapterId: last.chapterId,
+      wordOffset: last.wordOffset
+    };
+  }
+
   private recordViewed(book: LibraryReaderBook): void {
     if (typeof localStorage === 'undefined') return;
 
@@ -1337,6 +1489,10 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
         next: () => {
           this.readerBooks = this.readerBooks.filter(book => book.fileName !== fileName);
           this.removePreviouslyViewedEntry(fileName);
+          if (this.selectedBookPath) {
+            this.lastPositions.delete(this.selectedBookPath);
+            this.persistLastPositions();
+          }
           this.resetSelectedBookState();
         },
         error: err => {
@@ -1387,6 +1543,11 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
     this.chunkBoundaries = null;
     this.sectionSummaries.clear();
     this.currentSectionIndex = null;
+    this.fullChapterSummary = null;
+    this.fullSummaryTokens = null;
+    this.ultraChapterSummary = null;
+    this.ultraSummaryTokens = null;
+    this.loadingUltraChapterSummary = false;
     this.stopStatusPolling();
   }
 
@@ -1396,6 +1557,8 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
     if (!this.selectedBookPath || this.selectedChapterId == null) return;
     this.fullChapterSummary = null;
     this.fullSummaryTokens = null;
+    this.ultraChapterSummary = null;
+    this.ultraSummaryTokens = null;
     this.selectedText = null;
 
     const cached = this.fullChapterSummaryCache.get(this.selectedChapterId);
@@ -1408,6 +1571,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
         allowancePercent: cached.allowanceUsedPercent ?? undefined,
         remaining: cached.tokensRemaining ?? undefined
       };
+      this.loadCachedUltraChapterSummary();
       return;
     }
 
@@ -1424,9 +1588,34 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
           allowancePercent: resp.allowanceUsedPercent ?? undefined,
           remaining: resp.tokensRemaining ?? undefined
         };
+        this.loadCachedUltraChapterSummary();
       },
       error: () => {
         // No cached summary; ignore
+      }
+    });
+  }
+
+  private loadCachedUltraChapterSummary(): void {
+    if (!this.selectedBookPath || this.selectedChapterId == null || !this.fullChapterSummary) return;
+    this.ultraChapterSummary = null;
+    this.ultraSummaryTokens = null;
+
+    this.api.getUltraChapterSummary(this.selectedBookPath, this.selectedChapterId)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+      next: resp => {
+        this.ultraChapterSummary = resp.summary;
+        this.ultraSummaryTokens = {
+          total: resp.totalTokens,
+          prompt: resp.promptTokens,
+          completion: resp.completionTokens,
+          allowancePercent: resp.allowanceUsedPercent ?? undefined,
+          remaining: resp.tokensRemaining ?? undefined
+        };
+      },
+      error: () => {
+        // No cached ultra summary; ignore
       }
     });
   }
@@ -2029,6 +2218,7 @@ DO NOT create a card for every word. Only create cards for terms that add educat
 
     // Update current section index based on word offset
     this.updateCurrentSection();
+    this.updateReadingPosition();
   }
 
   // ─── Section/Chunk boundary methods ──────────────────────────────────────
@@ -2332,6 +2522,7 @@ DO NOT create a card for every word. Only create cards for terms that add educat
     const chunk = this.chunkBoundaries.chunks[sectionIndex];
     this.wordOffset = chunk.start;
     this.currentSectionIndex = sectionIndex;
+    this.updateReadingPosition();
 
     // Clear vocabulary immediately when switching sections
     // It will be repopulated from cache if the new section has vocab

@@ -30,6 +30,7 @@ using VersOne.Epub;
 using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.IO.Compression;
+using System.Xml.Linq;
 using ICSharpCode.SharpZipLib.Zip;
 using ICSharpCode.SharpZipLib.Checksum;
 using System.Net.Http.Headers;
@@ -3582,6 +3583,159 @@ app.MapDelete("/api/ai/summarize/chapter", (
 
     AiContentCache.DeleteChapterSummary(dropboxPath, chapterId);
     return Results.Ok(new { message = "Cached summary deleted." });
+})
+.RequireAuthorization()
+.RequireRateLimiting("api");
+
+// Retrieve or generate an ultra "I'm a Dummy" chapter summary
+app.MapPost("/api/ai/summarize/chapter/dummy", async (
+    [FromBody] UltraChapterSummaryRequest request,
+    DropboxClient dropbox,
+    IHttpClientFactory httpFactory,
+    IConfiguration cfg,
+    ITokenUsageService tokenUsage,
+    IOpenAiModelHelper modelHelper,
+    IAiResponseParser aiResponseParser,
+    IModelSelectionService modelSelection) =>
+{
+    if (request is null || string.IsNullOrWhiteSpace(request.DropboxPath) || request.ChapterId < 0)
+        return Results.BadRequest(new { error = "dropboxPath and valid chapterId are required." });
+
+    if (request.ForceRegenerate)
+    {
+        AiContentCache.DeleteUltraChapterSummary(request.DropboxPath, request.ChapterId);
+    }
+
+    var cached = AiContentCache.LoadUltraChapterSummary<Dictionary<string, object>>(request.DropboxPath, request.ChapterId);
+    if (cached != null)
+        return Results.Ok(cached);
+
+    var baseSummaryData = AiContentCache.LoadChapterSummary<Dictionary<string, object>>(request.DropboxPath, request.ChapterId);
+    var baseSummaryText = baseSummaryData != null && baseSummaryData.TryGetValue("summary", out var summaryObj)
+        ? summaryObj?.ToString()
+        : null;
+
+    if (string.IsNullOrWhiteSpace(baseSummaryText))
+        return ApiResponse.NotFound("Full chapter summary is required before generating the dummy explanation.");
+
+    var apiKey = cfg["OpenAI:ApiKey"] ?? Environment.GetEnvironmentVariable("OPENAI_API_KEY");
+    if (string.IsNullOrWhiteSpace(apiKey))
+        return Results.Problem("OpenAI API key not configured.");
+
+    var index = await LoadChapterIndexAsync(dropbox, request.DropboxPath);
+    var chapterTitle = index?.Chapters.FirstOrDefault(c => c.Id == request.ChapterId)?.Title;
+
+    var contextParts = new List<string>();
+    if (!string.IsNullOrWhiteSpace(request.BookTitle))
+        contextParts.Add($"Book: {request.BookTitle}");
+    if (!string.IsNullOrWhiteSpace(chapterTitle))
+        contextParts.Add($"Chapter: {chapterTitle}");
+    var contextLine = contextParts.Count > 0 ? string.Join(" | ", contextParts) : "Chapter context";
+
+    var systemPrompt = @"You are a friendly teacher who makes hard ideas feel obvious.
+Write in a warm, conversational tone for a smart reader with zero background knowledge.
+Use 3–5 short paragraphs. No headings, no bullet points, no numbered lists.";
+
+    var userPrompt = $@"Explain this chapter in the clearest, most human way possible.
+Focus on:
+- why this matters
+- what the author is really getting at
+- why someone should care
+- how it connects (or doesn't) to modern life
+
+Be direct, vivid, and helpful without dumbing it down.
+
+{contextLine}
+
+Chapter summary:
+{baseSummaryText}";
+
+    using var http = httpFactory.CreateClient("OpenAI");
+    var model = cfg["OpenAI:ModelUltra"]
+        ?? Environment.GetEnvironmentVariable("OPENAI_MODEL_ULTRA")
+        ?? modelSelection.GetModelDeep();
+
+    var reasoningEffort = cfg.GetValue<string>("AI:ReasoningEffort:UltraSummary") ?? "high";
+    var maxCompletion = cfg.GetValue<int?>("AI:MaxCompletionTokens:UltraChapterSummary")
+        ?? cfg.GetValue<int?>("AI:MaxCompletionTokens:FullChapterSummary")
+        ?? 1400;
+
+    var payload = modelHelper.BuildChatCompletionPayload(
+        model,
+        new object[]
+        {
+            new { role = "system", content = systemPrompt },
+            new { role = "user", content = userPrompt }
+        },
+        maxCompletionTokens: maxCompletion,
+        temperature: null,
+        reasoningEffort: reasoningEffort
+    );
+
+    var response = await http.PostAsJsonAsync("https://api.openai.com/v1/chat/completions", payload);
+    if (!response.IsSuccessStatusCode)
+    {
+        var body = await response.Content.ReadAsStringAsync();
+        Console.WriteLine($"❌ OpenAI ultra summary failed: {response.StatusCode}");
+        Console.WriteLine($"   Response body: {body}");
+        return Results.Problem($"Ultra summary failed: {(int)response.StatusCode}");
+    }
+
+    using var stream = await response.Content.ReadAsStreamAsync();
+    using var doc = await JsonDocument.ParseAsync(stream);
+    var summary = aiResponseParser.ExtractText(doc.RootElement);
+    if (string.IsNullOrWhiteSpace(summary))
+        return Results.Problem("Ultra summary response was empty.");
+
+    var promptTokens = 0;
+    var completionTokens = 0;
+    if (doc.RootElement.TryGetProperty("usage", out var usage))
+    {
+        promptTokens = usage.GetProperty("prompt_tokens").GetInt32();
+        completionTokens = usage.GetProperty("completion_tokens").GetInt32();
+        tokenUsage.AddUsage(promptTokens, completionTokens);
+    }
+
+    var totals = tokenUsage.GetTotals();
+    var monthlyAllowance = cfg.GetValue<long?>("OpenAI:MonthlyTokenAllowance");
+    double? percent = null;
+    long? remaining = null;
+    if (monthlyAllowance.HasValue && monthlyAllowance.Value > 0)
+    {
+        percent = Math.Round((double)totals.TotalTokens / monthlyAllowance.Value * 100, 2);
+        remaining = monthlyAllowance.Value - totals.TotalTokens;
+    }
+
+    var summaryData = new
+    {
+        summary = summary,
+        promptTokens,
+        completionTokens,
+        totalTokens = promptTokens + completionTokens,
+        allowanceUsedPercent = percent,
+        tokensRemaining = remaining,
+        cachedAt = DateTime.UtcNow
+    };
+
+    AiContentCache.SaveUltraChapterSummary(request.DropboxPath, request.ChapterId, summaryData);
+    return Results.Ok(summaryData);
+})
+.RequireAuthorization()
+.RequireRateLimiting("api");
+
+// Retrieve cached ultra "I'm a Dummy" summary (if any)
+app.MapGet("/api/ai/summarize/chapter/dummy", (
+    [FromQuery] string dropboxPath,
+    [FromQuery] int chapterId) =>
+{
+    if (string.IsNullOrWhiteSpace(dropboxPath) || chapterId < 0)
+        return Results.BadRequest(new { error = "dropboxPath and valid chapterId are required." });
+
+    var cached = AiContentCache.LoadUltraChapterSummary<Dictionary<string, object>>(dropboxPath, chapterId);
+    if (cached == null)
+        return ApiResponse.NotFound("No dummy summary cached for this chapter.");
+
+    return Results.Ok(cached);
 })
 .RequireAuthorization()
 .RequireRateLimiting("api");
@@ -7313,6 +7467,7 @@ record CandidateBook(string Md5, string Title, List<string> Authors, string Form
 record SeriesBookMatch(string BookTitle, int Order, string Status, string? SelectedMd5, string? SelectedTitle, string Confidence, string Reason);
 record MatchSeriesBooksResponse(List<SeriesBookMatch> Matches);
 record FullChapterSummaryRequest(string DropboxPath, int ChapterId, string? BookTitle, string? Author, int? Year, string? Premise, bool ForceRegenerate = false);
+record UltraChapterSummaryRequest(string DropboxPath, int ChapterId, string? BookTitle, string? Author, int? Year, string? Premise, bool ForceRegenerate = false);
 record FullChapterSummaryResponse(string Summary, int PromptTokens, int CompletionTokens, int TotalTokens, double? AllowanceUsedPercent, long? TokensRemaining, DateTime CachedAt, List<ProcessingStep> Steps);
 record ProcessingStep(string Stage, int StepNumber, int TotalSteps, string Message, bool Success, string? Error);
 record ChapterSummaryCacheResponse(string Summary, int PromptTokens, int CompletionTokens, int TotalTokens, DateTime CachedAt);
@@ -7630,6 +7785,248 @@ static class DropboxEpubCache
         }
 
         throw new InvalidOperationException($"Failed to parse EPUB after fallback attempts: {label}");
+    }
+
+    private static async Task<(string Title, List<FlatChapter> Chapters)> GetFlatChaptersAsync(
+        byte[] sourceBytes,
+        string label,
+        string filePath)
+    {
+        try
+        {
+            var book = await ReadBookWithFallbackAsync(sourceBytes, label);
+            var chapters = FlattenChapters(book).ToList();
+            var title = string.IsNullOrWhiteSpace(book.Title)
+                ? Path.GetFileNameWithoutExtension(filePath)
+                : book.Title;
+            return (title, chapters);
+        }
+        catch (Exception ex)
+        {
+            var fallback = TryBuildChaptersFromZipBytes(sourceBytes, label);
+            if (fallback != null && fallback.Value.Chapters.Count > 0)
+            {
+                var title = string.IsNullOrWhiteSpace(fallback.Value.Title)
+                    ? Path.GetFileNameWithoutExtension(filePath)
+                    : fallback.Value.Title!;
+                return (title, fallback.Value.Chapters);
+            }
+
+            throw new InvalidOperationException($"Failed to parse EPUB after tolerant fallback: {label}", ex);
+        }
+    }
+
+    private static (string? Title, List<FlatChapter> Chapters)? TryBuildChaptersFromZipBytes(
+        byte[] sourceBytes,
+        string label)
+    {
+        if (!TryReadZipEntries(sourceBytes, label, out var entries, out var opfPath))
+        {
+            var repaired = TryRepairZip(sourceBytes);
+            if (repaired == null || !TryReadZipEntries(repaired, label, out entries, out opfPath))
+                return null;
+        }
+
+        if (entries.Count == 0)
+            return null;
+
+        string? bookTitle = null;
+        List<string> orderedHtml = new();
+
+        if (!string.IsNullOrWhiteSpace(opfPath) && entries.TryGetValue(opfPath, out var opfBytes))
+        {
+            try
+            {
+                var opfText = ReadTextFromBytes(opfBytes);
+                var opfDir = NormalizeZipDir(Path.GetDirectoryName(opfPath) ?? string.Empty);
+                var doc = XDocument.Parse(opfText);
+
+                bookTitle = doc.Descendants()
+                    .FirstOrDefault(el => el.Name.LocalName.Equals("title", StringComparison.OrdinalIgnoreCase))
+                    ?.Value
+                    ?.Trim();
+
+                var items = doc.Descendants()
+                    .Where(el => el.Name.LocalName.Equals("item", StringComparison.OrdinalIgnoreCase))
+                    .Select(el => new
+                    {
+                        Id = el.Attribute("id")?.Value,
+                        Href = el.Attribute("href")?.Value
+                    })
+                    .Where(item => !string.IsNullOrWhiteSpace(item.Id) && !string.IsNullOrWhiteSpace(item.Href))
+                    .ToDictionary(
+                        item => item.Id!,
+                        item => NormalizeZipPath(ResolveOpfHref(opfDir, item.Href!)),
+                        StringComparer.OrdinalIgnoreCase);
+
+                var spine = doc.Descendants()
+                    .Where(el => el.Name.LocalName.Equals("itemref", StringComparison.OrdinalIgnoreCase))
+                    .Select(el => el.Attribute("idref")?.Value)
+                    .Where(idref => !string.IsNullOrWhiteSpace(idref))
+                    .Select(idref => items.TryGetValue(idref!, out var href) ? href : null)
+                    .Where(href => !string.IsNullOrWhiteSpace(href))
+                    .Select(href => FindEntry(entries, href!))
+                    .Where(path => !string.IsNullOrWhiteSpace(path))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
+                orderedHtml = spine;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[epub] Failed to parse OPF for tolerant fallback ({label}): {ex.Message}");
+            }
+        }
+
+        if (orderedHtml.Count == 0)
+        {
+            orderedHtml = entries.Keys
+                .Where(IsHtmlEntry)
+                .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
+        var chapters = new List<FlatChapter>();
+        var index = 0;
+        foreach (var path in orderedHtml)
+        {
+            if (!entries.TryGetValue(path, out var data))
+                continue;
+
+            var html = ReadTextFromBytes(data);
+            var text = HtmlToPlainText(html);
+            var words = CountWords(text);
+            var title = ExtractTitleFromHtml(html) ?? Path.GetFileNameWithoutExtension(path);
+            chapters.Add(new FlatChapter(index++, title, 0, text, words));
+        }
+
+        if (chapters.Count == 0)
+            return null;
+
+        Console.WriteLine($"[epub] Tolerant fallback used for {label}. Chapters={chapters.Count}");
+        return (bookTitle, chapters);
+    }
+
+    private static bool TryReadZipEntries(
+        byte[] sourceBytes,
+        string label,
+        out Dictionary<string, byte[]> entries,
+        out string? opfPath)
+    {
+        entries = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
+        opfPath = null;
+
+        try
+        {
+            using var inputStream = new MemoryStream(sourceBytes);
+            using var zipInput = new ZipInputStream(inputStream);
+            ZipEntry? entry;
+            while ((entry = zipInput.GetNextEntry()) != null)
+            {
+                if (!entry.IsFile) continue;
+                var name = NormalizeZipPath(entry.Name);
+                if (!IsHtmlEntry(name) && !name.EndsWith(".opf", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                using var buffer = new MemoryStream();
+                zipInput.CopyTo(buffer);
+                entries[name] = buffer.ToArray();
+                if (opfPath == null && name.EndsWith(".opf", StringComparison.OrdinalIgnoreCase))
+                    opfPath = name;
+            }
+
+            return entries.Count > 0;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[epub] Failed to read zip entries for tolerant fallback ({label}): {ex.Message}");
+            return false;
+        }
+    }
+
+    private static string NormalizeZipPath(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            return string.Empty;
+
+        var normalized = path.Replace('\\', '/').TrimStart('/');
+        var fragmentIndex = normalized.IndexOf('#');
+        if (fragmentIndex >= 0)
+            normalized = normalized[..fragmentIndex];
+        return normalized;
+    }
+
+    private static string NormalizeZipDir(string path)
+    {
+        var normalized = NormalizeZipPath(path);
+        return string.IsNullOrWhiteSpace(normalized) ? string.Empty : normalized.TrimEnd('/');
+    }
+
+    private static string ResolveOpfHref(string opfDir, string href)
+    {
+        var decoded = Uri.UnescapeDataString(href);
+        decoded = decoded.Replace('\\', '/');
+        if (string.IsNullOrWhiteSpace(opfDir))
+            return decoded;
+        return $"{opfDir}/{decoded}";
+    }
+
+    private static string? FindEntry(Dictionary<string, byte[]> entries, string href)
+    {
+        var normalized = NormalizeZipPath(href);
+        if (entries.ContainsKey(normalized))
+            return normalized;
+
+        var match = entries.Keys.FirstOrDefault(key =>
+            key.EndsWith("/" + normalized, StringComparison.OrdinalIgnoreCase) ||
+            key.EndsWith(normalized, StringComparison.OrdinalIgnoreCase));
+        return match;
+    }
+
+    private static bool IsHtmlEntry(string path)
+    {
+        return path.EndsWith(".xhtml", StringComparison.OrdinalIgnoreCase)
+            || path.EndsWith(".html", StringComparison.OrdinalIgnoreCase)
+            || path.EndsWith(".htm", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string ReadTextFromBytes(byte[] data)
+    {
+        using var stream = new MemoryStream(data);
+        using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+        return reader.ReadToEnd();
+    }
+
+    private static string? ExtractTitleFromHtml(string html)
+    {
+        if (string.IsNullOrWhiteSpace(html))
+            return null;
+
+        var titleMatch = Regex.Match(html, @"<title[^>]*>(?<t>.*?)</title>", RegexOptions.IgnoreCase | RegexOptions.Singleline);
+        if (titleMatch.Success)
+        {
+            var title = WebUtility.HtmlDecode(titleMatch.Groups["t"].Value).Trim();
+            if (!string.IsNullOrWhiteSpace(title))
+                return title;
+        }
+
+        var h1Match = Regex.Match(html, @"<h1[^>]*>(?<t>.*?)</h1>", RegexOptions.IgnoreCase | RegexOptions.Singleline);
+        if (h1Match.Success)
+        {
+            var title = WebUtility.HtmlDecode(h1Match.Groups["t"].Value).Trim();
+            if (!string.IsNullOrWhiteSpace(title))
+                return title;
+        }
+
+        var h2Match = Regex.Match(html, @"<h2[^>]*>(?<t>.*?)</h2>", RegexOptions.IgnoreCase | RegexOptions.Singleline);
+        if (h2Match.Success)
+        {
+            var title = WebUtility.HtmlDecode(h2Match.Groups["t"].Value).Trim();
+            if (!string.IsNullOrWhiteSpace(title))
+                return title;
+        }
+
+        return null;
     }
 
     private static byte[]? TryRepairZip(byte[] sourceBytes)
@@ -8048,8 +8445,8 @@ static class LibraryEpubCache
             await using var fileStream = File.OpenRead(filePath);
             using var ms = new MemoryStream();
             await fileStream.CopyToAsync(ms);
-            var book = await ReadBookWithFallbackAsync(ms.ToArray(), $"library:{filePath}");
-            var flatChapters = FlattenChapters(book)
+            var (title, flatChapters) = await GetFlatChaptersAsync(ms.ToArray(), $"library:{filePath}", filePath);
+            flatChapters = flatChapters
                 .Where(ch => ch.WordCount >= 50)
                 .ToList();
 
@@ -8073,9 +8470,7 @@ static class LibraryEpubCache
 
             var meta = new CachedChapterIndex(
                 readerKey,
-                string.IsNullOrWhiteSpace(book.Title)
-                    ? Path.GetFileNameWithoutExtension(filePath)
-                    : book.Title,
+                title,
                 DateTime.UtcNow,
                 chapterMetas);
 
@@ -8102,6 +8497,7 @@ static class LibraryEpubCache
         var workingBytes = sourceBytes;
         var added = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var coverFallbackApplied = false;
+        var zipRepairAttempted = false;
 
         for (var attempt = 0; attempt < 3; attempt += 1)
         {
@@ -8109,6 +8505,21 @@ static class LibraryEpubCache
             try
             {
                 return await EpubReader.ReadBookAsync(source);
+            }
+            catch (InvalidDataException)
+            {
+                if (!zipRepairAttempted)
+                {
+                    var repaired = TryRepairZip(workingBytes);
+                    if (repaired != null)
+                    {
+                        Console.WriteLine($"[epub] Repaired zip structure for {label}");
+                        workingBytes = repaired;
+                        zipRepairAttempted = true;
+                        continue;
+                    }
+                }
+                throw;
             }
             catch (EpubContentException ex)
             {
@@ -8131,6 +8542,312 @@ static class LibraryEpubCache
         }
 
         throw new InvalidOperationException($"Failed to parse EPUB after fallback attempts: {label}");
+    }
+
+
+    private static async Task<(string Title, List<FlatChapter> Chapters)> GetFlatChaptersAsync(
+        byte[] sourceBytes,
+        string label,
+        string filePath)
+    {
+        try
+        {
+            var book = await ReadBookWithFallbackAsync(sourceBytes, label);
+            var chapters = FlattenChapters(book).ToList();
+            var title = string.IsNullOrWhiteSpace(book.Title)
+                ? Path.GetFileNameWithoutExtension(filePath)
+                : book.Title;
+            return (title, chapters);
+        }
+        catch (Exception ex)
+        {
+            var fallback = TryBuildChaptersFromZipBytes(sourceBytes, label);
+            if (fallback != null && fallback.Value.Chapters.Count > 0)
+            {
+                var title = string.IsNullOrWhiteSpace(fallback.Value.Title)
+                    ? Path.GetFileNameWithoutExtension(filePath)
+                    : fallback.Value.Title!;
+                return (title, fallback.Value.Chapters);
+            }
+
+            throw new InvalidOperationException($"Failed to parse EPUB after tolerant fallback: {label}", ex);
+        }
+    }
+
+    private static (string? Title, List<FlatChapter> Chapters)? TryBuildChaptersFromZipBytes(
+        byte[] sourceBytes,
+        string label)
+    {
+        if (!TryReadZipEntries(sourceBytes, label, out var entries, out var opfPath))
+        {
+            var repaired = TryRepairZip(sourceBytes);
+            if (repaired == null || !TryReadZipEntries(repaired, label, out entries, out opfPath))
+                return null;
+        }
+
+        if (entries.Count == 0)
+            return null;
+
+        string? bookTitle = null;
+        List<string> orderedHtml = new();
+
+        if (!string.IsNullOrWhiteSpace(opfPath) && entries.TryGetValue(opfPath, out var opfBytes))
+        {
+            try
+            {
+                var opfText = ReadTextFromBytes(opfBytes);
+                var opfDir = NormalizeZipDir(Path.GetDirectoryName(opfPath) ?? string.Empty);
+                var doc = XDocument.Parse(opfText);
+
+                bookTitle = doc.Descendants()
+                    .FirstOrDefault(el => el.Name.LocalName.Equals("title", StringComparison.OrdinalIgnoreCase))
+                    ?.Value
+                    ?.Trim();
+
+                var items = doc.Descendants()
+                    .Where(el => el.Name.LocalName.Equals("item", StringComparison.OrdinalIgnoreCase))
+                    .Select(el => new
+                    {
+                        Id = el.Attribute("id")?.Value,
+                        Href = el.Attribute("href")?.Value
+                    })
+                    .Where(item => !string.IsNullOrWhiteSpace(item.Id) && !string.IsNullOrWhiteSpace(item.Href))
+                    .ToDictionary(
+                        item => item.Id!,
+                        item => NormalizeZipPath(ResolveOpfHref(opfDir, item.Href!)),
+                        StringComparer.OrdinalIgnoreCase);
+
+                var spine = doc.Descendants()
+                    .Where(el => el.Name.LocalName.Equals("itemref", StringComparison.OrdinalIgnoreCase))
+                    .Select(el => el.Attribute("idref")?.Value)
+                    .Where(idref => !string.IsNullOrWhiteSpace(idref))
+                    .Select(idref => items.TryGetValue(idref!, out var href) ? href : null)
+                    .Where(href => !string.IsNullOrWhiteSpace(href))
+                    .Select(href => FindEntry(entries, href!))
+                    .Where(path => !string.IsNullOrWhiteSpace(path))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
+                orderedHtml = spine;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[epub] Failed to parse OPF for tolerant fallback ({label}): {ex.Message}");
+            }
+        }
+
+        if (orderedHtml.Count == 0)
+        {
+            orderedHtml = entries.Keys
+                .Where(IsHtmlEntry)
+                .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
+        var chapters = new List<FlatChapter>();
+        var index = 0;
+        foreach (var path in orderedHtml)
+        {
+            if (!entries.TryGetValue(path, out var data))
+                continue;
+
+            var html = ReadTextFromBytes(data);
+            var text = HtmlToPlainText(html);
+            var words = CountWords(text);
+            var title = ExtractTitleFromHtml(html) ?? Path.GetFileNameWithoutExtension(path);
+            chapters.Add(new FlatChapter(index++, title, 0, text, words));
+        }
+
+        if (chapters.Count == 0)
+            return null;
+
+        Console.WriteLine($"[epub] Tolerant fallback used for {label}. Chapters={chapters.Count}");
+        return (bookTitle, chapters);
+    }
+
+    private static bool TryReadZipEntries(
+        byte[] sourceBytes,
+        string label,
+        out Dictionary<string, byte[]> entries,
+        out string? opfPath)
+    {
+        entries = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
+        opfPath = null;
+
+        try
+        {
+            using var inputStream = new MemoryStream(sourceBytes);
+            using var zipInput = new ZipInputStream(inputStream);
+            ZipEntry? entry;
+            while ((entry = zipInput.GetNextEntry()) != null)
+            {
+                if (!entry.IsFile) continue;
+                var name = NormalizeZipPath(entry.Name);
+                if (!IsHtmlEntry(name) && !name.EndsWith(".opf", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                using var buffer = new MemoryStream();
+                zipInput.CopyTo(buffer);
+                entries[name] = buffer.ToArray();
+                if (opfPath == null && name.EndsWith(".opf", StringComparison.OrdinalIgnoreCase))
+                    opfPath = name;
+            }
+
+            return entries.Count > 0;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[epub] Failed to read zip entries for tolerant fallback ({label}): {ex.Message}");
+            return false;
+        }
+    }
+
+    private static string NormalizeZipPath(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            return string.Empty;
+
+        var normalized = path.Replace('\\', '/').TrimStart('/');
+        var fragmentIndex = normalized.IndexOf('#');
+        if (fragmentIndex >= 0)
+            normalized = normalized[..fragmentIndex];
+        return normalized;
+    }
+
+    private static string NormalizeZipDir(string path)
+    {
+        var normalized = NormalizeZipPath(path);
+        return string.IsNullOrWhiteSpace(normalized) ? string.Empty : normalized.TrimEnd('/');
+    }
+
+    private static string ResolveOpfHref(string opfDir, string href)
+    {
+        var decoded = Uri.UnescapeDataString(href);
+        decoded = decoded.Replace('\\', '/');
+        if (string.IsNullOrWhiteSpace(opfDir))
+            return decoded;
+        return $"{opfDir}/{decoded}";
+    }
+
+    private static string? FindEntry(Dictionary<string, byte[]> entries, string href)
+    {
+        var normalized = NormalizeZipPath(href);
+        if (entries.ContainsKey(normalized))
+            return normalized;
+
+        var match = entries.Keys.FirstOrDefault(key =>
+            key.EndsWith("/" + normalized, StringComparison.OrdinalIgnoreCase) ||
+            key.EndsWith(normalized, StringComparison.OrdinalIgnoreCase));
+        return match;
+    }
+
+    private static bool IsHtmlEntry(string path)
+    {
+        return path.EndsWith(".xhtml", StringComparison.OrdinalIgnoreCase)
+            || path.EndsWith(".html", StringComparison.OrdinalIgnoreCase)
+            || path.EndsWith(".htm", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string ReadTextFromBytes(byte[] data)
+    {
+        using var stream = new MemoryStream(data);
+        using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+        return reader.ReadToEnd();
+    }
+
+    private static string? ExtractTitleFromHtml(string html)
+    {
+        if (string.IsNullOrWhiteSpace(html))
+            return null;
+
+        var titleMatch = Regex.Match(html, @"<title[^>]*>(?<t>.*?)</title>", RegexOptions.IgnoreCase | RegexOptions.Singleline);
+        if (titleMatch.Success)
+        {
+            var title = WebUtility.HtmlDecode(titleMatch.Groups["t"].Value).Trim();
+            if (!string.IsNullOrWhiteSpace(title))
+                return title;
+        }
+
+        var h1Match = Regex.Match(html, @"<h1[^>]*>(?<t>.*?)</h1>", RegexOptions.IgnoreCase | RegexOptions.Singleline);
+        if (h1Match.Success)
+        {
+            var title = WebUtility.HtmlDecode(titleMatch.Groups["t"].Value).Trim();
+            if (!string.IsNullOrWhiteSpace(title))
+                return title;
+        }
+
+        var h2Match = Regex.Match(html, @"<h2[^>]*>(?<t>.*?)</h2>", RegexOptions.IgnoreCase | RegexOptions.Singleline);
+        if (h2Match.Success)
+        {
+            var title = WebUtility.HtmlDecode(titleMatch.Groups["t"].Value).Trim();
+            if (!string.IsNullOrWhiteSpace(title))
+                return title;
+        }
+
+        return null;
+    }
+
+    private static byte[]? TryRepairZip(byte[] sourceBytes)
+    {
+        try
+        {
+            using var inputStream = new MemoryStream(sourceBytes);
+            using var zipInput = new ZipInputStream(inputStream);
+            var entries = new List<(string Name, byte[] Data)>();
+            ZipEntry? entry;
+            while ((entry = zipInput.GetNextEntry()) != null)
+            {
+                if (!entry.IsFile) continue;
+                using var buffer = new MemoryStream();
+                zipInput.CopyTo(buffer);
+                entries.Add((entry.Name, buffer.ToArray()));
+            }
+
+            if (entries.Count == 0)
+                return null;
+
+            var mimeEntry = entries.FirstOrDefault(e => string.Equals(e.Name, "mimetype", StringComparison.OrdinalIgnoreCase));
+            var others = entries.Where(e => !string.Equals(e.Name, "mimetype", StringComparison.OrdinalIgnoreCase)).ToList();
+
+            using var outputStream = new MemoryStream();
+            using var zipOutput = new ZipOutputStream(outputStream);
+            zipOutput.SetLevel(6);
+
+            if (!string.IsNullOrEmpty(mimeEntry.Name))
+            {
+                var crc32 = new ICSharpCode.SharpZipLib.Checksum.Crc32();
+                crc32.Update(mimeEntry.Data);
+                var mimeZipEntry = new ZipEntry("mimetype")
+                {
+                    CompressionMethod = CompressionMethod.Stored,
+                    Size = mimeEntry.Data.Length,
+                    CompressedSize = mimeEntry.Data.Length,
+                    Crc = crc32.Value
+                };
+                zipOutput.PutNextEntry(mimeZipEntry);
+                zipOutput.Write(mimeEntry.Data, 0, mimeEntry.Data.Length);
+                zipOutput.CloseEntry();
+            }
+
+            foreach (var item in others)
+            {
+                var newEntry = new ZipEntry(item.Name)
+                {
+                    CompressionMethod = CompressionMethod.Deflated
+                };
+                zipOutput.PutNextEntry(newEntry);
+                zipOutput.Write(item.Data, 0, item.Data.Length);
+                zipOutput.CloseEntry();
+            }
+
+            zipOutput.Finish();
+            return outputStream.ToArray();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[epub] Zip repair failed: {ex.Message}");
+            return null;
+        }
     }
 
     private static byte[] EnsureCommonCoverEntries(byte[] sourceBytes)
@@ -8202,8 +8919,8 @@ static class LibraryEpubCache
         await using var fileStream = File.OpenRead(filePath);
         using var ms = new MemoryStream();
         await fileStream.CopyToAsync(ms);
-        var book = await ReadBookWithFallbackAsync(ms.ToArray(), $"library:{filePath}");
-        var flatChapters = FlattenChapters(book)
+        var (title, flatChapters) = await GetFlatChaptersAsync(ms.ToArray(), $"library:{filePath}", filePath);
+        flatChapters = flatChapters
             .Where(ch => ch.WordCount >= 50)
             .ToList();
 
@@ -8221,9 +8938,7 @@ static class LibraryEpubCache
 
         var meta = new CachedChapterIndex(
             readerKey,
-            string.IsNullOrWhiteSpace(book.Title)
-                ? Path.GetFileNameWithoutExtension(filePath)
-                : book.Title,
+            title,
             DateTime.UtcNow,
             chapterMetas);
 
@@ -8350,8 +9065,7 @@ static class LibraryEpubCache
             await using var stream = File.OpenRead(filePath);
             using var ms = new MemoryStream();
             await stream.CopyToAsync(ms);
-            var book = await ReadBookWithFallbackAsync(ms.ToArray(), $"library:{filePath}");
-            var flatChapters = FlattenChapters(book).ToList();
+            var (_, flatChapters) = await GetFlatChaptersAsync(ms.ToArray(), $"library:{filePath}", filePath);
             var target = flatChapters.FirstOrDefault(ch => ch.Id == chapterId);
             return target?.PlainText;
         }
@@ -8408,6 +9122,7 @@ public static class AiContentCache
         var subDirs = new[]
         {
             "chapter-summaries",
+            "chapter-ultra-summaries",
             "section-summaries",
             "chunk-boundaries",
             "character-graphs"
@@ -8448,6 +9163,15 @@ public static class AiContentCache
         return Path.Combine(dir, $"chapter-{chapterId}.json");
     }
 
+    public static string GetUltraChapterSummaryCachePath(string dropboxPath, int chapterId)
+    {
+        var root = GetCacheRoot();
+        var bookFolder = SanitizeForFilename(dropboxPath);
+        var dir = Path.Combine(root, "chapter-ultra-summaries", bookFolder);
+        Directory.CreateDirectory(dir);
+        return Path.Combine(dir, $"chapter-{chapterId}.json");
+    }
+
     public static void SaveChapterSummary(string dropboxPath, int chapterId, object summaryData)
     {
         var path = GetChapterSummaryCachePath(dropboxPath, chapterId);
@@ -8457,6 +9181,17 @@ public static class AiContentCache
         });
         File.WriteAllText(path, json);
         Console.WriteLine($"💾 Saved chapter summary to: {path}");
+    }
+
+    public static void SaveUltraChapterSummary(string dropboxPath, int chapterId, object summaryData)
+    {
+        var path = GetUltraChapterSummaryCachePath(dropboxPath, chapterId);
+        var json = System.Text.Json.JsonSerializer.Serialize(summaryData, new System.Text.Json.JsonSerializerOptions
+        {
+            WriteIndented = true
+        });
+        File.WriteAllText(path, json);
+        Console.WriteLine($"💾 Saved ultra chapter summary to: {path}");
     }
 
     public static T? LoadChapterSummary<T>(string dropboxPath, int chapterId) where T : class
@@ -8476,9 +9211,32 @@ public static class AiContentCache
         }
     }
 
+    public static T? LoadUltraChapterSummary<T>(string dropboxPath, int chapterId) where T : class
+    {
+        var path = GetUltraChapterSummaryCachePath(dropboxPath, chapterId);
+        if (!File.Exists(path)) return null;
+
+        try
+        {
+            var json = File.ReadAllText(path);
+            return System.Text.Json.JsonSerializer.Deserialize<T>(json);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"⚠️ Failed to load ultra chapter summary from {path}: {ex.Message}");
+            return null;
+        }
+    }
+
     public static bool ChapterSummaryExists(string dropboxPath, int chapterId)
     {
         var path = GetChapterSummaryCachePath(dropboxPath, chapterId);
+        return File.Exists(path);
+    }
+
+    public static bool UltraChapterSummaryExists(string dropboxPath, int chapterId)
+    {
+        var path = GetUltraChapterSummaryCachePath(dropboxPath, chapterId);
         return File.Exists(path);
     }
 
@@ -8489,6 +9247,16 @@ public static class AiContentCache
         {
             File.Delete(path);
             Console.WriteLine($"🗑️ Deleted chapter summary: {path}");
+        }
+    }
+
+    public static void DeleteUltraChapterSummary(string dropboxPath, int chapterId)
+    {
+        var path = GetUltraChapterSummaryCachePath(dropboxPath, chapterId);
+        if (File.Exists(path))
+        {
+            File.Delete(path);
+            Console.WriteLine($"🗑️ Deleted ultra chapter summary: {path}");
         }
     }
 
@@ -8738,6 +9506,15 @@ public static class AiContentCache
                 Directory.Delete(chunkBoundariesDir, recursive: true);
                 deletedCount++;
                 Console.WriteLine($"🗑️ Deleted chunk boundaries: {chunkBoundariesDir}");
+            }
+
+            // Delete ultra chapter summaries
+            var ultraSummariesDir = Path.Combine(root, "chapter-ultra-summaries", bookFolder);
+            if (Directory.Exists(ultraSummariesDir))
+            {
+                Directory.Delete(ultraSummariesDir, recursive: true);
+                deletedCount++;
+                Console.WriteLine($"🗑️ Deleted ultra chapter summaries: {ultraSummariesDir}");
             }
 
             // Delete section summaries (includes vocab files)

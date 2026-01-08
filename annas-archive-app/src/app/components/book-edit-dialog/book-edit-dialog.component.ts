@@ -10,6 +10,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
 import { COMMA, ENTER } from '@angular/cdk/keycodes';
 import { MatChipInputEvent } from '@angular/material/chips';
+import { Router } from '@angular/router';
 import { GenreMappingService } from '../../services/genre-mapping.service';
 import { AnnaArchiveApiService } from '../../services/anna-archive-api.service';
 
@@ -92,7 +93,8 @@ export class BookEditDialogComponent {
     public dialogRef: MatDialogRef<BookEditDialogComponent>,
     @Inject(MAT_DIALOG_DATA) public data: BookEditDialogData,
     private genreMappingService: GenreMappingService,
-    private api: AnnaArchiveApiService
+    private api: AnnaArchiveApiService,
+    private router: Router
   ) {
     const fromLibrary = (data.availableGenres ?? []).filter(Boolean);
     this.genres = fromLibrary.length > 0
@@ -234,6 +236,21 @@ export class BookEditDialogComponent {
       error: () => {
         this.readerState = 'error';
       }
+    });
+  }
+
+  readerAction(): void {
+    if (this.data.readerEnabled || this.readerState === 'success') {
+      this.viewInReader();
+      return;
+    }
+    this.enableReader();
+  }
+
+  viewInReader(): void {
+    this.dialogRef.close();
+    this.router.navigate(['/reader'], {
+      queryParams: { fileName: this.data.fileName }
     });
   }
 

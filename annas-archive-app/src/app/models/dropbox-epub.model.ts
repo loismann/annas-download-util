@@ -81,6 +81,16 @@ export interface FullChapterSummaryRequest {
   premise?: string;
 }
 
+export interface UltraChapterSummaryRequest {
+  dropboxPath: string;
+  chapterId: number;
+  bookTitle?: string;
+  author?: string;
+  year?: number;
+  premise?: string;
+  forceRegenerate?: boolean;
+}
+
 export interface ProcessingStep {
   stage: 'chunks' | 'sections' | 'final' | 'complete' | 'error';
   stepNumber: number;
@@ -99,6 +109,16 @@ export interface FullChapterSummaryResponse {
   tokensRemaining?: number | null;
   cachedAt: string;
   steps: ProcessingStep[];
+}
+
+export interface UltraChapterSummaryResponse {
+  summary: string;
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  allowanceUsedPercent?: number | null;
+  tokensRemaining?: number | null;
+  cachedAt: string;
 }
 
 export interface TokenUsageResponse {

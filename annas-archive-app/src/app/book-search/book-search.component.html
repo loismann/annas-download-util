@@ -178,9 +178,7 @@
                 </ng-container>
               </button>
 
-              <!-- send-to-boox (admin only) -->
               <button
-                *ngIf="authService.isAdmin()"
                 mat-raised-button
                 color="accent"
                 (click)="sendToBoox(book)"
@@ -194,9 +192,7 @@
                 </ng-container>
               </button>
 
-              <!-- send-to-dad's-kindle (admin only) -->
               <button
-                *ngIf="authService.isAdmin()"
                 mat-raised-button
                 color="primary"
                 (click)="sendToDadsKindle(book)"
@@ -210,9 +206,7 @@
                 </ng-container>
               </button>
 
-              <!-- send-to-mom's-kindle (admin only) -->
               <button
-                *ngIf="authService.isAdmin()"
                 mat-raised-button
                 color="primary"
                 (click)="sendToMomsKindle(book)"

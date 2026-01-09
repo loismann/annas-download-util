@@ -83,6 +83,13 @@ PublishProfiles/
 node_modules/
 jspm_packages/
 
+# Python virtual environments
+.venv/
+.venv_*/
+venv/
+env/
+ENV/
+
 # Build outputs
 dist/
 dist-*/
@@ -99,6 +106,7 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 lerna-debug.log*
+local-logs/
 
 # Environment files
 .env
@@ -123,6 +131,12 @@ TestResults/
 *.coverage
 *.coveragexml
 *.cobertura.xml
+
+# Playwright and E2E test artifacts
+playwright-report/
+test-results/
+**/playwright-report/
+**/test-results/
 
 # Compiled files
 *.js
@@ -168,9 +182,16 @@ publish/
 deploy.sh
 deployment-logs/
 
+# Personal tagging scripts (contain usernames and hostnames)
+scripts/tag_dads_books.sh
+scripts/tag_pauls_books_rest.sh
+
 # All markdown files (may contain sensitive documentation)
 *.md
 *.MD
+
+# Documentation folder
+DOCS/
 
 # Auto-generated version file
 **/version.ts

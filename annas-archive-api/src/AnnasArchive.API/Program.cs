@@ -6872,16 +6872,20 @@ static async Task WriteLibraryMetadataAsync(
 
 static string? ResolveUserLibraryTag(HttpContext context)
 {
-    var accessCode = context.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+    var name = context.User?.FindFirst(ClaimTypes.Name)?.Value;
+    if (string.IsNullOrWhiteSpace(name))
+        return null;
 
-    // Map access codes to user tags
-    if (string.Equals(accessCode, "***REMOVED***", StringComparison.OrdinalIgnoreCase))
+    var normalized = name.Trim().ToLowerInvariant();
+
+    // Map user names to tags to avoid storing access codes in code/config.
+    if (normalized.Contains("paul"))
         return "Paul's Books";
 
-    if (string.Equals(accessCode, "cffdab-233322", StringComparison.OrdinalIgnoreCase))
+    if (normalized.Contains("mom"))
         return "Mom's Books";
 
-    if (string.Equals(accessCode, "eikdab-233322", StringComparison.OrdinalIgnoreCase))
+    if (normalized.Contains("dad"))
         return "Dad's Books";
 
     return null;

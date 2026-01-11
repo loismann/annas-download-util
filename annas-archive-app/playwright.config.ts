@@ -10,12 +10,13 @@ import { defineConfig, devices } from '@playwright/test';
  * - Uses system Chrome (not Chromium) via channel: 'chrome'
  * - Headless mode by default (headless: true), can be overridden with E2E_HEADED=1
  * - Text-only reporters (list, line) - no HTML reports
- * - Configurable parallel execution: set PARALLEL_TESTS=6 for visual test watching
+ * - Configurable parallel execution: set PARALLEL_TESTS=4 for parallel test running
+ * - Isolated browser contexts per test for true parallelism
  *
  * Usage:
  * - Sequential headless (deploy): npm run e2e
  * - Sequential headed (debug): E2E_HEADED=1 npm run e2e
- * - Parallel (watch): PARALLEL_TESTS=6 npm run e2e
+ * - Parallel (4 workers): PARALLEL_TESTS=4 npm run e2e
  */
 
 // Check if parallel mode is requested
@@ -34,6 +35,12 @@ export default defineConfig({
   retries: 0,
   workers: parallelWorkers,
 
+  // Global timeout settings
+  timeout: 30000, // 30s per test (fail fast)
+  expect: {
+    timeout: 5000 // 5s for assertions (fail fast)
+  },
+
   // Text-only reporters (no HTML report generation)
   reporter: [
     ['list'],
@@ -46,8 +53,19 @@ export default defineConfig({
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
-    // Smaller viewport for parallel execution so windows fit on screen
+    extraHTTPHeaders: process.env.E2E_WORKER_INDEX
+      ? { 'x-e2e-worker': process.env.E2E_WORKER_INDEX }
+      : {},
+
+    // Viewport configuration
     viewport: isParallel ? { width: 800, height: 600 } : { width: 1280, height: 720 },
+
+    // Ensure each test has isolated state
+    storageState: undefined,
+
+    // Network configuration
+    navigationTimeout: 30000,
+    actionTimeout: 10000,
   },
 
   // Browser configuration
@@ -56,8 +74,13 @@ export default defineConfig({
       name: 'chrome',
       use: {
         ...devices['Desktop Chrome'],
-        channel: 'chrome',   // Use system Chrome, not Chromium
-        headless: !isHeaded, // Headless by default, headed if E2E_HEADED=1
+        channel: 'chrome',
+        headless: !isHeaded,
+
+        // Additional context options for isolation
+        contextOptions: {
+          ignoreHTTPSErrors: true,
+        },
       },
     },
   ],

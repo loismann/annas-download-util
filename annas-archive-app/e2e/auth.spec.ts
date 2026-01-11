@@ -13,7 +13,10 @@ import { test, expect } from '@playwright/test';
  */
 
 test.describe('Authentication Flow', () => {
-  const validAccessCode = process.env.E2E_ACCESS_CODE || '***REMOVED***';
+  const validAccessCode = process.env.E2E_ACCESS_CODE;
+  if (!validAccessCode) {
+    throw new Error('E2E_ACCESS_CODE is required to run auth tests.');
+  }
   const invalidAccessCode = 'invalid-code-12345';
 
   // Clear all state before each test for isolation

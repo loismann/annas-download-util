@@ -151,6 +151,7 @@ test-cache/
 *.js.map
 *.mjs
 *.cjs
+!annas-archive-app/scripts/*.js
 
 # --------------------------------------
 # Miscellaneous
@@ -188,6 +189,7 @@ publish/
 
 # Deployment scripts (contain server-specific paths and credentials)
 deploy.sh
+*.sh
 deployment-logs/
 
 # Personal tagging scripts (contain usernames and hostnames)
@@ -197,6 +199,10 @@ scripts/tag_pauls_books_rest.sh
 # All markdown files (may contain sensitive documentation)
 *.md
 *.MD
+!README.md
+!README.MD
+!**/README.md
+!**/README.MD
 
 # Documentation folder
 DOCS/

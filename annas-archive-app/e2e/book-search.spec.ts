@@ -17,6 +17,7 @@ type BookFixture = {
 
 const aiLiveEnabled = process.env.E2E_AI_LIVE === 'true';
 const e2eAccessCode = process.env.E2E_ACCESS_CODE;
+const isParallelRun = !!process.env.PARALLEL_TESTS;
 
 const baseBooks: BookFixture[] = [
   {
@@ -419,9 +420,10 @@ test.describe('Book Search', () => {
     await expect(page.locator('mat-option')).toContainText(['All', 'EPUB', 'MOBI', 'PDF']);
   });
 
-  test.describe('AI Live', () => {
+  test.describe.serial('AI Live', () => {
     test.skip(!aiLiveEnabled, 'E2E_AI_LIVE not enabled');
     test.skip(!e2eAccessCode, 'E2E_ACCESS_CODE not set for live AI tests');
+    test.skip(isParallelRun, 'AI live tests are disabled during parallel runs');
 
     test('Author suggestions should appear after typing stops', async ({ page }) => {
       await page.unroute('**/api/ai/suggest-authors');

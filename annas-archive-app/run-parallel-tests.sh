@@ -1,123 +1,132 @@
 #!/bin/bash
 
-# Parallel E2E Test Runner with Error Reporting
-#
-# This script runs E2E tests in parallel with visible browser windows
-# and provides detailed error output in the terminal.
+# Parallel E2E Test Runner (single frontend + per-worker API isolation)
 #
 # Usage:
 #   ./run-parallel-tests.sh [workers]
 #
-# Examples:
-#   ./run-parallel-tests.sh        # Run with 6 workers (default)
-#   ./run-parallel-tests.sh 4      # Run with 4 workers
-#   ./run-parallel-tests.sh 8      # Run with 8 workers
+# Environment:
+#   E2E_ACCESS_CODE         Access code for login
+#   E2E_AI_LIVE             Set to true to run live AI tests
+#   API_WORKER_BASE_PORT    Base port for API workers (default: 5101)
+#   AUTH_WORKER_BASE_PORT   Base port for auth workers (default: 5150)
+#   FRONTEND_PORT           Frontend port (default: 4200)
+#   API_PROXY_PORT          API proxy port (default: 5001)
+#   AUTH_PROXY_PORT         Auth proxy port (default: 5050)
 
 set -e
+set -o pipefail
 
-# Configuration
 WORKERS=${1:-6}
-TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-LOG_FILE="parallel-e2e-${TIMESTAMP}.log"
-BACKEND_PORT=5050
-FRONTEND_PORT=4200
-ACCESS_CODE="***REMOVED***"
+ACCESS_CODE=${E2E_ACCESS_CODE:-}
+if [ -z "$ACCESS_CODE" ]; then
+  echo "[parallel-e2e] ERROR: E2E_ACCESS_CODE is required" >&2
+  exit 1
+fi
 
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-NC='\033[0m' # No Color
-BOLD='\033[1m'
+API_WORKER_BASE_PORT=${API_WORKER_BASE_PORT:-5101}
+AUTH_WORKER_BASE_PORT=${AUTH_WORKER_BASE_PORT:-5150}
+FRONTEND_PORT=${FRONTEND_PORT:-4200}
+API_PROXY_PORT=${API_PROXY_PORT:-5001}
+AUTH_PROXY_PORT=${AUTH_PROXY_PORT:-5050}
+AI_LIVE=${E2E_AI_LIVE:-}
 
-# Track PIDs for cleanup
-BACKEND_PID=""
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+APP_DIR="$ROOT_DIR/annas-archive-app"
+API_DIR="$ROOT_DIR/annas-archive-api"
+LOG_DIR="$ROOT_DIR/deployment-logs/parallel-e2e-$(date +%Y%m%d-%H%M%S)"
+
+mkdir -p "$LOG_DIR"
+
+BACKEND_PIDS=()
 FRONTEND_PID=""
-STARTED_BACKEND=false
-STARTED_FRONTEND=false
+PROXY_PID=""
+TEST_PIDS=()
 
-# Cleanup function
 cleanup() {
-    echo ""
-    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${CYAN}Cleaning up...${NC}"
-    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+  echo ""
+  echo "[parallel-e2e] Cleaning up..."
 
-    if [ "$STARTED_FRONTEND" = true ] && [ -n "$FRONTEND_PID" ]; then
-        echo -e "${YELLOW}Stopping frontend server (PID: $FRONTEND_PID)...${NC}"
-        kill $FRONTEND_PID 2>/dev/null || true
-        pkill -P $FRONTEND_PID 2>/dev/null || true
-        sleep 1
-        lsof -ti:$FRONTEND_PORT | xargs kill -9 2>/dev/null || true
-    fi
+  for pid in "${TEST_PIDS[@]}"; do
+    kill "$pid" 2>/dev/null || true
+  done
 
-    if [ "$STARTED_BACKEND" = true ] && [ -n "$BACKEND_PID" ]; then
-        echo -e "${YELLOW}Stopping backend API (PID: $BACKEND_PID)...${NC}"
-        kill $BACKEND_PID 2>/dev/null || true
-        pkill -P $BACKEND_PID 2>/dev/null || true
-        sleep 1
-        lsof -ti:$BACKEND_PORT | xargs kill -9 2>/dev/null || true
-    fi
+  if [ -n "$FRONTEND_PID" ]; then
+    kill "$FRONTEND_PID" 2>/dev/null || true
+    pkill -P "$FRONTEND_PID" 2>/dev/null || true
+  fi
 
-    echo -e "${GREEN}Cleanup complete${NC}"
+  if [ -n "$PROXY_PID" ]; then
+    kill "$PROXY_PID" 2>/dev/null || true
+  fi
+
+  for pid in "${BACKEND_PIDS[@]}"; do
+    kill "$pid" 2>/dev/null || true
+    pkill -P "$pid" 2>/dev/null || true
+  done
+
+  for i in $(seq 0 $((WORKERS-1))); do
+    lsof -ti:$((API_WORKER_BASE_PORT+i)) | xargs kill -9 2>/dev/null || true
+    lsof -ti:$((AUTH_WORKER_BASE_PORT+i)) | xargs kill -9 2>/dev/null || true
+  done
+  lsof -ti:$FRONTEND_PORT | xargs kill -9 2>/dev/null || true
+  lsof -ti:$API_PROXY_PORT | xargs kill -9 2>/dev/null || true
+  lsof -ti:$AUTH_PROXY_PORT | xargs kill -9 2>/dev/null || true
+
+  echo "[parallel-e2e] Cleanup complete."
 }
 
-# Set up trap for cleanup
 trap cleanup EXIT INT TERM
 
-# Helper function to check if port is in use
-is_port_in_use() {
-    lsof -i:$1 >/dev/null 2>&1
+wait_for_url() {
+  local url=$1
+  local name=$2
+  local max_wait=${3:-60}
+
+  for i in $(seq 1 $max_wait); do
+    if curl -s "$url" >/dev/null 2>&1; then
+      echo "[parallel-e2e] $name ready: $url"
+      return 0
+    fi
+    sleep 1
+  done
+
+  echo "[parallel-e2e] ERROR: $name failed to start: $url"
+  return 1
 }
 
-# Helper function to wait for server
-wait_for_server() {
-    local url=$1
-    local name=$2
-    local max_wait=60
+echo "[parallel-e2e] Starting $WORKERS worker(s)..."
 
-    echo -e "${YELLOW}Waiting for $name to be ready...${NC}"
-    for i in $(seq 1 $max_wait); do
-        if curl -s "$url" >/dev/null 2>&1; then
-            echo -e "${GREEN}✓ $name is ready${NC}"
-            return 0
-        fi
-        sleep 1
-    done
+# Ensure proxy/front-end ports are free
+lsof -ti:$API_PROXY_PORT | xargs kill -9 2>/dev/null || true
+lsof -ti:$AUTH_PROXY_PORT | xargs kill -9 2>/dev/null || true
+lsof -ti:$FRONTEND_PORT | xargs kill -9 2>/dev/null || true
 
-    echo -e "${RED}✗ $name failed to start within ${max_wait}s${NC}"
-    return 1
-}
+# Start API workers
+for i in $(seq 0 $((WORKERS-1))); do
+  API_PORT=$((API_WORKER_BASE_PORT+i))
+  AUTH_PORT=$((AUTH_WORKER_BASE_PORT+i))
 
-# Print header
-clear
-echo -e "${BOLD}${CYAN}"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "       Parallel E2E Test Runner with Visual Monitoring       "
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo -e "${NC}"
-echo -e "${CYAN}Configuration:${NC}"
-echo -e "  • Workers:      ${BOLD}$WORKERS${NC} parallel tests"
-echo -e "  • Backend:      http://localhost:$BACKEND_PORT"
-echo -e "  • Frontend:     http://localhost:$FRONTEND_PORT"
-echo -e "  • Access Code:  $ACCESS_CODE"
-echo -e "  • Log File:     $LOG_FILE"
-echo ""
-echo -e "${YELLOW}Browser windows will open - use Rectangle or Mission Control to tile them${NC}"
-echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo ""
+  echo "[parallel-e2e] Worker $i ports: API=$API_PORT AUTH=$AUTH_PORT"
 
-# Check and start backend API
-echo -e "${BOLD}[1/3] Backend API${NC}"
-if is_port_in_use $BACKEND_PORT; then
-    echo -e "${GREEN}✓ Backend already running on port $BACKEND_PORT${NC}"
-else
-    echo -e "${YELLOW}Starting backend API...${NC}"
-    cd ../annas-archive-api
-    EPUB_CACHE_ROOT=../test-cache/epubs \
-    AI_CACHE_ROOT=../test-cache/ai \
+  lsof -ti:$API_PORT | xargs kill -9 2>/dev/null || true
+  lsof -ti:$AUTH_PORT | xargs kill -9 2>/dev/null || true
+
+  API_LOG="$LOG_DIR/api-worker-$i.log"
+  EPUB_CACHE_ROOT="$ROOT_DIR/test-cache/epubs/worker-$i"
+  AI_CACHE_ROOT="$ROOT_DIR/test-cache/ai/worker-$i"
+  LIBRARY_ROOT="$ROOT_DIR/test-cache/library/worker-$i"
+  QUIZ_STORAGE_ROOT="$ROOT_DIR/test-cache/quiz/worker-$i"
+  DOWNLOAD_TRACKING_PATH="$ROOT_DIR/test-cache/download-tracking/worker-$i.json"
+  mkdir -p "$EPUB_CACHE_ROOT" "$AI_CACHE_ROOT" "$LIBRARY_ROOT" "$QUIZ_STORAGE_ROOT" "$(dirname "$DOWNLOAD_TRACKING_PATH")"
+
+  (
+    cd "$API_DIR"
+    EPUB_CACHE_ROOT="$EPUB_CACHE_ROOT" \
+    AI_CACHE_ROOT="$AI_CACHE_ROOT" \
+    LIBRARY_ROOT="$LIBRARY_ROOT" \
+    Quiz__StoragePath="$QUIZ_STORAGE_ROOT" \
+    DownloadTracking__StoragePath="$DOWNLOAD_TRACKING_PATH" \
     Auth__AccessCodes__0__Code="$ACCESS_CODE" \
     Auth__AccessCodes__0__Name="E2E Test" \
     Auth__AccessCodes__0__IsAdmin=true \
@@ -125,121 +134,73 @@ else
     Auth__TokenExpirationDays=1 \
     E2E_LOGIN_RATE_LIMIT=100 \
     E2E_API_RATE_LIMIT=200 \
-    dotnet run --project src/AnnasArchive.API/AnnasArchive.Api.csproj --urls http://localhost:$BACKEND_PORT >>"$LOG_FILE" 2>&1 &
-    BACKEND_PID=$!
-    STARTED_BACKEND=true
-    cd ../annas-archive-app
+    dotnet run --project src/AnnasArchive.API/AnnasArchive.Api.csproj --urls "http://localhost:$AUTH_PORT;http://localhost:$API_PORT" >>"$API_LOG" 2>&1 &
+    echo $! > "$LOG_DIR/api-worker-$i.pid"
+  )
+  BACKEND_PIDS+=($(cat "$LOG_DIR/api-worker-$i.pid"))
 
-    wait_for_server "http://localhost:$BACKEND_PORT/health" "Backend API" || exit 1
-fi
-echo ""
+  wait_for_url "http://localhost:$API_PORT/swagger" "API worker $i" 60
 
-# Check and start frontend
-echo -e "${BOLD}[2/3] Frontend Application${NC}"
-if is_port_in_use $FRONTEND_PORT; then
-    echo -e "${GREEN}✓ Frontend already running on port $FRONTEND_PORT${NC}"
+done
+
+# Start proxy (single instance)
+PROXY_LOG="$LOG_DIR/e2e-proxy.log"
+(
+  cd "$APP_DIR"
+  E2E_API_PROXY_PORT="$API_PROXY_PORT" \
+  E2E_AUTH_PROXY_PORT="$AUTH_PROXY_PORT" \
+  E2E_API_TARGET_BASE_PORT="$API_WORKER_BASE_PORT" \
+  E2E_AUTH_TARGET_BASE_PORT="$AUTH_WORKER_BASE_PORT" \
+  node scripts/e2e-proxy-server.js >>"$PROXY_LOG" 2>&1 &
+  echo $! > "$LOG_DIR/e2e-proxy.pid"
+)
+PROXY_PID=$(cat "$LOG_DIR/e2e-proxy.pid")
+
+wait_for_url "http://localhost:$API_PROXY_PORT/swagger" "API proxy" 30
+
+# Start frontend (single instance)
+FRONTEND_LOG="$LOG_DIR/frontend.log"
+(
+  cd "$APP_DIR"
+  npm run start >>"$FRONTEND_LOG" 2>&1 &
+  echo $! > "$LOG_DIR/frontend.pid"
+)
+FRONTEND_PID=$(cat "$LOG_DIR/frontend.pid")
+
+wait_for_url "http://localhost:$FRONTEND_PORT" "Frontend" 90
+
+echo "[parallel-e2e] Launching Playwright shards..."
+
+for i in $(seq 0 $((WORKERS-1))); do
+  SHARD="$((i+1))/$WORKERS"
+  TEST_LOG="$LOG_DIR/tests-worker-$i.log"
+
+  echo "[parallel-e2e] Worker $i test shard $SHARD -> baseURL=http://localhost:$FRONTEND_PORT (x-e2e-worker: $i)"
+
+  (
+    cd "$APP_DIR"
+    E2E_BASE_URL="http://localhost:$FRONTEND_PORT" \
+    E2E_ACCESS_CODE="$ACCESS_CODE" \
+    E2E_WORKER_INDEX="$i" \
+    E2E_AI_LIVE="$AI_LIVE" \
+    PARALLEL_TESTS="$WORKERS" \
+    npx playwright test --workers=1 --shard="$SHARD" --reporter=list >>"$TEST_LOG" 2>&1
+  ) &
+  TEST_PIDS+=($!)
+
+done
+
+EXIT_CODE=0
+for pid in "${TEST_PIDS[@]}"; do
+  if ! wait "$pid"; then
+    EXIT_CODE=1
+  fi
+done
+
+if [ $EXIT_CODE -eq 0 ]; then
+  echo "[parallel-e2e] All shards passed. Logs: $LOG_DIR"
 else
-    echo -e "${YELLOW}Starting frontend dev server...${NC}"
-    npm run start >>"$LOG_FILE" 2>&1 &
-    FRONTEND_PID=$!
-    STARTED_FRONTEND=true
-
-    wait_for_server "http://localhost:$FRONTEND_PORT" "Frontend" || exit 1
-fi
-echo ""
-
-# Run tests
-echo -e "${BOLD}[3/3] Running E2E Tests${NC}"
-echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo ""
-echo -e "${YELLOW}Watch the browser windows - tests running in parallel!${NC}"
-echo ""
-
-# Run tests and capture output
-TEST_OUTPUT=$(mktemp)
-E2E_ACCESS_CODE="$ACCESS_CODE" PARALLEL_TESTS=$WORKERS npm run e2e 2>&1 | tee "$TEST_OUTPUT"
-TEST_EXIT_CODE=${PIPESTATUS[0]}
-
-echo ""
-echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-
-# Check results
-if [ $TEST_EXIT_CODE -eq 0 ]; then
-    echo -e "${GREEN}${BOLD}"
-    echo "  ✓ ALL TESTS PASSED! "
-    echo -e "${NC}"
-    PASSED_COUNT=$(grep -c "✓" "$TEST_OUTPUT" || echo "0")
-    echo -e "${GREEN}Passed: $PASSED_COUNT tests${NC}"
-else
-    echo -e "${RED}${BOLD}"
-    echo "  ✗ TESTS FAILED "
-    echo -e "${NC}"
-
-    # Extract failure information
-    FAILED_COUNT=$(grep -c "✘" "$TEST_OUTPUT" || echo "0")
-    PASSED_COUNT=$(grep -c "✓" "$TEST_OUTPUT" || echo "0")
-
-    echo -e "${GREEN}Passed: $PASSED_COUNT tests${NC}"
-    echo -e "${RED}Failed: $FAILED_COUNT tests${NC}"
-    echo ""
-
-    # Show failed test names
-    echo -e "${RED}${BOLD}Failed Tests:${NC}"
-    echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    grep "✘" "$TEST_OUTPUT" | sed 's/^/  /' || echo "  (Could not extract test names)"
-    echo ""
-
-    # Find and display error details
-    echo -e "${YELLOW}${BOLD}Error Details:${NC}"
-    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-
-    # Look for error context files
-    ERROR_CONTEXTS=$(find test-results -name "error-context.md" 2>/dev/null || true)
-
-    if [ -n "$ERROR_CONTEXTS" ]; then
-        while IFS= read -r error_file; do
-            echo ""
-            echo -e "${CYAN}Error from: $(dirname "$error_file")${NC}"
-            echo -e "${CYAN}────────────────────────────────────────────────────────────${NC}"
-            cat "$error_file" | head -50
-            echo -e "${CYAN}────────────────────────────────────────────────────────────${NC}"
-        done <<< "$ERROR_CONTEXTS"
-    else
-        # Fallback: show error sections from test output
-        awk '/Error:|Error Context:|Call log:/{flag=1} flag{print} /^[[:space:]]*$/{if(flag)flag=0}' "$TEST_OUTPUT" | head -100
-    fi
-    echo ""
-
-    # Show traces if available
-    TRACE_FILES=$(find test-results -name "trace.zip" 2>/dev/null | head -3 || true)
-    if [ -n "$TRACE_FILES" ]; then
-        echo -e "${YELLOW}${BOLD}View Detailed Traces:${NC}"
-        echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-        while IFS= read -r trace_file; do
-            echo -e "  ${BLUE}npx playwright show-trace $trace_file${NC}"
-        done <<< "$TRACE_FILES"
-        echo ""
-    fi
-
-    # Show screenshots if available
-    SCREENSHOT_FILES=$(find test-results -name "test-failed-*.png" 2>/dev/null | head -3 || true)
-    if [ -n "$SCREENSHOT_FILES" ]; then
-        echo -e "${YELLOW}${BOLD}View Screenshots:${NC}"
-        echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-        while IFS= read -r screenshot; do
-            echo -e "  ${BLUE}open $screenshot${NC}"
-        done <<< "$SCREENSHOT_FILES"
-        echo ""
-    fi
+  echo "[parallel-e2e] One or more shards failed. Logs: $LOG_DIR"
 fi
 
-echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${BOLD}Full Log:${NC} $LOG_FILE"
-echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo ""
-
-# Clean up temp file
-rm -f "$TEST_OUTPUT"
-
-# Exit with test exit code
-exit $TEST_EXIT_CODE
+exit $EXIT_CODE

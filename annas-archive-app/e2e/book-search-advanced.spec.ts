@@ -67,10 +67,15 @@ test.describe('Book Search - Advanced Features', () => {
 
       const aiToggle = page.locator('button').filter({ has: page.locator('mat-icon', { hasText: 'smart_toy' }) });
       await aiToggle.click();
-      await page.locator('textarea[name="aiSearchQuery"]').fill('Top sci-fi books about empires');
+      const aiTextarea = page.locator('textarea[name="aiSearchQuery"]');
+      await expect(aiTextarea).toBeVisible();
+      await aiTextarea.fill('Top sci-fi books about empires');
+      const aiResponse = page.waitForResponse('**/api/ai/book-search');
       await page.locator('button[type="submit"]').click();
-
-      await expect(page.locator('mat-dialog-title')).toContainText('AI Book Search');
+      await aiResponse;
+      await expect(page.locator('.modal-layout')).toBeVisible();
+      const dialogTitle = page.locator('h2[mat-dialog-title], .mat-dialog-title');
+      await expect(dialogTitle).toContainText('AI Book Search');
       await expect(page.locator('.book-card').first()).toBeVisible();
       expect(aiSearchCalled).toBe(true);
     });

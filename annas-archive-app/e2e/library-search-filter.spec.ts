@@ -206,8 +206,8 @@ test.describe('Library - Search & Filter', () => {
 
   test('Genre count filter (less than/more than N) should work', async ({ page }) => {
     await openAdminPanel(page);
-    const genreCountRow = page.locator('label.admin-row').filter({ hasText: 'Book has' });
-    await genreCountRow.locator('input[type="checkbox"]').check();
+    const genreCountRow = page.locator('label.admin-row').filter({ has: page.locator('select') });
+    await genreCountRow.locator('input[type="checkbox"]').first().check();
     await genreCountRow.locator('select').selectOption('less');
     await genreCountRow.locator('input[type="number"]').fill('3');
     await expect(page.locator('.library-card')).toHaveCount(2);

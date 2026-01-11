@@ -138,8 +138,16 @@ test.describe('Authentication Flow', () => {
     // Should stay on login page
     await expect(page).toHaveURL(/#\/login/, { timeout: 5000 });
 
+    // Wait for login response to settle
+    await page.waitForResponse(
+      response => response.url().includes('/api/auth/login'),
+      { timeout: 10000 }
+    );
+
     // Should show error message
-    await expect(page.locator('.error-message, mat-error, .login-error')).toBeVisible({ timeout: 5000 });
+    const errorMessage = page.locator('.error-message');
+    await expect(errorMessage).toBeVisible({ timeout: 10000 });
+    await expect(errorMessage).toContainText(/Invalid access code/i);
 
     // Should not have token
     const token = await page.evaluate(() => localStorage.getItem('auth_token'));

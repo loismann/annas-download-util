@@ -186,12 +186,32 @@ async function mockSearch(page: Page, books: BookFixture[]): Promise<void> {
 
 async function openMatSelect(page: Page, labelText: string): Promise<void> {
   const field = page.locator('mat-form-field', { has: page.locator(`mat-label:text("${labelText}")`) });
-  await field.locator('mat-select').click({ force: true });
+  const select = field.locator('mat-select');
+  const options = page.locator('.cdk-overlay-container mat-option');
+  await select.scrollIntoViewIfNeeded();
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    await select.click({ force: true });
+    try {
+      await expect(options.first()).toBeVisible({ timeout: 3000 });
+      return;
+    } catch {
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(200);
+    }
+  }
+
+  await expect(options.first()).toBeVisible({ timeout: 5000 });
 }
 
 async function selectMatOption(page: Page, labelText: string, optionText: string): Promise<void> {
   await openMatSelect(page, labelText);
-  await page.locator('mat-option', { hasText: optionText }).click();
+  const overlayOptions = page.locator('.cdk-overlay-container mat-option');
+  if (optionText === 'All') {
+    await overlayOptions.first().click();
+    return;
+  }
+  await overlayOptions.filter({ hasText: optionText }).first().click();
 }
 
 test.describe('Book Search', () => {

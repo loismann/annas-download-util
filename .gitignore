@@ -18,6 +18,7 @@ Desktop.ini
 
 # IDEs
 .vscode/
+.vscode-extension/
 .idea/
 *.suo
 *.user
@@ -77,18 +78,33 @@ PublishProfiles/
 *.orig
 
 # --------------------------------------
-# Node / Angular
+# Python (Not used in this project)
 # --------------------------------------
-# Node modules
-node_modules/
-jspm_packages/
-
-# Python virtual environments
+# Virtual environments
 .venv/
 .venv_*/
 venv/
 env/
 ENV/
+
+# Python files
+*.py
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+*.egg-info/
+.python-version
+requirements.txt
+pyproject.toml
+setup.py
+
+# --------------------------------------
+# Node / Angular
+# --------------------------------------
+# Node modules
+node_modules/
+jspm_packages/
 
 # Build outputs
 dist/
@@ -187,10 +203,12 @@ publish/
 # Deployment guide with examples (optional - contains example access codes)
 # DEPLOYMENT_GUIDE.md
 
-# Deployment scripts (contain server-specific paths and credentials)
-deploy.sh
-*.sh
+# Deployment logs and test logs
 deployment-logs/
+test-logs/
+
+# Shell scripts are ignored by default (may contain sensitive data)
+*.sh
 
 # Personal tagging scripts (contain usernames and hostnames)
 scripts/tag_dads_books.sh

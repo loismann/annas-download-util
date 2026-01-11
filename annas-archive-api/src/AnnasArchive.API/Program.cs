@@ -4068,17 +4068,68 @@ Return format (JSON only, no explanation):
                 temperature: temp
             );
 
-            var response = await http.PostAsJsonAsync("https://api.openai.com/v1/chat/completions", payload);
-            if (!response.IsSuccessStatusCode)
+            // Retry logic for rate limiting (429 errors)
+            HttpResponseMessage? response = null;
+            int maxRetries = 3;
+            int retryCount = 0;
+            double baseDelaySeconds = 1.5;
+
+            while (retryCount <= maxRetries)
             {
-                var body = await response.Content.ReadAsStringAsync();
-                Console.WriteLine($"❌ OpenAI chunk detection failed: {body}");
+                response = await http.PostAsJsonAsync("https://api.openai.com/v1/chat/completions", payload);
+
+                if (response.IsSuccessStatusCode)
+                {
+                    break; // Success, exit retry loop
+                }
+
+                if (response.StatusCode == System.Net.HttpStatusCode.TooManyRequests && retryCount < maxRetries)
+                {
+                    var body = await response.Content.ReadAsStringAsync();
+                    Console.WriteLine($"⚠️  Rate limited (attempt {retryCount + 1}/{maxRetries + 1}): {body}");
+
+                    // Extract retry-after time from error message
+                    double retryAfterSeconds = baseDelaySeconds * Math.Pow(2, retryCount); // Exponential backoff
+                    try
+                    {
+                        // Parse "Please try again in X.XXs" from error message
+                        var match = System.Text.RegularExpressions.Regex.Match(body, @"try again in ([\d.]+)s");
+                        if (match.Success && double.TryParse(match.Groups[1].Value, out var parsedDelay))
+                        {
+                            retryAfterSeconds = Math.Max(parsedDelay, retryAfterSeconds);
+                        }
+                    }
+                    catch { /* Use exponential backoff if parsing fails */ }
+
+                    Console.WriteLine($"⏳ Waiting {retryAfterSeconds:F2}s before retry...");
+                    await Task.Delay(TimeSpan.FromSeconds(retryAfterSeconds));
+                    retryCount++;
+                    continue;
+                }
+
+                // Non-retryable error
+                var errorBody = await response.Content.ReadAsStringAsync();
+                Console.WriteLine($"❌ OpenAI chunk detection failed: {errorBody}");
                 await ServerSentEventsHelper.SendEventAsync(context.Response, new
                 {
                     stage = "error",
                     stepNumber = chunkIndex,
                     totalSteps = estimatedChunks,
                     message = $"Detection failed: {(int)response.StatusCode}"
+                });
+                return;
+            }
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var body = await response.Content.ReadAsStringAsync();
+                Console.WriteLine($"❌ OpenAI chunk detection failed after {maxRetries} retries: {body}");
+                await ServerSentEventsHelper.SendEventAsync(context.Response, new
+                {
+                    stage = "error",
+                    stepNumber = chunkIndex,
+                    totalSteps = estimatedChunks,
+                    message = $"Detection failed after {maxRetries} retries (rate limited)"
                 });
                 return;
             }

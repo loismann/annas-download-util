@@ -50,7 +50,7 @@ test.describe('Authentication Flow', () => {
   test('should redirect to login page when token expires', async ({ page, context }) => {
     // Start fresh - clear everything and reload
     await context.clearCookies();
-    await page.goto('/login');
+    await page.goto('/login', { timeout: 30000 });
 
     // Clear storage
     await page.evaluate(() => {
@@ -60,17 +60,30 @@ test.describe('Authentication Flow', () => {
 
     // Login fresh
     const codeInput = page.locator('input[name="code"]');
-    await expect(codeInput).toBeVisible();
+    await expect(codeInput).toBeVisible({ timeout: 20000 });
     await codeInput.fill(validAccessCode);
 
     const signInButton = page.locator('button[type="submit"]');
-    await expect(signInButton).toBeEnabled();
+    await expect(signInButton).toBeEnabled({ timeout: 10000 });
     await signInButton.click();
 
-    await expect(page).toHaveURL(/#\/search/, { timeout: 10000 });
+    // Wait for successful login redirect
+    await expect(page).toHaveURL(/#\/search/, { timeout: 20000 });
 
-    // Wait for page to fully load
-    await page.waitForLoadState('networkidle');
+    // Wait for DOM to be loaded (don't use networkidle - the page has polling requests)
+    await page.waitForLoadState('domcontentloaded', { timeout: 10000 });
+
+    // Wait for search page component to be visible
+    await expect(page.locator('app-book-search')).toBeVisible({ timeout: 15000 });
+
+    // Extra wait to ensure auth state is fully initialized
+    await page.waitForTimeout(2000);
+
+    // Verify we have a valid token before proceeding
+    const hasToken = await page.evaluate(() => {
+      return localStorage.getItem('auth_token') !== null;
+    });
+    expect(hasToken).toBeTruthy();
 
     // Simulate token expiration by replacing token with expired one
     await page.evaluate(() => {
@@ -80,10 +93,11 @@ test.describe('Authentication Flow', () => {
     });
 
     // Try to navigate to a protected route
-    await page.goto('/#/library');
+    await page.goto('/#/library', { timeout: 30000 });
 
-    // Wait for potential redirect
-    await page.waitForLoadState('networkidle');
+    // Wait for DOM to load and potential redirect to complete
+    await page.waitForLoadState('domcontentloaded', { timeout: 10000 });
+    await page.waitForTimeout(3000);
 
     // The app might stay on library or redirect to login depending on implementation
     // We just verify the expired token doesn't grant access
@@ -261,7 +275,7 @@ test.describe('Authentication Flow', () => {
 
   test('should allow admin access code to access admin-only routes', async ({ page }) => {
     // Login with admin code
-    await page.goto('/login');
+    await page.goto('/login', { timeout: 30000 });
 
     // Clear storage
     await page.evaluate(() => {
@@ -270,25 +284,48 @@ test.describe('Authentication Flow', () => {
     });
 
     const codeInput = page.locator('input[name="code"]');
+    await expect(codeInput).toBeVisible({ timeout: 20000 });
     await codeInput.fill(validAccessCode); // Assuming this is an admin code
 
     const signInButton = page.locator('button[type="submit"]');
+    await expect(signInButton).toBeEnabled({ timeout: 10000 });
     await signInButton.click();
 
-    await expect(page).toHaveURL(/#\/search/, { timeout: 10000 });
+    // Wait for successful login redirect
+    await expect(page).toHaveURL(/#\/search/, { timeout: 20000 });
 
-    // Wait for app to be fully initialized after login
-    await page.waitForLoadState('networkidle');
+    // Wait for DOM to be loaded (don't use networkidle - the page has polling requests)
+    await page.waitForLoadState('domcontentloaded', { timeout: 10000 });
+
+    // Wait for search page component to be visible
+    await expect(page.locator('app-book-search')).toBeVisible({ timeout: 15000 });
+
+    // Extra wait to ensure auth state and admin permissions are fully initialized
+    await page.waitForTimeout(2000);
+
+    // Verify authentication token and admin status are set
+    const authState = await page.evaluate(() => {
+      const token = localStorage.getItem('auth_token');
+      return {
+        hasToken: token !== null,
+        tokenLength: token?.length || 0
+      };
+    });
+    expect(authState.hasToken).toBeTruthy();
+    expect(authState.tokenLength).toBeGreaterThan(50);
 
     // Navigate to admin-only route (quiz page requires admin)
-    await page.goto('/#/quiz');
+    await page.goto('/#/quiz', { timeout: 30000 });
 
-    // Wait for navigation to complete
-    await page.waitForLoadState('networkidle');
+    // Wait for DOM to load and quiz component to render
+    await page.waitForLoadState('domcontentloaded', { timeout: 10000 });
 
     // Should be able to access quiz page (admin-only)
-    await expect(page).toHaveURL(/#\/quiz/, { timeout: 5000 });
-    await expect(page.locator('app-quiz')).toBeVisible();
+    await expect(page).toHaveURL(/#\/quiz/, { timeout: 15000 });
+    await expect(page.locator('app-quiz')).toBeVisible({ timeout: 15000 });
+
+    // Extra wait to ensure quiz component is fully initialized
+    await page.waitForTimeout(1000);
   });
 
   // test('should redirect non-admin users when accessing admin-only routes', async ({ page }) => {
@@ -343,9 +380,17 @@ test.describe('Authentication Flow', () => {
     for (let i = 0; i < 3; i++) {
       await codeInput.clear();
       await codeInput.fill(`invalid-attempt-${i}`);
-      await signInButton.click();
 
-      // Wait for error message to appear
+      // Wait for the login API call to complete before checking for error
+      const responsePromise = page.waitForResponse(
+        response => response.url().includes('/api/auth/login') && response.status() === 401,
+        { timeout: 15000 }
+      );
+
+      await signInButton.click();
+      await responsePromise;
+
+      // Now error message should be visible
       await expect(page.locator('.error-message, mat-error, .login-error')).toBeVisible({ timeout: 3000 });
     }
 

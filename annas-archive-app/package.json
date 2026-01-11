@@ -9,11 +9,10 @@
     "watch": "ng build --watch --configuration development",
     "test": "ng test",
     "serve:ssr:annas-archive-app": "node dist/annas-archive-app/server/server.mjs",
-    "e2e": "playwright test",
-    "e2e:headed": "playwright test --headed",
-    "e2e:debug": "playwright test --debug",
-    "e2e:parallel": "PARALLEL_TESTS=6 playwright test",
-    "e2e:watch": "PARALLEL_TESTS=6 playwright test --reporter=list"
+    "test:e2e:series": "/Users/paulferrer/Documents/personal_dev/annas-download-util/test-e2e-series.sh",
+    "test:e2e:parallel": "/Users/paulferrer/Documents/personal_dev/annas-download-util/test-e2e-parallel.sh",
+    "deploy:full": "/Users/paulferrer/Documents/personal_dev/annas-download-util/deploy-full.sh",
+    "deploy:skip-tests": "/Users/paulferrer/Documents/personal_dev/annas-download-util/deploy-skip-tests.sh"
   },
   "private": true,
   "dependencies": {

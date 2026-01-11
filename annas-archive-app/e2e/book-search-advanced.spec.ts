@@ -7,7 +7,6 @@ test.describe('Book Search - Advanced Features', () => {
   }
 
   const aiLiveEnabled = process.env.E2E_AI_LIVE === 'true';
-  const isParallelRun = !!process.env.PARALLEL_TESTS;
 
   const login = async (page: any) => {
     await page.goto('/login');
@@ -126,7 +125,6 @@ test.describe('Book Search - Advanced Features', () => {
 
   test.describe.serial('Related Books Modal (GPT-4 Live)', () => {
     test.skip(!aiLiveEnabled, 'E2E_AI_LIVE not enabled');
-    test.skip(isParallelRun, 'AI live tests are disabled during parallel runs');
 
     test('Related books should show other series by same author', async ({ page }) => {
       await page.locator('input[name="searchTerm"]').fill('Foundation');
@@ -135,8 +133,14 @@ test.describe('Book Search - Advanced Features', () => {
       await openAuthorSelect(page);
       await page.locator('mat-option').nth(1).click();
 
-      await page.locator('button').filter({ hasText: 'Find Related Books' }).click();
-      await page.waitForResponse('**/api/ai/related-books');
+      // Wait for button to be enabled before clicking
+      const relatedBooksButton = page.locator('button').filter({ hasText: 'Find Related Books' });
+      await expect(relatedBooksButton).toBeEnabled({ timeout: 5000 });
+
+      await relatedBooksButton.click();
+
+      // OpenAI API can take a while - increase timeout to 60s
+      await page.waitForResponse('**/api/ai/related-books', { timeout: 60000 });
       await expect(page.locator('.loading-state')).not.toBeVisible({ timeout: 15000 });
 
       await expect(page.locator('.modal-layout')).toBeVisible();
@@ -149,8 +153,14 @@ test.describe('Book Search - Advanced Features', () => {
       await openAuthorSelect(page);
       await page.locator('mat-option').nth(1).click();
 
-      await page.locator('button').filter({ hasText: 'Find Related Books' }).click();
-      await page.waitForResponse('**/api/ai/related-books');
+      // Wait for button to be enabled before clicking
+      const relatedBooksButton = page.locator('button').filter({ hasText: 'Find Related Books' });
+      await expect(relatedBooksButton).toBeEnabled({ timeout: 5000 });
+
+      await relatedBooksButton.click();
+
+      // OpenAI API can take a while - increase timeout to 60s
+      await page.waitForResponse('**/api/ai/related-books', { timeout: 60000 });
       await expect(page.locator('.loading-state')).not.toBeVisible({ timeout: 15000 });
 
       const searchButtons = page.locator('.book-card button').filter({ hasText: /Search this book/i });

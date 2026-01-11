@@ -17,7 +17,6 @@ type BookFixture = {
 
 const aiLiveEnabled = process.env.E2E_AI_LIVE === 'true';
 const e2eAccessCode = process.env.E2E_ACCESS_CODE;
-const isParallelRun = !!process.env.PARALLEL_TESTS;
 
 const baseBooks: BookFixture[] = [
   {
@@ -415,10 +414,10 @@ test.describe('Book Search', () => {
     await runSearch(page, 'Foundation');
 
     await selectMatOption(page, 'Format', 'EPUB');
-    await expect(page.locator('.book-card')).toHaveCount(1);
+    await expect(page.locator('.book-card')).toHaveCount(1, { timeout: 10000 });
 
     await selectMatOption(page, 'Format', 'All');
-    await expect(page.locator('.book-card')).toHaveCount(3);
+    await expect(page.locator('.book-card')).toHaveCount(3, { timeout: 10000 });
   });
 
   test('Search results should update when changing filters', async ({ page }) => {
@@ -427,10 +426,10 @@ test.describe('Book Search', () => {
     await runSearch(page, 'Foundation');
 
     await selectMatOption(page, 'Format', 'EPUB');
-    await expect(page.locator('.book-card')).toHaveCount(1);
+    await expect(page.locator('.book-card')).toHaveCount(1, { timeout: 10000 });
 
     await selectMatOption(page, 'Format', 'PDF');
-    await expect(page.locator('.book-card')).toHaveCount(1);
+    await expect(page.locator('.book-card')).toHaveCount(1, { timeout: 10000 });
     await expect(page.locator('.book-card mat-card-content')).toContainText('Format: PDF');
   });
 
@@ -443,7 +442,6 @@ test.describe('Book Search', () => {
   test.describe.serial('AI Live', () => {
     test.skip(!aiLiveEnabled, 'E2E_AI_LIVE not enabled');
     test.skip(!e2eAccessCode, 'E2E_ACCESS_CODE not set for live AI tests');
-    test.skip(isParallelRun, 'AI live tests are disabled during parallel runs');
 
     test('Author suggestions should appear after typing stops', async ({ page }) => {
       await page.unroute('**/api/ai/suggest-authors');

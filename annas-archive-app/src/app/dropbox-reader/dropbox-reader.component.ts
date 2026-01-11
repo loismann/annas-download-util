@@ -21,6 +21,7 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatDialog } from '@angular/material/dialog';
 import { ActivatedRoute, Router } from '@angular/router';
 import { CharacterGraphModalComponent } from '../character-graph-modal/character-graph-modal.component';
+import { ConfirmDialogComponent } from '../components/confirm-dialog/confirm-dialog.component';
 
 import {
   DropboxBookSearchResult,
@@ -234,6 +235,22 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
     this.vocabFilters = this.vocabularyService.getBookFilters();
     this.timeoutIds.push(setTimeout(() => this.recalcPageSize(), 0));
     this.refreshTokenUsage();
+
+    // Subscribe to vocabulary changes for real-time updates
+    // Always keep lists in sync so they're ready when modal opens
+    this.vocabularyService.knownWords$
+      .pipe(takeUntil(this.destroy$))
+      .subscribe(() => {
+        this.refreshVocabLists();
+        this.vocabFilters = this.vocabularyService.getBookFilters();
+      });
+
+    this.vocabularyService.studyWords$
+      .pipe(takeUntil(this.destroy$))
+      .subscribe(() => {
+        this.refreshVocabLists();
+        this.vocabFilters = this.vocabularyService.getBookFilters();
+      });
   }
 
   ngOnDestroy(): void {
@@ -1700,6 +1717,12 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
       this.vocabularyService.registerBook(this.selectedBookPath, this.selectedBook.title);
     }
     this.vocabFilters = this.vocabularyService.getBookFilters();
+
+    // Auto-select the currently loaded book in the filter if available
+    if (this.selectedBookPath && this.vocabFilters.some(f => f.id === this.selectedBookPath)) {
+      this.vocabFilter = this.selectedBookPath;
+    }
+
     this.refreshVocabLists();
     this.loadFlashcards();
     this.showVocabModal = true;
@@ -1707,6 +1730,19 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
 
   closeVocabModal(): void {
     this.showVocabModal = false;
+  }
+
+  onModalOverlayClick(event: MouseEvent): void {
+    // Close modal when clicking the overlay (but not the modal itself)
+    this.closeVocabModal();
+  }
+
+  @HostListener('document:keydown.escape', ['$event'])
+  handleEscapeKey(event: KeyboardEvent): void {
+    if (this.showVocabModal) {
+      event.preventDefault();
+      this.closeVocabModal();
+    }
   }
 
   openCharacterGraphModal(): void {
@@ -1739,12 +1775,21 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
   }
 
   moveKnownToStudy(term: string): void {
-    this.vocabularyService.markAsUnknown(term, '', this.selectedBookPath ?? undefined);
+    // Use the vocab filter (selected book in modal) if available, otherwise use currently loaded book
+    const bookId = this.vocabFilter !== 'all' ? this.vocabFilter : this.selectedBookPath ?? undefined;
+
+    // Retrieve cached definition if available
+    const cachedDefinition = this.vocabularyService.getCachedDefinition(term) || '';
+    console.log(`🔄 [moveKnownToStudy] Moving '${term}' to study with cached definition: '${cachedDefinition}'`);
+
+    this.vocabularyService.markAsUnknown(term, cachedDefinition, bookId);
     this.refreshVocabLists();
   }
 
   moveStudyToKnown(term: string): void {
-    this.vocabularyService.markAsKnown(term, this.selectedBookPath ?? undefined);
+    // Use the vocab filter (selected book in modal) if available, otherwise use currently loaded book
+    const bookId = this.vocabFilter !== 'all' ? this.vocabFilter : this.selectedBookPath ?? undefined;
+    this.vocabularyService.markAsKnown(term, bookId);
     this.refreshVocabLists();
   }
 
@@ -1860,6 +1905,21 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
     });
   }
 
+  deleteFlashcard(card: FlashcardItem): void {
+    // Use the vocab filter (selected book in modal) if available, otherwise use currently loaded book
+    const bookPath = this.vocabFilter !== 'all' ? this.vocabFilter : this.selectedBookPath;
+    if (!bookPath) return;
+
+    this.api.deleteFlashcard(bookPath, card.term)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: () => {
+          this.flashcards = this.flashcards.filter(c => c.term !== card.term);
+        },
+        error: () => {}
+      });
+  }
+
   learnMore(item: { term: string; definition: string }): void {
     if (this.loadingLearnMore) return;
     this.loadingLearnMore = true;
@@ -1893,12 +1953,20 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
   }
 
   makeFlashcard(item: { term: string; definition: string }): void {
-    if (!this.selectedBookPath || this.loadingFlashcard) return;
+    if (this.loadingFlashcard) return;
+
+    // Use the current book from reader, or fall back to vocab filter if no book is selected
+    const bookPath = this.selectedBookPath || (this.vocabFilter !== 'all' ? this.vocabFilter : null);
+    if (!bookPath) {
+      console.warn('No book selected for flashcard creation');
+      return;
+    }
+
     this.loadingFlashcard = true;
     const payload = {
       term: item.term,
       definition: item.definition,
-      dropboxPath: this.selectedBookPath,
+      dropboxPath: bookPath,
       bookTitle: this.selectedBook?.title ?? undefined,
       context: this.analysisText ?? undefined,
       saveToLibrary: true
@@ -1949,6 +2017,102 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
   onVocabFilterChange(id: string): void {
     this.vocabFilter = id;
     this.refreshVocabLists();
+
+    // Also reload flashcards based on the filter
+    if (id === 'all') {
+      // Show flashcards for the currently open book
+      this.loadFlashcards();
+    } else {
+      // Show flashcards for the filtered book
+      this.loadFlashcardsForBook(id);
+    }
+  }
+
+  private loadFlashcardsForBook(bookPath: string): void {
+    if (!bookPath) {
+      this.flashcards = [];
+      return;
+    }
+    this.api.getFlashcards(bookPath)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: cards => (this.flashcards = cards || []),
+        error: () => (this.flashcards = [])
+      });
+  }
+
+  deleteSelectedBook(): void {
+    if (!this.vocabFilter || this.vocabFilter === 'all') {
+      return;
+    }
+
+    const bookName = this.vocabFilters.find(f => f.id === this.vocabFilter)?.name || this.vocabFilter;
+
+    const dialogRef = this.dialog.open(ConfirmDialogComponent, {
+      width: '450px',
+      data: {
+        title: 'Delete Book Vocabulary',
+        message: `Delete all vocabulary words from "${bookName}"?\n\nThis will remove all known words, study words, and flashcards associated with this book. This action cannot be undone.`,
+        confirmText: 'Delete',
+        cancelText: 'Cancel',
+        isDanger: true
+      }
+    });
+
+    dialogRef.afterClosed().subscribe(confirmed => {
+      if (!confirmed) {
+        return;
+      }
+
+      // Delete vocabulary for the book
+      this.vocabularyService.deleteBook(this.vocabFilter, (success, message) => {
+        if (success) {
+          console.log(`✅ ${message}`);
+
+          // Delete flashcards for the book
+          this.api.clearFlashcards(this.vocabFilter)
+            .pipe(takeUntil(this.destroy$))
+            .subscribe({
+              next: () => {
+                console.log(`✅ Deleted flashcards for "${bookName}"`);
+              },
+              error: (err) => {
+                console.error(`❌ Failed to delete flashcards:`, err);
+              }
+            });
+
+          // Switch back to "all" filter
+          this.vocabFilter = 'all';
+          this.vocabFilters = this.vocabularyService.getBookFilters();
+          this.refreshVocabLists();
+          this.loadFlashcards();
+
+          // Show success message with another dialog
+          this.dialog.open(ConfirmDialogComponent, {
+            width: '400px',
+            data: {
+              title: 'Success',
+              message: `Successfully deleted all vocabulary from "${bookName}"`,
+              confirmText: 'OK',
+              cancelText: null,
+              isDanger: false
+            }
+          });
+        } else {
+          // Show error message with another dialog
+          this.dialog.open(ConfirmDialogComponent, {
+            width: '400px',
+            data: {
+              title: 'Error',
+              message: `Failed to delete vocabulary: ${message}`,
+              confirmText: 'OK',
+              cancelText: null,
+              isDanger: true
+            }
+          });
+        }
+      });
+    });
   }
 
   private cleanModelHtml(text: string): string {

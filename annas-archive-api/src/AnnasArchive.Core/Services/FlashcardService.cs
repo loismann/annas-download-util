@@ -60,4 +60,27 @@ public class FlashcardService : IFlashcardService
         var json = JsonSerializer.Serialize(cards, new JsonSerializerOptions { WriteIndented = true });
         File.WriteAllText(filePath, json);
     }
+
+    /// <summary>
+    /// Deletes a single flashcard by term for a given Dropbox path
+    /// </summary>
+    public bool DeleteFlashcard(string dropboxPath, string term)
+    {
+        try
+        {
+            var cards = LoadFlashcards(dropboxPath);
+            var initialCount = cards.Count;
+            cards.RemoveAll(c => c.Term.Equals(term, StringComparison.OrdinalIgnoreCase));
+
+            if (cards.Count == initialCount)
+                return false; // No flashcard found with that term
+
+            SaveFlashcards(dropboxPath, cards);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
 }

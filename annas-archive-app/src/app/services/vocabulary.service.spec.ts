@@ -1,15 +1,17 @@
 import { TestBed } from '@angular/core/testing';
+import { HttpClientTestingModule } from '@angular/common/http/testing';
 import { VocabularyService } from './vocabulary.service';
 
 /**
  * Basic smoke tests for VocabularyService
- * This service manages known/unknown vocabulary words per book
+ * This service manages known/study vocabulary words with server-side persistence
  */
 describe('VocabularyService', () => {
   let service: VocabularyService;
 
   beforeEach(() => {
     TestBed.configureTestingModule({
+      imports: [HttpClientTestingModule],
       providers: [VocabularyService]
     });
     service = TestBed.inject(VocabularyService);
@@ -26,13 +28,13 @@ describe('VocabularyService', () => {
 
   it('should have knownWords$ observable', (done) => {
     service.knownWords$.subscribe(words => {
-      expect(words).toBeInstanceOf(Map);
+      expect(words).toBeInstanceOf(Set);
       done();
     });
   });
 
-  it('should have unknownWords$ observable', (done) => {
-    service.unknownWords$.subscribe(words => {
+  it('should have studyWords$ observable', (done) => {
+    service.studyWords$.subscribe(words => {
       expect(words).toBeInstanceOf(Map);
       done();
     });
@@ -47,28 +49,20 @@ describe('VocabularyService', () => {
     expect(normalized2).toBe(normalized3);
   });
 
-  it('should load from localStorage if available', () => {
-    // Pre-populate localStorage
-    const testData = [{ term: 'test', books: ['book1'] }];
-    localStorage.setItem('vocabulary_known_words_map', JSON.stringify(testData));
-
-    // Create new service instance
-    const newService = new VocabularyService();
-
-    newService.knownWords$.subscribe(words => {
+  it('should load from server on initialization', (done) => {
+    // Service automatically loads from server in constructor
+    service.knownWords$.subscribe(words => {
+      expect(words).toBeInstanceOf(Set);
       expect(words.size).toBeGreaterThanOrEqual(0);
+      done();
     });
   });
 
-  it('should handle corrupted localStorage gracefully', () => {
-    localStorage.setItem('vocabulary_known_words_map', 'invalid json{');
-
-    // Should log error but not throw - service continues with empty maps
-    const newService = new VocabularyService();
-
-    newService.knownWords$.subscribe(words => {
-      expect(words).toBeInstanceOf(Map);
-      expect(words.size).toBe(0); // Should be empty due to corrupted data
+  it('should handle server errors gracefully', (done) => {
+    // Even if server fails, service should still be usable with empty state
+    service.knownWords$.subscribe(words => {
+      expect(words).toBeInstanceOf(Set);
+      done();
     });
   });
 

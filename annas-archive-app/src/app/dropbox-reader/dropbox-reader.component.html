@@ -598,8 +598,8 @@
   </div>
 </div>
 
-<div class="vocab-modal-overlay" *ngIf="showVocabModal">
-  <div class="vocab-modal">
+<div class="vocab-modal-overlay" *ngIf="showVocabModal" (click)="onModalOverlayClick($event)">
+  <div class="vocab-modal" (click)="$event.stopPropagation()">
     <div class="vocab-modal-header">
       <h3>Vocabulary lists</h3>
       <button mat-icon-button aria-label="Close" (click)="closeVocabModal()">
@@ -608,18 +608,32 @@
     </div>
 
     <div class="vocab-modal-actions">
-      <mat-form-field appearance="outline" class="vocab-filter">
-        <mat-label>Filter by book</mat-label>
-        <mat-select
-          [value]="vocabFilter"
-          (selectionChange)="onVocabFilterChange($event.value)"
-          panelClass="vocab-select-panel"
-          [panelWidth]="'fit-content'">
-          <mat-option *ngFor="let opt of vocabFilters" [value]="opt.id">{{ opt.name }}</mat-option>
-        </mat-select>
-      </mat-form-field>
+      <div class="vocab-filter-row">
+        <mat-form-field appearance="outline" class="vocab-filter">
+          <mat-label>Filter by book</mat-label>
+          <mat-select
+            [value]="vocabFilter"
+            (selectionChange)="onVocabFilterChange($event.value)"
+            panelClass="vocab-select-panel"
+            [panelWidth]="'fit-content'">
+            <mat-option *ngFor="let opt of vocabFilters" [value]="opt.id">{{ opt.name }}</mat-option>
+          </mat-select>
+        </mat-form-field>
+        <button
+          mat-icon-button
+          class="vocab-clear-button"
+          (click)="deleteSelectedBook()"
+          [disabled]="!vocabFilter || vocabFilter === 'all'"
+          matTooltip="Delete all vocabulary for this book"
+          matTooltipPosition="above">
+          <mat-icon>delete</mat-icon>
+        </button>
+      </div>
       <button mat-stroked-button color="primary" (click)="clearKnownWords()">Clear known</button>
       <button mat-stroked-button color="accent" (click)="clearUnknownWords()">Clear study list</button>
+      <button mat-stroked-button class="clear-flashcards-btn" (click)="clearFlashcards()" [disabled]="!flashcards.length">
+        Clear flashcards
+      </button>
       <button mat-stroked-button color="warn" (click)="clearAllVocab()">Clear all</button>
     </div>
 
@@ -642,12 +656,12 @@
       <div class="vocab-modal-column">
         <h4>Study list ({{ vocabUnknownList.length }})</h4>
         <div class="vocab-modal-list">
-          <div *ngFor="let item of vocabUnknownList" class="vocab-modal-item vocab-modal-item-row">
-            <div class="vocab-modal-left">
+          <div *ngFor="let item of vocabUnknownList" class="vocab-modal-item vocab-study-card">
+            <div class="vocab-study-content">
               <div class="vocab-term-line">{{ item.term }}</div>
               <div class="vocab-definition-line">{{ item.definition }}</div>
             </div>
-            <div class="vocab-modal-right">
+            <div class="vocab-study-actions">
               <button mat-stroked-button color="primary" (click)="learnMore(item)" [disabled]="loadingLearnMore">
                 Learn more
               </button>
@@ -664,24 +678,29 @@
       </div>
 
       <div class="vocab-modal-column">
-        <div class="vocab-modal-header-sub">
-          <h4>Flashcards ({{ flashcards.length }})</h4>
-          <button mat-stroked-button color="warn" (click)="clearFlashcards()" [disabled]="!flashcards.length">
-            Clear flashcards
-          </button>
-        </div>
+        <h4>Flashcards ({{ flashcards.length }})</h4>
         <div class="vocab-modal-list">
-          <div *ngFor="let card of flashcards" class="vocab-modal-item">
-            <div class="vocab-term-line">{{ card.term }}</div>
-            <div class="vocab-definition-line"><strong>Definition:</strong> {{ card.definition }}</div>
-            <div class="vocab-definition-line"><strong>Etymology:</strong> {{ card.etymology }}</div>
-            <div class="vocab-definition-line" *ngIf="card.usageExamples?.length">
-              <strong>Usage:</strong>
-              <ul>
-                <li *ngFor="let ex of card.usageExamples">{{ ex }}</li>
-              </ul>
+          <div *ngFor="let card of flashcards" class="vocab-modal-item vocab-flashcard-item">
+            <div class="vocab-flashcard-content">
+              <div class="vocab-term-line">{{ card.term }}</div>
+              <div class="vocab-definition-line"><strong>Definition:</strong> {{ card.definition }}</div>
+              <div class="vocab-definition-line"><strong>Etymology:</strong> {{ card.etymology }}</div>
+              <div class="vocab-definition-line" *ngIf="card.usageExamples?.length">
+                <strong>Usage:</strong>
+                <ul>
+                  <li *ngFor="let ex of card.usageExamples">{{ ex }}</li>
+                </ul>
+              </div>
+              <div class="vocab-definition-line" *ngIf="card.notes"><strong>Notes:</strong> {{ card.notes }}</div>
             </div>
-            <div class="vocab-definition-line" *ngIf="card.notes"><strong>Notes:</strong> {{ card.notes }}</div>
+            <button
+              mat-icon-button
+              class="vocab-flashcard-delete"
+              (click)="deleteFlashcard(card)"
+              matTooltip="Delete flashcard"
+              matTooltipPosition="left">
+              <mat-icon>delete</mat-icon>
+            </button>
           </div>
           <div *ngIf="!flashcards.length" class="vocab-empty">No flashcards yet.</div>
         </div>

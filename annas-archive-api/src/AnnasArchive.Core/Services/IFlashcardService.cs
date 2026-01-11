@@ -21,6 +21,11 @@ public interface IFlashcardService
     /// Saves flashcards to disk for a given Dropbox path
     /// </summary>
     void SaveFlashcards(string dropboxPath, List<FlashcardItem> cards);
+
+    /// <summary>
+    /// Deletes a single flashcard by term for a given Dropbox path
+    /// </summary>
+    bool DeleteFlashcard(string dropboxPath, string term);
 }
 
 /// <summary>

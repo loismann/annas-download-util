@@ -705,6 +705,16 @@ export class AnnaArchiveApiService {
     );
   }
 
+  deleteFlashcard(dropboxPath: string, term: string): Observable<{ deleted: boolean }> {
+    const params = new HttpParams()
+      .set('path', dropboxPath)
+      .set('term', term);
+    return this.http.delete<{ deleted: boolean }>(
+      `${this.aiBaseUrl}/flashcard`,
+      { params }
+    );
+  }
+
   getWikiImages(term: string): Observable<WikiImagesResponse> {
     const params = new HttpParams().set('term', term);
     return this.http.get<WikiImagesResponse>(
@@ -836,6 +846,39 @@ export class AnnaArchiveApiService {
     return this.http.post<MatchSeriesBooksResponse>(
       `${this.aiBaseUrl}/match-series-books`,
       request
+    );
+  }
+
+  /* ══════════════════════════════════════════════════════════════
+     NEW  ➜  Server-side vocabulary storage with book associations
+     ══════════════════════════════════════════════════════════════ */
+  getKnownWords(): Observable<{ [term: string]: string[] }> {
+    return this.http.get<{ [term: string]: string[] }>(`${this.apiHost}/api/vocab/known`);
+  }
+
+  addKnownWord(term: string, bookId?: string): Observable<void> {
+    return this.http.post<void>(`${this.apiHost}/api/vocab/known`, { term, bookId });
+  }
+
+  removeKnownWord(term: string): Observable<void> {
+    return this.http.delete<void>(`${this.apiHost}/api/vocab/known/${encodeURIComponent(term)}`);
+  }
+
+  getStudyWords(): Observable<{ [term: string]: { definition: string; books: string[] } }> {
+    return this.http.get<{ [term: string]: { definition: string; books: string[] } }>(`${this.apiHost}/api/vocab/study`);
+  }
+
+  addStudyWord(term: string, definition?: string, bookId?: string): Observable<void> {
+    return this.http.post<void>(`${this.apiHost}/api/vocab/study`, { term, definition, bookId });
+  }
+
+  removeStudyWord(term: string): Observable<void> {
+    return this.http.delete<void>(`${this.apiHost}/api/vocab/study/${encodeURIComponent(term)}`);
+  }
+
+  deleteBookVocab(bookId: string): Observable<{ success: boolean; knownWordsAffected: number; studyWordsAffected: number; totalRemoved: number }> {
+    return this.http.delete<{ success: boolean; knownWordsAffected: number; studyWordsAffected: number; totalRemoved: number }>(
+      `${this.apiHost}/api/vocab/book/${encodeURIComponent(bookId)}`
     );
   }
 }

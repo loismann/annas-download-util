@@ -137,6 +137,14 @@ playwright-report/
 test-results/
 **/playwright-report/
 **/test-results/
+deploy-e2e-*.log
+**/deploy-e2e-*.log
+.playwright/
+**/.playwright/
+test-cache/
+**/test-cache/
+.auth/
+**/auth-state.json
 
 # Compiled files
 *.js

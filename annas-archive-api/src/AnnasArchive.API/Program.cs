@@ -85,19 +85,25 @@ builder.Services.AddAuthorization(options =>
 // ─── rate limiting ───────────────────────────────────────────────────────
 builder.Services.AddRateLimiter(options =>
 {
-    // Global API rate limit: 60 requests per minute per IP
+    // Global API rate limit: 60 requests per minute per IP (configurable via API_RATE_LIMIT or E2E_API_RATE_LIMIT)
+    var apiRateLimit = int.TryParse(
+        builder.Configuration["API_RATE_LIMIT"] ?? builder.Configuration["E2E_API_RATE_LIMIT"],
+        out var apiLimit) ? apiLimit : 60;
     options.AddFixedWindowLimiter("api", opt =>
     {
-        opt.PermitLimit = 60;
+        opt.PermitLimit = apiRateLimit;
         opt.Window = TimeSpan.FromMinutes(1);
         opt.QueueProcessingOrder = System.Threading.RateLimiting.QueueProcessingOrder.OldestFirst;
         opt.QueueLimit = 0; // No queueing
     });
 
-    // Stricter rate limit for login: 5 attempts per minute per IP
+    // Stricter rate limit for login: 5 attempts per minute per IP (configurable via LOGIN_RATE_LIMIT or E2E_LOGIN_RATE_LIMIT)
+    var loginRateLimit = int.TryParse(
+        builder.Configuration["LOGIN_RATE_LIMIT"] ?? builder.Configuration["E2E_LOGIN_RATE_LIMIT"],
+        out var loginLimit) ? loginLimit : 5;
     options.AddFixedWindowLimiter("login", opt =>
     {
-        opt.PermitLimit = 5;
+        opt.PermitLimit = loginRateLimit;
         opt.Window = TimeSpan.FromMinutes(1);
         opt.QueueProcessingOrder = System.Threading.RateLimiting.QueueProcessingOrder.OldestFirst;
         opt.QueueLimit = 0;
@@ -1724,7 +1730,8 @@ app.MapPost("/api/library/book/send-to-kindle", async (
     [FromQuery] bool toDropbox,
     IEmailService emailService,
     DropboxClient dropbox,
-    IConfiguration cfg) =>
+    IConfiguration cfg,
+    HttpContext context) =>
 {
     if (string.IsNullOrWhiteSpace(fileName))
         return Results.BadRequest(new { error = "fileName is required." });
@@ -1756,12 +1763,22 @@ app.MapPost("/api/library/book/send-to-kindle", async (
             dropboxPath,
             WriteMode.Overwrite.Instance,
             body: fileStream);
+
+        // Add Kindle target tag to library book metadata
+        var userTag = ResolveUserLibraryTag(context);
+        var kindleTargetTag = GetKindleTargetTag(target);
+        await AddTagsToLibraryBookAsync(libraryRoot, safeFileName, userTag, kindleTargetTag);
     }
     else
     {
         var subject = "Book from Library";
         var body = $"Sent from Library: {title ?? safeFileName}";
         await emailService.SendEmailWithAttachmentAsync(kindleEmail, subject, body, fullPath, safeFileName);
+
+        // Add Kindle target tag to library book metadata
+        var userTag = ResolveUserLibraryTag(context);
+        var kindleTargetTag = GetKindleTargetTag(target);
+        await AddTagsToLibraryBookAsync(libraryRoot, safeFileName, userTag, kindleTargetTag);
     }
 
     return Results.Ok(new { success = true, message = toDropbox ? "Sent to Dropbox." : "Sent to Kindle." });
@@ -3220,6 +3237,28 @@ app.MapDelete("/api/ai/flashcards", ([FromQuery] string path, IFlashcardService 
 .RequireAuthorization()
 .RequireRateLimiting("api");
 
+app.MapDelete("/api/ai/flashcard", ([FromQuery] string path, [FromQuery] string term, IFlashcardService flashcardService) =>
+{
+    if (string.IsNullOrWhiteSpace(path))
+        return Results.BadRequest(new { error = "Query parameter 'path' is required." });
+    if (string.IsNullOrWhiteSpace(term))
+        return Results.BadRequest(new { error = "Query parameter 'term' is required." });
+
+    try
+    {
+        var deleted = flashcardService.DeleteFlashcard(path, term);
+        if (deleted)
+            return Results.Ok(new { deleted = true });
+        return Results.NotFound(new { error = "Flashcard not found." });
+    }
+    catch
+    {
+        return ApiResponse.InternalError("Failed to delete flashcard.");
+    }
+})
+.RequireAuthorization()
+.RequireRateLimiting("api");
+
 // ─── 5h) Wikipedia images helper (via REST summary) ─────────────────
 app.MapGet("/api/media/wiki-images", async ([FromQuery] string term) =>
 {
@@ -4207,7 +4246,43 @@ app.MapGet("/api/ai/section-summary", ([FromQuery] string dropboxPath, [FromQuer
         // Load associated vocab if it exists
         var vocab = AiContentCache.LoadSectionVocab(dropboxPath, chapterId, sectionIndex);
 
-        // Create new response with vocab included
+        // Filter out known AND study words from vocab
+        if (vocab != null && vocab.Count > 0)
+        {
+            Console.WriteLine($"🔍 [GET /api/ai/section-summary] Loading {vocab.Count} vocab cards from cache");
+            var knownWords = AiContentCache.LoadKnownWords();
+            var studyWords = AiContentCache.LoadStudyWordsWithBooks();
+            Console.WriteLine($"📚 [GET /api/ai/section-summary] Loaded {knownWords.Count} known words and {studyWords.Count} study words from server");
+
+            var beforeCount = vocab.Count;
+            var filteredVocab = vocab.Where(card =>
+            {
+                var normalized = AiContentCache.NormalizeTerm(card.Term);
+                var isKnown = knownWords.Contains(normalized);
+                var isStudy = studyWords.ContainsKey(normalized);
+
+                if (isKnown)
+                {
+                    Console.WriteLine($"  🚫 Filtering out known word: '{card.Term}' (normalized: '{normalized}')");
+                }
+                else if (isStudy)
+                {
+                    Console.WriteLine($"  🚫 Filtering out study word: '{card.Term}' (normalized: '{normalized}')");
+                }
+
+                return !isKnown && !isStudy;
+            }).ToList();
+
+            var removedCount = beforeCount - filteredVocab.Count;
+            Console.WriteLine($"✅ [GET /api/ai/section-summary] Filtered vocab: {beforeCount} cards → {filteredVocab.Count} cards (removed {removedCount} known/study words)");
+            vocab = filteredVocab;
+        }
+        else
+        {
+            Console.WriteLine($"ℹ️ [GET /api/ai/section-summary] No vocab to filter (vocab={vocab?.Count ?? 0})");
+        }
+
+        // Create new response with filtered vocab included
         var response = cached with { Vocab = vocab };
 
         Console.WriteLine($"✅ Returning cached section summary for chapter {chapterId}, section {sectionIndex} (vocab: {vocab?.Count ?? 0} cards)");
@@ -4422,9 +4497,279 @@ app.MapPost("/api/ai/section-vocab", ([FromBody] SaveSectionVocabRequest request
 .RequireAuthorization()
 .RequireRateLimiting("api");
 
-// ─── 5m) Suggest authors for a book title ────────────────────────────────────
+// ─── 5m) Get known vocabulary words with book associations ───────────────────
+app.MapGet("/api/vocab/known", () =>
+{
+    Console.WriteLine("🔍 [GET /api/vocab/known] Loading known words from server...");
+    var knownWords = AiContentCache.LoadKnownWordsWithBooks();
+    Console.WriteLine($"📊 [GET /api/vocab/known] Returning {knownWords.Count} known words with book associations");
+    return Results.Ok(knownWords);
+})
+.RequireAuthorization()
+.RequireRateLimiting("api");
+
+// ─── 5n) Add word to known list with book association ────────────────────────
+app.MapPost("/api/vocab/known", ([FromBody] AddVocabWordRequest request) =>
+{
+    Console.WriteLine($"➕ [POST /api/vocab/known] Request received: term='{request?.Term}', bookId='{request?.BookId}'");
+
+    if (request is null || string.IsNullOrWhiteSpace(request.Term))
+    {
+        Console.WriteLine("❌ [POST /api/vocab/known] Invalid request: term is null or empty");
+        return Results.BadRequest(new { error = "term is required." });
+    }
+
+    var knownWords = AiContentCache.LoadKnownWordsWithBooks();
+    var normalized = request.Term.Trim().ToLowerInvariant();
+    var bookId = request.BookId ?? "global";
+    Console.WriteLine($"🔤 [POST /api/vocab/known] Normalized term: '{normalized}', bookId: '{bookId}'");
+
+    // Get or create the list of books for this term
+    if (!knownWords.ContainsKey(normalized))
+    {
+        knownWords[normalized] = new List<string>();
+    }
+
+    var books = knownWords[normalized];
+    var wasNew = !books.Contains(bookId);
+    if (wasNew)
+    {
+        books.Add(bookId);
+        AiContentCache.SaveKnownWordsWithBooks(knownWords);
+        Console.WriteLine($"💾 [POST /api/vocab/known] Saved to file. Term now known in {books.Count} books");
+    }
+
+    // Remove from study list if it was there
+    var studyWords = AiContentCache.LoadStudyWordsWithBooks();
+    if (studyWords.ContainsKey(normalized))
+    {
+        var studyInfo = studyWords[normalized];
+        studyInfo.books.Remove(bookId);
+        if (studyInfo.books.Count == 0)
+        {
+            studyWords.Remove(normalized);
+            Console.WriteLine($"🔄 [POST /api/vocab/known] Removed '{normalized}' from study list entirely");
+        }
+        else
+        {
+            studyWords[normalized] = studyInfo;
+            Console.WriteLine($"🔄 [POST /api/vocab/known] Removed book '{bookId}' from study list for '{normalized}'");
+        }
+        AiContentCache.SaveStudyWordsWithBooks(studyWords);
+    }
+
+    Console.WriteLine($"✅ [POST /api/vocab/known] Added '{normalized}' to known words for book '{bookId}' (total: {knownWords.Count} unique terms)");
+    return Results.Ok(new { success = true, word = normalized, bookId, totalKnown = knownWords.Count, wasNew });
+})
+.RequireAuthorization()
+.RequireRateLimiting("api");
+
+// ─── 5o) Remove word from known list (all books) ─────────────────────────────
+app.MapDelete("/api/vocab/known/{term}", (string term) =>
+{
+    if (string.IsNullOrWhiteSpace(term))
+        return Results.BadRequest(new { error = "term is required." });
+
+    var knownWords = AiContentCache.LoadKnownWordsWithBooks();
+    var normalized = term.Trim().ToLowerInvariant();
+
+    if (knownWords.Remove(normalized))
+    {
+        AiContentCache.SaveKnownWordsWithBooks(knownWords);
+        Console.WriteLine($"🗑️ Removed '{normalized}' from known words entirely");
+        return Results.Ok(new { success = true, word = normalized, totalKnown = knownWords.Count });
+    }
+
+    return Results.Ok(new { success = false, word = normalized, message = "Word was not in known list" });
+})
+.RequireAuthorization()
+.RequireRateLimiting("api");
+
+// ─── 5p) Get study vocabulary words with book associations ───────────────────
+app.MapGet("/api/vocab/study", () =>
+{
+    Console.WriteLine("🔍 [GET /api/vocab/study] Loading study words from server...");
+    var studyWords = AiContentCache.LoadStudyWordsWithBooks();
+
+    // Convert to API response format
+    var response = new Dictionary<string, object>();
+    foreach (var kvp in studyWords)
+    {
+        response[kvp.Key] = new { definition = kvp.Value.definition, books = kvp.Value.books };
+    }
+
+    Console.WriteLine($"📊 [GET /api/vocab/study] Returning {studyWords.Count} study words with book associations");
+    return Results.Ok(response);
+})
+.RequireAuthorization()
+.RequireRateLimiting("api");
+
+// ─── 5q) Add word to study list with book association ────────────────────────
+app.MapPost("/api/vocab/study", ([FromBody] AddStudyWordRequest request) =>
+{
+    Console.WriteLine($"➕ [POST /api/vocab/study] Request received: term='{request?.Term}', definition='{request?.Definition}', bookId='{request?.BookId}'");
+
+    if (request is null || string.IsNullOrWhiteSpace(request.Term))
+    {
+        Console.WriteLine("❌ [POST /api/vocab/study] Invalid request: term is null or empty");
+        return Results.BadRequest(new { error = "term is required." });
+    }
+
+    var studyWords = AiContentCache.LoadStudyWordsWithBooks();
+    var normalized = request.Term.Trim().ToLowerInvariant();
+    var definition = request.Definition?.Trim() ?? "";
+    var bookId = request.BookId ?? "global";
+    Console.WriteLine($"🔤 [POST /api/vocab/study] Normalized term: '{normalized}', bookId: '{bookId}'");
+
+    // Get or create the entry for this term
+    if (!studyWords.ContainsKey(normalized))
+    {
+        studyWords[normalized] = (definition, new List<string>());
+    }
+
+    var (existingDef, books) = studyWords[normalized];
+    var wasNew = !books.Contains(bookId);
+    if (wasNew)
+    {
+        books.Add(bookId);
+    }
+    // Update definition if provided (use most recent)
+    if (!string.IsNullOrWhiteSpace(definition))
+    {
+        existingDef = definition;
+    }
+    studyWords[normalized] = (existingDef, books);
+
+    AiContentCache.SaveStudyWordsWithBooks(studyWords);
+    Console.WriteLine($"💾 [POST /api/vocab/study] Saved to file. Term now studied in {books.Count} books");
+
+    // Remove from known list if it was there
+    var knownWords = AiContentCache.LoadKnownWordsWithBooks();
+    if (knownWords.ContainsKey(normalized))
+    {
+        var knownBooks = knownWords[normalized];
+        knownBooks.Remove(bookId);
+        if (knownBooks.Count == 0)
+        {
+            knownWords.Remove(normalized);
+            Console.WriteLine($"🔄 [POST /api/vocab/study] Removed '{normalized}' from known list entirely");
+        }
+        else
+        {
+            knownWords[normalized] = knownBooks;
+            Console.WriteLine($"🔄 [POST /api/vocab/study] Removed book '{bookId}' from known list for '{normalized}'");
+        }
+        AiContentCache.SaveKnownWordsWithBooks(knownWords);
+    }
+
+    Console.WriteLine($"✅ [POST /api/vocab/study] Added '{normalized}' to study list for book '{bookId}' (total: {studyWords.Count} unique terms)");
+    return Results.Ok(new { success = true, word = normalized, definition = existingDef, bookId, totalStudy = studyWords.Count, wasNew });
+})
+.RequireAuthorization()
+.RequireRateLimiting("api");
+
+// ─── 5r) Remove word from study list (all books) ─────────────────────────────
+app.MapDelete("/api/vocab/study/{term}", (string term) =>
+{
+    if (string.IsNullOrWhiteSpace(term))
+        return Results.BadRequest(new { error = "term is required." });
+
+    var studyWords = AiContentCache.LoadStudyWordsWithBooks();
+    var normalized = term.Trim().ToLowerInvariant();
+
+    if (studyWords.Remove(normalized))
+    {
+        AiContentCache.SaveStudyWordsWithBooks(studyWords);
+        Console.WriteLine($"🗑️ Removed '{normalized}' from study list entirely");
+        return Results.Ok(new { success = true, word = normalized, totalStudy = studyWords.Count });
+    }
+
+    return Results.Ok(new { success = false, word = normalized, message = "Word was not in study list" });
+})
+.RequireAuthorization()
+.RequireRateLimiting("api");
+
+// ─── 5r2) Delete all vocabulary words for a specific book ────────────────────
+app.MapDelete("/api/vocab/book/{bookId}", (string bookId) =>
+{
+    Console.WriteLine($"🗑️ [DELETE /api/vocab/book/{bookId}] Deleting all vocabulary for book '{bookId}'");
+
+    if (string.IsNullOrWhiteSpace(bookId))
+    {
+        return Results.BadRequest(new { error = "bookId is required." });
+    }
+
+    int knownRemoved = 0;
+    int studyRemoved = 0;
+
+    // Remove book from known words
+    var knownWords = AiContentCache.LoadKnownWordsWithBooks();
+    var knownToRemove = new List<string>();
+
+    foreach (var (term, books) in knownWords)
+    {
+        if (books.Remove(bookId))
+        {
+            knownRemoved++;
+            if (books.Count == 0)
+            {
+                knownToRemove.Add(term);
+            }
+        }
+    }
+
+    foreach (var term in knownToRemove)
+    {
+        knownWords.Remove(term);
+    }
+
+    AiContentCache.SaveKnownWordsWithBooks(knownWords);
+    Console.WriteLine($"🗑️ [DELETE /api/vocab/book/{bookId}] Removed {knownRemoved} known words (deleted {knownToRemove.Count} entirely)");
+
+    // Remove book from study words
+    var studyWords = AiContentCache.LoadStudyWordsWithBooks();
+    var studyToRemove = new List<string>();
+
+    foreach (var (term, info) in studyWords)
+    {
+        if (info.books.Remove(bookId))
+        {
+            studyRemoved++;
+            if (info.books.Count == 0)
+            {
+                studyToRemove.Add(term);
+            }
+            else
+            {
+                studyWords[term] = info;
+            }
+        }
+    }
+
+    foreach (var term in studyToRemove)
+    {
+        studyWords.Remove(term);
+    }
+
+    AiContentCache.SaveStudyWordsWithBooks(studyWords);
+    Console.WriteLine($"🗑️ [DELETE /api/vocab/book/{bookId}] Removed {studyRemoved} study words (deleted {studyToRemove.Count} entirely)");
+
+    Console.WriteLine($"✅ [DELETE /api/vocab/book/{bookId}] Cleanup complete: {knownRemoved} known + {studyRemoved} study words affected");
+    return Results.Ok(new {
+        success = true,
+        bookId,
+        knownWordsAffected = knownRemoved,
+        studyWordsAffected = studyRemoved,
+        totalRemoved = knownRemoved + studyRemoved
+    });
+})
+.RequireAuthorization()
+.RequireRateLimiting("api");
+
+// ─── 5s) Suggest authors for a book title ────────────────────────────────────
 app.MapPost("/api/ai/suggest-authors", async (
     [FromBody] SuggestAuthorsRequest request,
+    HttpRequest httpRequest,
     IHttpClientFactory httpFactory,
     IConfiguration cfg,
     ITokenUsageService tokenUsage,
@@ -4437,11 +4782,20 @@ app.MapPost("/api/ai/suggest-authors", async (
 
     try
     {
-        var openLibraryAuthors = await FetchAuthorsFromOpenLibraryAsync(request.BookTitle, httpFactory);
-        if (openLibraryAuthors.Count > 0)
+        var forceOpenAi = false;
+        if (httpRequest.Headers.TryGetValue("x-force-openai", out var forceHeader))
         {
-            Console.WriteLine($"✅ Author suggestions (OpenLibrary) for '{request.BookTitle}': {openLibraryAuthors.Count} authors found");
-            return Results.Ok(new SuggestAuthorsResponse(openLibraryAuthors));
+            forceOpenAi = string.Equals(forceHeader.ToString(), "true", StringComparison.OrdinalIgnoreCase);
+        }
+
+        if (!forceOpenAi)
+        {
+            var openLibraryAuthors = await FetchAuthorsFromOpenLibraryAsync(request.BookTitle, httpFactory);
+            if (openLibraryAuthors.Count > 0)
+            {
+                Console.WriteLine($"✅ Author suggestions (OpenLibrary) for '{request.BookTitle}': {openLibraryAuthors.Count} authors found");
+                return Results.Ok(new SuggestAuthorsResponse(openLibraryAuthors));
+            }
         }
 
         var tokenLimitResult = CheckTokenLimit(cfg, tokenUsage);
@@ -4449,6 +4803,15 @@ app.MapPost("/api/ai/suggest-authors", async (
 
         using var http = httpFactory.CreateClient("OpenAI");
         var model = modelSelection.GetModelFast();  // Uses gpt-4o by default
+        if (httpRequest.Headers.TryGetValue("x-openai-model", out var modelHeader))
+        {
+            var overrideModel = modelHeader.ToString();
+            if (!string.IsNullOrWhiteSpace(overrideModel) &&
+                overrideModel.StartsWith("gpt-4", StringComparison.OrdinalIgnoreCase))
+            {
+                model = overrideModel;
+            }
+        }
 
         var systemPrompt = @"You are a book metadata expert. Given a book title, suggest the 3-5 most likely authors sorted by probability. Return ONLY valid JSON with no markdown, explanation, or additional text.";
 
@@ -6509,10 +6872,10 @@ static async Task WriteLibraryMetadataAsync(
 
 static string? ResolveUserLibraryTag(HttpContext context)
 {
-    var role = context.User?.FindFirst(ClaimTypes.Role)?.Value;
     var accessCode = context.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
 
-    if (string.Equals(role, "Admin", StringComparison.OrdinalIgnoreCase))
+    // Map access codes to user tags
+    if (string.Equals(accessCode, "***REMOVED***", StringComparison.OrdinalIgnoreCase))
         return "Paul's Books";
 
     if (string.Equals(accessCode, "cffdab-233322", StringComparison.OrdinalIgnoreCase))
@@ -6522,6 +6885,66 @@ static string? ResolveUserLibraryTag(HttpContext context)
         return "Dad's Books";
 
     return null;
+}
+
+static string GetKindleTargetTag(string target)
+{
+    return target.ToLower() == "mom" ? "Mom's Books" : "Dad's Books";
+}
+
+static async Task AddTagsToLibraryBookAsync(string libraryRoot, string fileName, params string[] tagsToAdd)
+{
+    if (tagsToAdd == null || tagsToAdd.Length == 0)
+        return;
+
+    var metaPath = Path.Combine(libraryRoot, fileName + ".meta.json");
+    if (!File.Exists(metaPath))
+    {
+        Console.WriteLine($"[AddTags] Metadata file not found for {fileName}, skipping tag addition");
+        return;
+    }
+
+    try
+    {
+        var jsonOptions = CreateLibraryJsonOptions();
+        var json = await File.ReadAllTextAsync(metaPath);
+        var meta = JsonSerializer.Deserialize<LibraryBookMeta>(json, jsonOptions);
+
+        if (meta == null)
+        {
+            Console.WriteLine($"[AddTags] Failed to deserialize metadata for {fileName}");
+            return;
+        }
+
+        // Get existing tags and add new ones (avoid duplicates)
+        var existingTags = new HashSet<string>(meta.Tags ?? Array.Empty<string>(), StringComparer.OrdinalIgnoreCase);
+        var tagsAdded = false;
+
+        foreach (var tag in tagsToAdd.Where(t => !string.IsNullOrWhiteSpace(t)))
+        {
+            if (existingTags.Add(tag))
+            {
+                tagsAdded = true;
+                Console.WriteLine($"[AddTags] Adding tag '{tag}' to {fileName}");
+            }
+        }
+
+        if (tagsAdded)
+        {
+            meta.Tags = existingTags.ToArray();
+            var updatedJson = JsonSerializer.Serialize(meta, jsonOptions);
+            await File.WriteAllTextAsync(metaPath, updatedJson);
+            Console.WriteLine($"[AddTags] Successfully updated tags for {fileName}: {string.Join(", ", meta.Tags)}");
+        }
+        else
+        {
+            Console.WriteLine($"[AddTags] No new tags to add for {fileName}");
+        }
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"[AddTags] Error adding tags to {fileName}: {ex.Message}");
+    }
 }
 
 static string FormatFileSize(long bytes)
@@ -7507,6 +7930,10 @@ public record ChunkBoundariesResponse(int ChapterId, List<ChunkBoundary> Chunks,
 public record SectionSummaryRequest(string DropboxPath, int ChapterId, int SectionIndex, string? BookTitle, string? Author);
 public record SectionSummaryResponse(string Summary, int SectionIndex, int PromptTokens, int CompletionTokens, int TotalTokens, DateTime CachedAt, List<FlashcardItem>? Vocab = null);
 public record SaveSectionVocabRequest(string DropboxPath, int ChapterId, int SectionIndex, List<FlashcardItem> Vocab);
+
+// ─── Vocabulary tracking models ──────────────────────────────────────────
+public record AddVocabWordRequest(string Term, string? BookId);
+public record AddStudyWordRequest(string Term, string? Definition, string? BookId);
 
 // ─── Character Graph models ──────────────────────────────────────────────
 public record CharacterGraphRequest(string DropboxPath, string? BookTitle, string? Context);
@@ -9643,6 +10070,172 @@ public static class AiContentCache
     {
         var path = GetCharacterGraphCachePath(dropboxPath);
         return File.Exists(path);
+    }
+
+    // ─── Vocabulary word tracking (known/study lists) ────────────────────────
+
+    /// <summary>
+    /// Normalize a term for matching: lower-case, trim, collapse punctuation,
+    /// strip simple plurals/possessives, and normalize curly quotes.
+    /// This MUST match the frontend normalization in vocabulary.service.ts!
+    /// </summary>
+    public static string NormalizeTerm(string term)
+    {
+        if (string.IsNullOrWhiteSpace(term)) return string.Empty;
+
+        // Convert to lowercase and normalize curly quotes to straight apostrophes
+        var normalized = term.ToLowerInvariant()
+            .Replace('\u2018', '\'')  // left single quote
+            .Replace('\u2019', '\''); // right single quote
+
+        // Replace hyphens with spaces (so "root-book" becomes "root book")
+        normalized = normalized.Replace('-', ' ');
+
+        // Remove all punctuation except apostrophes and spaces
+        normalized = System.Text.RegularExpressions.Regex.Replace(normalized, @"[^a-z0-9'\s]", " ");
+
+        // Collapse multiple spaces
+        normalized = System.Text.RegularExpressions.Regex.Replace(normalized, @"\s+", " ").Trim();
+
+        // Strip possessives ('s) and simple plurals (s)
+        if (normalized.EndsWith("'s"))
+        {
+            normalized = normalized.Substring(0, normalized.Length - 2);
+        }
+        else if (normalized.EndsWith('s') && normalized.Length > 3)
+        {
+            normalized = normalized.Substring(0, normalized.Length - 1);
+        }
+
+        return normalized;
+    }
+
+    public static string GetKnownWordsPath()
+    {
+        var root = GetCacheRoot();
+        var dir = Path.Combine(root, "vocabulary");
+        Directory.CreateDirectory(dir);
+        return Path.Combine(dir, "known-words.json");
+    }
+
+    public static string GetStudyWordsPath()
+    {
+        var root = GetCacheRoot();
+        var dir = Path.Combine(root, "vocabulary");
+        Directory.CreateDirectory(dir);
+        return Path.Combine(dir, "study-words.json");
+    }
+
+    // Storage format: Dictionary<term, List<bookId>>
+    public static Dictionary<string, List<string>> LoadKnownWordsWithBooks()
+    {
+        var path = GetKnownWordsPath();
+        if (!File.Exists(path)) return new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+
+        try
+        {
+            var json = File.ReadAllText(path);
+            var data = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, List<string>>>(json);
+            return data ?? new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"⚠️ Failed to load known words from {path}: {ex.Message}");
+            Console.WriteLine($"🗑️ Deleting incompatible vocabulary file and starting fresh...");
+            try
+            {
+                File.Delete(path);
+                Console.WriteLine($"✅ Deleted old known-words.json, will create new book-aware format on first save");
+            }
+            catch (Exception deleteEx)
+            {
+                Console.WriteLine($"❌ Failed to delete old file: {deleteEx.Message}");
+            }
+            return new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+        }
+    }
+
+    public static void SaveKnownWordsWithBooks(Dictionary<string, List<string>> knownWords)
+    {
+        var path = GetKnownWordsPath();
+        var json = System.Text.Json.JsonSerializer.Serialize(knownWords, new System.Text.Json.JsonSerializerOptions
+        {
+            WriteIndented = true
+        });
+        File.WriteAllText(path, json);
+        Console.WriteLine($"💾 Saved {knownWords.Count} known words to: {path}");
+    }
+
+    // Helper to get all known terms (for filtering vocab)
+    public static HashSet<string> LoadKnownWords()
+    {
+        var data = LoadKnownWordsWithBooks();
+        return new HashSet<string>(data.Keys, StringComparer.OrdinalIgnoreCase);
+    }
+
+    // Storage format: Dictionary<term, { definition: string, books: List<string> }>
+    public static Dictionary<string, (string definition, List<string> books)> LoadStudyWordsWithBooks()
+    {
+        var path = GetStudyWordsPath();
+        if (!File.Exists(path)) return new Dictionary<string, (string, List<string>)>(StringComparer.OrdinalIgnoreCase);
+
+        try
+        {
+            var json = File.ReadAllText(path);
+            var data = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, StudyWordEntry>>(json);
+            if (data == null) return new Dictionary<string, (string, List<string>)>(StringComparer.OrdinalIgnoreCase);
+
+            var result = new Dictionary<string, (string, List<string>)>(StringComparer.OrdinalIgnoreCase);
+            foreach (var kvp in data)
+            {
+                result[kvp.Key] = (kvp.Value.Definition ?? "", kvp.Value.Books ?? new List<string>());
+            }
+            return result;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"⚠️ Failed to load study words from {path}: {ex.Message}");
+            Console.WriteLine($"🗑️ Deleting incompatible vocabulary file and starting fresh...");
+            try
+            {
+                File.Delete(path);
+                Console.WriteLine($"✅ Deleted old study-words.json, will create new book-aware format on first save");
+            }
+            catch (Exception deleteEx)
+            {
+                Console.WriteLine($"❌ Failed to delete old file: {deleteEx.Message}");
+            }
+            return new Dictionary<string, (string, List<string>)>(StringComparer.OrdinalIgnoreCase);
+        }
+    }
+
+    public static void SaveStudyWordsWithBooks(Dictionary<string, (string definition, List<string> books)> studyWords)
+    {
+        var path = GetStudyWordsPath();
+
+        // Convert to serializable format
+        var data = new Dictionary<string, StudyWordEntry>(StringComparer.OrdinalIgnoreCase);
+        foreach (var kvp in studyWords)
+        {
+            data[kvp.Key] = new StudyWordEntry
+            {
+                Definition = kvp.Value.definition,
+                Books = kvp.Value.books
+            };
+        }
+
+        var json = System.Text.Json.JsonSerializer.Serialize(data, new System.Text.Json.JsonSerializerOptions
+        {
+            WriteIndented = true
+        });
+        File.WriteAllText(path, json);
+        Console.WriteLine($"💾 Saved {studyWords.Count} study words to: {path}");
+    }
+
+    private class StudyWordEntry
+    {
+        public string? Definition { get; set; }
+        public List<string>? Books { get; set; }
     }
 }
 

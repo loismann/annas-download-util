@@ -66,6 +66,11 @@ import { VERSION } from './version';
           <span *ngIf="authService.isAuthenticated$ | async" style="margin-right: 16px">
             {{ authService.getName() }}
           </span>
+          <!-- User Color Indicator -->
+          <div *ngIf="authService.isAuthenticated$ | async"
+               [style.background-color]="getUserColor()"
+               style="width: 40px; height: 40px; border-radius: 50%; margin-right: 12px; border: 3px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.3);">
+          </div>
           <button
             *ngIf="authService.isAuthenticated$ | async"
             mat-button
@@ -92,5 +97,22 @@ export class AppComponent {
   logout(): void {
     this.authService.logout();
     this.router.navigate(['/login']);
+  }
+
+  getUserColor(): string {
+    const userId = this.authService.getUserId();
+    if (!userId) return '#cccccc';
+
+    // Map each BCrypt hash to a unique color
+    const colorMap: { [key: string]: string } = {
+      // Boo! (Mom)
+      '$2a$12$lHLy2mwAQzK33rFmsrD2suo.pLC4dGGST9qFW9b06n9N1mmSoitxW': '#9C27B0', // Purple
+      // Paul (Admin)
+      '$2a$12$eiE.bT92XkNpGf.htLUOHOFFQriX0hDPuN43aMcLSECIL2TQQg3oq': '#2196F3', // Blue
+      // The Biggest Dad (Dad)
+      '$2y$12$kz7HIpHld/uTOQq0uMos1eJ7/.m3c0EHjgktpn0GQs55gdhIBMcqC': '#FF9800'  // Orange
+    };
+
+    return colorMap[userId] || '#cccccc';
   }
 }

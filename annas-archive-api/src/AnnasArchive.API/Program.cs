@@ -283,25 +283,59 @@ app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 
-static IResult? CheckTokenLimit(IConfiguration cfg, ITokenUsageService tokenUsage)
+static IResult? CheckTokenLimit(IConfiguration cfg, ITokenUsageService tokenUsage, HttpContext context)
 {
-    var allowance = cfg.GetValue<long?>("OpenAI:MonthlyTokenAllowance");
-    if (allowance.HasValue && tokenUsage.IsOverLimit(allowance.Value))
+    var userId = GetUserIdFromContext(context);
+    if (userId == null)
+        return Results.Unauthorized();
+
+    var allowanceUsd = cfg.GetValue<double?>("OpenAI:PerUserMonthlyCostAllowanceUsd") ?? 20.0;
+    var (promptTokens, completionTokens, _) = tokenUsage.GetTotals(userId);
+    var costUsd = tokenUsage.CalculateCostUsd(promptTokens, completionTokens);
+
+    if (costUsd >= allowanceUsd)
     {
+        var now = DateTime.UtcNow;
+        var nextReset = new DateTime(now.Year, now.Month, 1).AddMonths(1);
+        var daysUntilReset = (nextReset - now).Days;
+
         return Results.Problem(
-            detail: "Monthly token allowance has been exceeded. The service will reset at the beginning of next month.",
+            detail: $"Monthly AI usage allowance (${allowanceUsd:F2}) has been exceeded. Resets in {daysUntilReset} days.",
             statusCode: 429,
-            title: "Token Limit Exceeded"
+            title: "AI Usage Limit Exceeded"
         );
     }
 
     return null;
 }
 
-static bool IsTokenLimitExceeded(IConfiguration cfg, ITokenUsageService tokenUsage)
+static bool IsTokenLimitExceeded(IConfiguration cfg, ITokenUsageService tokenUsage, HttpContext context)
 {
-    var allowance = cfg.GetValue<long?>("OpenAI:MonthlyTokenAllowance");
-    return allowance.HasValue && tokenUsage.IsOverLimit(allowance.Value);
+    var userId = GetUserIdFromContext(context);
+    if (userId == null)
+        return false;
+
+    var allowanceUsd = cfg.GetValue<double?>("OpenAI:PerUserMonthlyCostAllowanceUsd") ?? 20.0;
+    var (promptTokens, completionTokens, _) = tokenUsage.GetTotals(userId);
+    var costUsd = tokenUsage.CalculateCostUsd(promptTokens, completionTokens);
+
+    return costUsd >= allowanceUsd;
+}
+
+static string? GetUserIdFromContext(HttpContext context)
+{
+    return context.User?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+}
+
+static string? GetUserNameFromContext(HttpContext context)
+{
+    return context.User?.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value;
+}
+
+static Dictionary<string, string> GetUserDisplayNames(IConfiguration cfg)
+{
+    var codes = cfg.GetSection("Auth:AccessCodes").Get<List<AccessCode>>();
+    return codes?.ToDictionary(c => c.Code, c => c.Name) ?? new Dictionary<string, string>();
 }
 
 var openLibraryAuthorCacheTtl = TimeSpan.FromHours(6);
@@ -2773,6 +2807,7 @@ app.MapDelete("/api/anna/dropbox/epub/index", (
 
 // ─── 5e) Summarize via OpenAI ────────────────────────────────────────────
 app.MapPost("/api/ai/summarize", async (
+    HttpContext context,
     [FromBody] SummarizeRequest request,
     IHttpClientFactory httpFactory,
     IConfiguration cfg,
@@ -2788,7 +2823,7 @@ app.MapPost("/api/ai/summarize", async (
     if (!validation.IsValidTextLength(request.Text))
         return Results.BadRequest(new { error = "Text too long. Maximum 1,000,000 characters." });
 
-    var tokenLimitResult = CheckTokenLimit(cfg, tokenUsage);
+    var tokenLimitResult = CheckTokenLimit(cfg, tokenUsage, context);
     if (tokenLimitResult is not null) return tokenLimitResult;
 
     try
@@ -2902,7 +2937,9 @@ Then add a 'Definitions:' section. BE EXTREMELY THOROUGH with definitions - incl
         {
             var promptTokens = usage.GetProperty("input_tokens").GetInt32();
             var completionTokens = usage.GetProperty("output_tokens").GetInt32();
-            tokenUsage.AddUsage(promptTokens, completionTokens);
+            var userId = GetUserIdFromContext(context);
+            if (userId != null)
+                tokenUsage.AddUsage(userId, promptTokens, completionTokens);
         }
 
         if (cacheDirForSummary != null && request.ChapterId.HasValue)
@@ -2930,6 +2967,7 @@ Then add a 'Definitions:' section. BE EXTREMELY THOROUGH with definitions - incl
 
 // ─── 5f) Learn more about a vocab term ──────────────────────────
 app.MapPost("/api/ai/vocab/learn-more", async (
+    HttpContext context,
     [FromBody] LearnMoreRequest request,
     IHttpClientFactory httpFactory,
     IConfiguration cfg,
@@ -2940,7 +2978,7 @@ app.MapPost("/api/ai/vocab/learn-more", async (
     if (request is null || string.IsNullOrWhiteSpace(request.Term))
         return Results.BadRequest(new { error = "Term is required." });
 
-    var tokenLimitResult = CheckTokenLimit(cfg, tokenUsage);
+    var tokenLimitResult = CheckTokenLimit(cfg, tokenUsage, context);
     if (tokenLimitResult is not null) return tokenLimitResult;
 
     try
@@ -3012,7 +3050,9 @@ Relevant passage/context: {request.Context ?? "(none)"}";
         {
             var promptTokens = usage.GetProperty("input_tokens").GetInt32();
             var completionTokens = usage.GetProperty("output_tokens").GetInt32();
-            tokenUsage.AddUsage(promptTokens, completionTokens);
+            var userId = GetUserIdFromContext(context);
+            if (userId != null)
+                tokenUsage.AddUsage(userId, promptTokens, completionTokens);
         }
 
         return Results.Ok(new LearnMoreResponse(detail ?? "No details returned."));
@@ -3039,6 +3079,7 @@ app.MapGet("/api/ai/flashcards", ([FromQuery] string path, IFlashcardService fla
 .RequireRateLimiting("api");
 
 app.MapPost("/api/ai/flashcards", async (
+    HttpContext context,
     [FromBody] FlashcardRequest request,
     IHttpClientFactory httpFactory,
     IConfiguration cfg,
@@ -3054,7 +3095,7 @@ app.MapPost("/api/ai/flashcards", async (
     if (shouldSave && string.IsNullOrWhiteSpace(request.DropboxPath))
         return Results.BadRequest(new { error = "dropboxPath is required when saving flashcards." });
 
-    var tokenLimitResult = CheckTokenLimit(cfg, tokenUsage);
+    var tokenLimitResult = CheckTokenLimit(cfg, tokenUsage, context);
     if (tokenLimitResult is not null) return tokenLimitResult;
 
     try
@@ -3150,7 +3191,9 @@ Return JSON array of flashcards for individual terms found in the passage.";
         {
             var promptTokens = usage.GetProperty("prompt_tokens").GetInt32();
             var completionTokens = usage.GetProperty("completion_tokens").GetInt32();
-            tokenUsage.AddUsage(promptTokens, completionTokens);
+            var userId = GetUserIdFromContext(context);
+            if (userId != null)
+                tokenUsage.AddUsage(userId, promptTokens, completionTokens);
         }
 
         List<FlashcardItem> cardsParsed;
@@ -3505,7 +3548,7 @@ app.MapPost("/api/ai/summarize/chapter/stream", async (
     try
     {
         // Check token limit
-        var tokenLimitResult = CheckTokenLimit(cfg, tokenUsage);
+        var tokenLimitResult = CheckTokenLimit(cfg, tokenUsage, context);
         if (tokenLimitResult is not null)
         {
             await tokenLimitResult.ExecuteAsync(context);
@@ -3572,8 +3615,10 @@ app.MapPost("/api/ai/summarize/chapter/stream", async (
         var promptTokensTotal = tier1PromptTokens + tier2PromptTokens + tier3PromptTokens;
         var completionTokensTotal = tier1CompletionTokens + tier2CompletionTokens + tier3CompletionTokens;
 
-        tokenUsage.AddUsage(promptTokensTotal, completionTokensTotal);
-        var totals = tokenUsage.GetTotals();
+        var userId = GetUserIdFromContext(context);
+        if (userId != null)
+            tokenUsage.AddUsage(userId, (int)promptTokensTotal, (int)completionTokensTotal);
+        var totals = tokenUsage.GetTotals(userId ?? "");
         var monthlyAllowance = cfg.GetValue<long?>("OpenAI:MonthlyTokenAllowance");
         double? percent = null;
         long? remaining = null;
@@ -3646,6 +3691,7 @@ app.MapDelete("/api/ai/summarize/chapter", (
 
 // Retrieve or generate an ultra "I'm a Dummy" chapter summary
 app.MapPost("/api/ai/summarize/chapter/dummy", async (
+    HttpContext context,
     [FromBody] UltraChapterSummaryRequest request,
     DropboxClient dropbox,
     IHttpClientFactory httpFactory,
@@ -3757,27 +3803,18 @@ Chapter summary:
     {
         promptTokens = usage.GetProperty("prompt_tokens").GetInt32();
         completionTokens = usage.GetProperty("completion_tokens").GetInt32();
-        tokenUsage.AddUsage(promptTokens, completionTokens);
+        var userId = GetUserIdFromContext(context);
+        if (userId != null)
+            tokenUsage.AddUsage(userId, promptTokens, completionTokens);
     }
 
-    var totals = tokenUsage.GetTotals();
-    var monthlyAllowance = cfg.GetValue<long?>("OpenAI:MonthlyTokenAllowance");
-    double? percent = null;
-    long? remaining = null;
-    if (monthlyAllowance.HasValue && monthlyAllowance.Value > 0)
-    {
-        percent = Math.Round((double)totals.TotalTokens / monthlyAllowance.Value * 100, 2);
-        remaining = monthlyAllowance.Value - totals.TotalTokens;
-    }
-
+    // Note: No longer calculating global allowance stats (now tracked per-user)
     var summaryData = new
     {
         summary = summary,
         promptTokens,
         completionTokens,
         totalTokens = promptTokens + completionTokens,
-        allowanceUsedPercent = percent,
-        tokensRemaining = remaining,
         cachedAt = DateTime.UtcNow
     };
 
@@ -3818,33 +3855,74 @@ app.MapGet("/api/ai/summarize/book", (
 .RequireRateLimiting("api");
 
 // Token usage status
-app.MapGet("/api/ai/usage", (IConfiguration cfg, ITokenUsageService tokenUsage) =>
+app.MapGet("/api/ai/usage", (HttpContext context, IConfiguration cfg, ITokenUsageService tokenUsage) =>
 {
-    var totals = tokenUsage.GetTotals();
-    var allowance = cfg.GetValue<long?>("OpenAI:MonthlyTokenAllowance");
-    double? percent = null;
-    long? remaining = null;
-    if (allowance.HasValue && allowance.Value > 0)
-    {
-        percent = Math.Round((double)totals.TotalTokens / allowance.Value * 100, 2);
-        remaining = allowance.Value - totals.TotalTokens;
-    }
+    var userId = GetUserIdFromContext(context);
+    if (userId == null)
+        return Results.Unauthorized();
 
-    var reset = ComputeResetDateUtc(cfg);
-    var costUsd = tokenUsage.CalculateCostUsd(totals.PromptTokens, totals.CompletionTokens);
+    var (promptTokens, completionTokens, totalTokens) = tokenUsage.GetTotals(userId);
+    var allowanceUsd = cfg.GetValue<double?>("OpenAI:PerUserMonthlyCostAllowanceUsd") ?? 20.0;
+    var costUsd = tokenUsage.CalculateCostUsd(promptTokens, completionTokens);
+    var allowanceUsedPercent = (costUsd / allowanceUsd) * 100.0;
+    var remaining = Math.Max(0, allowanceUsd - costUsd);
+
+    var now = DateTime.UtcNow;
+    var nextReset = new DateTime(now.Year, now.Month, 1).AddMonths(1);
 
     var resp = new TokenUsageResponse(
-        totals.PromptTokens,
-        totals.CompletionTokens,
-        totals.TotalTokens,
-        allowance,
-        percent,
-        remaining,
-        reset,
-        costUsd);
+        promptTokens,
+        completionTokens,
+        totalTokens,
+        null, // No longer using token-based allowance
+        allowanceUsedPercent,
+        null, // No longer using token-based remaining
+        nextReset,
+        costUsd
+    );
+
     return Results.Ok(resp);
 })
 .RequireAuthorization()
+.RequireRateLimiting("api");
+
+// Get all users' AI usage (admin only)
+app.MapGet("/api/ai/usage/all-users", (IConfiguration cfg, ITokenUsageService tokenUsage) =>
+{
+    var allowanceUsd = cfg.GetValue<double?>("OpenAI:PerUserMonthlyCostAllowanceUsd") ?? 20.0;
+    var userDisplayNames = GetUserDisplayNames(cfg);
+
+    var now = DateTime.UtcNow;
+    var nextReset = new DateTime(now.Year, now.Month, 1).AddMonths(1);
+
+    // Return usage for ALL configured users (from appsettings.json), even if they have $0.00 usage
+    var result = userDisplayNames.Select(kvp =>
+    {
+        var userId = kvp.Key;
+        var displayName = kvp.Value;
+
+        // Get totals for this user (will return 0,0,0 if no usage file exists yet)
+        var (promptTokens, completionTokens, totalTokens) = tokenUsage.GetTotals(userId);
+        var costUsd = tokenUsage.CalculateCostUsd(promptTokens, completionTokens);
+        var allowanceUsedPercent = (costUsd / allowanceUsd) * 100.0;
+
+        return new UserTokenUsage(
+            userId,
+            displayName,
+            promptTokens,
+            completionTokens,
+            totalTokens,
+            costUsd,
+            allowanceUsd,
+            allowanceUsedPercent,
+            nextReset,
+            costUsd >= allowanceUsd
+        );
+    }).ToList();
+
+    return Results.Ok(result);
+})
+.RequireAuthorization("AdminOnly")
 .RequireRateLimiting("api");
 
 // Reset token usage counter
@@ -3905,14 +3983,14 @@ app.MapGet("/api/ai/chunk-boundaries", async (
     context.Response.Headers["Connection"] = "keep-alive";
 
     // Check token limit
-    if (IsTokenLimitExceeded(cfg, tokenUsage))
+    if (IsTokenLimitExceeded(cfg, tokenUsage, context))
     {
         await ServerSentEventsHelper.SendEventAsync(context.Response, new
         {
             stage = "error",
             stepNumber = 0,
             totalSteps = 1,
-            message = "Monthly token allowance exceeded"
+            message = "Monthly AI usage allowance exceeded"
         });
         return;
     }
@@ -4169,7 +4247,9 @@ Return format (JSON only, no explanation):
             {
                 var promptTokens = usage.GetProperty("prompt_tokens").GetInt32();
                 var completionTokens = usage.GetProperty("completion_tokens").GetInt32();
-                tokenUsage.AddUsage(promptTokens, completionTokens);
+                var userId = GetUserIdFromContext(context);
+                if (userId != null)
+                    tokenUsage.AddUsage(userId, promptTokens, completionTokens);
             }
 
             // Parse the break point
@@ -4372,6 +4452,7 @@ app.MapGet("/api/ai/section-summary", ([FromQuery] string dropboxPath, [FromQuer
 
 // ─── 5k) Section summary generation using GPT-5.2 ────────────────────────────
 app.MapPost("/api/ai/section-summary", async (
+    HttpContext context,
     [FromBody] SectionSummaryRequest request,
     DropboxClient dropbox,
     IHttpClientFactory httpFactory,
@@ -4403,7 +4484,7 @@ app.MapPost("/api/ai/section-summary", async (
     try
     {
         // Check token limit
-        var tokenLimitResult = CheckTokenLimit(cfg, tokenUsage);
+        var tokenLimitResult = CheckTokenLimit(cfg, tokenUsage, context);
         if (tokenLimitResult is not null) return tokenLimitResult;
 
     // Load chunk boundaries
@@ -4521,7 +4602,9 @@ Text to summarize:
         {
             promptTokens = usage.GetProperty("prompt_tokens").GetInt32();
             completionTokens = usage.GetProperty("completion_tokens").GetInt32();
-            tokenUsage.AddUsage(promptTokens, completionTokens);
+            var userId = GetUserIdFromContext(context);
+            if (userId != null)
+                tokenUsage.AddUsage(userId, promptTokens, completionTokens);
             Console.WriteLine($"📊 Token usage: {promptTokens} prompt + {completionTokens} completion = {promptTokens + completionTokens} total");
         }
 
@@ -4844,8 +4927,8 @@ app.MapDelete("/api/vocab/book/{bookId}", (string bookId) =>
 
 // ─── 5s) Suggest authors for a book title ────────────────────────────────────
 app.MapPost("/api/ai/suggest-authors", async (
+    HttpContext context,
     [FromBody] SuggestAuthorsRequest request,
-    HttpRequest httpRequest,
     IHttpClientFactory httpFactory,
     IConfiguration cfg,
     ITokenUsageService tokenUsage,
@@ -4859,7 +4942,7 @@ app.MapPost("/api/ai/suggest-authors", async (
     try
     {
         var forceOpenAi = false;
-        if (httpRequest.Headers.TryGetValue("x-force-openai", out var forceHeader))
+        if (context.Request.Headers.TryGetValue("x-force-openai", out var forceHeader))
         {
             forceOpenAi = string.Equals(forceHeader.ToString(), "true", StringComparison.OrdinalIgnoreCase);
         }
@@ -4874,12 +4957,12 @@ app.MapPost("/api/ai/suggest-authors", async (
             }
         }
 
-        var tokenLimitResult = CheckTokenLimit(cfg, tokenUsage);
+        var tokenLimitResult = CheckTokenLimit(cfg, tokenUsage, context);
         if (tokenLimitResult is not null) return tokenLimitResult;
 
         using var http = httpFactory.CreateClient("OpenAI");
         var model = modelSelection.GetModelFast();  // Uses gpt-4o by default
-        if (httpRequest.Headers.TryGetValue("x-openai-model", out var modelHeader))
+        if (context.Request.Headers.TryGetValue("x-openai-model", out var modelHeader))
         {
             var overrideModel = modelHeader.ToString();
             if (!string.IsNullOrWhiteSpace(overrideModel) &&
@@ -4933,7 +5016,9 @@ Do NOT include any markdown formatting, explanations, or text outside the JSON a
         {
             var promptTokens = usage.GetProperty("prompt_tokens").GetInt32();
             var completionTokens = usage.GetProperty("completion_tokens").GetInt32();
-            tokenUsage.AddUsage(promptTokens, completionTokens);
+            var userId = GetUserIdFromContext(context);
+            if (userId != null)
+                tokenUsage.AddUsage(userId, promptTokens, completionTokens);
         }
 
         // Parse the JSON array of authors
@@ -4994,6 +5079,7 @@ Do NOT include any markdown formatting, explanations, or text outside the JSON a
 
 // ─── 5n) Find related books (series + other series by author) ────────────────
 app.MapPost("/api/ai/related-books", async (
+    HttpContext context,
     [FromBody] RelatedBooksRequest request,
     AnnaArchiveService annaArchiveService,
     IHttpClientFactory httpFactory,
@@ -5006,7 +5092,7 @@ app.MapPost("/api/ai/related-books", async (
     if (request is null || string.IsNullOrWhiteSpace(request.BookTitle) || string.IsNullOrWhiteSpace(request.Author))
         return Results.BadRequest(new { error = "BookTitle and Author are required." });
 
-    var tokenLimitResult = CheckTokenLimit(cfg, tokenUsage);
+    var tokenLimitResult = CheckTokenLimit(cfg, tokenUsage, context);
     if (tokenLimitResult is not null) return tokenLimitResult;
 
     try
@@ -5084,7 +5170,9 @@ Rules:
         {
             var promptTokens = usage.GetProperty("prompt_tokens").GetInt32();
             var completionTokens = usage.GetProperty("completion_tokens").GetInt32();
-            tokenUsage.AddUsage(promptTokens, completionTokens);
+            var userId = GetUserIdFromContext(context);
+            if (userId != null)
+                tokenUsage.AddUsage(userId, promptTokens, completionTokens);
         }
 
         // Parse the JSON response
@@ -5240,6 +5328,7 @@ Rules:
 
 // ─── 5n-2) AI book search (freeform query) ───────────────────────────────
 app.MapPost("/api/ai/book-search", async (
+    HttpContext context,
     [FromBody] AiBookSearchRequest request,
     IHttpClientFactory httpFactory,
     IConfiguration cfg,
@@ -5252,7 +5341,7 @@ app.MapPost("/api/ai/book-search", async (
     if (request is null || string.IsNullOrWhiteSpace(request.Query))
         return Results.BadRequest(new { error = "query is required." });
 
-    var tokenLimitResult = CheckTokenLimit(cfg, tokenUsage);
+    var tokenLimitResult = CheckTokenLimit(cfg, tokenUsage, context);
     if (tokenLimitResult is not null) return tokenLimitResult;
 
     try
@@ -5331,7 +5420,9 @@ Rules:
         {
             var promptTokens = usage.GetProperty("prompt_tokens").GetInt32();
             var completionTokens = usage.GetProperty("completion_tokens").GetInt32();
-            tokenUsage.AddUsage(promptTokens, completionTokens);
+            var userId = GetUserIdFromContext(context);
+            if (userId != null)
+                tokenUsage.AddUsage(userId, promptTokens, completionTokens);
         }
 
         if (string.IsNullOrWhiteSpace(rawText))
@@ -5481,6 +5572,7 @@ Rules:
 
 // ─── 5o) Match series books intelligently using GPT ─────────────────────────
 app.MapPost("/api/ai/match-series-books", async (
+    HttpContext context,
     [FromBody] MatchSeriesBooksRequest request,
     IHttpClientFactory httpFactory,
     IConfiguration cfg,
@@ -5492,7 +5584,7 @@ app.MapPost("/api/ai/match-series-books", async (
     if (request is null || request.Books is null || request.Books.Count == 0)
         return Results.BadRequest(new { error = "Books list is required." });
 
-    var tokenLimitResult = CheckTokenLimit(cfg, tokenUsage);
+    var tokenLimitResult = CheckTokenLimit(cfg, tokenUsage, context);
     if (tokenLimitResult is not null) return tokenLimitResult;
 
     try
@@ -5573,7 +5665,9 @@ Rules:
         {
             var promptTokens = usage.GetProperty("prompt_tokens").GetInt32();
             var completionTokens = usage.GetProperty("completion_tokens").GetInt32();
-            tokenUsage.AddUsage(promptTokens, completionTokens);
+            var userId = GetUserIdFromContext(context);
+            if (userId != null)
+                tokenUsage.AddUsage(userId, promptTokens, completionTokens);
         }
 
         // Parse the JSON response
@@ -5634,6 +5728,7 @@ Rules:
 // ─── Character Graph Generation ─────────────────────────────────────────────
 
 app.MapPost("/api/ai/characters/graph", async (
+    HttpContext context,
     [FromBody] CharacterGraphRequest request,
     IHttpClientFactory httpFactory,
     IConfiguration cfg,
@@ -5769,7 +5864,9 @@ Create a character relationship network graph based ONLY on information in these
         {
             var promptTokens = usage.GetProperty("prompt_tokens").GetInt32();
             var completionTokens = usage.GetProperty("completion_tokens").GetInt32();
-            tokenUsage.AddUsage(promptTokens, completionTokens);
+            var userId = GetUserIdFromContext(context);
+            if (userId != null)
+                tokenUsage.AddUsage(userId, promptTokens, completionTokens);
         }
 
         // Parse the character graph JSON
@@ -5845,6 +5942,7 @@ app.MapGet("/api/ai/characters/graph", ([FromQuery] string dropboxPath) =>
 .RequireRateLimiting("api");
 
 app.MapPost("/api/ai/characters/update", async (
+    HttpContext context,
     [FromBody] CharacterGraphUpdateRequest request,
     IHttpClientFactory httpFactory,
     IConfiguration cfg,
@@ -5923,7 +6021,9 @@ Update the character graph with any new information. Return the complete updated
         {
             var promptTokens = usage.GetProperty("prompt_tokens").GetInt32();
             var completionTokens = usage.GetProperty("completion_tokens").GetInt32();
-            tokenUsage.AddUsage(promptTokens, completionTokens);
+            var userId = GetUserIdFromContext(context);
+            if (userId != null)
+                tokenUsage.AddUsage(userId, promptTokens, completionTokens);
         }
 
         // Parse updated graph
@@ -8004,6 +8104,18 @@ record FullChapterSummaryResponse(string Summary, int PromptTokens, int Completi
 record ProcessingStep(string Stage, int StepNumber, int TotalSteps, string Message, bool Success, string? Error);
 record ChapterSummaryCacheResponse(string Summary, int PromptTokens, int CompletionTokens, int TotalTokens, DateTime CachedAt);
 record TokenUsageResponse(long PromptTokens, long CompletionTokens, long TotalTokens, long? Allowance, double? AllowanceUsedPercent, long? TokensRemaining, DateTime? ResetsAtUtc, double? TotalCostUsd);
+record UserTokenUsage(
+    string UserId,
+    string DisplayName,
+    long PromptTokens,
+    long CompletionTokens,
+    long TotalTokens,
+    double TotalCostUsd,
+    double AllowanceUsd,
+    double AllowanceUsedPercent,
+    DateTime ResetsAtUtc,
+    bool IsOverLimit
+);
 
 // ─── Chunk/Section boundary models ──────────────────────────────────────────
 public record ChunkBoundary(int Start, int End, int WordCount);

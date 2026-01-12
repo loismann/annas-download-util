@@ -108,6 +108,22 @@ export class AuthService {
     return localStorage.getItem(this.ADMIN_KEY) === 'true';
   }
 
+  getUserId(): string | null {
+    const token = this.getToken();
+    if (!token) return null;
+
+    try {
+      // Decode JWT (it's base64 encoded, split by '.')
+      const payload = token.split('.')[1];
+      const decodedPayload = JSON.parse(atob(payload));
+      // The userId is stored in the 'nameid' claim (ClaimTypes.NameIdentifier)
+      return decodedPayload.nameid || decodedPayload['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier'] || null;
+    } catch (e) {
+      console.error('Failed to decode JWT token:', e);
+      return null;
+    }
+  }
+
   private hasToken(): boolean {
     return !!this.getToken();
   }

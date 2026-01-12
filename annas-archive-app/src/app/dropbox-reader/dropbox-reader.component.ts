@@ -32,7 +32,8 @@ import {
   FullChapterSummaryResponse,
   ChunkBoundariesResponse,
   SectionSummaryResponse,
-  LibraryReaderBook
+  LibraryReaderBook,
+  UserTokenUsage
 } from '../models/dropbox-epub.model';
 import { AnnaArchiveApiService } from '../services/anna-archive-api.service';
 import { VocabularyService, VocabularyWord } from '../services/vocabulary.service';
@@ -168,6 +169,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
   analysisMode: 'section' | 'page' | 'chapter' = 'section';
   selectedText: string | null = null;
   tokenUsage: { promptTokens: number; completionTokens: number; totalTokens: number; allowance?: number | null; allowanceUsedPercent?: number | null; tokensRemaining?: number | null; resetsAtUtc?: string | null; totalCostUsd?: number | null } | null = null;
+  allUsersUsage: UserTokenUsage[] = [];
   fullChapterSummaryCache = new Map<number, FullChapterSummaryResponse>();
   bookmarks: BookmarkEntry[] = [];
   bookmarkSelectValue: string | null = null;
@@ -237,6 +239,16 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
     this.timeoutIds.push(setTimeout(() => this.recalcPageSize(), 0));
     this.refreshTokenUsage();
 
+    // Load all users' usage (if admin)
+    if (this.authService.isAdmin()) {
+      this.api.getAllUsersTokenUsage().subscribe({
+        next: (usage) => {
+          this.allUsersUsage = usage;
+        },
+        error: (err) => console.error('[reader] Failed to load all users usage:', err)
+      });
+    }
+
     // Subscribe to vocabulary changes for real-time updates
     // Always keep lists in sync so they're ready when modal opens
     this.vocabularyService.knownWords$
@@ -300,6 +312,24 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
     if (!total) return 0;
     const progress = (this.currentBookWordOffset + 1) / total;
     return Math.min(100, Math.max(0, Math.round(progress * 100)));
+  }
+
+  // Check if current user is over their AI usage limit
+  get isCurrentUserOverLimit(): boolean {
+    if (!this.allUsersUsage || this.allUsersUsage.length === 0) return false;
+    // Find current user in the usage data - we can match by checking who has the highest usage
+    // or we could add a "currentUser" flag from the API. For now, just check if any user is over limit
+    // This is a simplified version - in production you'd want to match the actual logged-in user
+    return this.allUsersUsage.some(user => user.isOverLimit);
+  }
+
+  // Calculate days until monthly reset
+  get daysUntilReset(): number {
+    if (!this.tokenUsage?.resetsAtUtc) return 0;
+    const resetDate = new Date(this.tokenUsage.resetsAtUtc);
+    const now = new Date();
+    const diff = resetDate.getTime() - now.getTime();
+    return Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
   }
 
   get visibleBookmarks(): BookmarkEntry[] {

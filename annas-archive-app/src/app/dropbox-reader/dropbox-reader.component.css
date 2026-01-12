@@ -1077,6 +1077,54 @@
   margin-top: -2px;
 }
 
+/* Per-user AI usage styles */
+.user-usage-block {
+  margin-bottom: 12px;
+  padding: 8px;
+  border-radius: 4px;
+  background: white;
+}
+
+.user-usage-block.warning {
+  background: #fff3e0;
+}
+
+.user-usage-block.danger {
+  background: #ffebee;
+}
+
+.user-usage-header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.user-name {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.user-cost {
+  font-weight: 700;
+  font-size: 16px;
+  color: #1976d2;
+}
+
+.user-limit-info {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  font-size: 12px;
+  color: #d32f2f;
+}
+
+.limit-icon {
+  font-size: 16px;
+  width: 16px;
+  height: 16px;
+}
+
 .status-block {
   display: flex;
   flex-direction: column;

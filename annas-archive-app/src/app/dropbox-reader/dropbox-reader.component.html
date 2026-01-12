@@ -223,32 +223,27 @@
       Remove from Reader
     </button>
 
-    <div class="ai-usage-section" *ngIf="tokenUsage">
-      <button mat-button class="cache-toggle" (click)="showAiUsageSection = !showAiUsageSection"
-              [class.warning]="(tokenUsage.allowanceUsedPercent || 0) >= 70 && (tokenUsage.allowanceUsedPercent || 0) < 90"
-              [class.danger]="(tokenUsage.allowanceUsedPercent || 0) >= 90">
+    <div class="ai-usage-section" *ngIf="allUsersUsage.length > 0">
+      <button mat-button class="cache-toggle" (click)="showAiUsageSection = !showAiUsageSection">
         <mat-icon>{{ showAiUsageSection ? 'expand_less' : 'expand_more' }}</mat-icon>
         AI Usage
       </button>
       <div class="ai-usage-content" *ngIf="showAiUsageSection">
-        <div class="token-usage-block"
-             [class.warning]="(tokenUsage.allowanceUsedPercent || 0) >= 70 && (tokenUsage.allowanceUsedPercent || 0) < 90"
-             [class.danger]="(tokenUsage.allowanceUsedPercent || 0) >= 90">
-          <div class="token-usage-header">
-            <span class="token-cost" *ngIf="tokenUsage.totalCostUsd !== null && tokenUsage.totalCostUsd !== undefined">
-              ${{ tokenUsage.totalCostUsd | number:'1.2-2' }}
-            </span>
-            <span class="token-percent" *ngIf="tokenUsage.totalCostUsd === null || tokenUsage.totalCostUsd === undefined">
-              {{ tokenUsage.allowanceUsedPercent | number:'1.0-1' }}%
-            </span>
+        <div *ngFor="let user of allUsersUsage" class="user-usage-block"
+             [class.warning]="user.allowanceUsedPercent >= 70 && user.allowanceUsedPercent < 90"
+             [class.danger]="user.allowanceUsedPercent >= 90">
+          <div class="user-usage-header">
+            <span class="user-name">{{ user.displayName }}</span>
+            <span class="user-cost">${{ user.totalCostUsd | number:'1.2-2' }}</span>
           </div>
           <mat-progress-bar
             mode="determinate"
-            [value]="tokenUsage.allowanceUsedPercent || 0"
-            [color]="(tokenUsage.allowanceUsedPercent || 0) >= 90 ? 'warn' : (tokenUsage.allowanceUsedPercent || 0) >= 70 ? 'accent' : 'primary'">
+            [value]="user.allowanceUsedPercent"
+            [color]="user.isOverLimit ? 'warn' : user.allowanceUsedPercent >= 70 ? 'accent' : 'primary'">
           </mat-progress-bar>
-          <div class="token-reset" *ngIf="tokenUsage.resetsAtUtc">
-            Resets {{ tokenUsage.resetsAtUtc | date:'MMM d' }}
+          <div class="user-limit-info" *ngIf="user.isOverLimit">
+            <mat-icon class="limit-icon">block</mat-icon>
+            <span>Limit reached - Resets {{ user.resetsAtUtc | date:'MMM d' }}</span>
           </div>
         </div>
       </div>

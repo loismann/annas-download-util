@@ -24,6 +24,7 @@ import {
   UltraChapterSummaryRequest,
   UltraChapterSummaryResponse,
   TokenUsageResponse,
+  UserTokenUsage,
   ChunkBoundariesResponse,
   SectionSummaryRequest,
   SectionSummaryResponse,
@@ -660,6 +661,12 @@ export class AnnaArchiveApiService {
   getTokenUsage(): Observable<TokenUsageResponse> {
     return this.http.get<TokenUsageResponse>(
       `${this.aiBaseUrl}/usage`
+    );
+  }
+
+  getAllUsersTokenUsage(): Observable<UserTokenUsage[]> {
+    return this.http.get<UserTokenUsage[]>(
+      `${this.aiBaseUrl}/usage/all-users`
     );
   }
 

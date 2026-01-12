@@ -5,31 +5,34 @@ namespace AnnasArchive.Tests.Services;
 
 public class TokenUsageServiceTests : IDisposable
 {
-    private readonly string _testFilePath;
+    private readonly string _testDirectory;
     private readonly TokenUsageService _service;
 
     public TokenUsageServiceTests()
     {
-        // Use a temporary file for testing
-        _testFilePath = Path.Combine(Path.GetTempPath(), $"test-usage-{Guid.NewGuid()}.json");
-        _service = new TokenUsageService(_testFilePath);
+        // Use a temporary directory for testing
+        _testDirectory = Path.Combine(Path.GetTempPath(), $"test-ai-usage-{Guid.NewGuid()}");
+        _service = new TokenUsageService(_testDirectory);
     }
 
     public void Dispose()
     {
-        // Clean up test file
-        if (File.Exists(_testFilePath))
+        // Clean up test directory
+        if (Directory.Exists(_testDirectory))
         {
-            File.Delete(_testFilePath);
+            Directory.Delete(_testDirectory, recursive: true);
         }
     }
 
     [Fact]
-    public void AddUsage_ShouldIncrementTokens()
+    public void AddUsage_SingleUser_ShouldIncrementTokens()
     {
+        // Arrange
+        const string userId = "user-123";
+
         // Act
-        _service.AddUsage(100, 50);
-        var totals = _service.GetTotals();
+        _service.AddUsage(userId, 100, 50);
+        var totals = _service.GetTotals(userId);
 
         // Assert
         Assert.Equal(100, totals.PromptTokens);
@@ -40,12 +43,15 @@ public class TokenUsageServiceTests : IDisposable
     [Fact]
     public void AddUsage_MultipleTimes_ShouldAccumulate()
     {
-        // Act
-        _service.AddUsage(100, 50);
-        _service.AddUsage(200, 75);
-        _service.AddUsage(50, 25);
+        // Arrange
+        const string userId = "user-456";
 
-        var totals = _service.GetTotals();
+        // Act
+        _service.AddUsage(userId, 100, 50);
+        _service.AddUsage(userId, 200, 75);
+        _service.AddUsage(userId, 50, 25);
+
+        var totals = _service.GetTotals(userId);
 
         // Assert
         Assert.Equal(350, totals.PromptTokens);
@@ -54,15 +60,70 @@ public class TokenUsageServiceTests : IDisposable
     }
 
     [Fact]
-    public void GetTotals_NewService_ShouldReturnZeros()
+    public void AddUsage_MultipleUsers_ShouldTrackIndependently()
+    {
+        // Arrange
+        const string user1 = "user-dad";
+        const string user2 = "user-mom";
+        const string user3 = "user-paul";
+
+        // Act
+        _service.AddUsage(user1, 1000, 500);
+        _service.AddUsage(user2, 2000, 1000);
+        _service.AddUsage(user3, 500, 250);
+
+        var totals1 = _service.GetTotals(user1);
+        var totals2 = _service.GetTotals(user2);
+        var totals3 = _service.GetTotals(user3);
+
+        // Assert
+        Assert.Equal(1000, totals1.PromptTokens);
+        Assert.Equal(2000, totals2.PromptTokens);
+        Assert.Equal(500, totals3.PromptTokens);
+    }
+
+    [Fact]
+    public void GetTotals_NewUser_ShouldReturnZeros()
     {
         // Act
-        var totals = _service.GetTotals();
+        var totals = _service.GetTotals("new-user");
 
         // Assert
         Assert.Equal(0, totals.PromptTokens);
         Assert.Equal(0, totals.CompletionTokens);
         Assert.Equal(0, totals.TotalTokens);
+    }
+
+    [Fact]
+    public void GetAllUsersUsage_MultipleUsers_ShouldReturnAllUsers()
+    {
+        // Arrange
+        _service.AddUsage("user-1", 1000, 500);
+        _service.AddUsage("user-2", 2000, 1000);
+        _service.AddUsage("user-3", 3000, 1500);
+
+        // Act
+        var allUsage = _service.GetAllUsersUsage();
+
+        // Assert
+        Assert.Equal(3, allUsage.Count);
+        Assert.True(allUsage.ContainsKey("user-1"));
+        Assert.True(allUsage.ContainsKey("user-2"));
+        Assert.True(allUsage.ContainsKey("user-3"));
+
+        Assert.Equal(1000, allUsage["user-1"].PromptTokens);
+        Assert.Equal(2000, allUsage["user-2"].PromptTokens);
+        Assert.Equal(3000, allUsage["user-3"].PromptTokens);
+    }
+
+    [Fact]
+    public void GetAllUsersUsage_NoUsers_ShouldReturnEmpty()
+    {
+        // Act
+        var allUsage = _service.GetAllUsersUsage();
+
+        // Assert
+        Assert.Empty(allUsage);
     }
 
     [Fact]
@@ -93,13 +154,28 @@ public class TokenUsageServiceTests : IDisposable
     }
 
     [Fact]
+    public void CalculateCostUsd_RealWorldExample_ShouldWork()
+    {
+        // Realistic usage: 50,000 input + 30,000 output tokens
+        // = (50,000 / 1M * $5) + (30,000 / 1M * $15)
+        // = $0.25 + $0.45 = $0.70
+
+        // Act
+        var cost = _service.CalculateCostUsd(50_000, 30_000);
+
+        // Assert
+        Assert.Equal(0.70, cost, precision: 2);
+    }
+
+    [Fact]
     public void IsOverLimit_UnderLimit_ShouldReturnFalse()
     {
         // Arrange
-        _service.AddUsage(1000, 500);
+        const string userId = "user-test";
+        _service.AddUsage(userId, 1000, 500);
 
         // Act
-        var isOver = _service.IsOverLimit(2000);
+        var isOver = _service.IsOverLimit(userId, 2000);
 
         // Assert
         Assert.False(isOver);
@@ -109,10 +185,11 @@ public class TokenUsageServiceTests : IDisposable
     public void IsOverLimit_AtLimit_ShouldReturnTrue()
     {
         // Arrange
-        _service.AddUsage(1000, 500);
+        const string userId = "user-test";
+        _service.AddUsage(userId, 1000, 500);
 
         // Act
-        var isOver = _service.IsOverLimit(1500);
+        var isOver = _service.IsOverLimit(userId, 1500);
 
         // Assert
         Assert.True(isOver);
@@ -122,40 +199,65 @@ public class TokenUsageServiceTests : IDisposable
     public void IsOverLimit_OverLimit_ShouldReturnTrue()
     {
         // Arrange
-        _service.AddUsage(1000, 500);
+        const string userId = "user-test";
+        _service.AddUsage(userId, 1000, 500);
 
         // Act
-        var isOver = _service.IsOverLimit(1000);
+        var isOver = _service.IsOverLimit(userId, 1000);
 
         // Assert
         Assert.True(isOver);
     }
 
     [Fact]
-    public void Reset_ShouldClearAllTokens()
+    public void Reset_SpecificUser_ShouldClearOnlyThatUser()
     {
         // Arrange
-        _service.AddUsage(5000, 3000);
+        const string user1 = "user-1";
+        const string user2 = "user-2";
+        _service.AddUsage(user1, 5000, 3000);
+        _service.AddUsage(user2, 2000, 1000);
 
         // Act
-        _service.Reset();
-        var totals = _service.GetTotals();
+        _service.Reset(user1);
+        var totals1 = _service.GetTotals(user1);
+        var totals2 = _service.GetTotals(user2);
 
         // Assert
-        Assert.Equal(0, totals.PromptTokens);
-        Assert.Equal(0, totals.CompletionTokens);
-        Assert.Equal(0, totals.TotalTokens);
+        Assert.Equal(0, totals1.PromptTokens);
+        Assert.Equal(0, totals1.CompletionTokens);
+
+        // User 2 should be unchanged
+        Assert.Equal(2000, totals2.PromptTokens);
+        Assert.Equal(1000, totals2.CompletionTokens);
+    }
+
+    [Fact]
+    public void Reset_AllUsers_ShouldClearAllUsers()
+    {
+        // Arrange
+        _service.AddUsage("user-1", 5000, 3000);
+        _service.AddUsage("user-2", 2000, 1000);
+        _service.AddUsage("user-3", 8000, 4000);
+
+        // Act
+        _service.Reset(userId: null);
+        var allUsage = _service.GetAllUsersUsage();
+
+        // Assert
+        Assert.Empty(allUsage);
     }
 
     [Fact]
     public void Persistence_ShouldSaveAndLoadAcrossInstances()
     {
         // Arrange
-        _service.AddUsage(12345, 67890);
+        const string userId = "persistent-user";
+        _service.AddUsage(userId, 12345, 67890);
 
-        // Act - Create new service instance with same file
-        var newService = new TokenUsageService(_testFilePath);
-        var totals = newService.GetTotals();
+        // Act - Create new service instance with same directory
+        var newService = new TokenUsageService(_testDirectory);
+        var totals = newService.GetTotals(userId);
 
         // Assert
         Assert.Equal(12345, totals.PromptTokens);
@@ -164,33 +266,115 @@ public class TokenUsageServiceTests : IDisposable
     }
 
     [Fact]
-    public void ConcurrentAccess_ShouldBeThreadSafe()
+    public void Persistence_MultipleUsers_ShouldPersistIndependently()
+    {
+        // Arrange
+        _service.AddUsage("user-a", 1000, 500);
+        _service.AddUsage("user-b", 2000, 1000);
+        _service.AddUsage("user-c", 3000, 1500);
+
+        // Act - Create new service instance
+        var newService = new TokenUsageService(_testDirectory);
+        var allUsage = newService.GetAllUsersUsage();
+
+        // Assert
+        Assert.Equal(3, allUsage.Count);
+        Assert.Equal(1000, allUsage["user-a"].PromptTokens);
+        Assert.Equal(2000, allUsage["user-b"].PromptTokens);
+        Assert.Equal(3000, allUsage["user-c"].PromptTokens);
+    }
+
+    [Fact]
+    public void ConcurrentAccess_SingleUser_ShouldBeThreadSafe()
     {
         // Arrange
         const int iterations = 100;
         const int threadsCount = 10;
+        const string userId = "concurrent-user";
         var tasks = new List<Task>();
 
-        // Act - Multiple threads adding usage concurrently
+        // Act - Multiple threads adding usage concurrently for same user
         for (int t = 0; t < threadsCount; t++)
         {
             tasks.Add(Task.Run(() =>
             {
                 for (int i = 0; i < iterations; i++)
                 {
-                    _service.AddUsage(10, 5);
+                    _service.AddUsage(userId, 10, 5);
                 }
             }));
         }
 
         Task.WaitAll(tasks.ToArray());
-
-        var totals = _service.GetTotals();
+        var totals = _service.GetTotals(userId);
 
         // Assert - Should have exact total (no race conditions)
         var expectedPrompt = threadsCount * iterations * 10;
         var expectedCompletion = threadsCount * iterations * 5;
         Assert.Equal(expectedPrompt, totals.PromptTokens);
         Assert.Equal(expectedCompletion, totals.CompletionTokens);
+    }
+
+    [Fact]
+    public void ConcurrentAccess_MultipleUsers_ShouldBeThreadSafe()
+    {
+        // Arrange
+        const int iterations = 50;
+        var users = new[] { "user-1", "user-2", "user-3" };
+        var tasks = new List<Task>();
+
+        // Act - Multiple threads adding usage for different users
+        foreach (var userId in users)
+        {
+            tasks.Add(Task.Run(() =>
+            {
+                for (int i = 0; i < iterations; i++)
+                {
+                    _service.AddUsage(userId, 10, 5);
+                }
+            }));
+        }
+
+        Task.WaitAll(tasks.ToArray());
+
+        // Assert - Each user should have exact totals
+        foreach (var userId in users)
+        {
+            var totals = _service.GetTotals(userId);
+            Assert.Equal(iterations * 10, totals.PromptTokens);
+            Assert.Equal(iterations * 5, totals.CompletionTokens);
+        }
+    }
+
+    [Fact]
+    public void UserIdSanitization_ShouldHandleSpecialCharacters()
+    {
+        // Arrange
+        const string userId = "user/with\\special:characters";
+
+        // Act
+        _service.AddUsage(userId, 100, 50);
+        var totals = _service.GetTotals(userId);
+
+        // Assert - Should work without errors
+        Assert.Equal(100, totals.PromptTokens);
+        Assert.Equal(50, totals.CompletionTokens);
+    }
+
+    [Fact]
+    public void AutoReset_ShouldIncludeLastResetDate()
+    {
+        // Arrange
+        const string userId = "test-user";
+        _service.AddUsage(userId, 1000, 500);
+
+        // Act
+        var allUsage = _service.GetAllUsersUsage();
+
+        // Assert
+        Assert.True(allUsage.ContainsKey(userId));
+        var (_, _, _, lastResetDate) = allUsage[userId];
+        Assert.True(lastResetDate <= DateTime.UtcNow);
+        Assert.True(lastResetDate > DateTime.UtcNow.AddHours(-1)); // Should be very recent
     }
 }

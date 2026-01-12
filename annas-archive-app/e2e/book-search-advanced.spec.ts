@@ -127,6 +127,15 @@ test.describe('Book Search - Advanced Features', () => {
     test.skip(!aiLiveEnabled, 'E2E_AI_LIVE not enabled');
 
     test('Related books should show other series by same author', async ({ page }) => {
+      // Reset AI usage before running live AI tests to avoid hitting usage limits
+      try {
+        const response = await page.request.post('/api/ai/usage/reset');
+        if (response.ok()) {
+          console.log('✅ AI usage reset before live test');
+        }
+      } catch (err) {
+        console.warn('⚠️ Could not reset AI usage:', err);
+      }
       await page.locator('input[name="searchTerm"]').fill('Foundation');
       await page.waitForResponse('**/api/ai/suggest-authors');
 

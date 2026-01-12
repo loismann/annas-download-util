@@ -14,7 +14,7 @@ export const routes: Routes = [
   { path: 'search', component: BookSearchComponent, canActivate: [authGuard] },
   { path: 'reader', component: DropboxReaderComponent, canActivate: [authGuard] },
   { path: 'library', component: LibraryComponent, canActivate: [authGuard] },
-  { path: 'spotifinator', component: SpotifinatorComponent, canActivate: [authGuard] },
+  { path: 'spotifinator', component: SpotifinatorComponent, canActivate: [authGuard, adminGuard] },
   { path: 'gaming', component: GamingControlComponent, canActivate: [authGuard] },
   { path: 'quiz', component: QuizComponent, canActivate: [authGuard, adminGuard] },
   { path: '', redirectTo: '/search', pathMatch: 'full' },

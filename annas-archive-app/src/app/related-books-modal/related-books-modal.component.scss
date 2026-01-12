@@ -108,6 +108,22 @@
   justify-content: space-between;
   gap: 0.5rem;
   align-items: center;
+
+  .remove-match-button {
+    opacity: 0.6;
+    transition: opacity 0.2s ease, color 0.2s ease;
+
+    &:hover {
+      opacity: 1;
+      color: #c62828;
+    }
+
+    mat-icon {
+      font-size: 1.25rem;
+      width: 1.25rem;
+      height: 1.25rem;
+    }
+  }
 }
 
 .status {
@@ -146,14 +162,16 @@
   color: #444;
 }
 
-.match-select-panel .mat-mdc-option {
-  white-space: nowrap;
+/* Match dropdown panel styling moved to global styles.scss */
+/* (CDK overlay panels require global styles to be styled properly) */
+
+/* Make match dropdown form field full width */
+.w-100 {
+  width: 100%;
 }
 
-.match-select-panel .mdc-list-item__primary-text {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.match-card mat-form-field {
+  width: 100%;
 }
 
 .send-log {

@@ -97,6 +97,8 @@
     justify-content: center;
     align-items: center;
     gap: var(--form-item-gap);
+    overflow-y: auto;
+    height: 100%;
   }
   
   .search-form form {
@@ -215,7 +217,10 @@
   :host ::ng-deep .mat-mdc-form-field.mat-form-field-disabled .mdc-notched-outline__trailing {
     border-color: #999 !important;
   }
-  
+
+/* Author dropdown panel styling moved to global styles.scss */
+/* (CDK overlay panels require global styles to be styled properly) */
+
 /* source toggle row */
 .source-toggle-row {
   width: 100%;
@@ -266,6 +271,7 @@
   /* ─── RIGHT column ────────────────────────────── */
   .search-results {
     overflow-y: auto;
+    height: 100%;
     padding: 5rem 0;
     display: flex;
     justify-content: center;
@@ -313,6 +319,30 @@
   :host ::ng-deep mat-card.book-card .info .mat-card-header {
     padding: 16px 16px 0 16px;
     align-items: start;
+    position: relative;
+  }
+
+  :host ::ng-deep mat-card.book-card .info .mat-card-header .remove-book-button {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 32px;
+    height: 32px;
+    line-height: 32px;
+    color: #666;
+    transition: color 0.2s ease, background-color 0.2s ease;
+  }
+
+  :host ::ng-deep mat-card.book-card .info .mat-card-header .remove-book-button:hover {
+    color: #f44336;
+    background-color: rgba(244, 67, 54, 0.1);
+  }
+
+  :host ::ng-deep mat-card.book-card .info .mat-card-header .remove-book-button mat-icon {
+    font-size: 20px;
+    width: 20px;
+    height: 20px;
+    line-height: 20px;
   }
   
   :host ::ng-deep mat-card.book-card .info .mat-card-content {

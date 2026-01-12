@@ -52,6 +52,57 @@
         <div class="meta-value">{{ filteredBooks.length }}</div>
       </div>
 
+      <!-- Bulk Edit Section -->
+      <div class="bulk-edit-section">
+        <button
+          mat-raised-button
+          color="accent"
+          (click)="toggleBulkEditMode()"
+          class="bulk-edit-toggle"
+        >
+          {{ bulkEditMode ? 'Exit Bulk Edit' : 'Bulk Edit' }}
+        </button>
+
+        <div *ngIf="bulkEditMode && selectedBooksForBulk.size > 0" class="bulk-edit-controls">
+          <div class="selection-counter">
+            {{ selectedBooksForBulk.size }} book{{ selectedBooksForBulk.size === 1 ? '' : 's' }} selected for bulk edit
+          </div>
+
+          <button
+            mat-raised-button
+            color="primary"
+            (click)="openBulkEditDialog()"
+            [disabled]="selectedBooksForBulk.size === 0"
+          >
+            Edit Selected
+          </button>
+
+          <div class="bulk-send-actions">
+            <button
+              mat-button
+              (click)="bulkSend('dropbox')"
+              [disabled]="selectedBooksForBulk.size === 0"
+            >
+              Send to Dropbox
+            </button>
+            <button
+              mat-button
+              (click)="bulkSend('kindle-dad')"
+              [disabled]="selectedBooksForBulk.size === 0"
+            >
+              Send to Dad's Kindle
+            </button>
+            <button
+              mat-button
+              (click)="bulkSend('kindle-mom')"
+              [disabled]="selectedBooksForBulk.size === 0"
+            >
+              Send to Mom's Kindle
+            </button>
+          </div>
+        </div>
+      </div>
+
       <div class="admin-section" *ngIf="authService.isAdmin()">
         <button type="button" class="admin-toggle" (click)="toggleAdmin()">
           <span>Admin</span>
@@ -133,7 +184,21 @@
       <div *ngIf="!loading && !error" class="library-grid-scroll" #libraryGrid (scroll)="onGridScroll()">
         <div class="library-grid">
           <ng-container *ngFor="let book of filteredBooks; let i = index; trackBy: trackByFileName">
-            <mat-card class="library-card" [attr.data-index]="i">
+            <mat-card
+              class="library-card"
+              [class.bulk-edit-selected]="bulkEditMode && selectedBooksForBulk.has(book.fileName)"
+              [attr.data-index]="i"
+            >
+              <!-- Checkbox overlay in upper-right corner -->
+              <div *ngIf="bulkEditMode" class="bulk-edit-checkbox-wrapper">
+                <mat-checkbox
+                  [checked]="selectedBooksForBulk.has(book.fileName)"
+                  (change)="toggleBookSelection(book)"
+                  (click)="$event.stopPropagation()"
+                >
+                </mat-checkbox>
+              </div>
+
               <div class="cover-frame" (click)="onCoverClick(book)" style="cursor: pointer;">
                 <img
                   class="cover"

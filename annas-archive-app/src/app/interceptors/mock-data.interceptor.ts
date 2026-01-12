@@ -106,6 +106,17 @@ const MOCK_WIKI_IMAGES = [
 ];
 
 export const mockDataInterceptor: HttpInterceptorFn = (req, next) => {
+  // Skip interceptor for E2E tests
+  // Check both URL query param and localStorage for E2E mode
+  const isE2E = (typeof window !== 'undefined' &&
+    (window.location.search.includes('e2e=') ||
+     window.location.hash.includes('e2e=') ||
+     localStorage.getItem('auth_name') === 'E2E User'));
+
+  if (isE2E) {
+    return next(req);
+  }
+
   // Only intercept in local dev mode
   if (!isLocalDev()) {
     return next(req);

@@ -179,14 +179,29 @@ export class VocabularyService {
     }
   }
 
-  markAsKnown(term: string, bookId?: string): void {
-    console.log(`📗 [markAsKnown] Called with term='${term}', bookId='${bookId}'`);
+  markAsKnown(term: string, bookId?: string, definition?: string): void {
+    console.log(`📗 [markAsKnown] Called with term='${term}', bookId='${bookId}', definition='${definition}'`);
     const normalizedTerm = this.normalizeTerm(term);
     if (!normalizedTerm) {
       console.warn(`⚠️ [markAsKnown] Normalized term is empty, skipping`);
       return;
     }
     console.log(`🔤 [markAsKnown] Normalized term: '${normalizedTerm}'`);
+
+    // Cache the definition permanently (even when marking as known, so it's available later)
+    if (definition && definition.trim()) {
+      this.definitionsCache.set(normalizedTerm, definition);
+      this.saveClientOnlyStorage();
+      console.log(`💿 [markAsKnown] Cached definition for '${normalizedTerm}'`);
+    } else if (!this.definitionsCache.has(normalizedTerm)) {
+      // If no definition provided, try to get it from study words
+      const studyDef = this.studyWordsSubject.value.get(normalizedTerm);
+      if (studyDef) {
+        this.definitionsCache.set(normalizedTerm, studyDef);
+        this.saveClientOnlyStorage();
+        console.log(`💿 [markAsKnown] Cached definition from study list for '${normalizedTerm}'`);
+      }
+    }
 
     // Update local state immediately for UI responsiveness
     // Create new Set instance to trigger BehaviorSubject emission
@@ -493,6 +508,14 @@ export class VocabularyService {
     const cached = this.definitionsCache.get(normalized);
     console.log(`💿 [getCachedDefinition] Looking up '${term}' (normalized: '${normalized}'): ${cached ? 'FOUND' : 'NOT FOUND'}`);
     return cached;
+  }
+
+  getStudyWordDefinition(term: string): string | undefined {
+    const normalized = this.normalizeTerm(term);
+    if (!normalized) return undefined;
+    const definition = this.studyWordsSubject.value.get(normalized);
+    console.log(`📕 [getStudyWordDefinition] Looking up '${term}' (normalized: '${normalized}'): ${definition ? 'FOUND' : 'NOT FOUND'}`);
+    return definition;
   }
 
   cacheLearnMore(term: string, detail: string, images: string[]): void {

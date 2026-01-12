@@ -2,16 +2,16 @@
   background: #ffffff;
   border-radius: 12px;
   padding: 32px;
-  max-width: 480px;
-  min-width: 400px;
-  max-height: 90vh;
   box-shadow: 0 20px 40px rgba(15, 23, 42, 0.15);
   text-align: center;
-  overflow: visible;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  overflow-x: hidden;
+  overflow-y: auto;
+  box-sizing: border-box;
+  width: 100%;
 }
 
 .confirm-title {
@@ -20,6 +20,10 @@
   font-weight: 700;
   letter-spacing: -0.02em;
   color: #0f172a;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .confirm-message {
@@ -28,6 +32,10 @@
   white-space: pre-wrap;
   color: #475569;
   font-size: 15px;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .confirm-actions {

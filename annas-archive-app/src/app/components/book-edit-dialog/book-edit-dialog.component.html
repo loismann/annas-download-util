@@ -51,8 +51,14 @@
       </div>
       <div class="cover-picker" *ngIf="coverPickerOpen">
         <div class="cover-picker-header">
-          <span>1:1.6 ratio - min {{ minCoverWidth }}x{{ minCoverHeight }}</span>
-          <button mat-button type="button" (click)="refreshCoverCandidates()">Refresh</button>
+          <span>Available covers (sorted by size)</span>
+          <div class="cover-picker-actions">
+            <button mat-button type="button" (click)="openGoogleImages()">
+              <mat-icon>search</mat-icon>
+              Google Images
+            </button>
+            <button mat-button type="button" (click)="refreshCoverCandidates()">Refresh</button>
+          </div>
         </div>
         <div class="cover-picker-status" *ngIf="coverCandidatesLoading">Loading covers...</div>
         <div class="cover-picker-status error" *ngIf="!coverCandidatesLoading && coverCandidatesError">

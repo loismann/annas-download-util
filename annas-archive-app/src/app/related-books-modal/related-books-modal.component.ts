@@ -388,6 +388,13 @@ export class RelatedBooksModalComponent {
     }
   }
 
+  removeMatchResult(result: MatchResult): void {
+    const index = this.matchResults.indexOf(result);
+    if (index > -1) {
+      this.matchResults.splice(index, 1);
+    }
+  }
+
   bookKey(book: SeriesBook): string {
     return `${book.order ?? 0}:${book.title}`.toLowerCase();
   }

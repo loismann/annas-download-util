@@ -8,9 +8,11 @@ import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
+import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MatDialog } from '@angular/material/dialog';
 import { AnnaArchiveApiService } from '../services/anna-archive-api.service';
 import { BookEditDialogComponent, BookEditDialogData, BookEditDialogResult } from '../components/book-edit-dialog/book-edit-dialog.component';
+import { BulkEditDialogComponent, BookBulkEditDialogData, BookBulkEditDialogResult } from '../components/bulk-edit-dialog/bulk-edit-dialog.component';
 import { AuthService } from '../services/auth.service';
 
 interface LibraryBook {
@@ -47,7 +49,8 @@ interface LibraryBook {
     MatInputModule,
     MatSelectModule,
     MatButtonModule,
-    MatIconModule
+    MatIconModule,
+    MatCheckboxModule
   ],
   templateUrl: './library.component.html',
   styleUrls: ['./library.component.css']
@@ -76,6 +79,8 @@ export class LibraryComponent implements OnInit {
   readonly starRange = [1, 2, 3, 4, 5];
   selectedOwnerTags = new Set<string>();
   readonly ownerTags = ["Dad's Books", "Mom's Books", "Paul's Books"];
+  bulkEditMode = false;
+  selectedBooksForBulk = new Set<string>();
 
   @ViewChild('libraryGrid') libraryGrid?: ElementRef<HTMLDivElement>;
 
@@ -440,16 +445,27 @@ export class LibraryComponent implements OnInit {
         });
 
         if (result.coverUrl) {
+          console.log('[library] Updating cover for', book.fileName, 'with URL:', result.coverUrl);
           this.api.updateLibraryBookCover(book.fileName, result.coverUrl).subscribe({
             next: (resp) => {
+              console.log('[library] Cover update response:', resp);
               if (resp?.coverUrl) {
-                book.coverUrl = resp.coverUrl;
+                // Add cache-busting timestamp to force browser to reload the image
+                const timestamp = new Date().getTime();
+                const separator = resp.coverUrl.includes('?') ? '&' : '?';
+                book.coverUrl = `${resp.coverUrl}${separator}t=${timestamp}`;
+                console.log('[library] Cover updated successfully to:', book.coverUrl);
+              } else {
+                console.warn('[library] Cover update succeeded but no coverUrl in response');
               }
             },
             error: (err) => {
               console.error('[library] Failed to update book cover:', err);
+              console.error('[library] Error details:', err.error);
             }
           });
+        } else {
+          console.log('[library] No coverUrl in result, skipping cover update');
         }
       }
     });
@@ -539,6 +555,21 @@ export class LibraryComponent implements OnInit {
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }
 
+  private buildGenreListForBulkEdit(books: LibraryBook[]): string[] {
+    const set = new Set<string>();
+    books.forEach(book => {
+      if (book.primaryGenre) {
+        set.add(book.primaryGenre);
+      }
+      (book.tags ?? []).forEach(tag => {
+        set.add(tag);
+      });
+    });
+    // Add owner tags explicitly to ensure they're always available
+    this.ownerTags.forEach(tag => set.add(tag));
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }
+
   toggleOwnerTag(tag: string): void {
     if (this.selectedOwnerTags.has(tag)) {
       this.selectedOwnerTags.delete(tag);
@@ -576,5 +607,115 @@ export class LibraryComponent implements OnInit {
         console.error('[library] Failed to wipe genres', err);
       }
     });
+  }
+
+  toggleBulkEditMode(): void {
+    this.bulkEditMode = !this.bulkEditMode;
+    if (!this.bulkEditMode) {
+      this.selectedBooksForBulk.clear();
+    }
+  }
+
+  toggleBookSelection(book: LibraryBook): void {
+    if (!this.bulkEditMode) return;
+
+    if (this.selectedBooksForBulk.has(book.fileName)) {
+      this.selectedBooksForBulk.delete(book.fileName);
+    } else {
+      this.selectedBooksForBulk.add(book.fileName);
+    }
+  }
+
+  openBulkEditDialog(): void {
+    if (this.selectedBooksForBulk.size === 0) return;
+
+    const selectedBooks = this.books.filter(book => this.selectedBooksForBulk.has(book.fileName));
+    const bookFileNames = selectedBooks.map(book => book.fileName);
+    const bookTitles = selectedBooks.map(book => book.title);
+
+    const dialogData: BookBulkEditDialogData = {
+      bookFileNames,
+      bookTitles,
+      availableGenres: this.buildGenreListForBulkEdit(this.books)
+    };
+
+    const dialogRef = this.dialog.open(BulkEditDialogComponent, {
+      width: '650px',
+      data: dialogData
+    });
+
+    dialogRef.afterClosed().subscribe((result: BookBulkEditDialogResult | undefined) => {
+      if (!result) return;
+
+      // Update all selected books with the new metadata
+      for (const book of selectedBooks) {
+        if (result.authors) {
+          book.authors = result.authors;
+        }
+        if (result.primaryGenre !== undefined) {
+          book.primaryGenre = result.primaryGenre;
+        }
+        if (result.tags) {
+          book.tags = result.tags;
+        }
+        if (result.series !== undefined) {
+          book.series = result.series;
+        }
+
+        // Update on backend
+        this.api.updateLibraryBookMetadata(book.fileName, {
+          primaryGenre: result.primaryGenre ?? book.primaryGenre ?? 'Uncategorized',
+          tags: result.tags ?? book.tags ?? [],
+          series: result.series ?? book.series ?? null,
+          title: book.title,
+          authors: result.authors ?? book.authors
+        }).subscribe({
+          next: () => {
+            console.log('[library] Updated book metadata:', book.fileName);
+          },
+          error: (err) => {
+            console.error('[library] Failed to update book metadata:', err);
+          }
+        });
+      }
+
+      // Rebuild genre list for filter dropdown
+      this.genres = this.buildGenreList(this.books);
+
+      // Exit bulk edit mode and clear selection
+      this.bulkEditMode = false;
+      this.selectedBooksForBulk.clear();
+    });
+  }
+
+  async bulkSend(action: 'dropbox' | 'kindle-dad' | 'kindle-mom'): Promise<void> {
+    if (this.selectedBooksForBulk.size === 0) return;
+
+    const selectedBooks = this.books.filter(book => this.selectedBooksForBulk.has(book.fileName));
+
+    for (let i = 0; i < selectedBooks.length; i++) {
+      const book = selectedBooks[i];
+
+      if (action === 'dropbox') {
+        this.sendToDropbox(book);
+      } else if (action === 'kindle-dad') {
+        this.sendToKindle(book, 'dad');
+      } else if (action === 'kindle-mom') {
+        this.sendToKindle(book, 'mom');
+      }
+
+      // Wait 2 seconds between sends (except after last book)
+      if (i < selectedBooks.length - 1) {
+        await this.delay(2000);
+      }
+    }
+
+    // Exit bulk edit mode after completion
+    this.bulkEditMode = false;
+    this.selectedBooksForBulk.clear();
+  }
+
+  private delay(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
   }
 }

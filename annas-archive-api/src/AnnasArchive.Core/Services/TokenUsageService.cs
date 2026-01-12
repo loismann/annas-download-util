@@ -1,15 +1,17 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 
 namespace AnnasArchive.Core.Services;
 
 /// <summary>
-/// Tracks OpenAI token usage with persistence to disk and automatic monthly resets
+/// Tracks OpenAI token usage per user with persistence to disk and automatic monthly resets
 /// </summary>
 public class TokenUsageService : ITokenUsageService
 {
-    private readonly string _usageFilePath;
+    private readonly string _storageDirectory;
     private readonly object _fileLock = new();
 
     private class UsageData
@@ -21,31 +23,68 @@ public class TokenUsageService : ITokenUsageService
 
     public TokenUsageService(string? storagePath = null)
     {
-        _usageFilePath = storagePath ?? Path.Combine(
+        _storageDirectory = storagePath ?? Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
             ".annas-archive",
-            "openai-usage.json"
+            "ai-usage"
         );
+        Directory.CreateDirectory(_storageDirectory);
     }
 
-    public void AddUsage(int promptTokens, int completionTokens)
+    private string GetUserFilePath(string userId)
+    {
+        // Sanitize userId for file system
+        var sanitized = string.Join("_", userId.Split(Path.GetInvalidFileNameChars()));
+        return Path.Combine(_storageDirectory, $"{sanitized}.json");
+    }
+
+    public void AddUsage(string userId, int promptTokens, int completionTokens)
     {
         lock (_fileLock)
         {
-            var data = LoadUsageUnsafe();
+            var data = LoadUsageUnsafe(userId);
             data.PromptTokens += promptTokens;
             data.CompletionTokens += completionTokens;
-            SaveUsageUnsafe(data);
+            SaveUsageUnsafe(userId, data);
         }
     }
 
-    public (long PromptTokens, long CompletionTokens, long TotalTokens) GetTotals()
+    public (long PromptTokens, long CompletionTokens, long TotalTokens) GetTotals(string userId)
     {
         lock (_fileLock)
         {
-            var data = LoadUsageUnsafe();
-            CheckAndAutoResetUnsafe(ref data);
+            var data = LoadUsageUnsafe(userId);
+            CheckAndAutoResetUnsafe(userId, ref data);
             return (data.PromptTokens, data.CompletionTokens, data.PromptTokens + data.CompletionTokens);
+        }
+    }
+
+    public Dictionary<string, (long PromptTokens, long CompletionTokens, long TotalTokens, DateTime LastResetDate)> GetAllUsersUsage()
+    {
+        lock (_fileLock)
+        {
+            var result = new Dictionary<string, (long, long, long, DateTime)>();
+
+            if (!Directory.Exists(_storageDirectory))
+                return result;
+
+            var files = Directory.GetFiles(_storageDirectory, "*.json");
+            foreach (var file in files)
+            {
+                try
+                {
+                    var userId = Path.GetFileNameWithoutExtension(file).Replace("_", "-");
+                    var data = LoadUsageUnsafe(userId);
+                    CheckAndAutoResetUnsafe(userId, ref data);
+                    result[userId] = (data.PromptTokens, data.CompletionTokens, data.PromptTokens + data.CompletionTokens, data.LastResetDate);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"⚠️ Failed to load usage for {file}: {ex.Message}");
+                }
+            }
+
+            return result;
         }
     }
 
@@ -63,43 +102,63 @@ public class TokenUsageService : ITokenUsageService
         return Math.Round(inputCost + outputCost, 2);
     }
 
-    public bool IsOverLimit(long allowance)
+    public bool IsOverLimit(string userId, long allowance)
     {
         lock (_fileLock)
         {
-            var data = LoadUsageUnsafe();
-            CheckAndAutoResetUnsafe(ref data);
+            var data = LoadUsageUnsafe(userId);
+            CheckAndAutoResetUnsafe(userId, ref data);
             var total = data.PromptTokens + data.CompletionTokens;
             return total >= allowance;
         }
     }
 
-    public void Reset()
-    {
-        var data = new UsageData
-        {
-            PromptTokens = 0,
-            CompletionTokens = 0,
-            LastResetDate = DateTime.UtcNow
-        };
-        SaveUsage(data);
-    }
-
-    private UsageData LoadUsage()
+    public void Reset(string? userId = null)
     {
         lock (_fileLock)
         {
-            return LoadUsageUnsafe();
+            if (userId == null)
+            {
+                // Reset all users
+                if (Directory.Exists(_storageDirectory))
+                {
+                    var files = Directory.GetFiles(_storageDirectory, "*.json");
+                    foreach (var file in files)
+                    {
+                        try
+                        {
+                            File.Delete(file);
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"⚠️ Failed to delete {file}: {ex.Message}");
+                        }
+                    }
+                }
+                Console.WriteLine("📅 Reset all user token usage counters");
+            }
+            else
+            {
+                // Reset specific user
+                var data = new UsageData
+                {
+                    PromptTokens = 0,
+                    CompletionTokens = 0,
+                    LastResetDate = DateTime.UtcNow
+                };
+                SaveUsageUnsafe(userId, data);
+                Console.WriteLine($"📅 Reset token usage counter for user: {userId}");
+            }
         }
     }
 
-    private UsageData LoadUsageUnsafe()
+    private UsageData LoadUsageUnsafe(string userId)
     {
         try
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(_usageFilePath)!);
+            var filePath = GetUserFilePath(userId);
 
-            if (!File.Exists(_usageFilePath))
+            if (!File.Exists(filePath))
             {
                 return new UsageData
                 {
@@ -109,7 +168,7 @@ public class TokenUsageService : ITokenUsageService
                 };
             }
 
-            var json = File.ReadAllText(_usageFilePath);
+            var json = File.ReadAllText(filePath);
             return JsonSerializer.Deserialize<UsageData>(json) ?? new UsageData
             {
                 PromptTokens = 0,
@@ -128,57 +187,40 @@ public class TokenUsageService : ITokenUsageService
         }
     }
 
-    private void SaveUsage(UsageData data)
-    {
-        lock (_fileLock)
-        {
-            SaveUsageUnsafe(data);
-        }
-    }
-
-    private void SaveUsageUnsafe(UsageData data)
+    private void SaveUsageUnsafe(string userId, UsageData data)
     {
         try
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(_usageFilePath)!);
+            var filePath = GetUserFilePath(userId);
             var json = JsonSerializer.Serialize(data, new JsonSerializerOptions
             {
                 WriteIndented = true
             });
-            File.WriteAllText(_usageFilePath, json);
+            File.WriteAllText(filePath, json);
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"⚠️ Failed to save token usage: {ex.Message}");
+            Console.WriteLine($"⚠️ Failed to save token usage for {userId}: {ex.Message}");
         }
     }
 
-    private void CheckAndAutoReset(ref UsageData data)
-    {
-        lock (_fileLock)
-        {
-            CheckAndAutoResetUnsafe(ref data);
-        }
-    }
-
-    private void CheckAndAutoResetUnsafe(ref UsageData data)
+    private void CheckAndAutoResetUnsafe(string userId, ref UsageData data)
     {
         // Check if we've passed into a new month since last reset
         var now = DateTime.UtcNow;
         var lastReset = data.LastResetDate;
 
-        // Reset if we're in a different month OR if it's been more than 30 days
-        var shouldReset = (now.Year > lastReset.Year && now.Month >= lastReset.Month) ||
-                         (now.Year == lastReset.Year && now.Month > lastReset.Month) ||
-                         (now - lastReset).TotalDays >= 30;
+        // Reset at the start of each calendar month
+        var shouldReset = (now.Year > lastReset.Year) ||
+                         (now.Year == lastReset.Year && now.Month > lastReset.Month);
 
         if (shouldReset)
         {
-            Console.WriteLine($"📅 Auto-resetting token usage counter (last reset: {lastReset:yyyy-MM-dd}, now: {now:yyyy-MM-dd})");
+            Console.WriteLine($"📅 Auto-resetting token usage for {userId} (last reset: {lastReset:yyyy-MM-dd}, now: {now:yyyy-MM-dd})");
             data.PromptTokens = 0;
             data.CompletionTokens = 0;
             data.LastResetDate = now;
-            SaveUsageUnsafe(data);
+            SaveUsageUnsafe(userId, data);
         }
     }
 }

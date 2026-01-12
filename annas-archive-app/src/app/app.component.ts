@@ -48,7 +48,7 @@ import { VERSION } from './version';
               <mat-icon>local_library</mat-icon>
               <span>Ebook Library</span>
             </button>
-            <button mat-menu-item routerLink="/spotifinator">
+            <button *ngIf="authService.isAdmin()" mat-menu-item routerLink="/spotifinator">
               <mat-icon>library_music</mat-icon>
               <span>Spotif-inator</span>
             </button>

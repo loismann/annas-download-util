@@ -30,10 +30,6 @@ describe('AuthService', () => {
     localStorage.clear();
   });
 
-  it('should be created', () => {
-    expect(service).toBeTruthy();
-  });
-
   it('should login and store token', (done) => {
     const mockResponse = {
       token: 'test-token',

@@ -84,11 +84,6 @@ export class BookEditDialogComponent {
   dropboxState: 'idle' | 'sending' | 'success' | 'error' = 'idle';
   readerState: 'idle' | 'sending' | 'success' | 'error' = 'idle';
 
-  readonly minCoverWidth = 400;
-  readonly minCoverHeight = 600;
-  readonly targetCoverRatio = 1.6;
-  readonly coverRatioTolerance = 0.3;
-
   constructor(
     public dialogRef: MatDialogRef<BookEditDialogComponent>,
     @Inject(MAT_DIALOG_DATA) public data: BookEditDialogData,
@@ -141,6 +136,16 @@ export class BookEditDialogComponent {
   }
 
   onSave(): void {
+    const coverUrl = this.selectedCoverUrl && this.selectedCoverUrl !== this.data.coverUrl
+      ? this.selectedCoverUrl
+      : null;
+
+    console.log('[BookEditDialog] Saving with:', {
+      selectedCoverUrl: this.selectedCoverUrl,
+      dataCoverUrl: this.data.coverUrl,
+      willSendCoverUrl: coverUrl
+    });
+
     this.dialogRef.close({
       primaryGenre: this.selectedGenre,
       tags: this.tags,
@@ -150,9 +155,7 @@ export class BookEditDialogComponent {
         .split(',')
         .map(author => author.trim())
         .filter(author => author.length > 0),
-      coverUrl: this.selectedCoverUrl && this.selectedCoverUrl !== this.data.coverUrl
-        ? this.selectedCoverUrl
-        : null
+      coverUrl: coverUrl
     } as BookEditDialogResult);
   }
 
@@ -193,6 +196,18 @@ export class BookEditDialogComponent {
     if (!trimmed) return;
     this.selectedCoverUrl = trimmed;
     this.manualCoverUrl = '';
+  }
+
+  openGoogleImages(): void {
+    const title = this.data.title?.trim();
+    const author = this.data.authors?.[0]?.trim();
+    let query = title || '';
+    if (author) {
+      query += ` ${author}`;
+    }
+    query += ' book cover';
+    const searchUrl = `https://www.google.com/search?tbm=isch&q=${encodeURIComponent(query)}`;
+    window.open(searchUrl, '_blank');
   }
 
   addSelectedGenreAsTag(): void {
@@ -317,25 +332,27 @@ export class BookEditDialogComponent {
         const urls = Array.from(new Set(resp.covers || []));
         this.applyCoverCandidates(urls)
           .catch(() => {
-            this.coverCandidatesError = 'Failed to validate cover images.';
+            this.coverCandidatesError = 'Failed to load cover images.';
           })
           .finally(() => {
             if (this.coverCandidates.length === 0 && !this.coverCandidatesError) {
-              this.coverCandidatesError = 'No cover images matched the size and ratio requirements.';
+              this.coverCandidatesError = 'No cover images found. Try Google Images or paste a URL manually.';
             }
             this.coverCandidatesLoading = false;
           });
       },
       error: () => {
         this.coverCandidatesLoading = false;
-        this.coverCandidatesError = 'Cover lookup failed.';
+        this.coverCandidatesError = 'Cover lookup failed. Try Google Images or paste a URL manually.';
       }
     });
   }
 
   private async applyCoverCandidates(urls: string[]): Promise<void> {
     const validations = await Promise.all(urls.map((url) => this.validateCoverCandidate(url)));
-    this.coverCandidates = validations.filter((candidate): candidate is CoverCandidate => candidate !== null);
+    const candidates = validations.filter((candidate): candidate is CoverCandidate => candidate !== null);
+    // Sort by size (larger images first)
+    this.coverCandidates = candidates.sort((a, b) => (b.width * b.height) - (a.width * a.height));
   }
 
   private validateCoverCandidate(url: string): Promise<CoverCandidate | null> {
@@ -349,14 +366,8 @@ export class BookEditDialogComponent {
           return;
         }
         const ratio = height / width;
-        const validSize = width >= this.minCoverWidth && height >= this.minCoverHeight;
-        const validRatio = Math.abs(ratio - this.targetCoverRatio) <= this.coverRatioTolerance;
-
-        if (validSize && validRatio) {
-          resolve({ url, width, height, ratio });
-        } else {
-          resolve(null);
-        }
+        // Accept all images that successfully load, no size or ratio restrictions
+        resolve({ url, width, height, ratio });
       };
       img.onerror = () => resolve(null);
       img.src = url;

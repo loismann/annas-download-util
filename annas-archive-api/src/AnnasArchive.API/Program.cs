@@ -622,7 +622,15 @@ async Task<List<string>> FetchGoogleBooksCoverCandidatesAsync(string title, stri
                 urlValue = smallThumb.GetString();
 
             if (string.IsNullOrWhiteSpace(urlValue)) continue;
+
+            // Upgrade to larger image by modifying URL parameters
             urlValue = urlValue.Replace("http://", "https://", StringComparison.OrdinalIgnoreCase);
+            // Remove zoom parameter to get full-size image, or change &zoom=1 to &zoom=0
+            urlValue = urlValue.Replace("&zoom=1", "&zoom=0", StringComparison.OrdinalIgnoreCase);
+            urlValue = urlValue.Replace("?zoom=1", "?zoom=0", StringComparison.OrdinalIgnoreCase);
+            // Some URLs have &edge=curl which reduces quality - remove it
+            urlValue = urlValue.Replace("&edge=curl", "", StringComparison.OrdinalIgnoreCase);
+
             results.Add(urlValue);
         }
 
@@ -701,18 +709,15 @@ static List<string> BuildCoverTitleCandidates(string title)
     return candidates.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
 }
 
-const int MinCoverWidth = 400;
-const int MinCoverHeight = 600;
-const double TargetCoverRatio = 1.6;
-const double CoverRatioTolerance = 0.3;
+// Relaxed cover size validation - accept any reasonable image size
+const int MinCoverWidth = 100;
+const int MinCoverHeight = 100;
 
 static bool IsCoverSizeValid(int width, int height)
 {
-    if (width < MinCoverWidth || height < MinCoverHeight)
-        return false;
-
-    var ratio = height / (double)width;
-    return Math.Abs(ratio - TargetCoverRatio) <= CoverRatioTolerance;
+    // Accept any image that's at least 100x100 pixels
+    // No ratio restrictions - any aspect ratio is fine
+    return width >= MinCoverWidth && height >= MinCoverHeight;
 }
 
 static bool TryGetImageSize(byte[] data, out int width, out int height)
@@ -2065,7 +2070,7 @@ app.MapPost("/api/library/book/{fileName}/cover", async (
     {
         return Results.BadRequest(new
         {
-            error = $"Cover image must be at least {MinCoverWidth}x{MinCoverHeight} pixels and 1:{TargetCoverRatio:0.##} (width:height) ratio."
+            error = $"Cover image must be at least {MinCoverWidth}x{MinCoverHeight} pixels."
         });
     }
 
@@ -2086,14 +2091,24 @@ app.MapPost("/api/library/book/{fileName}/cover", async (
     {
         var jsonOptions = CreateLibraryJsonOptions();
         var json = await File.ReadAllTextAsync(metaPath);
+        Console.WriteLine($"[library-cover] READ metadata for {safeFileName}:");
+        Console.WriteLine($"[library-cover]   Existing JSON: {json.Substring(0, Math.Min(200, json.Length))}...");
+
         var meta = JsonSerializer.Deserialize<LibraryBookMeta>(json, jsonOptions);
 
         if (meta == null)
             return Results.BadRequest(new { error = "Invalid metadata file." });
 
+        Console.WriteLine($"[library-cover]   Deserialized CoverUrl: {meta.CoverUrl}");
+
         var updated = meta with { CoverUrl = $"_covers/{coverFileName}" };
+        Console.WriteLine($"[library-cover]   NEW CoverUrl: {updated.CoverUrl}");
+
         var updatedJson = JsonSerializer.Serialize(updated, jsonOptions);
+        Console.WriteLine($"[library-cover]   Serialized JSON: {updatedJson.Substring(0, Math.Min(200, updatedJson.Length))}...");
+
         await File.WriteAllTextAsync(metaPath, updatedJson);
+        Console.WriteLine($"[library-cover] WROTE metadata to {metaPath}");
 
         var baseUrl = $"{context.Request.Scheme}://{context.Request.Host}";
         var normalized = NormalizeLibraryCoverUrl(updated.CoverUrl, baseUrl);
@@ -2103,6 +2118,7 @@ app.MapPost("/api/library/book/{fileName}/cover", async (
     catch (Exception ex)
     {
         Console.WriteLine($"[library] Failed to update cover metadata for {safeFileName}: {ex.Message}");
+        Console.WriteLine($"[library] Stack trace: {ex.StackTrace}");
         return Results.Problem("Failed to update cover metadata.");
     }
 })
@@ -3525,9 +3541,11 @@ app.MapPost("/api/ai/summarize/chapter/stream", async (
         if (!string.IsNullOrWhiteSpace(request.BookTitle))
             contextParts.Add($"Book: {request.BookTitle}");
 
+        // Use DisplayChapterNumber if provided (filtered chapters), otherwise fall back to ChapterId + 1
+        var chapterNum = request.DisplayChapterNumber ?? (request.ChapterId + 1);
         var chapterTitle = !string.IsNullOrWhiteSpace(chapter?.Title)
-            ? $"Chapter {request.ChapterId + 1}: {chapter.Title}"
-            : $"Chapter {request.ChapterId + 1}";
+            ? $"Chapter {chapterNum}: {chapter.Title}"
+            : $"Chapter {chapterNum}";
         contextParts.Add(chapterTitle);
         var contextLine = string.Join(" | ", contextParts);
 
@@ -3662,13 +3680,20 @@ app.MapPost("/api/ai/summarize/chapter/dummy", async (
         return Results.Problem("OpenAI API key not configured.");
 
     var index = await LoadChapterIndexAsync(dropbox, request.DropboxPath);
-    var chapterTitle = index?.Chapters.FirstOrDefault(c => c.Id == request.ChapterId)?.Title;
+    var chapter = index?.Chapters.FirstOrDefault(c => c.Id == request.ChapterId);
+    var chapterTitle = chapter?.Title;
 
     var contextParts = new List<string>();
     if (!string.IsNullOrWhiteSpace(request.BookTitle))
         contextParts.Add($"Book: {request.BookTitle}");
+
+    // Use DisplayChapterNumber if provided (filtered chapters), otherwise fall back to ChapterId + 1
+    var chapterNum = request.DisplayChapterNumber ?? (request.ChapterId + 1);
     if (!string.IsNullOrWhiteSpace(chapterTitle))
-        contextParts.Add($"Chapter: {chapterTitle}");
+        contextParts.Add($"Chapter {chapterNum}: {chapterTitle}");
+    else
+        contextParts.Add($"Chapter {chapterNum}");
+
     var contextLine = contextParts.Count > 0 ? string.Join(" | ", contextParts) : "Chapter context";
 
     var systemPrompt = @"You are a friendly teacher who makes hard ideas feel obvious.
@@ -7918,6 +7943,7 @@ record LibraryBookMeta(
 {
     public string? Title { get; set; } = Title;
     public string[]? Authors { get; set; } = Authors;
+    public string? CoverUrl { get; set; } = CoverUrl;
     public string? PrimaryGenre { get; set; } = PrimaryGenre;
     public string[]? Tags { get; set; } = Tags;
     public string? Series { get; set; } = Series;
@@ -7972,8 +7998,8 @@ record BookWithCandidates(string Title, int Order, List<CandidateBook> Candidate
 record CandidateBook(string Md5, string Title, List<string> Authors, string Format, string FileSize);
 record SeriesBookMatch(string BookTitle, int Order, string Status, string? SelectedMd5, string? SelectedTitle, string Confidence, string Reason);
 record MatchSeriesBooksResponse(List<SeriesBookMatch> Matches);
-record FullChapterSummaryRequest(string DropboxPath, int ChapterId, string? BookTitle, string? Author, int? Year, string? Premise, bool ForceRegenerate = false);
-record UltraChapterSummaryRequest(string DropboxPath, int ChapterId, string? BookTitle, string? Author, int? Year, string? Premise, bool ForceRegenerate = false);
+record FullChapterSummaryRequest(string DropboxPath, int ChapterId, string? BookTitle, string? Author, int? Year, string? Premise, int? DisplayChapterNumber = null, bool ForceRegenerate = false);
+record UltraChapterSummaryRequest(string DropboxPath, int ChapterId, string? BookTitle, string? Author, int? Year, string? Premise, int? DisplayChapterNumber = null, bool ForceRegenerate = false);
 record FullChapterSummaryResponse(string Summary, int PromptTokens, int CompletionTokens, int TotalTokens, double? AllowanceUsedPercent, long? TokensRemaining, DateTime CachedAt, List<ProcessingStep> Steps);
 record ProcessingStep(string Stage, int StepNumber, int TotalSteps, string Message, bool Success, string? Error);
 record ChapterSummaryCacheResponse(string Summary, int PromptTokens, int CompletionTokens, int TotalTokens, DateTime CachedAt);

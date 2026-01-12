@@ -79,6 +79,7 @@ export interface FullChapterSummaryRequest {
   author?: string;
   year?: number;
   premise?: string;
+  displayChapterNumber?: number;
 }
 
 export interface UltraChapterSummaryRequest {
@@ -88,6 +89,7 @@ export interface UltraChapterSummaryRequest {
   author?: string;
   year?: number;
   premise?: string;
+  displayChapterNumber?: number;
   forceRegenerate?: boolean;
 }
 

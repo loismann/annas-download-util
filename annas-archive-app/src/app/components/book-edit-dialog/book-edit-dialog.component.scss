@@ -76,6 +76,12 @@
   margin-bottom: 0.5rem;
 }
 
+.cover-picker-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
 .cover-picker-status {
   font-size: 0.8rem;
   color: #666;

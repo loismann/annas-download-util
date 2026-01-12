@@ -152,6 +152,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
   loadingLearnMore = false;
   loadingFlashcard = false;
   loadingSelectionVocab = false;
+  loadingChapterVocab = false;
   vocabFilter: string = 'all';
   vocabFilters: { id: string; name: string }[] = [{ id: 'all', name: 'All books' }];
   leftFlex = '1 1 0';
@@ -518,10 +519,37 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
 
   removeVocabularyWord(term: string): void {
     this.vocabularyWords = this.vocabularyWords.filter(w => w.term !== term);
+
+    // Update in-memory cache to reflect the removal
+    if (this.currentSectionIndex !== null && this.sectionSummaries.has(this.currentSectionIndex)) {
+      const summary = this.sectionSummaries.get(this.currentSectionIndex);
+      if (summary && summary.vocab) {
+        summary.vocab = summary.vocab.filter(v => v.term !== term);
+        console.log(`🗑️ Removed '${term}' from in-memory cache (${summary.vocab.length} remaining)`);
+      }
+    }
+
+    // Update backend cache to reflect the removal
+    if (this.selectedBookPath && this.selectedChapterId !== null && this.currentSectionIndex !== null) {
+      const remainingVocab = this.vocabularyWords.map(w => ({
+        term: w.term,
+        definition: w.definition,
+        etymology: '',
+        usageExamples: [],
+        notes: ''
+      }));
+
+      this.api.saveSectionVocab(this.selectedBookPath, this.selectedChapterId, this.currentSectionIndex, remainingVocab)
+        .pipe(takeUntil(this.destroy$))
+        .subscribe({
+          next: () => console.log(`💾 Updated backend cached vocab after removing '${term}' (${remainingVocab.length} remaining)`),
+          error: err => console.error('Failed to update vocab cache after removal', err)
+        });
+    }
   }
 
   markWordAsKnown(word: VocabularyWord): void {
-    this.vocabularyService.markAsKnown(word.term, this.selectedBookPath ?? undefined);
+    this.vocabularyService.markAsKnown(word.term, this.selectedBookPath ?? undefined, word.definition);
     this.removeVocabularyWord(word.term);
   }
 
@@ -990,10 +1018,15 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
       error: undefined
     };
 
+    // Calculate display chapter number (1-based index in filtered chapters)
+    const chapterIndex = this.chapters.findIndex(ch => ch.id === this.selectedChapterId);
+    const displayChapterNumber = chapterIndex >= 0 ? chapterIndex + 1 : undefined;
+
     const payload = {
       dropboxPath: this.selectedBookPath,
       chapterId: this.selectedChapterId,
       bookTitle: this.selectedBook?.title ?? '',
+      displayChapterNumber: displayChapterNumber,
       forceRegenerate: force
     };
 
@@ -1089,10 +1122,16 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
     if (this.loadingUltraChapterSummary) return;
 
     this.loadingUltraChapterSummary = true;
+
+    // Calculate display chapter number (1-based index in filtered chapters)
+    const chapterIndex = this.chapters.findIndex(ch => ch.id === this.selectedChapterId);
+    const displayChapterNumber = chapterIndex >= 0 ? chapterIndex + 1 : undefined;
+
     const payload = {
       dropboxPath: this.selectedBookPath,
       chapterId: this.selectedChapterId,
       bookTitle: this.selectedBook?.title,
+      displayChapterNumber: displayChapterNumber,
       forceRegenerate: !!this.ultraChapterSummary
     };
 
@@ -1789,7 +1828,9 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
   moveStudyToKnown(term: string): void {
     // Use the vocab filter (selected book in modal) if available, otherwise use currently loaded book
     const bookId = this.vocabFilter !== 'all' ? this.vocabFilter : this.selectedBookPath ?? undefined;
-    this.vocabularyService.markAsKnown(term, bookId);
+    // Get the definition from study words to preserve it when marking as known
+    const definition = this.vocabularyService.getStudyWordDefinition(term);
+    this.vocabularyService.markAsKnown(term, bookId, definition);
     this.refreshVocabLists();
   }
 
@@ -2334,6 +2375,67 @@ DO NOT create a card for every word. Only create cards for terms that add educat
         this.refreshTokenUsage();
       }
     });
+  }
+
+  generateChapterVocab(): void {
+    if (!this.chapterContent || !this.selectedBookPath || this.selectedChapterId === null || this.loadingChapterVocab) {
+      console.warn('⚠️ Cannot generate chapter vocab - missing required data');
+      return;
+    }
+
+    console.log('📚 Generating vocabulary for entire chapter');
+    this.loadingChapterVocab = true;
+
+    const allKnownWords = this.vocabularyService.getKnownWordsForPrompt();
+    const knownWords = allKnownWords.slice(-200); // Use more known words for chapter-level
+
+    const contextInstruction = `CHAPTER-LEVEL VOCABULARY: Analyze this entire chapter and identify 10-20 of the most important, challenging, or specialized terms that a reader should understand. Focus on:
+- Key philosophical, technical, or domain-specific concepts
+- Specialized terminology crucial to understanding the chapter
+- Difficult or archaic language
+- Important historical or cultural references
+
+DO NOT include common words. Only create flashcards for terms that significantly enhance comprehension of the chapter's main ideas.`;
+
+    const flashcardPayload = {
+      term: this.chapterContent.content, // Send full chapter text
+      definition: undefined,
+      dropboxPath: this.selectedBookPath,
+      bookTitle: this.selectedBook?.title ?? undefined,
+      context: contextInstruction,
+      knownWords: knownWords
+    };
+
+    this.api.createFlashcard(flashcardPayload)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: cards => {
+          console.log(`✅ Generated ${cards.length} chapter-level vocabulary card(s)`);
+
+          // Merge new cards with existing vocab (avoid duplicates)
+          const existingTerms = new Set(this.vocabularyWords.map(v => v.term.toLowerCase()));
+          const newCards = cards.filter(card => !existingTerms.has(card.term.toLowerCase()));
+
+          if (newCards.length === 0) {
+            console.log('ℹ️ All generated chapter vocab cards already exist');
+          } else {
+            const newVocabWords = newCards.map(card => ({
+              term: card.term,
+              definition: card.definition
+            }));
+            this.vocabularyWords = [...this.vocabularyWords, ...newVocabWords];
+            console.log(`➕ Added ${newCards.length} new chapter vocab terms to display`);
+          }
+
+          this.loadingChapterVocab = false;
+          this.refreshTokenUsage();
+        },
+        error: err => {
+          console.error('Failed to generate chapter vocabulary', err);
+          this.loadingChapterVocab = false;
+          this.refreshTokenUsage();
+        }
+      });
   }
 
   @HostListener('window:mousemove', ['$event'])

@@ -69,95 +69,79 @@
       <div *ngIf="selectedBook.authors?.length">Author: {{ selectedBook.authors.join(', ') }}</div>
     </div>
 
-    <button mat-stroked-button color="warn" class="w-100 reader-remove-button"
-      (click)="removeFromReader()" [disabled]="!selectedBook">
-      <mat-icon>remove_circle</mat-icon>
-      Remove from Reader
-    </button>
-
-    <button mat-flat-button color="accent" class="w-100 vocab-btn-main"
-      (click)="openVocabModal()">
-      <mat-icon>menu_book</mat-icon>
-      Vocab
-    </button>
-
-    <button mat-flat-button color="primary" class="w-100 character-graph-btn"
-      (click)="openCharacterGraphModal()"
-      [disabled]="!selectedBook">
-      <mat-icon>account_tree</mat-icon>
-      Characters
-    </button>
-
-    <div class="ai-usage-section" *ngIf="tokenUsage">
-      <button mat-button class="cache-toggle" (click)="showAiUsageSection = !showAiUsageSection"
-              [class.warning]="(tokenUsage.allowanceUsedPercent || 0) >= 70 && (tokenUsage.allowanceUsedPercent || 0) < 90"
-              [class.danger]="(tokenUsage.allowanceUsedPercent || 0) >= 90">
-        <mat-icon>{{ showAiUsageSection ? 'expand_less' : 'expand_more' }}</mat-icon>
-        AI Usage
-      </button>
-      <div class="ai-usage-content" *ngIf="showAiUsageSection">
-        <div class="token-usage-block"
-             [class.warning]="(tokenUsage.allowanceUsedPercent || 0) >= 70 && (tokenUsage.allowanceUsedPercent || 0) < 90"
-             [class.danger]="(tokenUsage.allowanceUsedPercent || 0) >= 90">
-          <div class="token-usage-header">
-            <span class="token-cost" *ngIf="tokenUsage.totalCostUsd !== null && tokenUsage.totalCostUsd !== undefined">
-              ${{ tokenUsage.totalCostUsd | number:'1.2-2' }}
-            </span>
-            <span class="token-percent" *ngIf="tokenUsage.totalCostUsd === null || tokenUsage.totalCostUsd === undefined">
-              {{ tokenUsage.allowanceUsedPercent | number:'1.0-1' }}%
-            </span>
+    <mat-form-field appearance="outline" class="w-100" [class.dropdown-disabled]="!chapters.length">
+      <mat-label>Chapter</mat-label>
+      <mat-select
+        [disabled]="!chapters.length || loadingChapters || loadingContent"
+        [value]="selectedChapterId"
+        (selectionChange)="onChapterSelected($event.value)"
+        panelClass="reader-select-panel"
+        [panelWidth]="'fit-content'">
+        <mat-option *ngFor="let chapter of chapters" [value]="chapter.id">
+          <div class="chapter-line" [style.paddingLeft.px]="chapter.level * 12">
+            <span class="chapter-title">{{ chapter.displayLabel || chapter.title }}</span>
+            <span class="chapter-meta">({{ chapter.wordCount | number }} words)</span>
+            <mat-icon *ngIf="fullChapterSummaryCache.has(chapter.id)" class="cached-indicator" [matTooltip]="'Summary cached for offline access'">cloud_done</mat-icon>
           </div>
-          <mat-progress-bar
-            mode="determinate"
-            [value]="tokenUsage.allowanceUsedPercent || 0"
-            [color]="(tokenUsage.allowanceUsedPercent || 0) >= 90 ? 'warn' : (tokenUsage.allowanceUsedPercent || 0) >= 70 ? 'accent' : 'primary'">
-          </mat-progress-bar>
-          <div class="token-reset" *ngIf="tokenUsage.resetsAtUtc">
-            Resets {{ tokenUsage.resetsAtUtc | date:'MMM d' }}
-          </div>
-        </div>
+        </mat-option>
+      </mat-select>
+    </mat-form-field>
+
+    <div class="book-search" *ngIf="selectedBookPath">
+      <h3>Search entire book</h3>
+      <mat-form-field appearance="outline" class="w-100">
+        <mat-label>Enter at least 10 characters</mat-label>
+        <input
+          matInput
+          [(ngModel)]="bookSearchTerm"
+          (keyup.enter)="searchWholeBook()"
+          placeholder="Search across all chapters" />
+        <button
+          mat-icon-button
+          matSuffix
+          aria-label="Run search"
+          (click)="searchWholeBook()">
+          <mat-icon>search</mat-icon>
+        </button>
+      </mat-form-field>
+      <div class="error" *ngIf="bookSearchError">{{ bookSearchError }}</div>
+
+      <div class="book-results">
+        <mat-form-field appearance="outline" class="w-100" [class.dropdown-disabled]="!bookSearchResults.length">
+          <mat-label>Matching chapters</mat-label>
+          <mat-select (selectionChange)="goToBookMatch($event.value)" [disabled]="!bookSearchResults.length">
+            <mat-option *ngFor="let res of bookSearchResults" [value]="res">
+              <div class="chapter-line">
+                <span class="chapter-title">{{ res.title }}</span>
+                <span class="chapter-meta">({{ res.matchCount }} hits)</span>
+              </div>
+              <div class="snippet">{{ res.snippet }}</div>
+            </mat-option>
+          </mat-select>
+        </mat-form-field>
       </div>
     </div>
 
-    <div class="cache-section" *ngIf="status">
-      <button mat-button class="cache-toggle" (click)="showCacheSection = !showCacheSection">
-        <mat-icon>{{ showCacheSection ? 'expand_less' : 'expand_more' }}</mat-icon>
-        Cache Management
+    <div class="reading-tools-section">
+      <h3 class="section-header">Reading Tools</h3>
+      <button mat-flat-button color="accent" class="w-100 vocab-btn-main"
+        (click)="openVocabModal()">
+        <mat-icon>menu_book</mat-icon>
+        Vocab
       </button>
-      <div class="cache-content" *ngIf="showCacheSection">
-        <div class="status-row">
-          <span>Indexing: {{ status.percent }}%</span>
-          <span *ngIf="status.cachedAt">Cached: {{ status.cachedAt | date:'short' }}</span>
-        </div>
-        <mat-progress-bar
-          mode="determinate"
-          [value]="status.percent">
-        </mat-progress-bar>
-        <div class="status-row small">
-          <span>{{ status.chaptersCached }}/{{ status.chaptersTotal }} chapters cached</span>
-          <span *ngIf="status.inProgress">Building…</span>
-        </div>
-        <div class="status-row small error" *ngIf="status.error">
-          <span>Cache error</span>
-          <span>{{ status.error }}</span>
-        </div>
-        <div class="status-actions">
-          <button mat-flat-button color="primary" class="status-btn status-btn-primary"
-            (click)="startIndexing()" [disabled]="!selectedBookPath || (status && status.inProgress)">
-            Cache
-          </button>
-          <button mat-flat-button color="warn" class="status-btn status-btn-warn"
-            (click)="deleteIndex()" [disabled]="!selectedBookPath">
-            Delete
-          </button>
-        </div>
-      </div>
+
+      <button mat-flat-button color="primary" class="w-100 character-graph-btn"
+        (click)="openCharacterGraphModal()"
+        [disabled]="!selectedBook">
+        <mat-icon>account_tree</mat-icon>
+        Characters
+      </button>
     </div>
 
     <div class="reader-controls-section" [class.dropdown-disabled]="!chapterContent">
       <button mat-button class="cache-toggle" (click)="showReaderControlsSection = !showReaderControlsSection">
         <mat-icon>{{ showReaderControlsSection ? 'expand_less' : 'expand_more' }}</mat-icon>
-        Reader Controls
+        Display Settings
       </button>
       <div class="reader-controls-content" *ngIf="showReaderControlsSection">
         <div class="control-row font-row">
@@ -233,56 +217,75 @@
       </div>
     </div>
 
-    <mat-form-field appearance="outline" class="w-100" [class.dropdown-disabled]="!chapters.length">
-      <mat-label>Chapter</mat-label>
-      <mat-select
-        [disabled]="!chapters.length || loadingChapters || loadingContent"
-        [value]="selectedChapterId"
-        (selectionChange)="onChapterSelected($event.value)"
-        panelClass="reader-select-panel"
-        [panelWidth]="'fit-content'">
-        <mat-option *ngFor="let chapter of chapters" [value]="chapter.id">
-          <div class="chapter-line" [style.paddingLeft.px]="chapter.level * 12">
-            <span class="chapter-title">{{ chapter.displayLabel || chapter.title }}</span>
-            <span class="chapter-meta">({{ chapter.wordCount | number }} words)</span>
-            <mat-icon *ngIf="fullChapterSummaryCache.has(chapter.id)" class="cached-indicator" [matTooltip]="'Summary cached for offline access'">cloud_done</mat-icon>
+    <button mat-stroked-button color="warn" class="w-100 reader-remove-button"
+      (click)="removeFromReader()" [disabled]="!selectedBook">
+      <mat-icon>remove_circle</mat-icon>
+      Remove from Reader
+    </button>
+
+    <div class="ai-usage-section" *ngIf="tokenUsage">
+      <button mat-button class="cache-toggle" (click)="showAiUsageSection = !showAiUsageSection"
+              [class.warning]="(tokenUsage.allowanceUsedPercent || 0) >= 70 && (tokenUsage.allowanceUsedPercent || 0) < 90"
+              [class.danger]="(tokenUsage.allowanceUsedPercent || 0) >= 90">
+        <mat-icon>{{ showAiUsageSection ? 'expand_less' : 'expand_more' }}</mat-icon>
+        AI Usage
+      </button>
+      <div class="ai-usage-content" *ngIf="showAiUsageSection">
+        <div class="token-usage-block"
+             [class.warning]="(tokenUsage.allowanceUsedPercent || 0) >= 70 && (tokenUsage.allowanceUsedPercent || 0) < 90"
+             [class.danger]="(tokenUsage.allowanceUsedPercent || 0) >= 90">
+          <div class="token-usage-header">
+            <span class="token-cost" *ngIf="tokenUsage.totalCostUsd !== null && tokenUsage.totalCostUsd !== undefined">
+              ${{ tokenUsage.totalCostUsd | number:'1.2-2' }}
+            </span>
+            <span class="token-percent" *ngIf="tokenUsage.totalCostUsd === null || tokenUsage.totalCostUsd === undefined">
+              {{ tokenUsage.allowanceUsedPercent | number:'1.0-1' }}%
+            </span>
           </div>
-        </mat-option>
-      </mat-select>
-    </mat-form-field>
+          <mat-progress-bar
+            mode="determinate"
+            [value]="tokenUsage.allowanceUsedPercent || 0"
+            [color]="(tokenUsage.allowanceUsedPercent || 0) >= 90 ? 'warn' : (tokenUsage.allowanceUsedPercent || 0) >= 70 ? 'accent' : 'primary'">
+          </mat-progress-bar>
+          <div class="token-reset" *ngIf="tokenUsage.resetsAtUtc">
+            Resets {{ tokenUsage.resetsAtUtc | date:'MMM d' }}
+          </div>
+        </div>
+      </div>
+    </div>
 
-    <div class="book-search" *ngIf="selectedBookPath">
-      <h3>Search entire book</h3>
-      <mat-form-field appearance="outline" class="w-100">
-        <mat-label>Enter at least 10 characters</mat-label>
-        <input
-          matInput
-          [(ngModel)]="bookSearchTerm"
-          (keyup.enter)="searchWholeBook()"
-          placeholder="Search across all chapters" />
-        <button
-          mat-icon-button
-          matSuffix
-          aria-label="Run search"
-          (click)="searchWholeBook()">
-          <mat-icon>search</mat-icon>
-        </button>
-      </mat-form-field>
-      <div class="error" *ngIf="bookSearchError">{{ bookSearchError }}</div>
-
-      <div class="book-results">
-        <mat-form-field appearance="outline" class="w-100" [class.dropdown-disabled]="!bookSearchResults.length">
-          <mat-label>Matching chapters</mat-label>
-          <mat-select (selectionChange)="goToBookMatch($event.value)" [disabled]="!bookSearchResults.length">
-            <mat-option *ngFor="let res of bookSearchResults" [value]="res">
-              <div class="chapter-line">
-                <span class="chapter-title">{{ res.title }}</span>
-                <span class="chapter-meta">({{ res.matchCount }} hits)</span>
-              </div>
-              <div class="snippet">{{ res.snippet }}</div>
-            </mat-option>
-          </mat-select>
-        </mat-form-field>
+    <div class="cache-section" *ngIf="status">
+      <button mat-button class="cache-toggle" (click)="showCacheSection = !showCacheSection">
+        <mat-icon>{{ showCacheSection ? 'expand_less' : 'expand_more' }}</mat-icon>
+        Cache Management
+      </button>
+      <div class="cache-content" *ngIf="showCacheSection">
+        <div class="status-row">
+          <span>Indexing: {{ status.percent }}%</span>
+          <span *ngIf="status.cachedAt">Cached: {{ status.cachedAt | date:'short' }}</span>
+        </div>
+        <mat-progress-bar
+          mode="determinate"
+          [value]="status.percent">
+        </mat-progress-bar>
+        <div class="status-row small">
+          <span>{{ status.chaptersCached }}/{{ status.chaptersTotal }} chapters cached</span>
+          <span *ngIf="status.inProgress">Building…</span>
+        </div>
+        <div class="status-row small error" *ngIf="status.error">
+          <span>Cache error</span>
+          <span>{{ status.error }}</span>
+        </div>
+        <div class="status-actions">
+          <button mat-flat-button color="primary" class="status-btn status-btn-primary"
+            (click)="startIndexing()" [disabled]="!selectedBookPath || (status && status.inProgress)">
+            Cache
+          </button>
+          <button mat-flat-button color="warn" class="status-btn status-btn-warn"
+            (click)="deleteIndex()" [disabled]="!selectedBookPath">
+            Delete
+          </button>
+        </div>
       </div>
     </div>
   </section>
@@ -448,6 +451,25 @@
                 <h4>Full chapter summary</h4>
               </div>
               <div class="full-summary-body markdown-content" [innerHTML]="fullChapterSummaryHtml"></div>
+
+              <!-- Chapter-level vocabulary generation -->
+              <div class="chapter-vocab-actions">
+                <button
+                  mat-stroked-button
+                  color="accent"
+                  class="chapter-vocab-btn"
+                  (click)="generateChapterVocab()"
+                  [disabled]="loadingChapterVocab || !fullChapterSummary">
+                  <mat-icon *ngIf="loadingChapterVocab" class="spinning">hourglass_empty</mat-icon>
+                  <mat-icon *ngIf="!loadingChapterVocab">school</mat-icon>
+                  {{ loadingChapterVocab ? 'Generating vocab...' : 'Generate chapter vocabulary' }}
+                </button>
+              </div>
+              <div class="chapter-vocab-progress" *ngIf="loadingChapterVocab">
+                <mat-icon class="pulse">auto_awesome</mat-icon>
+                <span>Analyzing chapter for key vocabulary terms...</span>
+              </div>
+
               <div class="dummy-summary-actions">
                 <button
                   mat-stroked-button

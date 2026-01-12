@@ -151,6 +151,44 @@
   cursor: pointer;
 }
 
+/* Bulk edit section in sidebar */
+.bulk-edit-section {
+  margin-top: 1rem;
+  padding: 1rem;
+  background: #f8fafc;
+  border-radius: 8px;
+}
+
+.bulk-edit-toggle {
+  width: 100%;
+  margin-bottom: 0.5rem;
+}
+
+.bulk-edit-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.selection-counter {
+  font-weight: 600;
+  color: #3f51b5;
+  font-size: 0.9rem;
+  padding: 0.5rem 0;
+  text-align: center;
+}
+
+.bulk-send-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.bulk-send-actions button {
+  width: 100%;
+  font-size: 0.85rem;
+}
+
 .library-panel {
   overflow: hidden;
   position: relative;
@@ -297,6 +335,24 @@
   border-radius: 10px;
   border: 1px solid #e5e7eb;
   height: fit-content;
+  position: relative;
+}
+
+/* Book card in bulk edit mode */
+.bulk-edit-checkbox-wrapper {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 10;
+  background: white;
+  border-radius: 4px;
+  padding: 4px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.library-card.bulk-edit-selected {
+  border: 3px solid #3f51b5;
+  box-shadow: 0 4px 12px rgba(63, 81, 181, 0.3);
 }
 
 .cover-frame {

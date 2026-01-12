@@ -1,0 +1,78 @@
+.bulk-edit-notice {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: #e8eaf6;
+  border-radius: 8px;
+  margin-bottom: 16px;
+  color: #3f51b5;
+  font-weight: 600;
+
+  mat-icon {
+    color: #3f51b5;
+  }
+}
+
+.book-list {
+  max-height: 200px;
+  overflow-y: auto;
+  padding: 12px;
+  background: #f8fafc;
+  border-radius: 8px;
+  margin-bottom: 24px;
+  border: 1px solid #e5e7eb;
+}
+
+.book-list-header {
+  font-weight: 600;
+  color: #475569;
+  margin-bottom: 8px;
+  font-size: 0.9rem;
+}
+
+.book-list-item {
+  padding: 4px 8px;
+  color: #1f2937;
+  font-size: 0.85rem;
+}
+
+.form-section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.genre-actions {
+  margin-top: -8px;
+  margin-bottom: 8px;
+}
+
+.disabled-fields-notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  background: #fef3c7;
+  border: 1px solid #fde68a;
+  border-radius: 8px;
+  color: #92400e;
+  font-size: 0.85rem;
+  margin-top: 8px;
+
+  mat-icon {
+    color: #f59e0b;
+    font-size: 20px;
+    width: 20px;
+    height: 20px;
+  }
+}
+
+.w-100 {
+  width: 100%;
+}
+
+mat-dialog-content {
+  max-height: 600px;
+  overflow-y: auto;
+}

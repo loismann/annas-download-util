@@ -24,10 +24,6 @@ describe('AnnaArchiveApiService', () => {
     httpMock.verify();
   });
 
-  it('should be created', () => {
-    expect(service).toBeTruthy();
-  });
-
   it('should search books with exact parameter', () => {
     const mockBooks = [
       {

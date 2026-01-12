@@ -67,6 +67,7 @@ export class BookSearchComponent implements OnInit, OnDestroy {
   searchPerformed = false;
   searchPanelCollapsed = false;
   useLibGen = false; // Toggle between Anna's Archive and LibGen
+  relatedBooksModalOpen = false; // Track if related books modal is open for matching
 
   books: BookDto[] = [];
   selectedFormat = '';
@@ -497,6 +498,14 @@ export class BookSearchComponent implements OnInit, OnDestroy {
     });
   }
 
+  /* ───────── remove book from results ───────── */
+  removeBook(book: BookDto): void {
+    const index = this.books.indexOf(book);
+    if (index > -1) {
+      this.books.splice(index, 1);
+    }
+  }
+
   onCoverError(book: BookDto, evt: Event): void {
       const img = evt.target as HTMLImageElement;
 
@@ -648,6 +657,9 @@ export class BookSearchComponent implements OnInit, OnDestroy {
       return;
     }
 
+    // Lock format dropdown while matching is in progress
+    this.relatedBooksModalOpen = true;
+
     const dialogRef = this.dialog.open(RelatedBooksModalComponent, {
       width: '1100px',
       maxWidth: '90vw',
@@ -687,6 +699,9 @@ export class BookSearchComponent implements OnInit, OnDestroy {
 
     // Handle modal close
     dialogRef.afterClosed().subscribe(result => {
+      // Unlock format dropdown when modal closes
+      this.relatedBooksModalOpen = false;
+
       if (result && result.searchBook) {
         // User clicked a book/series to search
         this.searchTerm = result.searchBook;

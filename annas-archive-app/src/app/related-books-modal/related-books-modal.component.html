@@ -149,7 +149,7 @@
 
         <mat-form-field appearance="outline" class="w-100">
           <mat-label>Format</mat-label>
-          <mat-select [(ngModel)]="selectedFormat" (selectionChange)="matchResults = []; sendLog = []">
+          <mat-select [(ngModel)]="selectedFormat" (selectionChange)="matchResults = []; sendLog = []" [disabled]="preparingMatches || sending">
             <mat-option value="ALL">All</mat-option>
             <mat-option value="EPUB">EPUB</mat-option>
             <mat-option value="MOBI">MOBI</mat-option>
@@ -176,6 +176,14 @@
           <div class="match-header">
             <strong>{{ result.title }}</strong>
             <span class="status" [class]="result.status">{{ result.status }}</span>
+            <button
+              mat-icon-button
+              class="remove-match-button"
+              (click)="removeMatchResult(result)"
+              aria-label="Remove from list"
+            >
+              <mat-icon>delete</mat-icon>
+            </button>
           </div>
           <p class="match-reason" *ngIf="result.reason">{{ result.reason }}</p>
 
@@ -189,6 +197,7 @@
               <mat-select
                 (selectionChange)="setSelectedCandidate(result, $event.value)"
                 [panelClass]="'match-select-panel'"
+                xPosition="before"
               >
                 <mat-option
                   *ngFor="let candidate of getFilteredCandidates(result)"

@@ -58,12 +58,14 @@
       </mat-form-field>
 
       <!-- Author suggestions -->
-      <mat-form-field appearance="outline" class="w-100">
+      <mat-form-field appearance="outline" class="w-100 author-dropdown">
         <mat-label>Author</mat-label>
         <mat-select
           [(ngModel)]="selectedAuthor"
           name="selectedAuthor"
           [disabled]="aiSearchExpanded || loadingAuthors || authorSuggestions.length === 0"
+          panelClass="author-select-panel"
+          xPosition="before"
         >
           <mat-option value="">All Authors</mat-option>
           <mat-option *ngFor="let suggestion of authorSuggestions" [value]="suggestion.author">
@@ -83,7 +85,7 @@
         <!-- Format selector -->
         <mat-form-field appearance="outline" class="format-filter">
           <mat-label>Format</mat-label>
-          <mat-select [(ngModel)]="selectedFormat" name="format">
+          <mat-select [(ngModel)]="selectedFormat" name="format" [disabled]="relatedBooksModalOpen">
             <mat-option value="">All</mat-option>
             <mat-option *ngFor="let fmt of availableFormats" [value]="fmt">
               {{ fmt }}

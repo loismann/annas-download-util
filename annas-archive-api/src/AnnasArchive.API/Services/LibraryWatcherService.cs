@@ -205,6 +205,9 @@ public class LibraryWatcherService : BackgroundService
             ["aiEnrichedAt"] = existing?.AiEnrichedAt
         };
 
+        Console.WriteLine($"[LibraryWatcher] Processing {Path.GetFileName(filePath)}");
+        Console.WriteLine($"[LibraryWatcher]   Existing CoverUrl: {existing?.CoverUrl}");
+
         if (ext.Equals(".epub", StringComparison.OrdinalIgnoreCase))
         {
             await PopulateEpubMetadataAsync(filePath, meta, libraryRoot, token);
@@ -306,7 +309,9 @@ public class LibraryWatcherService : BackgroundService
             WriteIndented = true
         });
 
+        Console.WriteLine($"[LibraryWatcher]   Final CoverUrl before write: {meta["coverUrl"]}");
         await File.WriteAllTextAsync(metaPath, json, token);
+        Console.WriteLine($"[LibraryWatcher]   WROTE metadata to {metaPath}");
     }
 
     private async Task<bool> WaitForStableFileAsync(string filePath, CancellationToken token)

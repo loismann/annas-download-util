@@ -396,4 +396,28 @@ describe('LibraryComponent', () => {
       expect(component.genres).toContain('Fantasy');
     });
   });
+
+  describe('Tile Size Controls', () => {
+    it('should default to medium tile size', () => {
+      expect(component.tileSize).toBe('medium');
+    });
+
+    it('should change tile size to small when setTileSize is called with small', () => {
+      component.setTileSize('small');
+      expect(component.tileSize).toBe('small');
+    });
+
+    it('should change tile size to large when setTileSize is called with large', () => {
+      component.setTileSize('large');
+      expect(component.tileSize).toBe('large');
+    });
+
+    it('should change tile size back to medium', () => {
+      component.setTileSize('large');
+      expect(component.tileSize).toBe('large');
+
+      component.setTileSize('medium');
+      expect(component.tileSize).toBe('medium');
+    });
+  });
 });

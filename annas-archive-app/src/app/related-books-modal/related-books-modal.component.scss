@@ -338,6 +338,29 @@
       -webkit-line-clamp: 2;
       -webkit-box-orient: vertical;
       overflow: hidden;
+      position: relative;
+
+      .description-source-icon {
+        display: inline-block;
+        font-size: 0.9rem;
+        width: 0.9rem;
+        height: 0.9rem;
+        vertical-align: middle;
+        margin-left: 4px;
+        opacity: 0.6;
+      }
+
+      .robot-icon {
+        color: #3f51b5;
+      }
+
+      .book-icon {
+        color: #ff6f00;
+      }
+
+      .leaf-icon {
+        color: #4caf50;
+      }
     }
   }
 }

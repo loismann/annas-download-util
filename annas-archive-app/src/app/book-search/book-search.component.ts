@@ -758,7 +758,8 @@ export class BookSearchComponent implements OnInit, OnDestroy {
           title: book.title,
           order: index + 1,
           description: [book.summary, book.importance].filter(Boolean).join(' • '),
-          coverUrl: book.coverUrl || undefined
+          coverUrl: book.coverUrl || undefined,
+          descriptionSource: book.descriptionSource || null
         }));
 
         dialogRef.componentInstance.data.sameSeries = results;

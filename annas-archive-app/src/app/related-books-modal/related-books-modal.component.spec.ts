@@ -385,4 +385,327 @@ describe('RelatedBooksModalComponent', () => {
       });
     });
   });
+
+  describe('Description Source Icons', () => {
+    it('should display robot icon when descriptionSource is "gpt"', () => {
+      // Arrange
+      component.data.sameSeries = [{
+        title: 'Test Book',
+        order: 1,
+        description: 'Test description',
+        coverUrl: 'http://example.com/cover.jpg',
+        descriptionSource: 'gpt'
+      }];
+      fixture.detectChanges();
+
+      // Act
+      const compiled = fixture.nativeElement;
+      const robotIcon = compiled.querySelector('.robot-icon');
+
+      // Assert
+      expect(robotIcon).toBeTruthy();
+      expect(robotIcon?.textContent?.trim()).toBe('smart_toy');
+      expect(robotIcon?.getAttribute('aria-label')).toBe('AI-generated description');
+    });
+
+    it('should display leaf icon when descriptionSource is "openlibrary"', () => {
+      // Arrange
+      component.data.sameSeries = [{
+        title: 'Test Book',
+        order: 1,
+        description: 'Test description',
+        coverUrl: 'http://example.com/cover.jpg',
+        descriptionSource: 'openlibrary'
+      }];
+      fixture.detectChanges();
+
+      // Act
+      const compiled = fixture.nativeElement;
+      const leafIcon = compiled.querySelector('.leaf-icon');
+
+      // Assert
+      expect(leafIcon).toBeTruthy();
+      expect(leafIcon?.textContent?.trim()).toBe('eco');
+      expect(leafIcon?.getAttribute('aria-label')).toBe('OpenLibrary description');
+    });
+
+    it('should display book icon when descriptionSource is "googlebooks"', () => {
+      // Arrange
+      component.data.sameSeries = [{
+        title: 'Test Book',
+        order: 1,
+        description: 'Test description',
+        coverUrl: 'http://example.com/cover.jpg',
+        descriptionSource: 'googlebooks'
+      }];
+      fixture.detectChanges();
+
+      // Act
+      const compiled = fixture.nativeElement;
+      const bookIcon = compiled.querySelector('.book-icon');
+
+      // Assert
+      expect(bookIcon).toBeTruthy();
+      expect(bookIcon?.textContent?.trim()).toBe('menu_book');
+      expect(bookIcon?.getAttribute('aria-label')).toBe('Google Books description');
+    });
+
+    it('should not display any icon when descriptionSource is null', () => {
+      // Arrange
+      component.data.sameSeries = [{
+        title: 'Test Book',
+        order: 1,
+        description: 'Test description',
+        coverUrl: 'http://example.com/cover.jpg',
+        descriptionSource: null
+      }];
+      fixture.detectChanges();
+
+      // Act
+      const compiled = fixture.nativeElement;
+      const robotIcon = compiled.querySelector('.robot-icon');
+      const bookIcon = compiled.querySelector('.book-icon');
+      const leafIcon = compiled.querySelector('.leaf-icon');
+
+      // Assert
+      expect(robotIcon).toBeFalsy();
+      expect(bookIcon).toBeFalsy();
+      expect(leafIcon).toBeFalsy();
+    });
+
+    it('should not display any icon when descriptionSource is undefined', () => {
+      // Arrange
+      component.data.sameSeries = [{
+        title: 'Test Book',
+        order: 1,
+        description: 'Test description',
+        coverUrl: 'http://example.com/cover.jpg'
+        // descriptionSource is undefined
+      }];
+      fixture.detectChanges();
+
+      // Act
+      const compiled = fixture.nativeElement;
+      const robotIcon = compiled.querySelector('.robot-icon');
+      const bookIcon = compiled.querySelector('.book-icon');
+      const leafIcon = compiled.querySelector('.leaf-icon');
+
+      // Assert
+      expect(robotIcon).toBeFalsy();
+      expect(bookIcon).toBeFalsy();
+      expect(leafIcon).toBeFalsy();
+    });
+
+    it('should display icons in "Same Series" section', () => {
+      // Arrange
+      component.data.sameSeries = [
+        {
+          title: 'Book One',
+          order: 1,
+          description: 'GPT description',
+          coverUrl: 'http://example.com/cover1.jpg',
+          descriptionSource: 'gpt'
+        },
+        {
+          title: 'Book Two',
+          order: 2,
+          description: 'Google Books description',
+          coverUrl: 'http://example.com/cover2.jpg',
+          descriptionSource: 'googlebooks'
+        },
+        {
+          title: 'Book Three',
+          order: 3,
+          description: 'OpenLibrary description',
+          coverUrl: 'http://example.com/cover3.jpg',
+          descriptionSource: 'openlibrary'
+        }
+      ];
+      fixture.detectChanges();
+
+      // Act
+      const compiled = fixture.nativeElement;
+      const robotIcons = compiled.querySelectorAll('.robot-icon');
+      const bookIcons = compiled.querySelectorAll('.book-icon');
+      const leafIcons = compiled.querySelectorAll('.leaf-icon');
+
+      // Assert
+      expect(robotIcons.length).toBe(1);
+      expect(bookIcons.length).toBe(1);
+      expect(leafIcons.length).toBe(1);
+    });
+
+    it('should display icons in "Other Series" section', () => {
+      // Arrange
+      component.data.mode = 'related'; // Ensure other series section is visible
+      component.data.otherSeries = [{
+        seriesName: 'Test Series',
+        bookCount: 3,
+        description: 'Series description',
+        summary: 'Series summary',
+        books: [
+          {
+            title: 'Book One',
+            order: 1,
+            description: 'GPT description',
+            coverUrl: 'http://example.com/cover1.jpg',
+            descriptionSource: 'gpt'
+          },
+          {
+            title: 'Book Two',
+            order: 2,
+            description: 'Google Books description',
+            coverUrl: 'http://example.com/cover2.jpg',
+            descriptionSource: 'googlebooks'
+          },
+          {
+            title: 'Book Three',
+            order: 3,
+            description: 'OpenLibrary description',
+            coverUrl: 'http://example.com/cover3.jpg',
+            descriptionSource: 'openlibrary'
+          }
+        ]
+      }];
+      // Expand the series to make books visible
+      component.expandedSeries.add('Test Series');
+      fixture.detectChanges();
+
+      // Act
+      const compiled = fixture.nativeElement;
+      const robotIcons = compiled.querySelectorAll('.robot-icon');
+      const bookIcons = compiled.querySelectorAll('.book-icon');
+      const leafIcons = compiled.querySelectorAll('.leaf-icon');
+
+      // Assert
+      expect(robotIcons.length).toBeGreaterThanOrEqual(1);
+      expect(bookIcons.length).toBeGreaterThanOrEqual(1);
+      expect(leafIcons.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('should display robot icon with correct CSS classes', () => {
+      // Arrange
+      component.data.sameSeries = [{
+        title: 'Test Book',
+        order: 1,
+        description: 'Test description',
+        coverUrl: 'http://example.com/cover.jpg',
+        descriptionSource: 'gpt'
+      }];
+      fixture.detectChanges();
+
+      // Act
+      const compiled = fixture.nativeElement;
+      const robotIcon = compiled.querySelector('.robot-icon');
+
+      // Assert
+      expect(robotIcon?.classList.contains('description-source-icon')).toBe(true);
+      expect(robotIcon?.classList.contains('robot-icon')).toBe(true);
+    });
+
+    it('should display leaf icon with correct CSS classes', () => {
+      // Arrange
+      component.data.sameSeries = [{
+        title: 'Test Book',
+        order: 1,
+        description: 'Test description',
+        coverUrl: 'http://example.com/cover.jpg',
+        descriptionSource: 'openlibrary'
+      }];
+      fixture.detectChanges();
+
+      // Act
+      const compiled = fixture.nativeElement;
+      const leafIcon = compiled.querySelector('.leaf-icon');
+
+      // Assert
+      expect(leafIcon?.classList.contains('description-source-icon')).toBe(true);
+      expect(leafIcon?.classList.contains('leaf-icon')).toBe(true);
+    });
+
+    it('should display book icon with correct CSS classes', () => {
+      // Arrange
+      component.data.sameSeries = [{
+        title: 'Test Book',
+        order: 1,
+        description: 'Test description',
+        coverUrl: 'http://example.com/cover.jpg',
+        descriptionSource: 'googlebooks'
+      }];
+      fixture.detectChanges();
+
+      // Act
+      const compiled = fixture.nativeElement;
+      const bookIcon = compiled.querySelector('.book-icon');
+
+      // Assert
+      expect(bookIcon?.classList.contains('description-source-icon')).toBe(true);
+      expect(bookIcon?.classList.contains('book-icon')).toBe(true);
+    });
+
+    it('should display icons in AI search results mode', () => {
+      // Arrange
+      component.data.mode = 'ai';
+      component.data.sameSeries = [{
+        title: 'Test Book',
+        order: 1,
+        description: 'Test description',
+        coverUrl: 'http://example.com/cover.jpg',
+        descriptionSource: 'gpt'
+      }];
+      fixture.detectChanges();
+
+      // Act
+      const compiled = fixture.nativeElement;
+      const robotIcon = compiled.querySelector('.robot-icon');
+
+      // Assert
+      expect(robotIcon).toBeTruthy();
+      expect(robotIcon?.textContent?.trim()).toBe('smart_toy');
+    });
+
+    it('should handle mixed descriptionSource values in same series', () => {
+      // Arrange
+      component.data.sameSeries = [
+        {
+          title: 'Book One',
+          order: 1,
+          description: 'GPT description',
+          descriptionSource: 'gpt'
+        },
+        {
+          title: 'Book Two',
+          order: 2,
+          description: 'Google Books description',
+          descriptionSource: 'googlebooks'
+        },
+        {
+          title: 'Book Three',
+          order: 3,
+          description: 'OpenLibrary description',
+          descriptionSource: 'openlibrary'
+        },
+        {
+          title: 'Book Four',
+          order: 4,
+          description: 'No source description',
+          descriptionSource: null
+        }
+      ];
+      fixture.detectChanges();
+
+      // Act
+      const compiled = fixture.nativeElement;
+      const robotIcons = compiled.querySelectorAll('.robot-icon');
+      const bookIcons = compiled.querySelectorAll('.book-icon');
+      const leafIcons = compiled.querySelectorAll('.leaf-icon');
+      const allIcons = compiled.querySelectorAll('.description-source-icon');
+
+      // Assert
+      expect(robotIcons.length).toBe(1);
+      expect(bookIcons.length).toBe(1);
+      expect(leafIcons.length).toBe(1);
+      expect(allIcons.length).toBe(3); // Only 3 books have icons
+    });
+  });
 });

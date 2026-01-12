@@ -85,6 +85,7 @@ export interface AiBookSearchItem {
   summary: string;
   importance: string;
   coverUrl?: string | null;
+  descriptionSource?: string | null;
 }
 
 export interface AiBookSearchResult {
@@ -107,6 +108,7 @@ export interface SeriesBook {
   order: number;
   description: string;
   coverUrl?: string;
+  descriptionSource?: string | null;
 }
 
 export interface AuthorSeriesInfo {

@@ -57,7 +57,27 @@
               </div>
               <div class="book-details">
                 <p class="book-title">{{ book.title }}</p>
-                <p class="book-description">{{ book.description }}</p>
+                <p class="book-description">
+                  {{ book.description }}
+                  <mat-icon
+                    *ngIf="book.descriptionSource === 'gpt'"
+                    class="description-source-icon robot-icon"
+                    aria-label="AI-generated description">
+                    smart_toy
+                  </mat-icon>
+                  <mat-icon
+                    *ngIf="book.descriptionSource === 'googlebooks'"
+                    class="description-source-icon book-icon"
+                    aria-label="Google Books description">
+                    menu_book
+                  </mat-icon>
+                  <mat-icon
+                    *ngIf="book.descriptionSource === 'openlibrary'"
+                    class="description-source-icon leaf-icon"
+                    aria-label="OpenLibrary description">
+                    eco
+                  </mat-icon>
+                </p>
                 <button
                   *ngIf="data.mode !== 'ai'"
                   mat-button
@@ -126,7 +146,27 @@
                   </div>
                   <div class="book-details">
                     <p class="book-title">{{ book.title }}</p>
-                    <p class="book-description">{{ book.description }}</p>
+                    <p class="book-description">
+                      {{ book.description }}
+                      <mat-icon
+                        *ngIf="book.descriptionSource === 'gpt'"
+                        class="description-source-icon robot-icon"
+                        aria-label="AI-generated description">
+                        smart_toy
+                      </mat-icon>
+                      <mat-icon
+                        *ngIf="book.descriptionSource === 'googlebooks'"
+                        class="description-source-icon book-icon"
+                        aria-label="Google Books description">
+                        menu_book
+                      </mat-icon>
+                      <mat-icon
+                        *ngIf="book.descriptionSource === 'openlibrary'"
+                        class="description-source-icon leaf-icon"
+                        aria-label="OpenLibrary description">
+                        eco
+                      </mat-icon>
+                    </p>
                   </div>
                 </div>
               </div>

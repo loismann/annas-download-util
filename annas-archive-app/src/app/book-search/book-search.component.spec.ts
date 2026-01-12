@@ -580,4 +580,251 @@ describe('BookSearchComponent', () => {
       expect(mockDialog.open).not.toHaveBeenCalled();
     });
   });
+
+  describe('AI Book Search - Description Source Mapping', () => {
+    beforeEach(() => {
+      mockApiService.aiBookSearch = jasmine.createSpy('aiBookSearch');
+    });
+
+    it('should map descriptionSource from API response to dialog data', (done) => {
+      // Arrange
+      const mockApiResponse = {
+        summary: 'AI search summary',
+        books: [
+          {
+            title: 'Book One',
+            author: 'Author One',
+            summary: 'GPT summary',
+            importance: 'High',
+            coverUrl: 'http://example.com/cover1.jpg',
+            descriptionSource: 'gpt'
+          },
+          {
+            title: 'Book Two',
+            author: 'Author Two',
+            summary: 'OpenLibrary summary',
+            importance: 'Medium',
+            coverUrl: 'http://example.com/cover2.jpg',
+            descriptionSource: 'openlibrary'
+          }
+        ]
+      };
+
+      mockApiService.aiBookSearch.and.returnValue(of(mockApiResponse));
+
+      const dialogRef = {
+        componentInstance: {
+          clearStatus: jasmine.createSpy('clearStatus'),
+          addStatus: jasmine.createSpy('addStatus'),
+          data: {}
+        },
+        afterClosed: () => of(null)
+      };
+      mockDialog.open.and.returnValue(dialogRef as any);
+
+      component.aiSearchExpanded = true;
+      component.aiSearchQuery = 'test query';
+
+      // Act
+      component.onSearch();
+
+      // Assert
+      setTimeout(() => {
+        expect((dialogRef.componentInstance.data as any).sameSeries).toBeDefined();
+        expect((dialogRef.componentInstance.data as any).sameSeries.length).toBe(2);
+        expect((dialogRef.componentInstance.data as any).sameSeries[0].descriptionSource).toBe('gpt');
+        expect((dialogRef.componentInstance.data as any).sameSeries[1].descriptionSource).toBe('openlibrary');
+        done();
+      }, 10);
+    });
+
+    it('should preserve descriptionSource as null when not provided', (done) => {
+      // Arrange
+      const mockApiResponse = {
+        summary: 'AI search summary',
+        books: [
+          {
+            title: 'Book One',
+            author: 'Author One',
+            summary: 'Summary without source',
+            importance: 'High',
+            coverUrl: null,
+            descriptionSource: null
+          }
+        ]
+      };
+
+      mockApiService.aiBookSearch.and.returnValue(of(mockApiResponse));
+
+      const dialogRef = {
+        componentInstance: {
+          clearStatus: jasmine.createSpy('clearStatus'),
+          addStatus: jasmine.createSpy('addStatus'),
+          data: {}
+        },
+        afterClosed: () => of(null)
+      };
+      mockDialog.open.and.returnValue(dialogRef as any);
+
+      component.aiSearchExpanded = true;
+      component.aiSearchQuery = 'test query';
+
+      // Act
+      component.onSearch();
+
+      // Assert
+      setTimeout(() => {
+        expect((dialogRef.componentInstance.data as any).sameSeries[0].descriptionSource).toBe(null);
+        done();
+      }, 10);
+    });
+
+    it('should handle undefined descriptionSource from API', (done) => {
+      // Arrange
+      const mockApiResponse = {
+        summary: 'AI search summary',
+        books: [
+          {
+            title: 'Book One',
+            author: 'Author One',
+            summary: 'Summary without source field',
+            importance: 'High',
+            coverUrl: null
+            // descriptionSource is undefined
+          }
+        ]
+      };
+
+      mockApiService.aiBookSearch.and.returnValue(of(mockApiResponse));
+
+      const dialogRef = {
+        componentInstance: {
+          clearStatus: jasmine.createSpy('clearStatus'),
+          addStatus: jasmine.createSpy('addStatus'),
+          data: {}
+        },
+        afterClosed: () => of(null)
+      };
+      mockDialog.open.and.returnValue(dialogRef as any);
+
+      component.aiSearchExpanded = true;
+      component.aiSearchQuery = 'test query';
+
+      // Act
+      component.onSearch();
+
+      // Assert
+      setTimeout(() => {
+        expect((dialogRef.componentInstance.data as any).sameSeries[0].descriptionSource).toBe(null);
+        done();
+      }, 10);
+    });
+
+    it('should handle mixed descriptionSource values in results', (done) => {
+      // Arrange
+      const mockApiResponse = {
+        summary: 'AI search summary',
+        books: [
+          {
+            title: 'Book One',
+            author: 'Author One',
+            summary: 'GPT summary',
+            importance: 'High',
+            coverUrl: null,
+            descriptionSource: 'gpt'
+          },
+          {
+            title: 'Book Two',
+            author: 'Author Two',
+            summary: 'OpenLibrary summary',
+            importance: 'Medium',
+            coverUrl: null,
+            descriptionSource: 'openlibrary'
+          },
+          {
+            title: 'Book Three',
+            author: 'Author Three',
+            summary: 'No source',
+            importance: 'Low',
+            coverUrl: null,
+            descriptionSource: null
+          }
+        ]
+      };
+
+      mockApiService.aiBookSearch.and.returnValue(of(mockApiResponse));
+
+      const dialogRef = {
+        componentInstance: {
+          clearStatus: jasmine.createSpy('clearStatus'),
+          addStatus: jasmine.createSpy('addStatus'),
+          data: {}
+        },
+        afterClosed: () => of(null)
+      };
+      mockDialog.open.and.returnValue(dialogRef as any);
+
+      component.aiSearchExpanded = true;
+      component.aiSearchQuery = 'test query';
+
+      // Act
+      component.onSearch();
+
+      // Assert
+      setTimeout(() => {
+        const results = (dialogRef.componentInstance.data as any).sameSeries;
+        expect(results.length).toBe(3);
+        expect(results[0].descriptionSource).toBe('gpt');
+        expect(results[1].descriptionSource).toBe('openlibrary');
+        expect(results[2].descriptionSource).toBe(null);
+        done();
+      }, 10);
+    });
+
+    it('should maintain descriptionSource through the entire mapping pipeline', (done) => {
+      // Arrange
+      const mockApiResponse = {
+        summary: 'AI search summary',
+        books: [
+          {
+            title: 'The Great Gatsby',
+            author: 'F. Scott Fitzgerald',
+            summary: 'A classic novel',
+            importance: 'Essential reading',
+            coverUrl: 'http://example.com/gatsby.jpg',
+            descriptionSource: 'openlibrary'
+          }
+        ]
+      };
+
+      mockApiService.aiBookSearch.and.returnValue(of(mockApiResponse));
+
+      const dialogRef = {
+        componentInstance: {
+          clearStatus: jasmine.createSpy('clearStatus'),
+          addStatus: jasmine.createSpy('addStatus'),
+          data: {}
+        },
+        afterClosed: () => of(null)
+      };
+      mockDialog.open.and.returnValue(dialogRef as any);
+
+      component.aiSearchExpanded = true;
+      component.aiSearchQuery = 'classic American novels';
+
+      // Act
+      component.onSearch();
+
+      // Assert
+      setTimeout(() => {
+        const mappedBook = (dialogRef.componentInstance.data as any).sameSeries[0];
+        expect(mappedBook.title).toBe('The Great Gatsby');
+        expect(mappedBook.order).toBe(1);
+        expect(mappedBook.description).toBe('A classic novel • Essential reading');
+        expect(mappedBook.coverUrl).toBe('http://example.com/gatsby.jpg');
+        expect(mappedBook.descriptionSource).toBe('openlibrary');
+        done();
+      }, 10);
+    });
+  });
 });

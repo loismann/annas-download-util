@@ -81,6 +81,7 @@ export class LibraryComponent implements OnInit {
   readonly ownerTags = ["Dad's Books", "Mom's Books", "Paul's Books"];
   bulkEditMode = false;
   selectedBooksForBulk = new Set<string>();
+  tileSize: 'small' | 'medium' | 'large' = 'medium';
 
   @ViewChild('libraryGrid') libraryGrid?: ElementRef<HTMLDivElement>;
 
@@ -359,6 +360,10 @@ export class LibraryComponent implements OnInit {
   toggleSortDirection(): void {
     this.sortDirection = this.sortDirection === 'down' ? 'up' : 'down';
     this.onSortChange(true);
+  }
+
+  setTileSize(size: 'small' | 'medium' | 'large'): void {
+    this.tileSize = size;
   }
 
   private getDefaultSortDirection(order: typeof this.sortOrder): 'down' | 'up' {

@@ -3,68 +3,12 @@ using Xunit;
 
 namespace AnnasArchive.Tests.Helpers;
 
+/// <summary>
+/// Tests for CoverLookupHelpers image utility methods.
+/// Note: BuildCoverTitleCandidates was moved to service layer.
+/// </summary>
 public class CoverLookupHelpersTests
 {
-    #region BuildCoverTitleCandidates Tests
-
-    [Fact]
-    public void BuildCoverTitleCandidates_ReturnsEmpty_WhenTitleIsEmpty()
-    {
-        var result = CoverLookupHelpers.BuildCoverTitleCandidates("");
-        Assert.Empty(result);
-    }
-
-    [Fact]
-    public void BuildCoverTitleCandidates_ReturnsEmpty_WhenTitleIsWhitespace()
-    {
-        var result = CoverLookupHelpers.BuildCoverTitleCandidates("   ");
-        Assert.Empty(result);
-    }
-
-    [Fact]
-    public void BuildCoverTitleCandidates_ReturnsTrimmedTitle_ForSimpleTitle()
-    {
-        var result = CoverLookupHelpers.BuildCoverTitleCandidates("  The Great Gatsby  ");
-        Assert.Contains("The Great Gatsby", result);
-    }
-
-    [Fact]
-    public void BuildCoverTitleCandidates_RemovesBracketedContent()
-    {
-        var result = CoverLookupHelpers.BuildCoverTitleCandidates("The Great Gatsby [Illustrated Edition]");
-        Assert.Contains("The Great Gatsby", result);
-    }
-
-    [Fact]
-    public void BuildCoverTitleCandidates_RemovesParenthesizedContent()
-    {
-        var result = CoverLookupHelpers.BuildCoverTitleCandidates("The Great Gatsby (Penguin Classics)");
-        Assert.Contains("The Great Gatsby", result);
-    }
-
-    [Fact]
-    public void BuildCoverTitleCandidates_RemovesBookNumberPattern()
-    {
-        var result = CoverLookupHelpers.BuildCoverTitleCandidates("Harry Potter Book 1");
-        Assert.Contains("Harry Potter", result);
-    }
-
-    [Fact]
-    public void BuildCoverTitleCandidates_IncludesColonSplitVariant()
-    {
-        var result = CoverLookupHelpers.BuildCoverTitleCandidates("Harry Potter: The Philosopher's Stone");
-        Assert.Contains("Harry Potter", result);
-    }
-
-    [Fact]
-    public void BuildCoverTitleCandidates_ReturnsDistinctCandidates()
-    {
-        var result = CoverLookupHelpers.BuildCoverTitleCandidates("Simple Title");
-        Assert.Equal(result.Distinct(StringComparer.OrdinalIgnoreCase).Count(), result.Count);
-    }
-
-    #endregion
-
     #region IsCoverSizeValid Tests
 
     [Fact]

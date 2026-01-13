@@ -1,4 +1,5 @@
 using AnnasArchive.Core.Services;
+using Microsoft.Extensions.Caching.Memory;
 using Moq;
 using Moq.Protected;
 using System.Net;
@@ -11,12 +12,14 @@ public class OpenLibraryServiceTests
 {
     private readonly Mock<IHttpClientFactory> _mockHttpFactory;
     private readonly Mock<HttpMessageHandler> _mockHttpHandler;
+    private readonly IMemoryCache _cache;
     private readonly OpenLibraryService _service;
 
     public OpenLibraryServiceTests()
     {
         _mockHttpHandler = new Mock<HttpMessageHandler>();
         _mockHttpFactory = new Mock<IHttpClientFactory>();
+        _cache = new MemoryCache(new MemoryCacheOptions());
 
         var httpClient = new HttpClient(_mockHttpHandler.Object)
         {
@@ -27,7 +30,7 @@ public class OpenLibraryServiceTests
             .Setup(x => x.CreateClient("OpenLibrary"))
             .Returns(httpClient);
 
-        _service = new OpenLibraryService(_mockHttpFactory.Object);
+        _service = new OpenLibraryService(_mockHttpFactory.Object, _cache);
     }
 
     [Fact]

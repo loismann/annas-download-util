@@ -112,14 +112,15 @@ public static class BookSearchEndpoints
     private static async Task<IResult> HandleCoverLookup(
         [FromQuery] string title,
         [FromQuery] string? author,
-        IHttpClientFactory httpFactory)
+        IOpenLibraryService openLibrary,
+        IGoogleBooksService googleBooks)
     {
         if (string.IsNullOrWhiteSpace(title))
             return Results.BadRequest(new { error = "title is required." });
 
         Console.WriteLine($"Cover lookup: title='{title}', author='{author}'");
-        var cover = await CoverLookupHelpers.FetchOpenLibraryCoverAsync(title, author, httpFactory)
-                    ?? await CoverLookupHelpers.FetchGoogleBooksCoverAsync(title, author, httpFactory);
+        var cover = await openLibrary.GetCoverUrlAsync(title, author)
+                    ?? await googleBooks.GetCoverUrlAsync(title, author);
 
         Console.WriteLine(cover is null
             ? $"Cover lookup failed for '{title}'"

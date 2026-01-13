@@ -1,8 +1,10 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 
 namespace AnnasArchive.Core.Services;
@@ -15,6 +17,8 @@ public class GoogleBooksService : IGoogleBooksService
     {
         _httpFactory = httpFactory;
     }
+
+    #region Book Description
 
     public async Task<string?> GetBookDescriptionAsync(string title, string author, string? isbn = null)
     {
@@ -77,4 +81,146 @@ public class GoogleBooksService : IGoogleBooksService
             return null;
         }
     }
+
+    #endregion
+
+    #region Cover Images
+
+    public async Task<string?> GetCoverUrlAsync(string title, string? author = null)
+    {
+        if (string.IsNullOrWhiteSpace(title)) return null;
+
+        try
+        {
+            var http = _httpFactory.CreateClient("GoogleBooks");
+            http.Timeout = TimeSpan.FromSeconds(3);
+
+            var candidateTitles = BuildCoverTitleCandidates(title);
+            foreach (var candidate in candidateTitles)
+            {
+                var titleQuery = Uri.EscapeDataString(candidate);
+                var authorQuery = string.IsNullOrWhiteSpace(author) ? "" : $"+inauthor:{Uri.EscapeDataString(author.Trim())}";
+                var url = $"https://www.googleapis.com/books/v1/volumes?q=intitle:{titleQuery}{authorQuery}&maxResults=3";
+
+                using var response = await http.GetAsync(url);
+                if (!response.IsSuccessStatusCode) continue;
+
+                using var stream = await response.Content.ReadAsStreamAsync();
+                using var doc = await JsonDocument.ParseAsync(stream);
+
+                if (!doc.RootElement.TryGetProperty("items", out var items) || items.ValueKind != JsonValueKind.Array)
+                    continue;
+
+                foreach (var item in items.EnumerateArray())
+                {
+                    if (!item.TryGetProperty("volumeInfo", out var volumeInfo)) continue;
+                    if (!volumeInfo.TryGetProperty("imageLinks", out var imageLinks)) continue;
+
+                    string? urlValue = null;
+                    if (imageLinks.TryGetProperty("thumbnail", out var thumb))
+                        urlValue = thumb.GetString();
+                    else if (imageLinks.TryGetProperty("smallThumbnail", out var smallThumb))
+                        urlValue = smallThumb.GetString();
+
+                    if (string.IsNullOrWhiteSpace(urlValue)) continue;
+                    return urlValue.Replace("http://", "https://", StringComparison.OrdinalIgnoreCase);
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(author))
+                return await GetCoverUrlAsync(title, null);
+        }
+        catch
+        {
+            return null;
+        }
+
+        return null;
+    }
+
+    public async Task<List<string>> GetCoverCandidatesAsync(string title, string? author = null, int limit = 12)
+    {
+        if (string.IsNullOrWhiteSpace(title))
+            return new List<string>();
+
+        try
+        {
+            var http = _httpFactory.CreateClient("GoogleBooks");
+            http.Timeout = TimeSpan.FromSeconds(5);
+
+            var query = string.IsNullOrWhiteSpace(author)
+                ? $"intitle:{title}"
+                : $"intitle:{title} inauthor:{author}";
+            var url = $"https://www.googleapis.com/books/v1/volumes?q={Uri.EscapeDataString(query)}&maxResults={Math.Max(limit, 5)}";
+
+            using var response = await http.GetAsync(url);
+            if (!response.IsSuccessStatusCode)
+                return new List<string>();
+
+            using var stream = await response.Content.ReadAsStreamAsync();
+            using var doc = await JsonDocument.ParseAsync(stream);
+
+            if (!doc.RootElement.TryGetProperty("items", out var items) || items.ValueKind != JsonValueKind.Array)
+                return new List<string>();
+
+            var results = new List<string>();
+            foreach (var item in items.EnumerateArray())
+            {
+                if (!item.TryGetProperty("volumeInfo", out var info)) continue;
+                if (!info.TryGetProperty("imageLinks", out var imageLinks)) continue;
+
+                string? urlValue = null;
+                if (imageLinks.TryGetProperty("thumbnail", out var thumb))
+                    urlValue = thumb.GetString();
+                else if (imageLinks.TryGetProperty("smallThumbnail", out var smallThumb))
+                    urlValue = smallThumb.GetString();
+
+                if (string.IsNullOrWhiteSpace(urlValue)) continue;
+
+                // Upgrade to larger image by modifying URL parameters
+                urlValue = urlValue.Replace("http://", "https://", StringComparison.OrdinalIgnoreCase);
+                urlValue = urlValue.Replace("&zoom=1", "&zoom=0", StringComparison.OrdinalIgnoreCase);
+                urlValue = urlValue.Replace("?zoom=1", "?zoom=0", StringComparison.OrdinalIgnoreCase);
+                urlValue = urlValue.Replace("&edge=curl", "", StringComparison.OrdinalIgnoreCase);
+
+                results.Add(urlValue);
+            }
+
+            return results.Distinct(StringComparer.OrdinalIgnoreCase).Take(limit).ToList();
+        }
+        catch
+        {
+            return new List<string>();
+        }
+    }
+
+    private static List<string> BuildCoverTitleCandidates(string title)
+    {
+        var candidates = new List<string>();
+        var trimmed = title.Trim();
+        if (string.IsNullOrWhiteSpace(trimmed)) return candidates;
+
+        string Simplify(string value)
+        {
+            var withoutBracket = Regex.Replace(value, @"\[[^\]]+\]", "").Trim();
+            var withoutParens = Regex.Replace(withoutBracket, @"\([^)]+\)", "").Trim();
+            var withoutSeries = Regex.Replace(withoutParens, @"\bbook\s+\d+\b", "", RegexOptions.IgnoreCase).Trim();
+            var withoutDash = Regex.Replace(withoutSeries, @"\s*-\s*\d+\s*-\s*", " ").Trim();
+            return Regex.Replace(withoutDash, @"\s{2,}", " ").Trim();
+        }
+
+        var baseTitle = Simplify(trimmed);
+        candidates.Add(baseTitle);
+
+        var colonSplit = baseTitle.Split(':')[0].Trim();
+        if (!string.Equals(colonSplit, baseTitle, StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(colonSplit))
+            candidates.Add(colonSplit);
+
+        if (!string.Equals(trimmed, baseTitle, StringComparison.OrdinalIgnoreCase))
+            candidates.Add(trimmed);
+
+        return candidates.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    #endregion
 }

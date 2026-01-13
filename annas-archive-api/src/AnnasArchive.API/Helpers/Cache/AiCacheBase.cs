@@ -16,13 +16,19 @@ public static class AiCacheBase
         return env ?? Path.Combine(Directory.GetCurrentDirectory(), "ai-cache");
     }
 
+    // Cross-platform invalid filename characters (union of Windows + Unix restrictions)
+    // This ensures cache files are portable between operating systems
+    private static readonly HashSet<char> InvalidFileNameChars = new(
+        Path.GetInvalidFileNameChars().Concat(new[] { '<', '>', ':', '"', '/', '\\', '|', '?', '*' })
+    );
+
     /// <summary>
-    /// Sanitizes a string to be safe for use as a filename.
+    /// Sanitizes a string to be safe for use as a filename on any platform.
+    /// Uses a consistent set of invalid characters for cross-platform compatibility.
     /// </summary>
     public static string SanitizeForFilename(string input)
     {
-        var invalid = Path.GetInvalidFileNameChars();
-        var sanitized = new string(input.Select(c => invalid.Contains(c) ? '_' : c).ToArray());
+        var sanitized = new string(input.Select(c => InvalidFileNameChars.Contains(c) ? '_' : c).ToArray());
         if (sanitized.Length > 200) sanitized = sanitized.Substring(0, 200);
         return sanitized;
     }

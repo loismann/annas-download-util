@@ -1,6 +1,12 @@
+using System.Collections.Generic;
 using System.Threading.Tasks;
 
 namespace AnnasArchive.Core.Services;
+
+/// <summary>
+/// Author suggestion with confidence level.
+/// </summary>
+public record OpenLibraryAuthorSuggestion(string Author, string Confidence);
 
 /// <summary>
 /// Service for fetching book descriptions and metadata from OpenLibrary.org
@@ -15,9 +21,21 @@ public interface IOpenLibraryService
     /// (Books API excerpts are intentionally skipped as they often contain book text rather than summaries)
     /// Returns null if no description is found in any source.
     /// </summary>
-    /// <param name="title">Book title</param>
-    /// <param name="author">Book author</param>
-    /// <param name="isbn">Optional ISBN for more accurate lookups</param>
-    /// <returns>Book description or null if not found</returns>
     Task<string?> GetBookDescriptionAsync(string title, string author, string? isbn = null);
+
+    /// <summary>
+    /// Fetches author suggestions for a book title from OpenLibrary.
+    /// Results are cached for 6 hours.
+    /// </summary>
+    Task<List<OpenLibraryAuthorSuggestion>> GetAuthorSuggestionsAsync(string title);
+
+    /// <summary>
+    /// Fetches the best cover image URL for a book from OpenLibrary.
+    /// </summary>
+    Task<string?> GetCoverUrlAsync(string title, string? author = null);
+
+    /// <summary>
+    /// Fetches multiple cover image candidates for a book from OpenLibrary.
+    /// </summary>
+    Task<List<string>> GetCoverCandidatesAsync(string title, string? author = null, int limit = 12);
 }

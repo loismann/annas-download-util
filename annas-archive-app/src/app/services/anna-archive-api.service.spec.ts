@@ -101,4 +101,148 @@ describe('AnnaArchiveApiService', () => {
     expect(req.request.method).toBe('GET');
     req.flush(mockUsage);
   });
+
+  // ─── Anna Download Endpoint Tests ────────────────────────────────────────
+
+  it('should send book to library with all parameters', () => {
+    const mockResponse = { success: true, message: 'Saved to library' };
+
+    service.sendToLibrary(
+      'abc123',
+      'Test Book',
+      'https://covers.example.com/cover.jpg',
+      'Test Author',
+      'EPUB',
+      '1.5 MB',
+      'anna',
+      'A test book description'
+    ).subscribe(response => {
+      expect(response.success).toBe(true);
+    });
+
+    const req = httpMock.expectOne(req => req.url.includes('/send-to-library'));
+    expect(req.request.method).toBe('POST');
+    expect(req.request.params.get('title')).toBe('Test Book');
+    expect(req.request.params.get('coverUrl')).toBe('https://covers.example.com/cover.jpg');
+    expect(req.request.params.get('authors')).toBe('Test Author');
+    expect(req.request.params.get('format')).toBe('EPUB');
+    expect(req.request.params.get('fileSize')).toBe('1.5 MB');
+    expect(req.request.params.get('source')).toBe('anna');
+    expect(req.request.params.get('description')).toBe('A test book description');
+    req.flush(mockResponse);
+  });
+
+  it('should send book to library with minimal parameters', () => {
+    const mockResponse = { success: true };
+
+    service.sendToLibrary('abc123', 'Test Book').subscribe(response => {
+      expect(response.success).toBe(true);
+    });
+
+    const req = httpMock.expectOne(req => req.url.includes('/send-to-library'));
+    expect(req.request.method).toBe('POST');
+    expect(req.request.params.get('title')).toBe('Test Book');
+    expect(req.request.params.has('coverUrl')).toBe(false);
+    req.flush(mockResponse);
+  });
+
+  it('should download member book with cover replacement', () => {
+    const mockBlob = new Blob(['test content'], { type: 'application/epub+zip' });
+
+    service.downloadMember('abc123', 'Test Book', 'https://covers.example.com/cover.jpg').subscribe(response => {
+      expect(response).toBeInstanceOf(Blob);
+    });
+
+    const req = httpMock.expectOne(req => req.url.includes('/download/member'));
+    expect(req.request.method).toBe('POST');
+    expect(req.request.params.get('title')).toBe('Test Book');
+    expect(req.request.params.get('coverUrl')).toBe('https://covers.example.com/cover.jpg');
+    expect(req.request.responseType).toBe('blob');
+    req.flush(mockBlob);
+  });
+
+  it('should download member book without cover', () => {
+    const mockBlob = new Blob(['test content'], { type: 'application/epub+zip' });
+
+    service.downloadMember('abc123', 'Test Book').subscribe(response => {
+      expect(response).toBeInstanceOf(Blob);
+    });
+
+    const req = httpMock.expectOne(req => req.url.includes('/download/member'));
+    expect(req.request.method).toBe('POST');
+    expect(req.request.params.get('title')).toBe('Test Book');
+    expect(req.request.params.has('coverUrl')).toBe(false);
+    req.flush(mockBlob);
+  });
+
+  it('should fetch GPT-4 description with author', () => {
+    const mockResponse = { description: 'A fascinating adventure story.' };
+
+    service.fetchDescriptionFromGPT4('Test Book', 'Test Author').subscribe(response => {
+      expect(response.description).toBe('A fascinating adventure story.');
+    });
+
+    const req = httpMock.expectOne(req => req.url.includes('/description/gpt'));
+    expect(req.request.method).toBe('GET');
+    expect(req.request.params.get('title')).toBe('Test Book');
+    expect(req.request.params.get('author')).toBe('Test Author');
+    req.flush(mockResponse);
+  });
+
+  it('should fetch GPT-4 description without author', () => {
+    const mockResponse = { description: 'A fascinating adventure story.' };
+
+    service.fetchDescriptionFromGPT4('Test Book').subscribe(response => {
+      expect(response.description).toBe('A fascinating adventure story.');
+    });
+
+    const req = httpMock.expectOne(req => req.url.includes('/description/gpt'));
+    expect(req.request.method).toBe('GET');
+    expect(req.request.params.get('title')).toBe('Test Book');
+    expect(req.request.params.has('author')).toBe(false);
+    req.flush(mockResponse);
+  });
+
+  it('should get download status', () => {
+    const mockResponse = { accountFastInfo: { downloadsLeft: 50, downloadsPerDay: 100 } };
+
+    service.getDownloadStatus().subscribe(response => {
+      expect(response.accountFastInfo?.downloadsLeft).toBe(50);
+      expect(response.accountFastInfo?.downloadsPerDay).toBe(100);
+    });
+
+    const req = httpMock.expectOne(req => req.url.includes('/download-status'));
+    expect(req.request.method).toBe('GET');
+    req.flush(mockResponse);
+  });
+
+  it('should send to Kindle with target parameter', () => {
+    const mockResponse = { success: true, message: "Sent to Dad's Kindle" };
+
+    service.sendToKindle('abc123', 'Test Book', 'dad', 'https://covers.example.com/cover.jpg').subscribe(response => {
+      expect(response.success).toBe(true);
+    });
+
+    const req = httpMock.expectOne(req => req.url.includes('/send-to-kindle'));
+    expect(req.request.method).toBe('POST');
+    expect(req.request.params.get('target')).toBe('dad');
+    expect(req.request.params.get('title')).toBe('Test Book');
+    expect(req.request.params.get('coverUrl')).toBe('https://covers.example.com/cover.jpg');
+    req.flush(mockResponse);
+  });
+
+  it('should send to Boox with cover URL', () => {
+    const mockResponse = { success: true, dropboxPath: '/Books/test.epub' };
+
+    service.sendToBoox('abc123', 'Test Book', 'https://covers.example.com/cover.jpg').subscribe(response => {
+      expect(response.success).toBe(true);
+      expect(response.dropboxPath).toBe('/Books/test.epub');
+    });
+
+    const req = httpMock.expectOne(req => req.url.includes('/send-to-boox'));
+    expect(req.request.method).toBe('POST');
+    expect(req.request.params.get('title')).toBe('Test Book');
+    expect(req.request.params.get('coverUrl')).toBe('https://covers.example.com/cover.jpg');
+    req.flush(mockResponse);
+  });
 });

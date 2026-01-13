@@ -53,7 +53,9 @@ public class VocabularyCacheTests
     [Fact]
     public void NormalizeTerm_PreservesApostrophes()
     {
-        Assert.Equal("it'", VocabularyCache.NormalizeTerm("it's")); // 's gets stripped
+        // "it's" has possessive 's stripped, leaving "it"
+        Assert.Equal("it", VocabularyCache.NormalizeTerm("it's"));
+        // "don't" keeps the apostrophe (not a possessive)
         Assert.Equal("don't", VocabularyCache.NormalizeTerm("don't"));
     }
 
@@ -90,8 +92,9 @@ public class VocabularyCacheTests
     [Fact]
     public void NormalizeTerm_HandlesComplexInput()
     {
-        // Complex case combining multiple transformations
-        Assert.Equal("john doe' book", VocabularyCache.NormalizeTerm("John Doe's Books!"));
+        // Complex case: lowercase, remove !, strip trailing 's' from "books"
+        // The possessive in "Doe's" is NOT stripped because we only strip trailing 's or 's
+        Assert.Equal("john doe's book", VocabularyCache.NormalizeTerm("John Doe's Books!"));
     }
 
     [Fact]

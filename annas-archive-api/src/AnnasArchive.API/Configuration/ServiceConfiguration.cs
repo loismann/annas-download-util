@@ -198,6 +198,9 @@ public static class ServiceConfiguration
     /// </summary>
     public static IServiceCollection AddCoreServices(this IServiceCollection services, IConfiguration configuration)
     {
+        // Memory cache (required by OpenLibraryService for author suggestions caching)
+        services.AddMemoryCache();
+
         // Background services
         services.AddHostedService<LibraryWatcherService>();
 

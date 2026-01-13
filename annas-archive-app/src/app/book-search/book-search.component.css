@@ -314,18 +314,20 @@
     display: flex;
     flex-direction: column;
     flex: 1 1 auto;
+    min-height: 0;
   }
-  
+
   :host ::ng-deep mat-card.book-card .info .mat-card-header {
-    padding: 16px 16px 0 16px;
+    padding: 40px 40px 0 40px;
     align-items: start;
     position: relative;
+    flex: 0 0 auto;
   }
 
   :host ::ng-deep mat-card.book-card .info .mat-card-header .remove-book-button {
     position: absolute;
-    top: 8px;
-    right: 8px;
+    top: 32px;
+    right: 32px;
     width: 32px;
     height: 32px;
     line-height: 32px;
@@ -346,30 +348,126 @@
   }
   
   :host ::ng-deep mat-card.book-card .info .mat-card-content {
-    padding: 0 16px 20px 16px;
+    padding: 0 40px 20px 40px;
+    flex: 1 1 auto;
+    overflow: hidden;
   }
-  
+
+  /* Book description styling */
+  :host ::ng-deep mat-card.book-card .book-description {
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid #e0e0e0;
+    position: relative;
+  }
+
+  :host ::ng-deep mat-card.book-card .book-description .description-text {
+    margin: 0;
+    padding-right: 40px;
+    font-size: 0.9rem;
+    line-height: 1.5;
+    color: #555;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  :host ::ng-deep mat-card.book-card .book-description .description-text.expanded {
+    -webkit-line-clamp: unset;
+    max-height: none;
+  }
+
+  :host ::ng-deep mat-card.book-card .book-description .expand-toggle {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    color: #3f51b5;
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    padding: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  :host ::ng-deep mat-card.book-card .book-description .expand-toggle:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+  }
+
+  :host ::ng-deep mat-card.book-card .book-description .expand-toggle mat-icon {
+    font-size: 24px;
+    width: 24px;
+    height: 24px;
+    line-height: 24px;
+    margin: 0;
+  }
+
+  :host ::ng-deep mat-card.book-card .book-description .retrieve-summary-btn {
+    width: auto;
+    display: inline-block;
+    opacity: 0.6;
+    transition: opacity 0.2s ease;
+  }
+
+  :host ::ng-deep mat-card.book-card .book-description .retrieve-summary-btn:hover {
+    opacity: 1;
+  }
+
+  :host ::ng-deep mat-card.book-card .book-description.retrieve-summary-container {
+    padding: 2rem 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 85px;
+  }
+
+  :host ::ng-deep mat-card.book-card .book-description .description-source-icon {
+    display: inline-block;
+    font-size: 1rem;
+    width: 1rem;
+    height: 1rem;
+    vertical-align: middle;
+    margin-left: 4px;
+    opacity: 0.7;
+  }
+
+  :host ::ng-deep mat-card.book-card .book-description .robot-icon {
+    color: #3f51b5;
+  }
+
+  :host ::ng-deep mat-card.book-card .book-description .book-icon {
+    color: #ff6f00;
+  }
+
+  :host ::ng-deep mat-card.book-card .book-description .leaf-icon {
+    color: #4caf50;
+  }
+
   :host ::ng-deep mat-card.book-card .info .mat-card-actions,
   :host ::ng-deep mat-card.book-card .info .action-buttons {
-    padding: 0 16px 16px 16px;
+    padding: 40px;
     display: flex;
-    flex-wrap: wrap;
-    margin: -4px;
+    flex-wrap: nowrap;
+    gap: 8px;
     align-items: stretch;
+    margin-top: auto;
+    flex: 0 0 auto;
   }
 
   :host ::ng-deep mat-card.book-card .info .mat-card-actions button,
   :host ::ng-deep mat-card.book-card .info .action-buttons button {
-    flex: 1 1 120px;
+    flex: 1 1 0;
     min-width: 0;
     white-space: nowrap;
     height: auto;
     min-height: 36px;
-    padding: 8px 10px;
+    padding: 8px 4px;
     line-height: 1.2;
     text-align: center;
-    margin: 4px !important;
-    font-size: 13px;
+    font-size: 12px;
   }
 
   :host ::ng-deep mat-card.book-card .info .action-buttons .button-label-with-icon,
@@ -524,5 +622,11 @@
 
     :host ::ng-deep mat-card.book-card .info .mat-card-actions {
       flex-direction: column;
+      gap: 8px;
+    }
+
+    :host ::ng-deep mat-card.book-card .info .mat-card-actions button {
+      width: 100%;
+      font-size: 13px;
     }
   }

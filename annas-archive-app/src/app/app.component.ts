@@ -1,12 +1,15 @@
-import { Component } from '@angular/core';
+import { Component, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterOutlet, Router, RouterLink } from '@angular/router';
 import { MatToolbarModule } from '@angular/material/toolbar';
 import { MatButtonModule } from '@angular/material/button';
 import { MatMenuModule } from '@angular/material/menu';
 import { MatIconModule } from '@angular/material/icon';
-import { AuthService } from './services/auth.service';
+import { MatTooltipModule } from '@angular/material/tooltip';
+import { AuthService, UserActivity } from './services/auth.service';
 import { VERSION } from './version';
+import { Subscription, interval } from 'rxjs';
+import { switchMap, filter } from 'rxjs/operators';
 
 @Component({
   selector: 'app-root',
@@ -18,8 +21,39 @@ import { VERSION } from './version';
     MatToolbarModule,
     MatButtonModule,
     MatMenuModule,
-    MatIconModule
+    MatIconModule,
+    MatTooltipModule
   ],
+  styles: [`
+    .user-activity-indicators {
+      display: flex;
+      gap: 6px;
+      margin-left: 8px;
+      align-items: center;
+    }
+    .activity-dot {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: bold;
+      cursor: default;
+      border: 2px solid #4caf50;
+      color: #4caf50;
+      background-color: transparent;
+    }
+    .activity-dot.full-tone {
+      background-color: #4caf50;
+      color: white;
+    }
+    .activity-dot.half-tone {
+      background-color: rgba(76, 175, 80, 0.5);
+      color: white;
+    }
+  `],
   template: `
     <mat-toolbar color="primary">
       <div style="display: flex; flex-direction: column; width: 100%;">
@@ -63,15 +97,24 @@ import { VERSION } from './version';
       </mat-menu>
 
           <span style="flex: 1"></span>
-          <span *ngIf="authService.isAuthenticated$ | async" style="margin-right: 16px">
-            {{ authService.getName() }}
-          </span>
-          <button
-            *ngIf="authService.isAuthenticated$ | async"
-            mat-button
-            (click)="logout()">
-            Logout
-          </button>
+          <div *ngIf="authService.isAuthenticated$ | async" style="display: flex; align-items: center;">
+            <span style="margin-right: 8px">
+              {{ authService.getName() }}
+            </span>
+            <button mat-button (click)="logout()">
+              Logout
+            </button>
+            <div class="user-activity-indicators" *ngIf="userActivity.length > 0">
+              <div
+                *ngFor="let activity of userActivity"
+                class="activity-dot"
+                [class.full-tone]="activity.isFullTone"
+                [class.half-tone]="activity.isHalfTone"
+                [matTooltip]="activity.userName + ' - ' + (activity.minutesAgo === null ? 'no recent activity' : activity.minutesAgo < 1 ? 'just now' : Math.round(activity.minutesAgo) + 'm ago')">
+                {{ activity.initial }}
+              </div>
+            </div>
+          </div>
         </div>
         <div style="font-size: 12px; opacity: 0.85; padding-top: 2px;">
           Latest Version: {{ buildTime }}
@@ -81,13 +124,48 @@ import { VERSION } from './version';
     <router-outlet></router-outlet>
   `
 })
-export class AppComponent {
+export class AppComponent implements OnInit, OnDestroy {
   buildTime = VERSION.buildTime;
+  userActivity: UserActivity[] = [];
+  Math = Math; // Expose Math to template
+
+  private activitySubscription?: Subscription;
 
   constructor(
     public authService: AuthService,
     private router: Router
   ) {}
+
+  ngOnInit(): void {
+    // Poll for user activity every 60 seconds when authenticated
+    this.activitySubscription = this.authService.isAuthenticated$.pipe(
+      filter(isAuth => isAuth),
+      switchMap(() => {
+        // Initial fetch
+        this.fetchUserActivity();
+        // Then poll every 60 seconds
+        return interval(60000);
+      })
+    ).subscribe(() => {
+      this.fetchUserActivity();
+    });
+  }
+
+  ngOnDestroy(): void {
+    this.activitySubscription?.unsubscribe();
+  }
+
+  private fetchUserActivity(): void {
+    this.authService.getUserActivity().subscribe({
+      next: (activity) => {
+        this.userActivity = activity;
+      },
+      error: (err) => {
+        console.error('Failed to fetch user activity:', err);
+        this.userActivity = [];
+      }
+    });
+  }
 
   logout(): void {
     this.authService.logout();

@@ -312,7 +312,7 @@ test.describe('Library - Sorting', () => {
 
     const titlesDescending = await getBookTitles(page);
 
-    expect(titlesDescending).toEqual(titlesAscending.reverse());
+    expect(titlesDescending).toEqual([...titlesAscending].reverse());
   });
 
   test('Alphabet index should appear for title/author/series sorts', async ({ page }) => {

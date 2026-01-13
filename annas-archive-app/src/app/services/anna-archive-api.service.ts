@@ -79,6 +79,10 @@ export interface CoverCandidatesResponse {
   covers: string[];
 }
 
+export interface DescriptionLookupResponse {
+  description: string | null;
+}
+
 export interface AiBookSearchItem {
   title: string;
   author: string;
@@ -231,7 +235,8 @@ export class AnnaArchiveApiService {
     authors?: string,
     format?: string,
     fileSize?: string,
-    source?: string
+    source?: string,
+    description?: string
   ): Observable<any> {
     let params = new HttpParams().set('title', title);
     if (coverUrl) {
@@ -248,6 +253,9 @@ export class AnnaArchiveApiService {
     }
     if (source) {
       params = params.set('source', source);
+    }
+    if (description) {
+      params = params.set('description', description);
     }
     return this.http.post(
       `${this.baseUrl}/book/${md5}/send-to-library`,
@@ -330,7 +338,8 @@ export class AnnaArchiveApiService {
     authors?: string,
     format?: string,
     fileSize?: string,
-    source?: string
+    source?: string,
+    description?: string
   ): Observable<any> {
     let params = new HttpParams().set('title', title);
     if (coverUrl) {
@@ -347,6 +356,9 @@ export class AnnaArchiveApiService {
     }
     if (source) {
       params = params.set('source', source);
+    }
+    if (description) {
+      params = params.set('description', description);
     }
     return this.http.post(
       `${this.libgenBaseUrl}/book/${md5}/send-to-library`,
@@ -435,6 +447,12 @@ export class AnnaArchiveApiService {
     );
   }
 
+  getLibraryBookSummary(fileName: string): Observable<{ summary: string | null; source: string | null }> {
+    return this.http.get<{ summary: string | null; source: string | null }>(
+      `${this.apiHost}/api/library/book/${encodeURIComponent(fileName)}/summary`
+    );
+  }
+
   /* ══════════════════════════════════════════════════════════════
      SLUM Health Status – proxied through backend to avoid CORS
      ══════════════════════════════════════════════════════════════ */
@@ -453,6 +471,39 @@ export class AnnaArchiveApiService {
     }
     return this.http.get<CoverLookupResponse>(
       `${this.baseUrl}/book/cover`,
+      { params }
+    );
+  }
+
+  fetchDescriptionFromGoogleBooks(title: string, author?: string): Observable<DescriptionLookupResponse> {
+    let params = new HttpParams().set('title', title);
+    if (author) {
+      params = params.set('author', author);
+    }
+    return this.http.get<DescriptionLookupResponse>(
+      `${this.baseUrl}/book/description/google-books`,
+      { params }
+    );
+  }
+
+  fetchDescriptionFromOpenLibrary(title: string, author?: string): Observable<DescriptionLookupResponse> {
+    let params = new HttpParams().set('title', title);
+    if (author) {
+      params = params.set('author', author);
+    }
+    return this.http.get<DescriptionLookupResponse>(
+      `${this.baseUrl}/book/description/openlibrary`,
+      { params }
+    );
+  }
+
+  fetchDescriptionFromGPT4(title: string, author?: string): Observable<DescriptionLookupResponse> {
+    let params = new HttpParams().set('title', title);
+    if (author) {
+      params = params.set('author', author);
+    }
+    return this.http.get<DescriptionLookupResponse>(
+      `${this.baseUrl}/book/description/gpt`,
       { params }
     );
   }

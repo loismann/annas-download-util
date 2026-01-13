@@ -125,6 +125,8 @@ test.describe('Book Search - Advanced Features', () => {
 
   test.describe.serial('Related Books Modal (GPT-4 Live)', () => {
     test.skip(!aiLiveEnabled, 'E2E_AI_LIVE not enabled');
+    // Live GPT-4 tests need longer timeout for API calls + cover lookups
+    test.setTimeout(120000);
 
     test('Related books should show other series by same author', async ({ page }) => {
       // Reset AI usage before running live AI tests to avoid hitting usage limits
@@ -150,7 +152,8 @@ test.describe('Book Search - Advanced Features', () => {
 
       // OpenAI API can take a while - increase timeout to 60s
       await page.waitForResponse('**/api/ai/related-books', { timeout: 60000 });
-      await expect(page.locator('.loading-state')).not.toBeVisible({ timeout: 15000 });
+      // Cover lookups can be slow - increase timeout to 45s
+      await expect(page.locator('.loading-state')).not.toBeVisible({ timeout: 45000 });
 
       await expect(page.locator('.modal-layout')).toBeVisible();
     });
@@ -170,7 +173,8 @@ test.describe('Book Search - Advanced Features', () => {
 
       // OpenAI API can take a while - increase timeout to 60s
       await page.waitForResponse('**/api/ai/related-books', { timeout: 60000 });
-      await expect(page.locator('.loading-state')).not.toBeVisible({ timeout: 15000 });
+      // Cover lookups can be slow - increase timeout to 45s
+      await expect(page.locator('.loading-state')).not.toBeVisible({ timeout: 45000 });
 
       const searchButtons = page.locator('.book-card button').filter({ hasText: /Search this book/i });
       if (await searchButtons.count()) {

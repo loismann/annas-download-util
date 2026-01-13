@@ -239,15 +239,13 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
     this.timeoutIds.push(setTimeout(() => this.recalcPageSize(), 0));
     this.refreshTokenUsage();
 
-    // Load all users' usage (if admin)
-    if (this.authService.isAdmin()) {
-      this.api.getAllUsersTokenUsage().subscribe({
-        next: (usage) => {
-          this.allUsersUsage = usage;
-        },
-        error: (err) => console.error('[reader] Failed to load all users usage:', err)
-      });
-    }
+    // Load all users' usage
+    this.api.getAllUsersTokenUsage().subscribe({
+      next: (usage) => {
+        this.allUsersUsage = usage;
+      },
+      error: (err) => console.error('[reader] Failed to load all users usage:', err)
+    });
 
     // Subscribe to vocabulary changes for real-time updates
     // Always keep lists in sync so they're ready when modal opens

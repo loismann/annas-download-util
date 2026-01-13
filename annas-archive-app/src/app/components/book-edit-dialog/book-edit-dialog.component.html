@@ -2,53 +2,56 @@
 
 <mat-dialog-content>
   <div class="dialog-layout">
-    <!-- Book Cover -->
-    <div class="cover-section">
-      <button type="button" class="cover-button" (click)="toggleCoverPicker()" aria-label="Change cover">
-        <img
-          [src]="displayCoverUrl"
-          [alt]="data.title + ' cover'"
-          (error)="onCoverError($event)"
-          class="book-cover"
-        />
-        <span class="cover-edit-label">Change cover</span>
-      </button>
-      <div class="cover-actions">
-        <button mat-raised-button color="primary" type="button" (click)="sendToKindle('dad')" [disabled]="!data.canSendToKindle || dadsKindleState === 'sending'">
-          <ng-container [ngSwitch]="dadsKindleState">
-            <span *ngSwitchCase="'sending'">Sending…</span>
-            <span *ngSwitchCase="'success'">✔ Sent</span>
-            <span *ngSwitchCase="'error'">✖ Retry</span>
-            <span *ngSwitchDefault>Dad's Kindle</span>
-          </ng-container>
+    <!-- Left Column: Cover + Buttons + Summary -->
+    <div class="left-column">
+      <!-- Top Row: Cover and Buttons side by side -->
+      <div class="cover-buttons-row">
+        <button type="button" class="cover-button" (click)="toggleCoverPicker()" aria-label="Change cover">
+          <img
+            [src]="displayCoverUrl"
+            [alt]="data.title + ' cover'"
+            (error)="onCoverError($event)"
+            class="book-cover"
+          />
+          <span class="cover-edit-label">Change cover</span>
         </button>
-        <button mat-raised-button color="primary" type="button" (click)="sendToKindle('mom')" [disabled]="!data.canSendToKindle || momsKindleState === 'sending'">
-          <ng-container [ngSwitch]="momsKindleState">
-            <span *ngSwitchCase="'sending'">Sending…</span>
-            <span *ngSwitchCase="'success'">✔ Sent</span>
-            <span *ngSwitchCase="'error'">✖ Retry</span>
-            <span *ngSwitchDefault>Mom's Kindle</span>
-          </ng-container>
-        </button>
-        <button mat-raised-button color="primary" type="button" (click)="sendToDropbox()" [disabled]="!data.canSendToKindle || dropboxState === 'sending'">
-          <ng-container [ngSwitch]="dropboxState">
-            <span *ngSwitchCase="'sending'">Sending…</span>
-            <span *ngSwitchCase="'success'">✔ Sent</span>
-            <span *ngSwitchCase="'error'">✖ Retry</span>
-            <span *ngSwitchDefault>Dropbox</span>
-          </ng-container>
-        </button>
+        <div class="buttons-stack">
+          <button mat-raised-button color="primary" type="button" (click)="sendToKindle('dad')" [disabled]="!data.canSendToKindle || dadsKindleState === 'sending'">
+            <ng-container [ngSwitch]="dadsKindleState">
+              <span *ngSwitchCase="'sending'">Sending…</span>
+              <span *ngSwitchCase="'success'">✔ Sent</span>
+              <span *ngSwitchCase="'error'">✖ Retry</span>
+              <span *ngSwitchDefault>Dad's Kindle</span>
+            </ng-container>
+          </button>
+          <button mat-raised-button color="primary" type="button" (click)="sendToKindle('mom')" [disabled]="!data.canSendToKindle || momsKindleState === 'sending'">
+            <ng-container [ngSwitch]="momsKindleState">
+              <span *ngSwitchCase="'sending'">Sending…</span>
+              <span *ngSwitchCase="'success'">✔ Sent</span>
+              <span *ngSwitchCase="'error'">✖ Retry</span>
+              <span *ngSwitchDefault>Mom's Kindle</span>
+            </ng-container>
+          </button>
+          <button mat-raised-button color="primary" type="button" (click)="sendToDropbox()" [disabled]="!data.canSendToKindle || dropboxState === 'sending'">
+            <ng-container [ngSwitch]="dropboxState">
+              <span *ngSwitchCase="'sending'">Sending…</span>
+              <span *ngSwitchCase="'success'">✔ Sent</span>
+              <span *ngSwitchCase="'error'">✖ Retry</span>
+              <span *ngSwitchDefault>Dropbox</span>
+            </ng-container>
+          </button>
+          <button mat-stroked-button color="primary" type="button" (click)="readerAction()"
+            [disabled]="!data.fileName || readerState === 'sending'">
+            <ng-container [ngSwitch]="readerState">
+              <span *ngSwitchCase="'sending'">Adding…</span>
+              <span *ngSwitchCase="'error'">✖ Retry</span>
+              <span *ngSwitchDefault>{{ data.readerEnabled ? 'View in ereader' : 'Add to ebook reader' }}</span>
+            </ng-container>
+          </button>
+        </div>
       </div>
-      <div class="reader-action">
-        <button mat-stroked-button color="primary" type="button" (click)="readerAction()"
-          [disabled]="!data.fileName || readerState === 'sending'">
-          <ng-container [ngSwitch]="readerState">
-            <span *ngSwitchCase="'sending'">Adding…</span>
-            <span *ngSwitchCase="'error'">✖ Retry</span>
-            <span *ngSwitchDefault>{{ data.readerEnabled ? 'View in ereader' : 'Add to ebook reader' }}</span>
-          </ng-container>
-        </button>
-      </div>
+
+      <!-- Cover Picker (shown when toggled) -->
       <div class="cover-picker" *ngIf="coverPickerOpen">
         <div class="cover-picker-header">
           <span>Available covers (sorted by size)</span>
@@ -77,9 +80,29 @@
           </button>
         </div>
       </div>
+
+      <!-- Summary Section -->
+      <div class="summary-section">
+        <div class="summary-header">
+          <span class="summary-label">Summary</span>
+          <span class="summary-source" *ngIf="summarySource">({{ summarySource }})</span>
+        </div>
+        <div class="summary-content">
+          <div *ngIf="summaryLoading" class="summary-loading">
+            <mat-spinner diameter="20"></mat-spinner>
+            <span>Loading summary...</span>
+          </div>
+          <div *ngIf="!summaryLoading && summary" class="summary-text">
+            {{ summary }}
+          </div>
+          <div *ngIf="!summaryLoading && !summary" class="summary-empty">
+            No summary available
+          </div>
+        </div>
+      </div>
     </div>
 
-    <!-- Edit Form -->
+    <!-- Right Column: Edit Form -->
     <div class="form-section">
       <div class="book-header">
         <mat-form-field appearance="outline" class="w-100">

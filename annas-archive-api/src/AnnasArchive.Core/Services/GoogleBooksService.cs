@@ -22,7 +22,8 @@ public class GoogleBooksService : IGoogleBooksService
         {
             var http = _httpFactory.CreateClient("GoogleBooks");
 
-            // Build query - prefer ISBN if available
+            // Build query - prefer ISBN if available, otherwise use simple freeform search
+            // (freeform search is more forgiving and finds more results than intitle:/inauthor: operators)
             string query;
             if (!string.IsNullOrWhiteSpace(isbn))
             {
@@ -30,10 +31,12 @@ public class GoogleBooksService : IGoogleBooksService
             }
             else
             {
-                query = $"intitle:{Uri.EscapeDataString(title)}+inauthor:{Uri.EscapeDataString(author)}";
+                // Simple freeform query - more forgiving than structured field operators
+                var searchTerms = $"{title} {author}".Trim();
+                query = Uri.EscapeDataString(searchTerms);
             }
 
-            var url = $"https://www.googleapis.com/books/v1/volumes?q={query}";
+            var url = $"https://www.googleapis.com/books/v1/volumes?q={query}&maxResults=1";
 
             var response = await http.GetAsync(url);
             if (!response.IsSuccessStatusCode)

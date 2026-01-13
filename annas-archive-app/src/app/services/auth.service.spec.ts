@@ -118,4 +118,34 @@ describe('AuthService', () => {
       });
     }, 100);
   });
+
+  it('should fetch user activity', (done) => {
+    const mockActivity = [
+      { initial: 'M', userName: 'Mom', minutesAgo: 5, isFullTone: true, isHalfTone: false },
+      { initial: 'D', userName: 'Dad', minutesAgo: 45, isFullTone: false, isHalfTone: true }
+    ];
+
+    service.getUserActivity().subscribe(activity => {
+      expect(activity.length).toBe(2);
+      expect(activity[0].initial).toBe('M');
+      expect(activity[0].isFullTone).toBe(true);
+      expect(activity[1].initial).toBe('D');
+      expect(activity[1].isHalfTone).toBe(true);
+      done();
+    });
+
+    const req = httpMock.expectOne(req => req.url.includes('/user-activity'));
+    expect(req.request.method).toBe('GET');
+    req.flush(mockActivity);
+  });
+
+  it('should return empty array when no user activity', (done) => {
+    service.getUserActivity().subscribe(activity => {
+      expect(activity).toEqual([]);
+      done();
+    });
+
+    const req = httpMock.expectOne(req => req.url.includes('/user-activity'));
+    req.flush([]);
+  });
 });

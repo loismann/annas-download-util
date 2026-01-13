@@ -1,6 +1,7 @@
 import { Component, HostListener, OnDestroy, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { HttpClient } from '@angular/common/http';
 
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule }     from '@angular/material/input';
@@ -12,6 +13,7 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import { MatIconModule } from '@angular/material/icon';
 import { MatSlideToggleModule } from '@angular/material/slide-toggle';
+import { MatTooltipModule } from '@angular/material/tooltip';
 
 import {
   AnnaArchiveApiService,
@@ -50,6 +52,7 @@ interface DomainHealth {
     MatDialogModule,
     MatIconModule,
     MatSlideToggleModule,
+    MatTooltipModule,
   ],
   templateUrl: './book-search.component.html',
   styleUrls: ['./book-search.component.css'],
@@ -71,6 +74,7 @@ export class BookSearchComponent implements OnInit, OnDestroy {
 
   books: BookDto[] = [];
   selectedFormat = '';
+  expandedCards = new Set<string>(); // Track which book cards are expanded by md5
 
   downloadsLeft: number | null = null;
   downloadsPerDay: number | null = null;
@@ -96,7 +100,8 @@ export class BookSearchComponent implements OnInit, OnDestroy {
   constructor(
     private api: AnnaArchiveApiService,
     public authService: AuthService,
-    private dialog: MatDialog
+    private dialog: MatDialog,
+    private http: HttpClient
   ) {
     // Set up debounced author fetching
     this.searchTermSubject.pipe(
@@ -325,6 +330,7 @@ export class BookSearchComponent implements OnInit, OnDestroy {
         });
         this.loading = false;
         this.queueCoverLookups();
+        this.fetchBookDescriptions();
       },
       error: err => {
         console.error('[Book Search] Error:', err);
@@ -363,7 +369,8 @@ export class BookSearchComponent implements OnInit, OnDestroy {
           authorString,
           book.format,
           book.fileSize,
-          book.source
+          book.source,
+          book.description ?? undefined
         )
       : this.api.sendToLibrary(
           book.md5,
@@ -372,7 +379,8 @@ export class BookSearchComponent implements OnInit, OnDestroy {
           authorString,
           book.format,
           book.fileSize,
-          book.source
+          book.source,
+          book.description ?? undefined
         );
 
     libraryObservable.subscribe({
@@ -397,7 +405,8 @@ export class BookSearchComponent implements OnInit, OnDestroy {
           authorString,
           book.format,
           book.fileSize,
-          book.source
+          book.source,
+          book.description ?? undefined
         )
       : this.api.sendToLibrary(
           book.md5,
@@ -406,7 +415,8 @@ export class BookSearchComponent implements OnInit, OnDestroy {
           authorString,
           book.format,
           book.fileSize,
-          book.source
+          book.source,
+          book.description ?? undefined
         );
 
     libraryObservable.subscribe({
@@ -577,6 +587,104 @@ export class BookSearchComponent implements OnInit, OnDestroy {
   private isLibGenCoverUrl(url: string): boolean {
     const normalized = url.toLowerCase();
     return normalized.includes('libgen.') && normalized.includes('/covers');
+  }
+
+  /* ───────── book description fetching ───────── */
+  private fetchBookDescriptions(): void {
+    // Fetch descriptions for first 10 books automatically
+    const booksToFetch = this.books.slice(0, 10);
+
+    booksToFetch.forEach((book, index) => {
+      // Stagger requests slightly to avoid overwhelming the APIs
+      setTimeout(() => this.fetchDescriptionForBook(book), index * 100);
+    });
+  }
+
+  fetchDescriptionOnDemand(book: BookDto): void {
+    if (book.description) {
+      return; // Already has description
+    }
+    this.fetchDescriptionForBook(book);
+  }
+
+  toggleCardExpansion(bookMd5: string): void {
+    if (this.expandedCards.has(bookMd5)) {
+      this.expandedCards.delete(bookMd5);
+    } else {
+      this.expandedCards.add(bookMd5);
+    }
+  }
+
+  isCardExpanded(bookMd5: string): boolean {
+    return this.expandedCards.has(bookMd5);
+  }
+
+  needsExpansion(description: string): boolean {
+    // Rough estimate: if description is longer than ~150 characters, it likely needs expansion
+    // This accounts for 3 lines at ~50 characters per line
+    return !!description && description.length > 150;
+  }
+
+  private fetchDescriptionForBook(book: BookDto): void {
+    if (book.description) {
+      return; // Already has a description
+    }
+
+    const author = book.authors?.[0];
+
+    // Try Google Books first
+    this.api.fetchDescriptionFromGoogleBooks(book.title, author).subscribe({
+      next: (resp) => {
+        if (resp.description) {
+          book.description = resp.description;
+          book.descriptionSource = 'googlebooks';
+        } else {
+          // If Google Books fails, try OpenLibrary
+          this.tryOpenLibrary(book);
+        }
+      },
+      error: () => {
+        // If Google Books fails, try OpenLibrary
+        this.tryOpenLibrary(book);
+      }
+    });
+  }
+
+  private tryOpenLibrary(book: BookDto): void {
+    const author = book.authors?.[0];
+
+    this.api.fetchDescriptionFromOpenLibrary(book.title, author).subscribe({
+      next: (resp) => {
+        if (resp.description) {
+          book.description = resp.description;
+          book.descriptionSource = 'openlibrary';
+        } else {
+          // If OpenLibrary fails, try GPT-4
+          this.tryGPT4(book);
+        }
+      },
+      error: () => {
+        // If OpenLibrary fails, try GPT-4
+        this.tryGPT4(book);
+      }
+    });
+  }
+
+  private tryGPT4(book: BookDto): void {
+    const author = book.authors?.[0];
+
+    this.api.fetchDescriptionFromGPT4(book.title, author).subscribe({
+      next: (resp) => {
+        if (resp.description) {
+          book.description = resp.description;
+          book.descriptionSource = 'gpt';
+        }
+      },
+      error: (err) => {
+        console.error('Failed to fetch description from GPT-4', err);
+        // No more fallbacks - book will remain without description
+      }
+    });
   }
 
   /* ───────── author suggestion methods ───────── */

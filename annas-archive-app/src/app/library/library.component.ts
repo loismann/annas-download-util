@@ -33,6 +33,7 @@ interface LibraryBook {
   goodreadsRating?: number | null;
   personalRating?: number | null;
   readerEnabled?: boolean | null;
+  description?: string | null;
   dadsKindleState?: 'idle' | 'sending' | 'success' | 'error';
   momsKindleState?: 'idle' | 'sending' | 'success' | 'error';
 }
@@ -407,8 +408,11 @@ export class LibraryComponent implements OnInit {
     };
 
     const dialogRef = this.dialog.open(BookEditDialogComponent, {
-      width: '650px',
-      data: dialogData
+      width: '920px',
+      maxWidth: '95vw',
+      data: dialogData,
+      panelClass: 'book-edit-dialog-panel',
+      backdropClass: 'book-edit-dialog-backdrop'
     });
 
     dialogRef.afterClosed().subscribe((result: BookEditDialogResult | undefined) => {

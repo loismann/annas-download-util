@@ -87,8 +87,9 @@ public class OpenLibraryService : IOpenLibraryService
                 }
             }
 
-            // Fallback to search API
-            var searchQuery = $"title:{Uri.EscapeDataString(title)} author:{Uri.EscapeDataString(author)}";
+            // Fallback to search API - use simple freeform query (more forgiving than title:/author: operators)
+            var searchTerms = $"{title} {author}".Trim();
+            var searchQuery = Uri.EscapeDataString(searchTerms);
             var searchUrl = $"https://openlibrary.org/search.json?q={searchQuery}&fields=key&limit=1";
 
             var response = await http.GetAsync(searchUrl);
@@ -260,7 +261,9 @@ public class OpenLibraryService : IOpenLibraryService
         try
         {
             var http = _httpFactory.CreateClient("OpenLibrary");
-            var searchQuery = $"title:{Uri.EscapeDataString(title)} author:{Uri.EscapeDataString(author)}";
+            // Use simple freeform query (more forgiving than title:/author: operators)
+            var searchTerms = $"{title} {author}".Trim();
+            var searchQuery = Uri.EscapeDataString(searchTerms);
             var url = $"https://openlibrary.org/search.json?q={searchQuery}&fields=first_sentence&limit=1";
 
             var response = await http.GetAsync(url);

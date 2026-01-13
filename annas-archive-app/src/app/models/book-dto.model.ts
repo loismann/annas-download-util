@@ -11,6 +11,8 @@ export interface BookDto {
   year: number | null;
   isbn: string | null;
   coverCandidates: string[];
+  description?: string | null;
+  descriptionSource?: string | null;
 
   /* NEW – track button state in the UI */
   sendState?: 'idle' | 'sending' | 'success' | 'error';

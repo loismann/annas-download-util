@@ -102,4 +102,25 @@ button {
   width: 100% !important;
 }
 
+/* Book Edit Dialog - darker backdrop and scroll blocking */
+.book-edit-dialog-backdrop {
+  background-color: rgba(0, 0, 0, 0.6) !important;
+}
+
+.book-edit-dialog-panel {
+  /* Ensure proper overflow handling */
+  overflow: hidden !important;
+}
+
+.book-edit-dialog-panel .mat-mdc-dialog-container {
+  overflow: hidden !important;
+}
+
+/* Ensure body scroll is blocked when any dialog is open */
+.cdk-global-scrollblock {
+  position: fixed !important;
+  width: 100% !important;
+  overflow-y: scroll !important;
+}
+
 /* …any other global styles… */

@@ -15,6 +15,14 @@ export interface LoginResponse {
   expiresAt: string;
 }
 
+export interface UserActivity {
+  initial: string;
+  userName: string;
+  minutesAgo: number | null;
+  isFullTone: boolean;   // Active within 30 min - full color
+  isHalfTone: boolean;   // Active 30-60 min - half-toned
+}
+
 @Injectable({ providedIn: 'root' })
 export class AuthService {
   private readonly isLocalDev = typeof window !== 'undefined' && window.location.hostname === 'localhost';
@@ -126,5 +134,9 @@ export class AuthService {
 
   private hasToken(): boolean {
     return !!this.getToken();
+  }
+
+  getUserActivity(): Observable<UserActivity[]> {
+    return this.http.get<UserActivity[]>(`${this.baseUrl}/user-activity`);
   }
 }

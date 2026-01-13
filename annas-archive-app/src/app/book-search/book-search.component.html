@@ -147,7 +147,9 @@
   <div class="search-results">
     <div class="results-inner">
       <ng-container *ngIf="filteredBooks.length; else maybeNoResults">
-        <mat-card *ngFor="let book of filteredBooks" class="book-card">
+        <mat-card *ngFor="let book of filteredBooks; let i = index"
+                  class="book-card"
+                  [class.expanded]="isCardExpanded(book.md5)">
           <img
             class="cover"
             [src]="book.coverCandidates.length ? book.coverCandidates[0] : placeholderUrl"
@@ -163,6 +165,53 @@
 
             <mat-card-content>
               Format: {{ book.format }} &nbsp;|&nbsp; Size: {{ book.fileSize }}
+
+              <!-- Book Description -->
+              <div class="book-description" *ngIf="book.description">
+                <button
+                  mat-icon-button
+                  class="expand-toggle"
+                  (click)="toggleCardExpansion(book.md5)"
+                  [disabled]="!needsExpansion(book.description)"
+                  [attr.aria-label]="isCardExpanded(book.md5) ? 'Collapse' : 'Expand'">
+                  <mat-icon>{{ isCardExpanded(book.md5) ? 'keyboard_arrow_up' : 'keyboard_arrow_down' }}</mat-icon>
+                </button>
+                <p class="description-text" [class.expanded]="isCardExpanded(book.md5)">
+                  {{ book.description }}
+                  <mat-icon
+                    *ngIf="book.descriptionSource === 'gpt'"
+                    class="description-source-icon robot-icon"
+                    aria-label="AI-generated description"
+                    matTooltip="AI-generated description">
+                    smart_toy
+                  </mat-icon>
+                  <mat-icon
+                    *ngIf="book.descriptionSource === 'googlebooks'"
+                    class="description-source-icon book-icon"
+                    aria-label="Google Books description"
+                    matTooltip="From Google Books">
+                    menu_book
+                  </mat-icon>
+                  <mat-icon
+                    *ngIf="book.descriptionSource === 'openlibrary'"
+                    class="description-source-icon leaf-icon"
+                    aria-label="OpenLibrary description"
+                    matTooltip="From OpenLibrary">
+                    eco
+                  </mat-icon>
+                </p>
+              </div>
+
+              <!-- Retrieve Summary Button (for books 11+) -->
+              <div class="book-description retrieve-summary-container" *ngIf="!book.description && i >= 10">
+                <button
+                  mat-raised-button
+                  color="accent"
+                  class="retrieve-summary-btn"
+                  (click)="fetchDescriptionOnDemand(book)">
+                  Retrieve Summary
+                </button>
+              </div>
             </mat-card-content>
 
             <!-- ACTION BUTTONS -->

@@ -35,8 +35,10 @@ describe('BookEditDialogComponent', () => {
     mockApiService = jasmine.createSpyObj('AnnaArchiveApiService', [
       'deleteLibraryBook',
       'sendLibraryToKindle',
-      'updateLibraryBookReaderEnabled'
+      'updateLibraryBookReaderEnabled',
+      'getLibraryBookSummary'
     ]);
+    mockApiService.getLibraryBookSummary.and.returnValue(of({ summary: null, source: null }));
     mockRouter = jasmine.createSpyObj('Router', ['navigate']);
 
     mockGenreMappingService.getStandardGenres.and.returnValue([

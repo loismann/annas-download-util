@@ -217,6 +217,8 @@ export class RelatedBooksModalComponent {
       for (const match of matchResponse.matches) {
         const bookData = booksWithCandidates.find(b => b.title === match.bookTitle);
         const selectedCandidate = bookData?.candidates.find(c => c.md5 === match.selectedMd5);
+        // Find the original SeriesBook to get its description
+        const originalBook = this.selectedBooks.find(b => b.title === match.bookTitle);
 
         const result: MatchResult = {
           key: `${match.order}:${match.bookTitle}`.toLowerCase(),
@@ -238,7 +240,9 @@ export class RelatedBooksModalComponent {
             sendState: 'idle',
             dadsKindleState: 'idle',
             momsKindleState: 'idle',
-            coverCandidates: []
+            coverCandidates: [],
+            description: originalBook?.description,
+            descriptionSource: originalBook?.descriptionSource
           } as BookDto)) ?? [],
           selected: selectedCandidate ? {
             md5: selectedCandidate.md5,
@@ -255,7 +259,9 @@ export class RelatedBooksModalComponent {
             sendState: 'idle',
             dadsKindleState: 'idle',
             momsKindleState: 'idle',
-            coverCandidates: []
+            coverCandidates: [],
+            description: originalBook?.description,
+            descriptionSource: originalBook?.descriptionSource
           } as BookDto : undefined,
           reason: `${match.confidence.toUpperCase()}: ${match.reason}`
         };
@@ -267,6 +273,9 @@ export class RelatedBooksModalComponent {
 
       // Fallback: Use simple client-side matching
       for (const bookData of booksWithCandidates) {
+        // Find the original SeriesBook to get its description
+        const originalBook = this.selectedBooks.find(b => b.title === bookData.title);
+
         const result: MatchResult = {
           key: `${bookData.order}:${bookData.title}`.toLowerCase(),
           title: bookData.title,
@@ -287,7 +296,9 @@ export class RelatedBooksModalComponent {
             sendState: 'idle',
             dadsKindleState: 'idle',
             momsKindleState: 'idle',
-            coverCandidates: []
+            coverCandidates: [],
+            description: originalBook?.description,
+            descriptionSource: originalBook?.descriptionSource
           } as BookDto)),
           reason: 'AI matching failed - please select manually'
         };
@@ -331,7 +342,8 @@ export class RelatedBooksModalComponent {
                 authorString,
                 selected.format,
                 selected.fileSize,
-                selected.source
+                selected.source,
+                selected.description ?? undefined
               )
             );
             return true;

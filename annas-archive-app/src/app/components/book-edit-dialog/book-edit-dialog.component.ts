@@ -1,4 +1,4 @@
-import { Component, HostListener, Inject } from '@angular/core';
+import { Component, HostListener, Inject, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MatDialogModule, MatDialogRef, MAT_DIALOG_DATA } from '@angular/material/dialog';
@@ -8,6 +8,7 @@ import { MatInputModule } from '@angular/material/input';
 import { MatChipsModule } from '@angular/material/chips';
 import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
+import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { COMMA, ENTER } from '@angular/cdk/keycodes';
 import { MatChipInputEvent } from '@angular/material/chips';
 import { Router } from '@angular/router';
@@ -26,6 +27,7 @@ export interface BookEditDialogData {
   format?: string | null;
   canSendToKindle?: boolean;
   readerEnabled?: boolean | null;
+  summary?: string | null;
 }
 
 export interface BookEditDialogResult {
@@ -57,12 +59,13 @@ interface CoverCandidate {
     MatInputModule,
     MatChipsModule,
     MatIconModule,
-    MatButtonModule
+    MatButtonModule,
+    MatProgressSpinnerModule
   ],
   templateUrl: './book-edit-dialog.component.html',
   styleUrls: ['./book-edit-dialog.component.scss']
 })
-export class BookEditDialogComponent {
+export class BookEditDialogComponent implements OnInit {
   readonly separatorKeysCodes = [ENTER, COMMA] as const;
 
   genres: string[];
@@ -84,6 +87,11 @@ export class BookEditDialogComponent {
   dropboxState: 'idle' | 'sending' | 'success' | 'error' = 'idle';
   readerState: 'idle' | 'sending' | 'success' | 'error' = 'idle';
 
+  // Summary state
+  summary: string | null = null;
+  summaryLoading = false;
+  summarySource: string | null = null;
+
   constructor(
     public dialogRef: MatDialogRef<BookEditDialogComponent>,
     @Inject(MAT_DIALOG_DATA) public data: BookEditDialogData,
@@ -103,6 +111,37 @@ export class BookEditDialogComponent {
     this.series = data.series;
     this.title = data.title;
     this.authorsInput = (data.authors ?? []).join(', ');
+
+    // Initialize summary from data if present
+    this.summary = data.summary || null;
+  }
+
+  ngOnInit(): void {
+    this.loadSummary();
+  }
+
+  private loadSummary(): void {
+    if (!this.data.fileName) {
+      return;
+    }
+
+    // If we already have a summary from the data, don't reload
+    if (this.summary) {
+      return;
+    }
+
+    this.summaryLoading = true;
+    this.api.getLibraryBookSummary(this.data.fileName).subscribe({
+      next: (resp) => {
+        this.summary = resp.summary;
+        this.summarySource = resp.source;
+        this.summaryLoading = false;
+      },
+      error: () => {
+        this.summaryLoading = false;
+        this.summary = null;
+      }
+    });
   }
 
   @HostListener('document:keydown.enter', ['$event'])

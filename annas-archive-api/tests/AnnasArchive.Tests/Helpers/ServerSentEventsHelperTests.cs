@@ -1,6 +1,7 @@
 using System.IO;
 using System.Text.Json;
 using System.Threading.Tasks;
+using AnnasArchive.API.Helpers;
 using Microsoft.AspNetCore.Http;
 using Xunit;
 

@@ -2,6 +2,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Threading.RateLimiting;
+using AnnasArchive.API.Helpers;
 using AnnasArchive.API.Services;
 using AnnasArchive.Core.Services;
 using Dropbox.Api;

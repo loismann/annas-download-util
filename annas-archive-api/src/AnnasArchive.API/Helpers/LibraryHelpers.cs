@@ -111,4 +111,128 @@ public static class LibraryHelpers
         var jsonOptions = CreateLibraryJsonOptions();
         await File.WriteAllTextAsync(metaPath, JsonSerializer.Serialize(meta, jsonOptions));
     }
+
+    /// <summary>
+    /// Gets the library tag for a Kindle target user.
+    /// </summary>
+    public static string GetKindleTargetTag(string target)
+    {
+        return target.ToLower() == "mom" ? "Mom's Books" : "Dad's Books";
+    }
+
+    /// <summary>
+    /// Normalizes a cover URL, converting relative paths to API URLs.
+    /// </summary>
+    public static string? NormalizeLibraryCoverUrl(string? coverValue, string baseUrl)
+    {
+        if (string.IsNullOrWhiteSpace(coverValue))
+            return null;
+
+        if (coverValue.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+            return coverValue;
+
+        var normalized = coverValue.Replace("\\", "/").TrimStart('/');
+        var segments = normalized.Split('/', StringSplitOptions.RemoveEmptyEntries)
+            .Select(Uri.EscapeDataString);
+        var encodedPath = string.Join("/", segments);
+
+        return $"{baseUrl}/api/library/cover/{encodedPath}";
+    }
+
+    /// <summary>
+    /// Finds a local cover file URL for a book in the library.
+    /// </summary>
+    public static string? FindLocalCoverUrl(string libraryRoot, string fileName, string baseUrl)
+    {
+        var coverDir = Path.Combine(libraryRoot, "_covers");
+        if (!Directory.Exists(coverDir))
+            return null;
+
+        var safeName = Path.GetFileName(fileName);
+        var matches = Directory.GetFiles(coverDir, $"{safeName}.cover.*");
+        var match = matches.FirstOrDefault();
+        if (string.IsNullOrWhiteSpace(match))
+            return null;
+
+        var relative = Path.Combine("_covers", Path.GetFileName(match)).Replace("\\", "/");
+        return NormalizeLibraryCoverUrl(relative, baseUrl);
+    }
+
+    /// <summary>
+    /// Formats a file size in bytes to a human-readable string.
+    /// </summary>
+    public static string FormatFileSize(long bytes)
+    {
+        if (bytes <= 0)
+            return "0B";
+
+        string[] units = { "B", "KB", "MB", "GB" };
+        var size = (double)bytes;
+        var unitIndex = 0;
+        while (size >= 1024 && unitIndex < units.Length - 1)
+        {
+            size /= 1024;
+            unitIndex++;
+        }
+
+        return $"{size:0.0}{units[unitIndex]}";
+    }
+
+    /// <summary>
+    /// Adds tags to a library book's metadata file.
+    /// </summary>
+    public static async Task AddTagsToLibraryBookAsync(string libraryRoot, string fileName, params string[] tagsToAdd)
+    {
+        if (tagsToAdd == null || tagsToAdd.Length == 0)
+            return;
+
+        var metaPath = Path.Combine(libraryRoot, fileName + ".meta.json");
+        if (!File.Exists(metaPath))
+        {
+            Console.WriteLine($"[AddTags] Metadata file not found for {fileName}, skipping tag addition");
+            return;
+        }
+
+        try
+        {
+            var jsonOptions = CreateLibraryJsonOptions();
+            var json = await File.ReadAllTextAsync(metaPath);
+            var meta = JsonSerializer.Deserialize<LibraryBookMeta>(json, jsonOptions);
+
+            if (meta == null)
+            {
+                Console.WriteLine($"[AddTags] Failed to deserialize metadata for {fileName}");
+                return;
+            }
+
+            // Get existing tags and add new ones (avoid duplicates)
+            var existingTags = new HashSet<string>(meta.Tags ?? Array.Empty<string>(), StringComparer.OrdinalIgnoreCase);
+            var tagsAdded = false;
+
+            foreach (var tag in tagsToAdd.Where(t => !string.IsNullOrWhiteSpace(t)))
+            {
+                if (existingTags.Add(tag))
+                {
+                    tagsAdded = true;
+                    Console.WriteLine($"[AddTags] Adding tag '{tag}' to {fileName}");
+                }
+            }
+
+            if (tagsAdded)
+            {
+                meta.Tags = existingTags.ToArray();
+                var updatedJson = JsonSerializer.Serialize(meta, jsonOptions);
+                await File.WriteAllTextAsync(metaPath, updatedJson);
+                Console.WriteLine($"[AddTags] Successfully updated tags for {fileName}: {string.Join(", ", meta.Tags)}");
+            }
+            else
+            {
+                Console.WriteLine($"[AddTags] No new tags to add for {fileName}");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[AddTags] Error adding tags to {fileName}: {ex.Message}");
+        }
+    }
 }

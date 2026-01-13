@@ -125,103 +125,6 @@ app.Use(async (context, next) =>
 // - CheckTokenLimit, IsTokenLimitExceeded -> TokenLimitHelpers.cs
 // - GenerateNoSpoilerDescriptionAsync -> AiDescriptionHelpers.cs
 
-var openLibraryAuthorCacheTtl = TimeSpan.FromHours(6);
-var openLibraryAuthorCache = new Dictionary<string, (DateTime fetchedAt, List<AuthorSuggestion> authors)>();
-var openLibraryAuthorCacheLock = new object();
-
-bool TryGetOpenLibraryAuthorCache(string title, out List<AuthorSuggestion> authors)
-{
-    var key = title.Trim().ToLowerInvariant();
-    lock (openLibraryAuthorCacheLock)
-    {
-        if (openLibraryAuthorCache.TryGetValue(key, out var entry))
-        {
-            if (DateTime.UtcNow - entry.fetchedAt <= openLibraryAuthorCacheTtl)
-            {
-                authors = entry.authors;
-                return true;
-            }
-            openLibraryAuthorCache.Remove(key);
-        }
-    }
-
-    authors = new List<AuthorSuggestion>();
-    return false;
-}
-
-void SetOpenLibraryAuthorCache(string title, List<AuthorSuggestion> authors)
-{
-    var key = title.Trim().ToLowerInvariant();
-    lock (openLibraryAuthorCacheLock)
-    {
-        openLibraryAuthorCache[key] = (DateTime.UtcNow, authors);
-    }
-}
-
-async Task<List<AuthorSuggestion>> FetchAuthorsFromOpenLibraryAsync(string title, IHttpClientFactory httpFactory)
-{
-    if (string.IsNullOrWhiteSpace(title)) return new List<AuthorSuggestion>();
-
-    if (TryGetOpenLibraryAuthorCache(title, out var cached))
-        return cached;
-
-    try
-    {
-        using var http = httpFactory.CreateClient();
-        http.Timeout = TimeSpan.FromSeconds(3);
-
-        var query = Uri.EscapeDataString(title.Trim());
-        var url = $"https://openlibrary.org/search.json?title={query}&limit=10";
-        using var response = await http.GetAsync(url);
-        if (!response.IsSuccessStatusCode) return new List<AuthorSuggestion>();
-
-        using var stream = await response.Content.ReadAsStreamAsync();
-        using var doc = await JsonDocument.ParseAsync(stream);
-
-        if (!doc.RootElement.TryGetProperty("docs", out var docs) || docs.ValueKind != JsonValueKind.Array)
-            return new List<AuthorSuggestion>();
-
-        var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-        foreach (var item in docs.EnumerateArray())
-        {
-            if (!item.TryGetProperty("author_name", out var authorNames) || authorNames.ValueKind != JsonValueKind.Array)
-                continue;
-
-            foreach (var author in authorNames.EnumerateArray())
-            {
-                var name = author.GetString();
-                if (string.IsNullOrWhiteSpace(name)) continue;
-                var key = name.Trim();
-                counts[key] = counts.TryGetValue(key, out var existing) ? existing + 1 : 1;
-            }
-        }
-
-        if (counts.Count == 0) return new List<AuthorSuggestion>();
-
-        var max = counts.Values.Max();
-        string ConfidenceFromScore(int score)
-        {
-            var ratio = score / (double)max;
-            if (ratio >= 0.66) return "high";
-            if (ratio >= 0.34) return "medium";
-            return "low";
-        }
-
-        var results = counts
-            .OrderByDescending(kv => kv.Value)
-            .ThenBy(kv => kv.Key)
-            .Take(5)
-            .Select(kv => new AuthorSuggestion(kv.Key, ConfidenceFromScore(kv.Value)))
-            .ToList();
-        SetOpenLibraryAuthorCache(title, results);
-        return results;
-    }
-    catch
-    {
-        return new List<AuthorSuggestion>();
-    }
-}
-
 
 // ─── Anna Download endpoints ── (moved to AnnaDownloadEndpoints.cs)
 
@@ -625,107 +528,8 @@ Then add a 'Definitions:' section. BE EXTREMELY THOROUGH with definitions - incl
 .RequireAuthorization()
 .RequireRateLimiting("api");
 
-// ─── 5f) Learn more about a vocab term ──────────────────────────
-app.MapPost("/api/ai/vocab/learn-more", async (
-    HttpContext context,
-    [FromBody] LearnMoreRequest request,
-    IHttpClientFactory httpFactory,
-    IConfiguration cfg,
-    ITokenUsageService tokenUsage,
-    IAiResponseParser aiResponseParser,
-    IModelSelectionService modelSelection) =>
-{
-    if (request is null || string.IsNullOrWhiteSpace(request.Term))
-        return Results.BadRequest(new { error = "Term is required." });
 
-    var tokenLimitResult = TokenLimitHelpers.CheckTokenLimit(cfg, tokenUsage, context);
-    if (tokenLimitResult is not null) return tokenLimitResult;
-
-    try
-    {
-        using var http = httpFactory.CreateClient("OpenAI");
-        var model = modelSelection.GetModelDeep();
-
-        var contextParts = new List<string>();
-        if (!string.IsNullOrWhiteSpace(request.BookTitle))
-            contextParts.Add($"Book: {request.BookTitle}");
-        if (!string.IsNullOrWhiteSpace(request.DropboxPath))
-            contextParts.Add($"Source path: {request.DropboxPath}");
-
-        var prompt = $@"Provide a rich, scholarly 300-400 word deep dive on the term/phrase ""{request.Term}"" that goes beyond dictionary definitions.
-
-Respond as concise HTML with paragraphs, <ul>, <strong>, and include up to 2-3 reliable image URLs and 1-2 reference links (e.g., Wikipedia) that help explain the term.
-
-**Your analysis should explore:**
-- Core meaning and etymology
-- Historical development and evolution of the concept
-- How this term/concept is understood in different academic disciplines (philosophy, literature, sociology, etc.)
-- Key thinkers, works, or movements associated with it
-- How it appears in popular culture vs. academic discourse
-- Common misconceptions or debates surrounding the term
-- Relevance to contemporary discussions or current events (if applicable)
-- Interesting facts or notable usage examples
-
-IMAGE RULES (strict):
-- Prefer upload.wikimedia.org or commons.wikimedia.org images; use fully-qualified HTTPS URLs with underscores instead of spaces.
-- Do NOT include images unless you are confident the URL exists and is directly fetchable (ending in .jpg/.png/.jpeg).
-- If unsure about an image URL, skip images entirely.
-
-Structure:
-- Rich overview paragraph (2-3 sentences)
-- Bullet list covering the points above
-- A ""Resources"" section with authoritative hyperlinks (plain <a href=""..."">text</a>)
-- After the text, include a line ""Images:"" followed by <img src=""..."" alt=""..."" loading=""lazy"" /> for each image (absolute URLs only). Use images that are likely to be stable (e.g., Wikimedia, Wikipedia, major news/edu sites). No base64.
-
-Context: {string.Join(" | ", contextParts)}
-Definition (if given): {request.Definition ?? "(none)"}
-Relevant passage/context: {request.Context ?? "(none)"}";
-
-        var systemInstructions = "You are a scholarly explainer with expertise in philosophy, critical theory, literature, history, and cultural studies. Provide nuanced, intellectually rich analysis that bridges academic and accessible discourse.";
-        var fullInput = $"{systemInstructions}\n\n{prompt}";
-
-        var payload = new
-        {
-            model,
-            input = fullInput,
-            reasoning = new { effort = cfg.GetValue<string>("AI:ReasoningEffort:WikiImages") },
-            max_output_tokens = cfg.GetValue<int>("AI:MaxCompletionTokens:WikiImages"),
-            temperature = cfg.GetValue<double>("AI:Temperature:WikiImages")
-        };
-
-        var response = await http.PostAsJsonAsync("https://api.openai.com/v1/responses", payload);
-        if (!response.IsSuccessStatusCode)
-        {
-            var body = await response.Content.ReadAsStringAsync();
-            Console.WriteLine($"❌ OpenAI learn-more failed status={(int)response.StatusCode} body={body}");
-            return Results.Problem($"OpenAI request failed: {(int)response.StatusCode}");
-        }
-
-        using var stream = await response.Content.ReadAsStreamAsync();
-        using var doc = await JsonDocument.ParseAsync(stream);
-        var detail = aiResponseParser.ExtractText(doc.RootElement);
-
-        // Track token usage
-        if (doc.RootElement.TryGetProperty("usage", out var usage))
-        {
-            var promptTokens = usage.GetProperty("input_tokens").GetInt32();
-            var completionTokens = usage.GetProperty("output_tokens").GetInt32();
-            var userId = UserHelpers.GetUserIdFromContext(context);
-            if (userId != null)
-                tokenUsage.AddUsage(userId, promptTokens, completionTokens);
-        }
-
-        return Results.Ok(new LearnMoreResponse(detail ?? "No details returned."));
-    }
-    catch (Exception ex)
-    {
-        Console.WriteLine($"❌ OpenAI learn-more failed: {ex.Message}");
-        return ApiResponse.InternalError("Failed to fetch details.");
-    }
-})
-.RequireAuthorization()
-.RequireRateLimiting("api");
-
+// ─── 5f) Learn more about a vocab term (moved to AiVocabEndpoints.cs) ───
 
 // ─── 5g) Flashcards CRUD (moved to AiFlashcardsEndpoints.cs) ───────────────
 
@@ -1829,178 +1633,13 @@ Text to summarize:
 .RequireAuthorization()
 .RequireRateLimiting("api");
 
-// ─── 5l) Save section vocabulary to cache ────────────────────────────────────
-app.MapPost("/api/ai/section-vocab", ([FromBody] SaveSectionVocabRequest request) =>
-{
-    if (request is null || string.IsNullOrWhiteSpace(request.DropboxPath))
-        return Results.BadRequest(new { error = "dropboxPath is required." });
-    if (request.ChapterId < 0 || request.SectionIndex < 0)
-        return Results.BadRequest(new { error = "chapterId and sectionIndex must be zero or positive." });
-    if (request.Vocab == null)
-        return Results.BadRequest(new { error = "vocab is required." });
 
-    Console.WriteLine($"💾 Saving {request.Vocab.Count} vocab cards for chapter {request.ChapterId}, section {request.SectionIndex}");
-
-    AiContentCache.SaveSectionVocab(request.DropboxPath, request.ChapterId, request.SectionIndex, request.Vocab);
-
-    return Results.Ok(new { success = true, vocabCount = request.Vocab.Count });
-})
-.RequireAuthorization()
-.RequireRateLimiting("api");
+// ─── 5l) Save section vocabulary (moved to AiVocabEndpoints.cs) ─────────────
 
 // ─── 5m-5r2) Vocab endpoints (moved to VocabEndpoints.cs) ─────────────────────
 
-// ─── 5s) Suggest authors for a book title ────────────────────────────────────
-app.MapPost("/api/ai/suggest-authors", async (
-    HttpContext context,
-    [FromBody] SuggestAuthorsRequest request,
-    IHttpClientFactory httpFactory,
-    IConfiguration cfg,
-    ITokenUsageService tokenUsage,
-    IOpenAiModelHelper modelHelper,
-    IAiResponseParser aiResponseParser,
-    IModelSelectionService modelSelection) =>
-{
-    if (request is null || string.IsNullOrWhiteSpace(request.BookTitle))
-        return Results.BadRequest(new { error = "BookTitle is required." });
 
-    try
-    {
-        var forceOpenAi = false;
-        if (context.Request.Headers.TryGetValue("x-force-openai", out var forceHeader))
-        {
-            forceOpenAi = string.Equals(forceHeader.ToString(), "true", StringComparison.OrdinalIgnoreCase);
-        }
-
-        if (!forceOpenAi)
-        {
-            var openLibraryAuthors = await FetchAuthorsFromOpenLibraryAsync(request.BookTitle, httpFactory);
-            if (openLibraryAuthors.Count > 0)
-            {
-                Console.WriteLine($"✅ Author suggestions (OpenLibrary) for '{request.BookTitle}': {openLibraryAuthors.Count} authors found");
-                return Results.Ok(new SuggestAuthorsResponse(openLibraryAuthors));
-            }
-        }
-
-        var tokenLimitResult = TokenLimitHelpers.CheckTokenLimit(cfg, tokenUsage, context);
-        if (tokenLimitResult is not null) return tokenLimitResult;
-
-        using var http = httpFactory.CreateClient("OpenAI");
-        var model = modelSelection.GetModelFast();  // Uses gpt-4o by default
-        if (context.Request.Headers.TryGetValue("x-openai-model", out var modelHeader))
-        {
-            var overrideModel = modelHeader.ToString();
-            if (!string.IsNullOrWhiteSpace(overrideModel) &&
-                overrideModel.StartsWith("gpt-4", StringComparison.OrdinalIgnoreCase))
-            {
-                model = overrideModel;
-            }
-        }
-
-        var systemPrompt = @"You are a book metadata expert. Given a book title, suggest the 3-5 most likely authors sorted by probability. Return ONLY valid JSON with no markdown, explanation, or additional text.";
-
-        var userPrompt = $@"Book title: ""{request.BookTitle}""
-
-Return ONLY a JSON array of likely authors sorted by probability (most likely first). Each entry should have ""author"" (full name) and ""confidence"" (high/medium/low).
-
-Example format:
-[
-  {{""author"": ""J.R.R. Tolkien"", ""confidence"": ""high""}},
-  {{""author"": ""Christopher Tolkien"", ""confidence"": ""medium""}}
-]
-
-If the title is ambiguous or you don't recognize it, return an empty array: []
-
-Do NOT include any markdown formatting, explanations, or text outside the JSON array.";
-
-        var payload = modelHelper.BuildChatCompletionPayload(
-            model,
-            new[]
-            {
-                new { role = "system", content = systemPrompt },
-                new { role = "user", content = userPrompt }
-            },
-            maxCompletionTokens: 500,
-            temperature: 0.3
-        );
-
-        var response = await http.PostAsJsonAsync("https://api.openai.com/v1/chat/completions", payload);
-        if (!response.IsSuccessStatusCode)
-        {
-            var body = await response.Content.ReadAsStringAsync();
-            Console.WriteLine($"❌ OpenAI suggest-authors failed status={(int)response.StatusCode} body={body}");
-            return Results.Problem($"OpenAI request failed: {(int)response.StatusCode}");
-        }
-
-        using var stream = await response.Content.ReadAsStreamAsync();
-        using var doc = await JsonDocument.ParseAsync(stream);
-        var rawText = aiResponseParser.ExtractText(doc.RootElement);
-
-        // Track token usage
-        if (doc.RootElement.TryGetProperty("usage", out var usage))
-        {
-            var promptTokens = usage.GetProperty("prompt_tokens").GetInt32();
-            var completionTokens = usage.GetProperty("completion_tokens").GetInt32();
-            var userId = UserHelpers.GetUserIdFromContext(context);
-            if (userId != null)
-                tokenUsage.AddUsage(userId, promptTokens, completionTokens);
-        }
-
-        // Parse the JSON array of authors
-        var authors = new List<AuthorSuggestion>();
-        if (!string.IsNullOrWhiteSpace(rawText))
-        {
-            try
-            {
-                // Remove markdown code blocks if present
-                var cleanedText = rawText.Trim();
-                if (cleanedText.StartsWith("```"))
-                {
-                    cleanedText = cleanedText
-                        .Replace("```json", "")
-                        .Replace("```", "")
-                        .Trim();
-                }
-
-                // If the model adds extra text, extract the JSON array.
-                var arrayMatch = Regex.Match(cleanedText, @"\[[\s\S]*\]");
-                var jsonPayload = arrayMatch.Success ? arrayMatch.Value : cleanedText;
-
-                var authorsDoc = JsonDocument.Parse(jsonPayload);
-                if (authorsDoc.RootElement.ValueKind == JsonValueKind.Array)
-                {
-                    foreach (var item in authorsDoc.RootElement.EnumerateArray())
-                    {
-                        if (item.TryGetProperty("author", out var authorProp) &&
-                            item.TryGetProperty("confidence", out var confidenceProp))
-                        {
-                            authors.Add(new AuthorSuggestion(
-                                authorProp.GetString() ?? "",
-                                confidenceProp.GetString() ?? "low"
-                            ));
-                        }
-                    }
-                }
-            }
-            catch (JsonException ex)
-            {
-                Console.WriteLine($"⚠️ Failed to parse author suggestions JSON: {ex.Message}");
-                Console.WriteLine($"Raw text: {rawText}");
-                // Return empty array on parse failure
-            }
-        }
-
-        Console.WriteLine($"✅ Author suggestions for '{request.BookTitle}': {authors.Count} authors found");
-        return Results.Ok(new SuggestAuthorsResponse(authors));
-    }
-    catch (Exception ex)
-    {
-        Console.WriteLine($"❌ OpenAI suggest-authors failed: {ex.Message}");
-        return ApiResponse.InternalError("Failed to suggest authors.");
-    }
-})
-.RequireAuthorization()
-.RequireRateLimiting("api");
+// ─── 5s) Suggest authors (moved to AiBookSearchEndpoints.cs) ──────────────
 
 // ─── 5n) Find related books (series + other series by author) ────────────────
 app.MapPost("/api/ai/related-books", async (
@@ -3184,6 +2823,12 @@ app.MapAiUsageEndpoints();
 
 // ─── 6g) AI Flashcards endpoints ── (moved to AiFlashcardsEndpoints.cs)
 app.MapAiFlashcardsEndpoints();
+
+// ─── 6h) AI Vocab endpoints ── (moved to AiVocabEndpoints.cs)
+app.MapAiVocabEndpoints();
+
+// ─── 6i) AI Book Search endpoints ── (moved to AiBookSearchEndpoints.cs)
+app.MapAiBookSearchEndpoints();
 
 // ─── 7) Development helper: Generate BCrypt hashes ───────────────────────
 #if DEBUG

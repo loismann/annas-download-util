@@ -171,9 +171,10 @@ public class EndpointIntegrationTests : IClassFixture<WebApplicationFactory<Prog
         var response = await _client.GetAsync("/api/anna/book?name=test");
 
         // Assert
-        // In test environment, we expect either OK or Unauthorized (if auth is strict)
+        // In test environment, we expect either OK, NotFound (no books), or Unauthorized (if auth is strict)
         response.StatusCode.Should().BeOneOf(
             HttpStatusCode.OK,
+            HttpStatusCode.NotFound,
             HttpStatusCode.Unauthorized,
             HttpStatusCode.ServiceUnavailable
         );

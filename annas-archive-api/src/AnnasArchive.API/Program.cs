@@ -9,20 +9,20 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
-using Microsoft.OpenApi.Models;
+using AnnasArchive.API.Configuration;
+using AnnasArchive.API.Endpoints;
+using AnnasArchive.API.Helpers;
 using AnnasArchive.API.Services;
 using AnnasArchive.API.Models;
 using AnnasArchive.Core.Models;
 using AnnasArchive.Core.Services;
 using Dropbox.Api;
 using Dropbox.Api.Files;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
-using System.Threading.RateLimiting;
 using System.Threading;
 using BCrypt.Net;
 using System.Diagnostics;
@@ -51,203 +51,8 @@ var memberKey   = builder.Configuration["Anna:MemberKey"]
                ?? throw new InvalidOperationException("Missing Anna:MemberKey.");
 var searchLimit = builder.Configuration.GetValue<int>("Anna:SearchLimit", 25);  // Reduced from 50 to 25 for better performance
 
-// ─── JWT authentication ──────────────────────────────────────────────────
-var jwtSecret = builder.Configuration["Auth:JwtSecret"]
-             ?? throw new InvalidOperationException("Missing Auth:JwtSecret.");
-var jwtKey = Encoding.UTF8.GetBytes(jwtSecret);
-
-builder.Services.AddAuthentication(options =>
-{
-    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
-    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
-})
-.AddJwtBearer(options =>
-{
-    options.TokenValidationParameters = new TokenValidationParameters
-    {
-        ValidateIssuerSigningKey = true,
-        IssuerSigningKey = new SymmetricSecurityKey(jwtKey),
-        ValidateIssuer = true,
-        ValidIssuer = "AnnasArchiveAPI",
-        ValidateAudience = true,
-        ValidAudience = "AnnasArchiveApp",
-        ValidateLifetime = true,
-        ClockSkew = TimeSpan.Zero
-    };
-});
-
-builder.Services.AddAuthorization(options =>
-{
-    // Admin policy for future use
-    options.AddPolicy("AdminOnly", policy => policy.RequireRole("Admin"));
-});
-
-// ─── rate limiting ───────────────────────────────────────────────────────
-builder.Services.AddRateLimiter(options =>
-{
-    // Global API rate limit: 60 requests per minute per IP (configurable via API_RATE_LIMIT or E2E_API_RATE_LIMIT)
-    var apiRateLimit = int.TryParse(
-        builder.Configuration["API_RATE_LIMIT"] ?? builder.Configuration["E2E_API_RATE_LIMIT"],
-        out var apiLimit) ? apiLimit : 60;
-    options.AddFixedWindowLimiter("api", opt =>
-    {
-        opt.PermitLimit = apiRateLimit;
-        opt.Window = TimeSpan.FromMinutes(1);
-        opt.QueueProcessingOrder = System.Threading.RateLimiting.QueueProcessingOrder.OldestFirst;
-        opt.QueueLimit = 0; // No queueing
-    });
-
-    // Stricter rate limit for login: 5 attempts per minute per IP (configurable via LOGIN_RATE_LIMIT or E2E_LOGIN_RATE_LIMIT)
-    var loginRateLimit = int.TryParse(
-        builder.Configuration["LOGIN_RATE_LIMIT"] ?? builder.Configuration["E2E_LOGIN_RATE_LIMIT"],
-        out var loginLimit) ? loginLimit : 5;
-    options.AddFixedWindowLimiter("login", opt =>
-    {
-        opt.PermitLimit = loginRateLimit;
-        opt.Window = TimeSpan.FromMinutes(1);
-        opt.QueueProcessingOrder = System.Threading.RateLimiting.QueueProcessingOrder.OldestFirst;
-        opt.QueueLimit = 0;
-    });
-});
-
-// ─── swagger ─────────────────────────────────────────────────────────────
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen(c =>
-{
-    c.SwaggerDoc("v1", new OpenApiInfo { Title = "Anna's Archive Proxy API", Version = "v1" });
-});
-
-builder.Services.AddHostedService<LibraryWatcherService>();
-
-// ─── Anna's Archive HTTP client ──────────────────────────────────────────
-builder.Services.AddHttpClient<AnnaArchiveService>(c =>
-{
-    c.BaseAddress = new Uri("https://annas-archive.org");
-    c.DefaultRequestHeaders.UserAgent.ParseAdd(
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
-        "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36");
-    c.DefaultRequestHeaders.Add("Accept",
-        "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
-    c.DefaultRequestHeaders.Add("Accept-Language", "en-US,en;q=0.9");
-});
-
-// ─── LibGen HTTP client ──────────────────────────────────────────────────
-builder.Services.AddHttpClient<LibGenService>(c =>
-{
-    c.BaseAddress = new Uri("https://libgen.rs");
-    c.Timeout = TimeSpan.FromSeconds(15); // 15 second timeout per domain attempt
-    c.DefaultRequestHeaders.UserAgent.ParseAdd(
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
-        "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36");
-    c.DefaultRequestHeaders.Add("Accept",
-        "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
-    c.DefaultRequestHeaders.Add("Accept-Language", "en-US,en;q=0.9");
-});
-
-// ─── OpenAI HTTP client ──────────────────────────────────────────────────
-builder.Services.AddHttpClient("OpenAI", (serviceProvider, client) =>
-{
-    var cfg = serviceProvider.GetRequiredService<IConfiguration>();
-    var apiKey = cfg["OpenAI:ApiKey"] ?? throw new InvalidOperationException("OpenAI:ApiKey is not configured");
-
-    client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
-    client.DefaultRequestHeaders.Add("OpenAI-Beta", "responses=v1");
-    client.Timeout = TimeSpan.FromMinutes(5);
-});
-
-// ─── OpenLibrary HTTP Client ─────────────────────────────────────────────
-builder.Services.AddHttpClient("OpenLibrary", client =>
-{
-    client.BaseAddress = new Uri("https://openlibrary.org/");
-    client.Timeout = TimeSpan.FromSeconds(30);
-    client.DefaultRequestHeaders.Add("User-Agent", "AnnaArchive/1.0");
-});
-
-// ─── OpenLibrary Service ─────────────────────────────────────────────────
-builder.Services.AddSingleton<IOpenLibraryService, OpenLibraryService>();
-
-// ─── Google Books HTTP Client ────────────────────────────────────────────
-builder.Services.AddHttpClient("GoogleBooks", client =>
-{
-    client.BaseAddress = new Uri("https://www.googleapis.com/");
-    client.Timeout = TimeSpan.FromSeconds(30);
-    client.DefaultRequestHeaders.Add("User-Agent", "AnnaArchive/1.0");
-});
-
-// ─── Google Books Service ────────────────────────────────────────────────
-builder.Services.AddSingleton<IGoogleBooksService, GoogleBooksService>();
-
-// ─── Email Service ───────────────────────────────────────────────────────
-builder.Services.AddSingleton<IEmailService, EmailService>();
-
-// ─── Token Usage Service ─────────────────────────────────────────────────
-builder.Services.AddSingleton<ITokenUsageService, TokenUsageService>();
-
-// ─── Download Tracking Service ───────────────────────────────────────────────
-builder.Services.AddSingleton<IDownloadTrackingService>(provider =>
-{
-    var cfg = provider.GetRequiredService<IConfiguration>();
-    var downloadLimit = cfg.GetValue<int>("DownloadTracking:DownloadLimit", 50);
-    var rollingHours = cfg.GetValue<double>("DownloadTracking:RollingWindowHours", 18);
-    var configuredPath = cfg.GetValue<string>("DownloadTracking:StoragePath");
-    var storagePath = string.IsNullOrWhiteSpace(configuredPath)
-        ? Path.Combine(Directory.GetCurrentDirectory(), "download-tracking.json")
-        : (Path.IsPathRooted(configuredPath)
-            ? configuredPath
-            : Path.Combine(Directory.GetCurrentDirectory(), configuredPath));
-    return new DownloadTrackingService(downloadLimit, rollingHours, storagePath);
-});
-
-// ─── OpenAI Model Helper Service ─────────────────────────────────────────────
-builder.Services.AddSingleton<IOpenAiModelHelper, AnnasArchive.Core.Services.OpenAiModelHelper>();
-
-// ─── AI Response Parser Service ──────────────────────────────────────────────
-builder.Services.AddSingleton<IAiResponseParser, AnnasArchive.Core.Services.AiResponseParser>();
-
-// ─── Model Selection Service ─────────────────────────────────────────────────
-builder.Services.AddSingleton<IModelSelectionService, ModelSelectionService>();
-
-// ─── Validation Service ──────────────────────────────────────────────────────
-builder.Services.AddSingleton<IValidationService, ValidationService>();
-
-// ─── Quiz Services ───────────────────────────────────────────────────────────
-builder.Services.AddSingleton<IQuizValidationService, QuizValidationService>();
-builder.Services.AddSingleton<IQuizStorageService, QuizStorageService>();
-
-// ─── Text Processing Service ─────────────────────────────────────────────────
-builder.Services.AddSingleton<ITextProcessingService, TextProcessingService>();
-
-// ─── EPUB Cache Path Provider (Adapter for static DropboxEpubCache) ──────────
-builder.Services.AddSingleton<IEpubCachePathProvider>(provider =>
-    new EpubCachePathProviderAdapter());
-
-// ─── Flashcard Service ───────────────────────────────────────────────────────
-builder.Services.AddSingleton<IFlashcardService, FlashcardService>();
-
-// ─── Ebook Cover Service ─────────────────────────────────────────────────────
-builder.Services.AddHttpClient<IEbookCoverService, EbookCoverService>();
-
-// ─── dropbox client (refresh token auth) ─────────────────────────────────────
-builder.Services.AddSingleton<DropboxClient>(provider =>
-{
-    var cfg = provider.GetRequiredService<IConfiguration>();
-    var appKey       = cfg["Dropbox:AppKey"];
-    var appSecret    = cfg["Dropbox:AppSecret"];
-    var refreshToken = cfg["Dropbox:RefreshToken"];
-
-    if (string.IsNullOrWhiteSpace(appKey) ||
-        string.IsNullOrWhiteSpace(appSecret) ||
-        string.IsNullOrWhiteSpace(refreshToken))
-        throw new InvalidOperationException("Dropbox is not configured. Please set Dropbox:AppKey, Dropbox:AppSecret, and Dropbox:RefreshToken in appsettings.json");
-
-    Console.WriteLine("✅ Dropbox client initialized with refresh-token auth");
-    return new DropboxClient(refreshToken, appKey, appSecret);
-});
-
-// ─── misc ────────────────────────────────────────────────────────────────
-builder.Services.ConfigureHttpJsonOptions(o =>
-        o.SerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase);
-builder.Services.AddCors();
+// ─── Register all application services ───────────────────────────────────
+builder.Services.AddApplicationServices(builder.Configuration);
 
 var app = builder.Build();
 
@@ -256,17 +61,6 @@ var aiJobLocks = new ConcurrentDictionary<string, byte>();
 
 bool TryStartAiJob(string key) => aiJobLocks.TryAdd(key, 0);
 void EndAiJob(string key) => aiJobLocks.TryRemove(key, out _);
-
-// ─── User activity tracking ─────────────────────────────────────────────────
-var userActivityTracker = new ConcurrentDictionary<string, DateTime>();
-
-void RecordUserActivity(string userName)
-{
-    if (!string.IsNullOrWhiteSpace(userName))
-    {
-        userActivityTracker[userName] = DateTime.UtcNow;
-    }
-}
 
 if (app.Environment.IsDevelopment())
 {
@@ -322,60 +116,15 @@ app.Use(async (context, next) =>
     if (context.User?.Identity?.IsAuthenticated == true)
     {
         var userName = context.User.FindFirst(ClaimTypes.Name)?.Value;
-        RecordUserActivity(userName ?? "");
+        var activityService = context.RequestServices.GetRequiredService<IUserActivityService>();
+        activityService.RecordActivity(userName ?? "");
     }
     await next();
 });
 
-static IResult? CheckTokenLimit(IConfiguration cfg, ITokenUsageService tokenUsage, HttpContext context)
-{
-    var userId = GetUserIdFromContext(context);
-    if (userId == null)
-        return Results.Unauthorized();
-
-    var allowanceUsd = cfg.GetValue<double?>("OpenAI:PerUserMonthlyCostAllowanceUsd") ?? 20.0;
-    var (promptTokens, completionTokens, _) = tokenUsage.GetTotals(userId);
-    var costUsd = tokenUsage.CalculateCostUsd(promptTokens, completionTokens);
-
-    if (costUsd >= allowanceUsd)
-    {
-        var now = DateTime.UtcNow;
-        var nextReset = new DateTime(now.Year, now.Month, 1).AddMonths(1);
-        var daysUntilReset = (nextReset - now).Days;
-
-        return Results.Problem(
-            detail: $"Monthly AI usage allowance (${allowanceUsd:F2}) has been exceeded. Resets in {daysUntilReset} days.",
-            statusCode: 429,
-            title: "AI Usage Limit Exceeded"
-        );
-    }
-
-    return null;
-}
-
-static bool IsTokenLimitExceeded(IConfiguration cfg, ITokenUsageService tokenUsage, HttpContext context)
-{
-    var userId = GetUserIdFromContext(context);
-    if (userId == null)
-        return false;
-
-    var allowanceUsd = cfg.GetValue<double?>("OpenAI:PerUserMonthlyCostAllowanceUsd") ?? 20.0;
-    var (promptTokens, completionTokens, _) = tokenUsage.GetTotals(userId);
-    var costUsd = tokenUsage.CalculateCostUsd(promptTokens, completionTokens);
-
-    return costUsd >= allowanceUsd;
-}
-
-static string? GetUserIdFromContext(HttpContext context)
-{
-    return context.User?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
-}
-
-static Dictionary<string, string> GetUserDisplayNames(IConfiguration cfg)
-{
-    var codes = cfg.GetSection("Auth:AccessCodes").Get<List<AccessCode>>();
-    return codes?.ToDictionary(c => c.Code, c => c.Name) ?? new Dictionary<string, string>();
-}
+// Helper functions moved to Helpers/ folder:
+// - GetUserIdFromContext, GetUserDisplayNames -> UserHelpers.cs
+// - CheckTokenLimit, IsTokenLimitExceeded -> TokenLimitHelpers.cs
 
 static async Task<string> GenerateNoSpoilerDescriptionAsync(
     string title,
@@ -909,95 +658,10 @@ static string DetermineImageExtension(string url, byte[] imageData)
     return ".jpg";
 }
 
-// ─── 1) search ───────────────────────────────────────────────────────────
-app.MapGet("/api/anna/book", async (
-    [FromQuery] string name,
-    AnnaArchiveService svc,
-    IValidationService validation,
-    IHttpClientFactory httpFactory,
-    [FromQuery] bool exact = false) =>
-{
-    if (!validation.IsValidSearchQuery(name))
-        return Results.BadRequest(new {
-            error = "Query parameter 'name' is required and must be between 1 and 500 characters."
-        });
+// ─── 1) search ── (moved to BookSearchEndpoints.cs)
+// ─── 1a) Cover lookup ── (moved to BookSearchEndpoints.cs)
 
-    var books = (await svc.SearchAsync(name, searchLimit, exact)).ToList();
-
-    if (exact)
-        books = books
-            .Where(b => string.Equals(b.Title?.Trim(), name.Trim(), StringComparison.OrdinalIgnoreCase))
-            .ToList();
-
-    return books.Any()
-        ? books.Count == 1 ? Results.Ok(books[0]) : Results.Ok(books)
-        : ApiResponse.NotFound("No books found matching that name.");
-})
-.RequireAuthorization()
-.RequireRateLimiting("api");
-
-// ─── 1a) Cover lookup (OpenLibrary -> Google Books) ───────────────────────
-app.MapGet("/api/anna/book/cover", async (
-    [FromQuery] string title,
-    [FromQuery] string? author,
-    IHttpClientFactory httpFactory) =>
-{
-    if (string.IsNullOrWhiteSpace(title))
-        return Results.BadRequest(new { error = "title is required." });
-
-    Console.WriteLine($"🖼️ Cover lookup: title='{title}', author='{author}'");
-    var cover = await FetchOpenLibraryCoverAsync(title, author, httpFactory)
-                ?? await FetchGoogleBooksCoverAsync(title, author, httpFactory);
-
-    Console.WriteLine(cover is null
-        ? $"⚠️ Cover lookup failed for '{title}'"
-        : $"✅ Cover lookup found for '{title}': {cover}");
-
-    return Results.Ok(new { coverUrl = cover });
-})
-.RequireAuthorization()
-.RequireRateLimiting("api");
-
-// ─── Description endpoints ──────────────────────────────────────────────
-app.MapGet("/api/anna/book/description/google-books", async (
-    [FromQuery] string title,
-    [FromQuery] string? author,
-    IGoogleBooksService googleBooks) =>
-{
-    if (string.IsNullOrWhiteSpace(title))
-        return Results.BadRequest(new { error = "title is required." });
-
-    Console.WriteLine($"📖 Google Books description lookup: title='{title}', author='{author}'");
-    var description = await googleBooks.GetBookDescriptionAsync(title, author ?? "");
-
-    Console.WriteLine(description is null
-        ? $"⚠️ Google Books description not found for '{title}'"
-        : $"✅ Google Books description found for '{title}'");
-
-    return Results.Ok(new { description });
-})
-.RequireAuthorization()
-.RequireRateLimiting("api");
-
-app.MapGet("/api/anna/book/description/openlibrary", async (
-    [FromQuery] string title,
-    [FromQuery] string? author,
-    IOpenLibraryService openLibrary) =>
-{
-    if (string.IsNullOrWhiteSpace(title))
-        return Results.BadRequest(new { error = "title is required." });
-
-    Console.WriteLine($"📖 OpenLibrary description lookup: title='{title}', author='{author}'");
-    var description = await openLibrary.GetBookDescriptionAsync(title, author ?? "");
-
-    Console.WriteLine(description is null
-        ? $"⚠️ OpenLibrary description not found for '{title}'"
-        : $"✅ OpenLibrary description found for '{title}'");
-
-    return Results.Ok(new { description });
-})
-.RequireAuthorization()
-.RequireRateLimiting("api");
+// ─── Description endpoints ── (google-books and openlibrary moved to BookSearchEndpoints.cs)
 
 app.MapGet("/api/anna/book/description/gpt", async (
     HttpContext context,
@@ -1013,7 +677,7 @@ app.MapGet("/api/anna/book/description/gpt", async (
     if (string.IsNullOrWhiteSpace(title))
         return Results.BadRequest(new { error = "title is required." });
 
-    var tokenLimitResult = CheckTokenLimit(cfg, tokenUsage, context);
+    var tokenLimitResult = TokenLimitHelpers.CheckTokenLimit(cfg, tokenUsage, context);
     if (tokenLimitResult is not null) return tokenLimitResult;
 
     Console.WriteLine($"📖 GPT-4 description lookup: title='{title}', author='{author}'");
@@ -1029,7 +693,7 @@ app.MapGet("/api/anna/book/description/gpt", async (
         aiResponseParser);
 
     // Track token usage (estimate ~50 completion tokens for description)
-    var userId = GetUserIdFromContext(context);
+    var userId = UserHelpers.GetUserIdFromContext(context);
     if (userId != null)
         tokenUsage.AddUsage(userId, 150, 50);
 
@@ -1173,7 +837,7 @@ app.MapPost("/api/anna/book/{md5}/send-to-library", async (
     var userName = context.User?.FindFirst(ClaimTypes.Email)?.Value
         ?? context.User?.FindFirst(ClaimTypes.Name)?.Value
         ?? "unknown";
-    var userTag = ResolveUserLibraryTag(context);
+    var userTag = LibraryHelpers.ResolveUserLibraryTag(context);
 
     // Use shared helper to download book from Anna's Archive
     var (resp, fileName, acctInfo, errorMessage) = await DownloadBookFromAnnaArchiveAsync(md5, title, anna, memberKey);
@@ -1200,7 +864,7 @@ app.MapPost("/api/anna/book/{md5}/send-to-library", async (
     var (currentDownloadsLeft, currentDownloadsPerDay) = downloadTracking.GetDownloadStatus();
     var currentTrackingInfo = new AccountFastDownloadInfoDto(currentDownloadsLeft, currentDownloadsPerDay);
 
-    var libraryRoot = ResolveLibraryRoot();
+    var libraryRoot = LibraryHelpers.ResolveLibraryRoot();
     Directory.CreateDirectory(libraryRoot);
 
     using (resp)
@@ -1238,7 +902,7 @@ app.MapPost("/api/anna/book/{md5}/send-to-library", async (
         await using var outStream = File.Create(destinationPath);
         await ebookStream.CopyToAsync(outStream);
 
-        await WriteLibraryMetadataAsync(libraryRoot, fileName, md5, title, authors, format, fileSize, coverUrl, source, userTag, description);
+        await LibraryHelpers.WriteLibraryMetadataAsync(libraryRoot, fileName, md5, title, authors, format, fileSize, coverUrl, source, userTag, description);
 
         return Results.Ok(new
         {
@@ -1253,72 +917,13 @@ app.MapPost("/api/anna/book/{md5}/send-to-library", async (
 .RequireAuthorization()
 .RequireRateLimiting("api");
 
-// ─── 3.5) Check download counter status ────────────────────────────────────────
-app.MapGet("/api/anna/download-status", (IDownloadTrackingService downloadTracking) =>
-{
-    try
-    {
-        var (downloadsLeft, downloadsPerDay) = downloadTracking.GetDownloadStatus();
-        var acctInfo = new AccountFastDownloadInfoDto(downloadsLeft, downloadsPerDay);
-
-        return Results.Ok(new { accountFastInfo = acctInfo });
-    }
-    catch (Exception ex)
-    {
-        return Results.Ok(new { accountFastInfo = (AccountFastDownloadInfoDto?)null, error = ex.Message });
-    }
-})
-.RequireAuthorization()
-.RequireRateLimiting("api");
+// ─── 3.5) Check download counter status ── (moved to BookSearchEndpoints.cs)
 
 // ═══════════════════════════════════════════════════════════════════════════
 // ═══ LIBGEN ENDPOINTS ══════════════════════════════════════════════════════
 // ═══════════════════════════════════════════════════════════════════════════
 
-// ─── LibGen search ───────────────────────────────────────────────────────
-app.MapGet("/api/libgen/book", async (
-    [FromQuery] string name,
-    LibGenService svc,
-    IValidationService validation,
-    [FromQuery] bool exact = false) =>
-{
-    Console.WriteLine($"[API LibGen Search] Received request: name='{name}', exact={exact}");
-
-    if (!validation.IsValidSearchQuery(name))
-    {
-        Console.WriteLine($"[API LibGen Search] Validation failed for query: '{name}'");
-        return Results.BadRequest(new {
-            error = "Query parameter 'name' is required and must be between 1 and 500 characters."
-        });
-    }
-
-    Console.WriteLine($"[API LibGen Search] Calling LibGenService.SearchAsync...");
-    var books = (await svc.SearchAsync(name, searchLimit, exact)).ToList();
-    Console.WriteLine($"[API LibGen Search] Service returned {books.Count} books");
-
-    if (exact)
-    {
-        var originalCount = books.Count;
-        books = books
-            .Where(b => string.Equals(b.Title?.Trim(), name.Trim(), StringComparison.OrdinalIgnoreCase))
-            .ToList();
-        Console.WriteLine($"[API LibGen Search] After exact filter: {books.Count} books (was {originalCount})");
-    }
-
-    if (books.Any())
-    {
-        var result = books.Count == 1 ? Results.Ok(books[0]) : Results.Ok(books);
-        Console.WriteLine($"[API LibGen Search] Returning {books.Count} books");
-        return result;
-    }
-    else
-    {
-        Console.WriteLine($"[API LibGen Search] No books found, returning 404");
-        return ApiResponse.NotFound("No books found matching that name.");
-    }
-})
-.RequireAuthorization()
-.RequireRateLimiting("api");
+// ─── LibGen search ── (moved to LibGenEndpoints.cs)
 
 // ─── LibGen download ─────────────────────────────────────────────────────
 app.MapPost("/api/libgen/book/{md5}/download/member", async (
@@ -1449,7 +1054,7 @@ app.MapPost("/api/libgen/book/{md5}/send-to-library", async (
     var userName = context.User?.FindFirst(ClaimTypes.Email)?.Value
         ?? context.User?.FindFirst(ClaimTypes.Name)?.Value
         ?? "unknown";
-    var userTag = ResolveUserLibraryTag(context);
+    var userTag = LibraryHelpers.ResolveUserLibraryTag(context);
 
     Console.WriteLine($"📚 [LibGen] Saving book {md5} to library for user {userName}...");
 
@@ -1490,7 +1095,7 @@ app.MapPost("/api/libgen/book/{md5}/send-to-library", async (
     var (currentDownloadsLeft, currentDownloadsPerDay) = downloadTracking.GetDownloadStatus();
     var currentTrackingInfo = new AccountFastDownloadInfoDto(currentDownloadsLeft, currentDownloadsPerDay);
 
-    var libraryRoot = ResolveLibraryRoot();
+    var libraryRoot = LibraryHelpers.ResolveLibraryRoot();
     Directory.CreateDirectory(libraryRoot);
 
     using (resp)
@@ -1528,7 +1133,7 @@ app.MapPost("/api/libgen/book/{md5}/send-to-library", async (
         await using var outStream = File.Create(destinationPath);
         await ebookStream.CopyToAsync(outStream);
 
-        await WriteLibraryMetadataAsync(libraryRoot, fileName, md5, title, authors, format, fileSize, coverUrl, source, userTag, description);
+        await LibraryHelpers.WriteLibraryMetadataAsync(libraryRoot, fileName, md5, title, authors, format, fileSize, coverUrl, source, userTag, description);
 
         return Results.Ok(new
         {
@@ -1547,158 +1152,17 @@ app.MapPost("/api/libgen/book/{md5}/send-to-library", async (
 // ═══ END LIBGEN ENDPOINTS ══════════════════════════════════════════════════
 // ═══════════════════════════════════════════════════════════════════════════
 
-// ─── SLUM Health Status Proxy ───────────────────────────────────────────
-app.MapGet("/api/anna/slum-health", async (IHttpClientFactory httpFactory) =>
-{
-    try
-    {
-        using var http = httpFactory.CreateClient();
-        http.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
-
-        Console.WriteLine("[slum-health] Fetching status page data...");
-        var statusResponse = await http.GetAsync("https://open-slum.org/api/status-page/slum");
-        if (!statusResponse.IsSuccessStatusCode)
-        {
-            Console.WriteLine($"❌ [slum-health] Failed to fetch status page: {statusResponse.StatusCode}");
-            return Results.Json(new { success = false, error = "Failed to fetch status page data" });
-        }
-
-        Console.WriteLine("[slum-health] Fetching heartbeat data...");
-        var heartbeatResponse = await http.GetAsync("https://open-slum.org/api/status-page/heartbeat/slum");
-        if (!heartbeatResponse.IsSuccessStatusCode)
-        {
-            Console.WriteLine($"❌ [slum-health] Failed to fetch heartbeat: {heartbeatResponse.StatusCode}");
-            return Results.Json(new { success = false, error = "Failed to fetch heartbeat data" });
-        }
-
-        var statusJson = await statusResponse.Content.ReadAsStringAsync();
-        var heartbeatJson = await heartbeatResponse.Content.ReadAsStringAsync();
-
-        using var statusDoc = JsonDocument.Parse(statusJson);
-        using var heartbeatDoc = JsonDocument.Parse(heartbeatJson);
-
-        // Build result array with Anna's Archive monitors
-        var result = new List<object>();
-        var heartbeats = heartbeatDoc.RootElement.GetProperty("heartbeatList");
-
-        // Find Anna's Archive group
-        if (statusDoc.RootElement.TryGetProperty("publicGroupList", out var groups))
-        {
-            foreach (var group in groups.EnumerateArray())
-            {
-                if (group.TryGetProperty("name", out var groupName) &&
-                    groupName.GetString()?.Contains("Anna's Archive") == true)
-                {
-                    foreach (var monitor in group.GetProperty("monitorList").EnumerateArray())
-                    {
-                        var name = monitor.GetProperty("name").GetString() ?? "";
-                        var id = monitor.GetProperty("id").GetInt32().ToString();
-
-                        // Calculate health percentage from heartbeats
-                        double health = 0;
-                        if (heartbeats.TryGetProperty(id, out var monitorHeartbeats))
-                        {
-                            int upCount = 0, totalCount = 0;
-                            foreach (var heartbeat in monitorHeartbeats.EnumerateArray())
-                            {
-                                totalCount++;
-                                if (heartbeat.GetProperty("status").GetInt32() == 1) upCount++;
-                            }
-                            health = totalCount > 0 ? Math.Round((double)upCount / totalCount * 100, 2) : 0;
-                        }
-
-                        // Get cert expiry
-                        int? certExpDays = null;
-                        if (monitor.TryGetProperty("certExpiryDaysRemaining", out var cert))
-                        {
-                            certExpDays = cert.GetInt32();
-                        }
-
-                        result.Add(new
-                        {
-                            name = name,
-                            health = $"{health}%",
-                            cert_exp = certExpDays.HasValue ? $"{certExpDays} days" : null
-                        });
-                    }
-                    break;
-                }
-            }
-        }
-
-        Console.WriteLine($"✅ [slum-health] Returning {result.Count} monitors");
-        return Results.Json(result);
-    }
-    catch (Exception ex)
-    {
-        Console.WriteLine($"❌ [slum-health] Error: {ex.Message}");
-        return Results.Json(new { success = false, error = ex.Message });
-    }
-});
-
-// ─── 3b) Anna's Archive mirror health (direct probe) ──────────────────────
-app.MapGet("/api/anna/mirror-health", async (IHttpClientFactory httpFactory) =>
-{
-    var client = httpFactory.CreateClient();
-    client.Timeout = TimeSpan.FromSeconds(4);
-
-    var mirrors = new[]
-    {
-        ("org", "https://annas-archive.org"),
-        ("se",  "https://annas-archive.se"),
-        ("li",  "https://annas-archive.li"),
-        ("pm",  "https://annas-archive.pm"),
-        ("in",  "https://annas-archive.in")
-    };
-
-    var results = new List<object>();
-
-    foreach (var (extension, url) in mirrors)
-    {
-        var sw = Stopwatch.StartNew();
-        try
-        {
-            using var resp = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
-            sw.Stop();
-
-            var statusCode = (int)resp.StatusCode;
-            var ok = statusCode >= 200 && statusCode < 500;
-            results.Add(new
-            {
-                name = $"Anna's Archive {extension.ToUpperInvariant()}",
-                extension,
-                health = ok ? 100 : 0,
-                statusCode,
-                responseMs = sw.ElapsedMilliseconds
-            });
-        }
-        catch (Exception ex)
-        {
-            sw.Stop();
-            results.Add(new
-            {
-                name = $"Anna's Archive {extension.ToUpperInvariant()}",
-                extension,
-                health = (int?)null,
-                statusCode = (int?)null,
-                responseMs = sw.ElapsedMilliseconds,
-                error = ex.GetType().Name
-            });
-        }
-    }
-
-    return Results.Json(results);
-});
+// ─── Health endpoints ── (moved to BookSearchEndpoints.cs)
 
 // ─── 3c) Library listing ─────────────────────────────────────────────────
 app.MapGet("/api/library/books", (HttpContext context) =>
 {
-    var libraryRoot = ResolveLibraryRoot();
+    var libraryRoot = LibraryHelpers.ResolveLibraryRoot();
     if (!Directory.Exists(libraryRoot))
         return Results.Json(Array.Empty<LibraryBookDto>());
 
     var metaFiles = Directory.GetFiles(libraryRoot, "*.meta.json");
-    var jsonOptions = CreateLibraryJsonOptions();
+    var jsonOptions = LibraryHelpers.CreateLibraryJsonOptions();
     var books = new List<LibraryBookDto>();
     var metaLookup = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
     var baseUrl = $"{context.Request.Scheme}://{context.Request.Host}";
@@ -1805,7 +1269,7 @@ app.MapGet("/api/library/cover/{*path}", (HttpContext context, string path) =>
     if (string.IsNullOrWhiteSpace(path))
         return Results.NotFound();
 
-    var libraryRoot = ResolveLibraryRoot();
+    var libraryRoot = LibraryHelpers.ResolveLibraryRoot();
     var fullPath = Path.GetFullPath(Path.Combine(libraryRoot, path));
     if (!fullPath.StartsWith(libraryRoot, StringComparison.OrdinalIgnoreCase))
         return Results.BadRequest(new { error = "Invalid path." });
@@ -1868,7 +1332,7 @@ app.MapPost("/api/library/book/send-to-kindle", async (
     if (!string.Equals(Path.GetExtension(safeFileName), ".epub", StringComparison.OrdinalIgnoreCase))
         return Results.BadRequest(new { error = "Reader supports EPUB files only." });
 
-    var libraryRoot = ResolveLibraryRoot();
+    var libraryRoot = LibraryHelpers.ResolveLibraryRoot();
     var fullPath = Path.Combine(libraryRoot, safeFileName);
     if (!File.Exists(fullPath))
         return Results.NotFound(new { error = "File not found." });
@@ -1887,7 +1351,7 @@ app.MapPost("/api/library/book/send-to-kindle", async (
             body: fileStream);
 
         // Add Kindle target tag to library book metadata
-        var userTag = ResolveUserLibraryTag(context);
+        var userTag = LibraryHelpers.ResolveUserLibraryTag(context);
         var kindleTargetTag = GetKindleTargetTag(target);
         var tagsToAdd = new[] { userTag, kindleTargetTag }.OfType<string>().ToArray();
         await AddTagsToLibraryBookAsync(libraryRoot, safeFileName, tagsToAdd);
@@ -1899,7 +1363,7 @@ app.MapPost("/api/library/book/send-to-kindle", async (
         await emailService.SendEmailWithAttachmentAsync(kindleEmail, subject, body, fullPath, safeFileName);
 
         // Add Kindle target tag to library book metadata
-        var userTag = ResolveUserLibraryTag(context);
+        var userTag = LibraryHelpers.ResolveUserLibraryTag(context);
         var kindleTargetTag = GetKindleTargetTag(target);
         var tagsToAdd = new[] { userTag, kindleTargetTag }.OfType<string>().ToArray();
         await AddTagsToLibraryBookAsync(libraryRoot, safeFileName, tagsToAdd);
@@ -1920,7 +1384,7 @@ app.MapPatch("/api/library/book/{fileName}/metadata", async (
     if (!string.Equals(fileName, safeFileName, StringComparison.Ordinal))
         return Results.BadRequest(new { error = "Invalid fileName." });
 
-    var libraryRoot = ResolveLibraryRoot();
+    var libraryRoot = LibraryHelpers.ResolveLibraryRoot();
     var metaPath = Path.Combine(libraryRoot, safeFileName + ".meta.json");
 
     if (!File.Exists(metaPath))
@@ -1928,7 +1392,7 @@ app.MapPatch("/api/library/book/{fileName}/metadata", async (
 
     try
     {
-        var jsonOptions = CreateLibraryJsonOptions();
+        var jsonOptions = LibraryHelpers.CreateLibraryJsonOptions();
         var json = await File.ReadAllTextAsync(metaPath);
         var meta = JsonSerializer.Deserialize<LibraryBookMeta>(json, jsonOptions);
 
@@ -1970,7 +1434,7 @@ app.MapPatch("/api/library/book/{fileName}/ratings", async (
     if (!string.Equals(fileName, safeFileName, StringComparison.Ordinal))
         return Results.BadRequest(new { error = "Invalid fileName." });
 
-    var libraryRoot = ResolveLibraryRoot();
+    var libraryRoot = LibraryHelpers.ResolveLibraryRoot();
     var metaPath = Path.Combine(libraryRoot, safeFileName + ".meta.json");
 
     if (!File.Exists(metaPath))
@@ -1978,7 +1442,7 @@ app.MapPatch("/api/library/book/{fileName}/ratings", async (
 
     try
     {
-        var jsonOptions = CreateLibraryJsonOptions();
+        var jsonOptions = LibraryHelpers.CreateLibraryJsonOptions();
         var json = await File.ReadAllTextAsync(metaPath);
         var meta = JsonSerializer.Deserialize<LibraryBookMeta>(json, jsonOptions);
 
@@ -2022,7 +1486,7 @@ app.MapPost("/api/library/book/{fileName}/reader", async (
     if (!string.Equals(fileName, safeFileName, StringComparison.Ordinal))
         return Results.BadRequest(new { error = "Invalid fileName." });
 
-    var libraryRoot = ResolveLibraryRoot();
+    var libraryRoot = LibraryHelpers.ResolveLibraryRoot();
     var metaPath = Path.Combine(libraryRoot, safeFileName + ".meta.json");
 
     if (!File.Exists(metaPath))
@@ -2030,7 +1494,7 @@ app.MapPost("/api/library/book/{fileName}/reader", async (
 
     try
     {
-        var jsonOptions = CreateLibraryJsonOptions();
+        var jsonOptions = LibraryHelpers.CreateLibraryJsonOptions();
         var json = await File.ReadAllTextAsync(metaPath);
         var meta = JsonSerializer.Deserialize<LibraryBookMeta>(json, jsonOptions);
 
@@ -2064,7 +1528,7 @@ app.MapPost("/api/library/book/reader", async (
     if (!string.Equals(Path.GetExtension(safeFileName), ".epub", StringComparison.OrdinalIgnoreCase))
         return Results.BadRequest(new { error = "Reader supports EPUB files only." });
 
-    var libraryRoot = ResolveLibraryRoot();
+    var libraryRoot = LibraryHelpers.ResolveLibraryRoot();
     var metaPath = Path.Combine(libraryRoot, safeFileName + ".meta.json");
 
     if (!File.Exists(metaPath))
@@ -2072,7 +1536,7 @@ app.MapPost("/api/library/book/reader", async (
 
     try
     {
-        var jsonOptions = CreateLibraryJsonOptions();
+        var jsonOptions = LibraryHelpers.CreateLibraryJsonOptions();
         var json = await File.ReadAllTextAsync(metaPath);
         var meta = JsonSerializer.Deserialize<LibraryBookMeta>(json, jsonOptions);
 
@@ -2098,12 +1562,12 @@ app.MapPost("/api/library/book/reader", async (
 // ─── 3f-2) Wipe all library genres ───────────────────────────────────────
 app.MapPost("/api/library/books/genres/wipe", async () =>
 {
-    var libraryRoot = ResolveLibraryRoot();
+    var libraryRoot = LibraryHelpers.ResolveLibraryRoot();
     if (!Directory.Exists(libraryRoot))
         return Results.Ok(new { success = true, updated = 0 });
 
     var metaFiles = Directory.GetFiles(libraryRoot, "*.meta.json");
-    var jsonOptions = CreateLibraryJsonOptions();
+    var jsonOptions = LibraryHelpers.CreateLibraryJsonOptions();
     var updatedCount = 0;
 
     foreach (var metaPath in metaFiles)
@@ -2155,7 +1619,7 @@ app.MapPost("/api/library/book/{fileName}/cover", async (
     if (!string.Equals(fileName, safeFileName, StringComparison.Ordinal))
         return Results.BadRequest(new { error = "Invalid fileName." });
 
-    var libraryRoot = ResolveLibraryRoot();
+    var libraryRoot = LibraryHelpers.ResolveLibraryRoot();
     var metaPath = Path.Combine(libraryRoot, safeFileName + ".meta.json");
 
     if (!File.Exists(metaPath))
@@ -2208,7 +1672,7 @@ app.MapPost("/api/library/book/{fileName}/cover", async (
 
     try
     {
-        var jsonOptions = CreateLibraryJsonOptions();
+        var jsonOptions = LibraryHelpers.CreateLibraryJsonOptions();
         var json = await File.ReadAllTextAsync(metaPath);
         Console.WriteLine($"[library-cover] READ metadata for {safeFileName}:");
         Console.WriteLine($"[library-cover]   Existing JSON: {json.Substring(0, Math.Min(200, json.Length))}...");
@@ -2256,7 +1720,7 @@ app.MapGet("/api/library/book/{fileName}/summary", async (
     if (!string.Equals(fileName, safeFileName, StringComparison.Ordinal))
         return Results.BadRequest(new { error = "Invalid fileName." });
 
-    var libraryRoot = ResolveLibraryRoot();
+    var libraryRoot = LibraryHelpers.ResolveLibraryRoot();
     var metaPath = Path.Combine(libraryRoot, safeFileName + ".meta.json");
 
     if (!File.Exists(metaPath))
@@ -2264,7 +1728,7 @@ app.MapGet("/api/library/book/{fileName}/summary", async (
 
     try
     {
-        var jsonOptions = CreateLibraryJsonOptions();
+        var jsonOptions = LibraryHelpers.CreateLibraryJsonOptions();
         var json = await File.ReadAllTextAsync(metaPath);
         var meta = JsonSerializer.Deserialize<LibraryBookMeta>(json, jsonOptions);
 
@@ -2417,12 +1881,12 @@ app.MapGet("/api/library/book/{fileName}/summary", async (
 // ─── 3f-4) Library reader list ──────────────────────────────────────────
 app.MapGet("/api/library/reader/books", (HttpContext context) =>
 {
-    var libraryRoot = ResolveLibraryRoot();
+    var libraryRoot = LibraryHelpers.ResolveLibraryRoot();
     if (!Directory.Exists(libraryRoot))
         return Results.Json(Array.Empty<ReaderBookDto>());
 
     var metaFiles = Directory.GetFiles(libraryRoot, "*.meta.json");
-    var jsonOptions = CreateLibraryJsonOptions();
+    var jsonOptions = LibraryHelpers.CreateLibraryJsonOptions();
     var results = new List<ReaderBookDto>();
     var baseUrl = $"{context.Request.Scheme}://{context.Request.Host}";
 
@@ -2484,7 +1948,7 @@ app.MapGet("/api/library/reader/epub/chapters", async (
     if (string.IsNullOrWhiteSpace(fileName))
         return Results.BadRequest(new { error = "fileName is required." });
 
-    var libraryRoot = ResolveLibraryRoot();
+    var libraryRoot = LibraryHelpers.ResolveLibraryRoot();
     var safeFileName = Path.GetFileName(fileName);
     if (!string.Equals(Path.GetExtension(safeFileName), ".epub", StringComparison.OrdinalIgnoreCase))
         return Results.BadRequest(new { error = "Reader supports EPUB files only." });
@@ -2524,7 +1988,7 @@ app.MapGet("/api/library/reader/epub/chapter", async (
     if (string.IsNullOrWhiteSpace(fileName))
         return Results.BadRequest(new { error = "fileName is required." });
 
-    var libraryRoot = ResolveLibraryRoot();
+    var libraryRoot = LibraryHelpers.ResolveLibraryRoot();
     var safeFileName = Path.GetFileName(fileName);
     if (!string.Equals(Path.GetExtension(safeFileName), ".epub", StringComparison.OrdinalIgnoreCase))
         return Results.BadRequest(new { error = "Reader supports EPUB files only." });
@@ -2578,7 +2042,7 @@ app.MapGet("/api/library/reader/epub/status", async (
     if (string.IsNullOrWhiteSpace(fileName))
         return Results.BadRequest(new { error = "fileName is required." });
 
-    var libraryRoot = ResolveLibraryRoot();
+    var libraryRoot = LibraryHelpers.ResolveLibraryRoot();
     var safeFileName = Path.GetFileName(fileName);
     if (!string.Equals(Path.GetExtension(safeFileName), ".epub", StringComparison.OrdinalIgnoreCase))
         return Results.BadRequest(new { error = "Reader supports EPUB files only." });
@@ -2602,7 +2066,7 @@ app.MapPost("/api/library/reader/epub/index", async (
     var fileName = Path.GetFileName(request.FileName);
     if (!string.Equals(Path.GetExtension(fileName), ".epub", StringComparison.OrdinalIgnoreCase))
         return Results.BadRequest(new { error = "Reader supports EPUB files only." });
-    var libraryRoot = ResolveLibraryRoot();
+    var libraryRoot = LibraryHelpers.ResolveLibraryRoot();
     var fullPath = Path.Combine(libraryRoot, fileName);
     if (!File.Exists(fullPath))
         return Results.NotFound(new { error = "Book file not found." });
@@ -2638,7 +2102,7 @@ app.MapGet("/api/library/reader/epub/search", async (
     if (string.IsNullOrWhiteSpace(fileName))
         return Results.BadRequest(new { error = "fileName is required." });
 
-    var libraryRoot = ResolveLibraryRoot();
+    var libraryRoot = LibraryHelpers.ResolveLibraryRoot();
     var safeFileName = Path.GetFileName(fileName);
     if (!string.Equals(Path.GetExtension(safeFileName), ".epub", StringComparison.OrdinalIgnoreCase))
         return Results.BadRequest(new { error = "Reader supports EPUB files only." });
@@ -2665,7 +2129,7 @@ app.MapDelete("/api/library/book/{fileName}", (
     if (!string.Equals(fileName, safeFileName, StringComparison.Ordinal))
         return Results.BadRequest(new { error = "Invalid fileName." });
 
-    var libraryRoot = ResolveLibraryRoot();
+    var libraryRoot = LibraryHelpers.ResolveLibraryRoot();
     var bookPath = Path.Combine(libraryRoot, safeFileName);
     var metaPath = Path.Combine(libraryRoot, safeFileName + ".meta.json");
     var coverDir = Path.Combine(libraryRoot, "_covers");
@@ -3078,7 +2542,7 @@ app.MapPost("/api/ai/summarize", async (
     if (!validation.IsValidTextLength(request.Text))
         return Results.BadRequest(new { error = "Text too long. Maximum 1,000,000 characters." });
 
-    var tokenLimitResult = CheckTokenLimit(cfg, tokenUsage, context);
+    var tokenLimitResult = TokenLimitHelpers.CheckTokenLimit(cfg, tokenUsage, context);
     if (tokenLimitResult is not null) return tokenLimitResult;
 
     try
@@ -3192,7 +2656,7 @@ Then add a 'Definitions:' section. BE EXTREMELY THOROUGH with definitions - incl
         {
             var promptTokens = usage.GetProperty("input_tokens").GetInt32();
             var completionTokens = usage.GetProperty("output_tokens").GetInt32();
-            var userId = GetUserIdFromContext(context);
+            var userId = UserHelpers.GetUserIdFromContext(context);
             if (userId != null)
                 tokenUsage.AddUsage(userId, promptTokens, completionTokens);
         }
@@ -3233,7 +2697,7 @@ app.MapPost("/api/ai/vocab/learn-more", async (
     if (request is null || string.IsNullOrWhiteSpace(request.Term))
         return Results.BadRequest(new { error = "Term is required." });
 
-    var tokenLimitResult = CheckTokenLimit(cfg, tokenUsage, context);
+    var tokenLimitResult = TokenLimitHelpers.CheckTokenLimit(cfg, tokenUsage, context);
     if (tokenLimitResult is not null) return tokenLimitResult;
 
     try
@@ -3305,7 +2769,7 @@ Relevant passage/context: {request.Context ?? "(none)"}";
         {
             var promptTokens = usage.GetProperty("input_tokens").GetInt32();
             var completionTokens = usage.GetProperty("output_tokens").GetInt32();
-            var userId = GetUserIdFromContext(context);
+            var userId = UserHelpers.GetUserIdFromContext(context);
             if (userId != null)
                 tokenUsage.AddUsage(userId, promptTokens, completionTokens);
         }
@@ -3350,7 +2814,7 @@ app.MapPost("/api/ai/flashcards", async (
     if (shouldSave && string.IsNullOrWhiteSpace(request.DropboxPath))
         return Results.BadRequest(new { error = "dropboxPath is required when saving flashcards." });
 
-    var tokenLimitResult = CheckTokenLimit(cfg, tokenUsage, context);
+    var tokenLimitResult = TokenLimitHelpers.CheckTokenLimit(cfg, tokenUsage, context);
     if (tokenLimitResult is not null) return tokenLimitResult;
 
     try
@@ -3446,7 +2910,7 @@ Return JSON array of flashcards for individual terms found in the passage.";
         {
             var promptTokens = usage.GetProperty("prompt_tokens").GetInt32();
             var completionTokens = usage.GetProperty("completion_tokens").GetInt32();
-            var userId = GetUserIdFromContext(context);
+            var userId = UserHelpers.GetUserIdFromContext(context);
             if (userId != null)
                 tokenUsage.AddUsage(userId, promptTokens, completionTokens);
         }
@@ -3573,109 +3037,7 @@ app.MapDelete("/api/ai/flashcard", ([FromQuery] string path, [FromQuery] string 
 .RequireAuthorization()
 .RequireRateLimiting("api");
 
-// ─── 5h) Wikipedia images helper (via REST summary) ─────────────────
-app.MapGet("/api/media/wiki-images", async ([FromQuery] string term) =>
-{
-    if (string.IsNullOrWhiteSpace(term))
-        return Results.BadRequest(new { error = "Query parameter 'term' is required." });
-
-    try
-    {
-        var title = term.Replace(' ', '_');
-        var summaryUrl = $"https://en.wikipedia.org/api/rest_v1/page/summary/{Uri.EscapeDataString(title)}";
-
-        using var http = new HttpClient();
-        http.DefaultRequestHeaders.UserAgent.ParseAdd("AnnasArchive/1.0 (+https://fs01pfbooks.synology.me)");
-
-        var images = new List<string>();
-        var summaryJson = await http.GetStringAsync(summaryUrl);
-        using (var doc = JsonDocument.Parse(summaryJson))
-        {
-            void TryAdd(string? url)
-            {
-                if (string.IsNullOrWhiteSpace(url)) return;
-                var normalized = url.Replace(" ", "_");
-                if (!normalized.StartsWith("https://upload.wikimedia.org", StringComparison.OrdinalIgnoreCase)) return;
-                if (!(normalized.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase) ||
-                      normalized.EndsWith(".jpeg", StringComparison.OrdinalIgnoreCase) ||
-                      normalized.EndsWith(".png", StringComparison.OrdinalIgnoreCase)))
-                    return;
-                if (!images.Contains(normalized)) images.Add(normalized);
-            }
-
-            if (doc.RootElement.TryGetProperty("originalimage", out var original) &&
-                original.TryGetProperty("source", out var source))
-            {
-                TryAdd(source.GetString());
-            }
-
-            if (doc.RootElement.TryGetProperty("thumbnail", out var thumb) &&
-                thumb.TryGetProperty("source", out var tsource))
-            {
-                TryAdd(tsource.GetString());
-            }
-        }
-
-        // Fallback: use pageimages API for more options if needed
-        if (images.Count < 3)
-        {
-            var queryUrl = $"https://en.wikipedia.org/w/api.php?action=query&format=json&prop=pageimages&piprop=original|thumbnail&pithumbsize=640&titles={Uri.EscapeDataString(title)}";
-            var queryJson = await http.GetStringAsync(queryUrl);
-            using var doc2 = JsonDocument.Parse(queryJson);
-            if (doc2.RootElement.TryGetProperty("query", out var q) &&
-                q.TryGetProperty("pages", out var pages) &&
-                pages.EnumerateObject().Any())
-            {
-                foreach (var page in pages.EnumerateObject())
-                {
-                    var val = page.Value;
-                    if (val.TryGetProperty("original", out var orig) && orig.TryGetProperty("source", out var osrc))
-                    {
-                        var url = osrc.GetString();
-                        if (!string.IsNullOrWhiteSpace(url) && images.Count < 3)
-                        {
-                            var normalized = url!.Replace(" ", "_");
-                            if (normalized.StartsWith("https://upload.wikimedia.org", StringComparison.OrdinalIgnoreCase) &&
-                                (normalized.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase) ||
-                                 normalized.EndsWith(".jpeg", StringComparison.OrdinalIgnoreCase) ||
-                                 normalized.EndsWith(".png", StringComparison.OrdinalIgnoreCase)))
-                            {
-                                if (!images.Contains(normalized))
-                                    images.Add(normalized);
-                            }
-                        }
-                    }
-
-                    if (val.TryGetProperty("thumbnail", out var thumb) && thumb.TryGetProperty("source", out var tsrc))
-                    {
-                        var url = tsrc.GetString();
-                        if (!string.IsNullOrWhiteSpace(url) && images.Count < 3)
-                        {
-                            var normalized = url!.Replace(" ", "_");
-                            if (normalized.StartsWith("https://upload.wikimedia.org", StringComparison.OrdinalIgnoreCase) &&
-                                (normalized.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase) ||
-                                 normalized.EndsWith(".jpeg", StringComparison.OrdinalIgnoreCase) ||
-                                 normalized.EndsWith(".png", StringComparison.OrdinalIgnoreCase)))
-                            {
-                                if (!images.Contains(normalized))
-                                    images.Add(normalized);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        return Results.Ok(new WikiImagesResponse(images));
-    }
-    catch
-    {
-        Console.WriteLine($"⚠️ Wiki images lookup failed for term '{term}'");
-        return Results.Ok(new WikiImagesResponse(new List<string>()));
-    }
-})
-.RequireAuthorization()
-.RequireRateLimiting("api");
+// ─── 5h) Wikipedia images helper ── (moved to MediaEndpoints.cs)
 
 app.MapGet("/api/anna/dropbox/epub/search", async (
     [FromQuery] string path,
@@ -3793,7 +3155,7 @@ app.MapPost("/api/ai/summarize/chapter/stream", async (
     try
     {
         // Check token limit
-        var tokenLimitResult = CheckTokenLimit(cfg, tokenUsage, context);
+        var tokenLimitResult = TokenLimitHelpers.CheckTokenLimit(cfg, tokenUsage, context);
         if (tokenLimitResult is not null)
         {
             await tokenLimitResult.ExecuteAsync(context);
@@ -3860,7 +3222,7 @@ app.MapPost("/api/ai/summarize/chapter/stream", async (
         var promptTokensTotal = tier1PromptTokens + tier2PromptTokens + tier3PromptTokens;
         var completionTokensTotal = tier1CompletionTokens + tier2CompletionTokens + tier3CompletionTokens;
 
-        var userId = GetUserIdFromContext(context);
+        var userId = UserHelpers.GetUserIdFromContext(context);
         if (userId != null)
             tokenUsage.AddUsage(userId, (int)promptTokensTotal, (int)completionTokensTotal);
         var totals = tokenUsage.GetTotals(userId ?? "");
@@ -4048,7 +3410,7 @@ Chapter summary:
     {
         promptTokens = usage.GetProperty("prompt_tokens").GetInt32();
         completionTokens = usage.GetProperty("completion_tokens").GetInt32();
-        var userId = GetUserIdFromContext(context);
+        var userId = UserHelpers.GetUserIdFromContext(context);
         if (userId != null)
             tokenUsage.AddUsage(userId, promptTokens, completionTokens);
     }
@@ -4102,7 +3464,7 @@ app.MapGet("/api/ai/summarize/book", (
 // Token usage status
 app.MapGet("/api/ai/usage", (HttpContext context, IConfiguration cfg, ITokenUsageService tokenUsage) =>
 {
-    var userId = GetUserIdFromContext(context);
+    var userId = UserHelpers.GetUserIdFromContext(context);
     if (userId == null)
         return Results.Unauthorized();
 
@@ -4135,7 +3497,7 @@ app.MapGet("/api/ai/usage", (HttpContext context, IConfiguration cfg, ITokenUsag
 app.MapGet("/api/ai/usage/all-users", (IConfiguration cfg, ITokenUsageService tokenUsage) =>
 {
     var allowanceUsd = cfg.GetValue<double?>("OpenAI:PerUserMonthlyCostAllowanceUsd") ?? 20.0;
-    var userDisplayNames = GetUserDisplayNames(cfg);
+    var userDisplayNames = UserHelpers.GetUserDisplayNames(cfg);
 
     var now = DateTime.UtcNow;
     var nextReset = new DateTime(now.Year, now.Month, 1).AddMonths(1);
@@ -4228,7 +3590,7 @@ app.MapGet("/api/ai/chunk-boundaries", async (
     context.Response.Headers["Connection"] = "keep-alive";
 
     // Check token limit
-    if (IsTokenLimitExceeded(cfg, tokenUsage, context))
+    if (TokenLimitHelpers.IsTokenLimitExceeded(cfg, tokenUsage, context))
     {
         await ServerSentEventsHelper.SendEventAsync(context.Response, new
         {
@@ -4492,7 +3854,7 @@ Return format (JSON only, no explanation):
             {
                 var promptTokens = usage.GetProperty("prompt_tokens").GetInt32();
                 var completionTokens = usage.GetProperty("completion_tokens").GetInt32();
-                var userId = GetUserIdFromContext(context);
+                var userId = UserHelpers.GetUserIdFromContext(context);
                 if (userId != null)
                     tokenUsage.AddUsage(userId, promptTokens, completionTokens);
             }
@@ -4729,7 +4091,7 @@ app.MapPost("/api/ai/section-summary", async (
     try
     {
         // Check token limit
-        var tokenLimitResult = CheckTokenLimit(cfg, tokenUsage, context);
+        var tokenLimitResult = TokenLimitHelpers.CheckTokenLimit(cfg, tokenUsage, context);
         if (tokenLimitResult is not null) return tokenLimitResult;
 
     // Load chunk boundaries
@@ -4847,7 +4209,7 @@ Text to summarize:
         {
             promptTokens = usage.GetProperty("prompt_tokens").GetInt32();
             completionTokens = usage.GetProperty("completion_tokens").GetInt32();
-            var userId = GetUserIdFromContext(context);
+            var userId = UserHelpers.GetUserIdFromContext(context);
             if (userId != null)
                 tokenUsage.AddUsage(userId, promptTokens, completionTokens);
             Console.WriteLine($"📊 Token usage: {promptTokens} prompt + {completionTokens} completion = {promptTokens + completionTokens} total");
@@ -5202,7 +4564,7 @@ app.MapPost("/api/ai/suggest-authors", async (
             }
         }
 
-        var tokenLimitResult = CheckTokenLimit(cfg, tokenUsage, context);
+        var tokenLimitResult = TokenLimitHelpers.CheckTokenLimit(cfg, tokenUsage, context);
         if (tokenLimitResult is not null) return tokenLimitResult;
 
         using var http = httpFactory.CreateClient("OpenAI");
@@ -5261,7 +4623,7 @@ Do NOT include any markdown formatting, explanations, or text outside the JSON a
         {
             var promptTokens = usage.GetProperty("prompt_tokens").GetInt32();
             var completionTokens = usage.GetProperty("completion_tokens").GetInt32();
-            var userId = GetUserIdFromContext(context);
+            var userId = UserHelpers.GetUserIdFromContext(context);
             if (userId != null)
                 tokenUsage.AddUsage(userId, promptTokens, completionTokens);
         }
@@ -5339,7 +4701,7 @@ app.MapPost("/api/ai/related-books", async (
     if (request is null || string.IsNullOrWhiteSpace(request.BookTitle) || string.IsNullOrWhiteSpace(request.Author))
         return Results.BadRequest(new { error = "BookTitle and Author are required." });
 
-    var tokenLimitResult = CheckTokenLimit(cfg, tokenUsage, context);
+    var tokenLimitResult = TokenLimitHelpers.CheckTokenLimit(cfg, tokenUsage, context);
     if (tokenLimitResult is not null) return tokenLimitResult;
 
     try
@@ -5417,7 +4779,7 @@ Rules:
         {
             var promptTokens = usage.GetProperty("prompt_tokens").GetInt32();
             var completionTokens = usage.GetProperty("completion_tokens").GetInt32();
-            var userId = GetUserIdFromContext(context);
+            var userId = UserHelpers.GetUserIdFromContext(context);
             if (userId != null)
                 tokenUsage.AddUsage(userId, promptTokens, completionTokens);
         }
@@ -5683,7 +5045,7 @@ app.MapPost("/api/ai/book-search", async (
     if (request is null || string.IsNullOrWhiteSpace(request.Query))
         return Results.BadRequest(new { error = "query is required." });
 
-    var tokenLimitResult = CheckTokenLimit(cfg, tokenUsage, context);
+    var tokenLimitResult = TokenLimitHelpers.CheckTokenLimit(cfg, tokenUsage, context);
     if (tokenLimitResult is not null) return tokenLimitResult;
 
     try
@@ -5762,7 +5124,7 @@ Rules:
         {
             var promptTokens = usage.GetProperty("prompt_tokens").GetInt32();
             var completionTokens = usage.GetProperty("completion_tokens").GetInt32();
-            var userId = GetUserIdFromContext(context);
+            var userId = UserHelpers.GetUserIdFromContext(context);
             if (userId != null)
                 tokenUsage.AddUsage(userId, promptTokens, completionTokens);
         }
@@ -6006,7 +5368,7 @@ app.MapPost("/api/ai/match-series-books", async (
     if (request is null || request.Books is null || request.Books.Count == 0)
         return Results.BadRequest(new { error = "Books list is required." });
 
-    var tokenLimitResult = CheckTokenLimit(cfg, tokenUsage, context);
+    var tokenLimitResult = TokenLimitHelpers.CheckTokenLimit(cfg, tokenUsage, context);
     if (tokenLimitResult is not null) return tokenLimitResult;
 
     try
@@ -6087,7 +5449,7 @@ Rules:
         {
             var promptTokens = usage.GetProperty("prompt_tokens").GetInt32();
             var completionTokens = usage.GetProperty("completion_tokens").GetInt32();
-            var userId = GetUserIdFromContext(context);
+            var userId = UserHelpers.GetUserIdFromContext(context);
             if (userId != null)
                 tokenUsage.AddUsage(userId, promptTokens, completionTokens);
         }
@@ -6286,7 +5648,7 @@ Create a character relationship network graph based ONLY on information in these
         {
             var promptTokens = usage.GetProperty("prompt_tokens").GetInt32();
             var completionTokens = usage.GetProperty("completion_tokens").GetInt32();
-            var userId = GetUserIdFromContext(context);
+            var userId = UserHelpers.GetUserIdFromContext(context);
             if (userId != null)
                 tokenUsage.AddUsage(userId, promptTokens, completionTokens);
         }
@@ -6443,7 +5805,7 @@ Update the character graph with any new information. Return the complete updated
         {
             var promptTokens = usage.GetProperty("prompt_tokens").GetInt32();
             var completionTokens = usage.GetProperty("completion_tokens").GetInt32();
-            var userId = GetUserIdFromContext(context);
+            var userId = UserHelpers.GetUserIdFromContext(context);
             if (userId != null)
                 tokenUsage.AddUsage(userId, promptTokens, completionTokens);
         }
@@ -6642,169 +6004,23 @@ app.MapPost("/api/anna/book/{md5}/send-to-kindle", async (
 .RequireAuthorization()
 .RequireRateLimiting("api");
 
-// ─── 6) Login endpoint (using invite codes) ──────────────────────────────
-app.MapPost("/api/auth/login", (CodeLoginRequest request, IConfiguration cfg) =>
-{
-    if (string.IsNullOrEmpty(request.Code))
-        return Results.BadRequest(new { error = "Access code required" });
+// ─── 6) Auth endpoints (login, user activity) ────────────────────────────
+app.MapAuthEndpoints();
 
-    // Get access codes from config
-    var codesSection = cfg.GetSection("Auth:AccessCodes");
-    var codes = codesSection.Get<List<AccessCode>>();
+// ─── 6a) Book search endpoints ────────────────────────────────────────────
+app.MapBookSearchEndpoints();
 
-    if (codes == null || codes.Count == 0)
-        return Results.Unauthorized();
+// ─── 6a2) LibGen endpoints ────────────────────────────────────────────────
+app.MapLibGenEndpoints();
 
-    // Find valid code (supports both hashed and plaintext for migration)
-    var validCode = codes.FirstOrDefault(c =>
-    {
-        // If the stored code starts with "$2" it's a BCrypt hash
-        if (c.Code.StartsWith("$2"))
-        {
-            try
-            {
-                return BCrypt.Net.BCrypt.Verify(request.Code, c.Code);
-            }
-            catch
-            {
-                return false; // Invalid hash format
-            }
-        }
+// ─── 6a3) Gaming endpoints ────────────────────────────────────────────────
+app.MapGamingEndpoints();
 
-        // Fall back to plaintext comparison (DEPRECATED - migrate to BCrypt)
-        return c.Code.Equals(request.Code, StringComparison.OrdinalIgnoreCase);
-    });
+// ─── 6a4) Media endpoints ─────────────────────────────────────────────────
+app.MapMediaEndpoints();
 
-    if (validCode == null)
-        return Results.Unauthorized();
-
-    // Generate JWT token
-    var jwtSecret = cfg["Auth:JwtSecret"]!;
-    var jwtKey = Encoding.UTF8.GetBytes(jwtSecret);
-    var tokenExpirationDays = cfg.GetValue<int>("Auth:TokenExpirationDays", 30);
-
-    var tokenHandler = new JwtSecurityTokenHandler();
-    var claims = new List<Claim>
-    {
-        new Claim(ClaimTypes.Name, validCode.Name),
-        new Claim(ClaimTypes.NameIdentifier, validCode.Code),
-        new Claim(ClaimTypes.Role, validCode.IsAdmin ? "Admin" : "User")
-    };
-
-    var tokenDescriptor = new SecurityTokenDescriptor
-    {
-        Subject = new ClaimsIdentity(claims),
-        Expires = DateTime.UtcNow.AddDays(tokenExpirationDays),
-        Issuer = "AnnasArchiveAPI",
-        Audience = "AnnasArchiveApp",
-        SigningCredentials = new SigningCredentials(
-            new SymmetricSecurityKey(jwtKey),
-            SecurityAlgorithms.HmacSha256Signature)
-    };
-
-    var token = tokenHandler.CreateToken(tokenDescriptor);
-    var tokenString = tokenHandler.WriteToken(token);
-
-    return Results.Ok(new
-    {
-        token = tokenString,
-        name = validCode.Name,
-        isAdmin = validCode.IsAdmin,
-        expiresAt = tokenDescriptor.Expires
-    });
-})
-.RequireRateLimiting("login");
-
-// ─── 6a) User activity endpoint ───────────────────────────────────────────
-app.MapGet("/api/auth/user-activity", (HttpContext context, IConfiguration cfg) =>
-{
-    var currentUser = context.User?.FindFirst(ClaimTypes.Name)?.Value ?? "";
-    var now = DateTime.UtcNow;
-
-    // Define user mappings: user name -> display initial
-    var userInitials = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-    {
-        { "Mom", "M" },
-        { "Dad", "D" }
-    };
-
-    var activityList = new List<object>();
-
-    foreach (var (userName, initial) in userInitials)
-    {
-        // Skip current user
-        if (userName.Equals(currentUser, StringComparison.OrdinalIgnoreCase))
-            continue;
-
-        double? minutesAgo = null;
-        if (userActivityTracker.TryGetValue(userName, out var lastActivity))
-        {
-            minutesAgo = (now - lastActivity).TotalMinutes;
-        }
-
-        // Always return both users with outline, fill based on activity
-        activityList.Add(new
-        {
-            initial,
-            userName,
-            minutesAgo = minutesAgo.HasValue ? Math.Round(minutesAgo.Value, 1) : (double?)null,
-            isFullTone = minutesAgo.HasValue && minutesAgo <= 30,     // Full color: active within 30 min
-            isHalfTone = minutesAgo.HasValue && minutesAgo > 30 && minutesAgo <= 60  // Half-toned: 30-60 min
-        });
-    }
-
-    return Results.Ok(activityList);
-})
-.RequireAuthorization()
-.RequireRateLimiting("api");
-
-// ─── 6b) Quiz endpoints (admin only) ─────────────────────────────────────
-var quizGroup = app.MapGroup("/api/quiz")
-    .RequireAuthorization("AdminOnly")
-    .RequireRateLimiting("api");
-
-quizGroup.MapGet("/subjects", async (IQuizStorageService storage, CancellationToken token) =>
-{
-    var index = await storage.GetIndexAsync(token);
-    return Results.Ok(index);
-});
-
-quizGroup.MapGet("/subjects/{subjectId}", async (string subjectId, IQuizStorageService storage, CancellationToken token) =>
-{
-    var subject = await storage.GetSubjectAsync(subjectId, token);
-    return subject == null ? Results.NotFound() : Results.Ok(subject);
-});
-
-quizGroup.MapPut("/subjects/{subjectId}", async (
-    string subjectId,
-    QuizSubject subject,
-    IQuizStorageService storage,
-    IQuizValidationService validator,
-    CancellationToken token) =>
-{
-    if (!string.Equals(subjectId, subject.Id, StringComparison.OrdinalIgnoreCase))
-        return Results.BadRequest(new { error = "Subject id in route must match payload id." });
-
-    var validation = validator.ValidateSubject(subject);
-    if (!validation.IsValid)
-        return Results.BadRequest(new { errors = validation.Errors });
-
-    try
-    {
-        var saved = await storage.SaveSubjectAsync(subjectId, subject, token);
-        return Results.Ok(saved);
-    }
-    catch (Exception ex)
-    {
-        return Results.BadRequest(new { error = ex.Message });
-    }
-});
-
-quizGroup.MapDelete("/subjects/{subjectId}", async (string subjectId, IQuizStorageService storage, CancellationToken token) =>
-{
-    var deleted = await storage.DeleteSubjectAsync(subjectId, token);
-    return deleted ? Results.Ok(new { removed = true }) : Results.NotFound();
-});
+// ─── 6b) Quiz endpoints ── (moved to QuizEndpoints.cs)
+app.MapQuizEndpoints();
 
 // ─── 7) Development helper: Generate BCrypt hashes ───────────────────────
 #if DEBUG
@@ -6825,133 +6041,7 @@ app.MapGet("/api/dev/hash", (string? code) =>
 });
 #endif
 
-// ─── 8) Gaming PC Control ────────────────────────────────────────────────
-
-// Check gaming PC status (online/offline)
-app.MapGet("/api/gaming/status", async (IConfiguration cfg) =>
-{
-    var pcIp = "192.168.0.80"; // Gaming PC IP
-
-    try
-    {
-        Console.WriteLine($"→ Checking gaming PC status at {pcIp}");
-
-        // Use ping to check if PC is reachable
-        var process = new Process
-        {
-            StartInfo = new ProcessStartInfo
-            {
-                FileName = "/bin/ping",
-                Arguments = $"-c 1 -W 1 {pcIp}", // 1 ping with 1 second timeout
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true
-            }
-        };
-
-        process.Start();
-        await process.WaitForExitAsync();
-
-        var isOnline = process.ExitCode == 0;
-        Console.WriteLine($"✅ Gaming PC status: {(isOnline ? "ONLINE" : "OFFLINE")}");
-
-        return Results.Ok(new
-        {
-            isOnline = isOnline,
-            ipAddress = pcIp,
-            lastChecked = DateTime.UtcNow
-        });
-    }
-    catch (Exception ex)
-    {
-        Console.WriteLine($"❌ Gaming PC status check exception: {ex.Message}");
-        return Results.Ok(new
-        {
-            isOnline = false,
-            ipAddress = pcIp,
-            lastChecked = DateTime.UtcNow,
-            error = "Failed to check PC status"
-        });
-    }
-})
-.RequireAuthorization()
-.RequireRateLimiting("api");
-
-app.MapPost("/api/gaming/toggle", async (
-    [FromQuery] int action,
-    IConfiguration cfg) =>
-{
-    if (action != 1 && action != 2)
-        return Results.BadRequest(new { error = "Invalid action. Use 1 to wake PC, 2 to sleep PC." });
-
-    var synologyHost = cfg["Gaming:SynologyHost"];
-    var synologyUser = cfg["Gaming:SynologyUser"];
-    var synologyKeyPath = cfg["Gaming:SynologyKeyPath"];
-
-    if (string.IsNullOrEmpty(synologyHost) || string.IsNullOrEmpty(synologyUser))
-        return Results.Problem("Gaming PC control is not configured.");
-
-    try
-    {
-        var actionName = action == 1 ? "wake" : "sleep";
-        Console.WriteLine($"→ Gaming PC {actionName} request received");
-
-        // SSH into Synology and run the wake-steam.sh script
-        var process = new Process
-        {
-            StartInfo = new ProcessStartInfo
-            {
-                FileName = "/usr/bin/ssh",
-                Arguments = string.IsNullOrEmpty(synologyKeyPath)
-                    ? $"{synologyUser}@{synologyHost} \"/usr/local/bin/wake-steam.sh {action}\""
-                    : $"-i {synologyKeyPath} {synologyUser}@{synologyHost} \"/usr/local/bin/wake-steam.sh {action}\"",
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true
-            }
-        };
-
-        process.Start();
-        var output = await process.StandardOutput.ReadToEndAsync();
-        var error = await process.StandardError.ReadToEndAsync();
-        await process.WaitForExitAsync();
-
-        if (process.ExitCode == 0)
-        {
-            Console.WriteLine($"✅ Gaming PC {actionName} successful");
-            Console.WriteLine(output);
-            return Results.Ok(new
-            {
-                success = true,
-                action = actionName,
-                message = action == 1
-                    ? "Gaming PC is waking up and launching Steam..."
-                    : "Gaming PC is shutting down...",
-                output = output
-            });
-        }
-        else
-        {
-            Console.WriteLine($"❌ Gaming PC {actionName} failed: {error}");
-            return Results.Ok(new
-            {
-                success = false,
-                action = actionName,
-                message = "Failed to control gaming PC.",
-                error = error
-            });
-        }
-    }
-    catch (Exception ex)
-{
-    Console.WriteLine($"❌ Gaming PC control exception: {ex.Message}");
-    return Results.Problem("An error occurred while controlling the gaming PC.");
-}
-})
-.RequireAuthorization()
-.RequireRateLimiting("api");
+// ─── 8) Gaming PC Control ── (moved to GamingEndpoints.cs)
 
 // ─── Shared Helper Functions ────────────────────────────────────────────
 
@@ -7375,18 +6465,7 @@ static async Task<(HttpResponseMessage? response, string? fileName, AccountFastD
     return (resp, fileName, acctInfo, null);
 }
 
-static string ResolveLibraryRoot()
-{
-    var envRoot = Environment.GetEnvironmentVariable("LIBRARY_ROOT");
-    if (!string.IsNullOrWhiteSpace(envRoot))
-        return envRoot;
-
-    const string synologyDefault = "/volume1/books/Library";
-    if (Directory.Exists(synologyDefault))
-        return synologyDefault;
-
-    return Path.Combine(AppContext.BaseDirectory, "library");
-}
+// ResolveLibraryRoot moved to LibraryHelpers.cs
 
 static string ResolveReaderKey(string fileName, ISet<string> existingKeys)
 {
@@ -7410,7 +6489,7 @@ static bool TryResolveLibraryFileForReaderKey(
 {
     fileName = string.Empty;
     fullPath = string.Empty;
-    var libraryRoot = ResolveLibraryRoot();
+    var libraryRoot = LibraryHelpers.ResolveLibraryRoot();
     if (!Directory.Exists(libraryRoot))
         return false;
 
@@ -7426,7 +6505,7 @@ static bool TryResolveLibraryFileForReaderKey(
         }
     }
 
-    var jsonOptions = CreateLibraryJsonOptions();
+    var jsonOptions = LibraryHelpers.CreateLibraryJsonOptions();
     foreach (var metaFile in Directory.GetFiles(libraryRoot, "*.meta.json"))
     {
         try
@@ -7457,82 +6536,7 @@ static bool TryResolveLibraryFileForReaderKey(
     return false;
 }
 
-static JsonSerializerOptions CreateLibraryJsonOptions()
-{
-    return new JsonSerializerOptions
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        WriteIndented = true
-    };
-}
-
-static async Task WriteLibraryMetadataAsync(
-    string libraryRoot,
-    string fileName,
-    string md5,
-    string? title,
-    string? authors,
-    string? format,
-    string? fileSize,
-    string? coverUrl,
-    string? source,
-    string? userTag,
-    string? description)
-{
-    var metaPath = Path.Combine(libraryRoot, $"{fileName}.meta.json");
-    var authorList = string.IsNullOrWhiteSpace(authors)
-        ? Array.Empty<string>()
-        : authors.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-    var tags = string.IsNullOrWhiteSpace(userTag)
-        ? Array.Empty<string>()
-        : new[] { userTag };
-
-    var meta = new LibraryBookMeta(
-        title ?? Path.GetFileNameWithoutExtension(fileName),
-        authorList,
-        format,
-        fileSize,
-        fileName,
-        coverUrl,
-        source,
-        md5,
-        DateTime.UtcNow,
-        null,
-        tags,
-        null,
-        Array.Empty<string>(),
-        null,
-        null,
-        null,
-        null,
-        null,
-        description
-    );
-
-    var jsonOptions = CreateLibraryJsonOptions();
-    await File.WriteAllTextAsync(metaPath, JsonSerializer.Serialize(meta, jsonOptions));
-}
-
-static string? ResolveUserLibraryTag(HttpContext context)
-{
-    var name = context.User?.FindFirst(ClaimTypes.Name)?.Value;
-    if (string.IsNullOrWhiteSpace(name))
-        return null;
-
-    var normalized = name.Trim().ToLowerInvariant();
-
-    // Map user names to tags to avoid storing access codes in code/config.
-    if (normalized.Contains("paul"))
-        return "Paul's Books";
-
-    if (normalized.Contains("mom"))
-        return "Mom's Books";
-
-    if (normalized.Contains("dad"))
-        return "Dad's Books";
-
-    return null;
-}
+// CreateLibraryJsonOptions, WriteLibraryMetadataAsync, ResolveUserLibraryTag moved to LibraryHelpers.cs
 
 static string GetKindleTargetTag(string target)
 {
@@ -7553,7 +6557,7 @@ static async Task AddTagsToLibraryBookAsync(string libraryRoot, string fileName,
 
     try
     {
-        var jsonOptions = CreateLibraryJsonOptions();
+        var jsonOptions = LibraryHelpers.CreateLibraryJsonOptions();
         var json = await File.ReadAllTextAsync(metaPath);
         var meta = JsonSerializer.Deserialize<LibraryBookMeta>(json, jsonOptions);
 
@@ -8033,8 +7037,7 @@ public static class ApiResponse
 }
 
 // ─── DTOs ────────────────────────────────────────────────────────────────
-record CodeLoginRequest(string Code);
-record AccessCode(string Code, string Name, bool IsAdmin);
+// Note: CodeLoginRequest and AccessCode moved to Models/AuthModels.cs
 record DropboxEpubFileDto(string Id, string Name, string Path, long Size, DateTime ServerModified);
 record DropboxEpubChaptersResponse(string Title, List<DropboxChapterDto> Chapters);
 record DropboxChapterDto(int Id, string Title, int Level, int WordCount, string? DisplayLabel, bool? IsMainChapter);
@@ -8476,7 +7479,7 @@ record LearnMoreResponse(string Detail);
 record FlashcardRequest(string Term, string? Definition, string? DropboxPath, string? BookTitle, string? Context, List<string>? KnownWords, bool? SaveToLibrary);
 // FlashcardItem is now defined in AnnasArchive.Core.Services.IFlashcardService
 public record FlashcardResult(List<FlashcardItem> Cards);
-record WikiImagesResponse(List<string> Images);
+// WikiImagesResponse moved to MediaEndpoints.cs
 record SummarizeResponse(string Summary);
 record SuggestAuthorsRequest(string BookTitle);
 record SuggestAuthorsResponse(List<AuthorSuggestion> Authors);

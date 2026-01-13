@@ -50,16 +50,23 @@ public class LibraryWatcherService : BackgroundService
         await Task.WhenAll(queueTask, scanTask);
     }
 
-    public override Task StopAsync(CancellationToken cancellationToken)
+    public override async Task StopAsync(CancellationToken cancellationToken)
     {
-        if (_watcher != null)
+        try
         {
-            _watcher.EnableRaisingEvents = false;
-            _watcher.Dispose();
-            _watcher = null;
+            if (_watcher != null)
+            {
+                _watcher.EnableRaisingEvents = false;
+                _watcher.Dispose();
+                _watcher = null;
+            }
+        }
+        catch
+        {
+            // Ignore cleanup errors during shutdown
         }
 
-        return base.StopAsync(cancellationToken);
+        await base.StopAsync(cancellationToken);
     }
 
     private void StartWatcher(string libraryRoot)

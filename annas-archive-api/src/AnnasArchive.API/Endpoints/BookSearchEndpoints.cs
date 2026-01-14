@@ -139,6 +139,10 @@ public static class BookSearchEndpoints
 
             return Results.Ok(new { accountFastInfo = acctInfo });
         }
+        catch (ArgumentException ex)
+        {
+            return Results.BadRequest(new { error = $"Invalid parameter: {ex.ParamName ?? "unknown"}" });
+        }
         catch (Exception ex)
         {
             return Results.Ok(new { accountFastInfo = (AccountFastDownloadInfoDto?)null, error = ex.Message });
@@ -226,6 +230,11 @@ public static class BookSearchEndpoints
             Log.Information("[slum-health] Returning {result.Count} monitors");
             return Results.Json(result);
         }
+        catch (ArgumentException ex)
+        {
+            Log.Information("[slum-health] Invalid argument: {Message}", ex.Message);
+            return Results.BadRequest(new { error = $"Invalid parameter: {ex.ParamName ?? "unknown"}" });
+        }
         catch (Exception ex)
         {
             Log.Information("[slum-health] Error: {ex.Message}");
@@ -266,6 +275,19 @@ public static class BookSearchEndpoints
                     health = ok ? 100 : 0,
                     statusCode,
                     responseMs = sw.ElapsedMilliseconds
+                });
+            }
+            catch (ArgumentException ex)
+            {
+                sw.Stop();
+                results.Add(new
+                {
+                    name = $"Anna's Archive {extension.ToUpperInvariant()}",
+                    extension,
+                    health = (int?)null,
+                    statusCode = (int?)null,
+                    responseMs = sw.ElapsedMilliseconds,
+                    error = $"ArgumentException: {ex.ParamName ?? "unknown"}"
                 });
             }
             catch (Exception ex)

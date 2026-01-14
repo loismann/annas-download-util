@@ -367,6 +367,11 @@ public static class LibraryEndpoints
 
             return Results.Ok(new { success = true, message = "Metadata updated successfully." });
         }
+        catch (ArgumentException ex)
+        {
+            Log.Information("[library] Invalid argument for metadata update: {Message}", ex.Message);
+            return Results.BadRequest(new { error = $"Invalid parameter: {ex.ParamName ?? "unknown"}" });
+        }
         catch (Exception ex)
         {
             Log.Information("[library] Failed to update metadata for {safeFileName}: {ex.Message}");
@@ -415,6 +420,11 @@ public static class LibraryEndpoints
             Log.Information("[library] Updated ratings for {safeFileName}: Goodreads={meta.GoodreadsRating}, Personal={meta.PersonalRating}");
 
             return Results.Ok(new { success = true, message = "Ratings updated successfully." });
+        }
+        catch (ArgumentException ex)
+        {
+            Log.Information("[library] Invalid argument for ratings update: {Message}", ex.Message);
+            return Results.BadRequest(new { error = $"Invalid parameter: {ex.ParamName ?? "unknown"}" });
         }
         catch (Exception ex)
         {

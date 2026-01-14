@@ -246,6 +246,13 @@ public static class DropboxEpubCache
             if (File.Exists(errorPath))
                 File.Delete(errorPath);
         }
+        catch (ArgumentException ex)
+        {
+            var message = $"[dropbox] Invalid argument building EPUB cache for {dropboxPath}: {ex.ParamName}";
+            Log.Information(message);
+            await File.WriteAllTextAsync(errorPath, message);
+            throw;
+        }
         catch (Exception ex)
         {
             var message = $"[dropbox] Failed to build EPUB cache for {dropboxPath}: {ex}";
@@ -325,6 +332,11 @@ public static class DropboxEpubCache
                 : book.Title;
             return (title, chapters);
         }
+        catch (ArgumentException ex)
+        {
+            Log.Information($"[dropbox] Invalid argument parsing EPUB {label}: {ex.ParamName}");
+            throw;
+        }
         catch (Exception ex)
         {
             var fallback = TryBuildChaptersFromZipBytes(sourceBytes, label);
@@ -396,6 +408,10 @@ public static class DropboxEpubCache
 
                 orderedHtml = spine;
             }
+            catch (ArgumentException ex)
+            {
+                Log.Information($"[epub] Invalid argument parsing OPF for tolerant fallback ({label}): {ex.ParamName}");
+            }
             catch (Exception ex)
             {
                 Log.Information($"[epub] Failed to parse OPF for tolerant fallback ({label}): {ex.Message}");
@@ -460,6 +476,11 @@ public static class DropboxEpubCache
             }
 
             return entries.Count > 0;
+        }
+        catch (ArgumentException ex)
+        {
+            Log.Information($"[epub] Invalid argument reading zip entries for tolerant fallback ({label}): {ex.ParamName}");
+            return false;
         }
         catch (Exception ex)
         {
@@ -608,6 +629,11 @@ public static class DropboxEpubCache
 
             zipOutput.Finish();
             return outputStream.ToArray();
+        }
+        catch (ArgumentException ex)
+        {
+            Log.Information($"[epub] Invalid argument for zip repair: {ex.ParamName}");
+            return null;
         }
         catch (Exception ex)
         {

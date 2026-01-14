@@ -64,6 +64,18 @@ public class EbookCoverService : IEbookCoverService
             Log.Information("[EbookCoverService] Format {Format} not implemented", format);
             return ebookStream;
         }
+        catch (ArgumentException ex)
+        {
+            Log.Warning("[EbookCoverService] Invalid argument replacing cover: {ParamName}", ex.ParamName);
+
+            // Reset stream position if possible
+            if (ebookStream.CanSeek)
+            {
+                ebookStream.Position = 0;
+            }
+
+            return ebookStream;
+        }
         catch (Exception ex)
         {
             Log.Warning("[EbookCoverService] Failed to replace cover: {ErrorMessage}", ex.Message);
@@ -90,6 +102,11 @@ public class EbookCoverService : IEbookCoverService
             coverImageData = await _httpClient.GetByteArrayAsync(coverUrl);
             coverExtension = DetermineImageExtension(coverUrl, coverImageData);
             Log.Information("[EbookCoverService] Downloaded cover: {ByteCount} bytes, extension: {Extension}", coverImageData.Length, coverExtension);
+        }
+        catch (ArgumentException ex)
+        {
+            Log.Warning("[EbookCoverService] Invalid argument downloading cover: {ParamName}", ex.ParamName);
+            return ebookStream;
         }
         catch (Exception ex)
         {
@@ -232,6 +249,18 @@ public class EbookCoverService : IEbookCoverService
             outputStream.Position = 0;
             Log.Information("[EbookCoverService] Successfully replaced EPUB cover, output size: {ByteCount} bytes", outputStream.Length);
             return outputStream;
+        }
+        catch (ArgumentException ex)
+        {
+            Log.Warning("[EbookCoverService] Invalid argument processing EPUB: {ParamName}", ex.ParamName);
+
+            // Reset stream position if possible
+            if (ebookStream.CanSeek)
+            {
+                ebookStream.Position = 0;
+            }
+
+            return ebookStream;
         }
         catch (Exception ex)
         {

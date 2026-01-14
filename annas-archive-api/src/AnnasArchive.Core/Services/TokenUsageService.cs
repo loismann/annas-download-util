@@ -79,6 +79,10 @@ public class TokenUsageService : ITokenUsageService
                     CheckAndAutoResetUnsafe(userId, ref data);
                     result[userId] = (data.PromptTokens, data.CompletionTokens, data.PromptTokens + data.CompletionTokens, data.LastResetDate);
                 }
+                catch (ArgumentException ex)
+                {
+                    Log.Warning("Invalid argument loading usage for {FilePath}: {ParamName}", file, ex.ParamName);
+                }
                 catch (Exception ex)
                 {
                     Log.Warning("Failed to load usage for {FilePath}: {ErrorMessage}", file, ex.Message);
@@ -129,6 +133,10 @@ public class TokenUsageService : ITokenUsageService
                         try
                         {
                             File.Delete(file);
+                        }
+                        catch (ArgumentException ex)
+                        {
+                            Log.Warning("Invalid argument deleting {FilePath}: {ParamName}", file, ex.ParamName);
                         }
                         catch (Exception ex)
                         {
@@ -198,6 +206,10 @@ public class TokenUsageService : ITokenUsageService
                 WriteIndented = true
             });
             File.WriteAllText(filePath, json);
+        }
+        catch (ArgumentException ex)
+        {
+            Log.Warning("Invalid argument saving token usage for {UserId}: {ParamName}", userId, ex.ParamName);
         }
         catch (Exception ex)
         {

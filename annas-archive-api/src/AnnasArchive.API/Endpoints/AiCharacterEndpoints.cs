@@ -212,6 +212,11 @@ Create a character relationship network graph based ONLY on information in these
                 return Results.Problem("Failed to parse character graph data.");
             }
         }
+        catch (ArgumentException ex)
+        {
+            Log.Information("❌ Invalid argument for character graph: {Message}", ex.Message);
+            return Results.BadRequest(new { error = $"Invalid parameter: {ex.ParamName ?? "unknown"}" });
+        }
         catch (Exception ex)
         {
             Log.Information("❌ Character graph generation failed: {ex.Message}");
@@ -341,6 +346,11 @@ Update the character graph with any new information. Return the complete updated
             Log.Information("✅ Character graph updated: {updatedGraph.Nodes.Count} characters, {updatedGraph.Edges.Count} relationships");
 
             return Results.Ok(updatedGraph);
+        }
+        catch (ArgumentException ex)
+        {
+            Log.Information("❌ Invalid argument for character graph update: {Message}", ex.Message);
+            return Results.BadRequest(new { error = $"Invalid parameter: {ex.ParamName ?? "unknown"}" });
         }
         catch (Exception ex)
         {

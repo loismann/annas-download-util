@@ -76,6 +76,11 @@ public class GoogleBooksService : IGoogleBooksService
             Log.Information("[GoogleBooks] No description found for {Title} by {Author}", title, author);
             return null;
         }
+        catch (ArgumentException ex)
+        {
+            Log.Warning("[GoogleBooks] Invalid argument: {ParamName}", ex.ParamName);
+            return null;
+        }
         catch (Exception ex)
         {
             Log.Warning("[GoogleBooks] Error: {ErrorMessage}", ex.Message);

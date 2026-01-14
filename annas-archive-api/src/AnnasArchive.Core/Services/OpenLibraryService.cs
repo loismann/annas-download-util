@@ -331,6 +331,11 @@ public class OpenLibraryService : IOpenLibraryService
 
             return null;
         }
+        catch (ArgumentException ex)
+        {
+            Log.Warning("[OpenLibrary] Invalid argument finding work key: {ParamName}", ex.ParamName);
+            return null;
+        }
         catch (Exception ex)
         {
             Log.Warning("[OpenLibrary] Error finding work key: {ErrorMessage}", ex.Message);
@@ -359,6 +364,11 @@ public class OpenLibraryService : IOpenLibraryService
                     return valueProp.GetString();
             }
 
+            return null;
+        }
+        catch (ArgumentException ex)
+        {
+            Log.Warning("[OpenLibrary] Invalid argument getting work description: {ParamName}", ex.ParamName);
             return null;
         }
         catch (Exception ex)
@@ -391,6 +401,11 @@ public class OpenLibraryService : IOpenLibraryService
 
             return null;
         }
+        catch (ArgumentException ex)
+        {
+            Log.Warning("[OpenLibrary] Invalid argument finding edition key: {ParamName}", ex.ParamName);
+            return null;
+        }
         catch (Exception ex)
         {
             Log.Warning("[OpenLibrary] Error finding edition key: {ErrorMessage}", ex.Message);
@@ -419,6 +434,11 @@ public class OpenLibraryService : IOpenLibraryService
                     return valueProp.GetString();
             }
 
+            return null;
+        }
+        catch (ArgumentException ex)
+        {
+            Log.Warning("[OpenLibrary] Invalid argument getting edition description: {ParamName}", ex.ParamName);
             return null;
         }
         catch (Exception ex)
@@ -457,6 +477,11 @@ public class OpenLibraryService : IOpenLibraryService
                 }
             }
 
+            return null;
+        }
+        catch (ArgumentException ex)
+        {
+            Log.Warning("[OpenLibrary] Invalid argument getting first sentence: {ParamName}", ex.ParamName);
             return null;
         }
         catch (Exception ex)

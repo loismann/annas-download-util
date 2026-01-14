@@ -60,6 +60,11 @@ public static class GamingEndpoints
                 lastChecked = DateTime.UtcNow
             });
         }
+        catch (ArgumentException ex)
+        {
+            Log.Information("❌ Invalid argument for gaming status: {Message}", ex.Message);
+            return Results.BadRequest(new { error = $"Invalid parameter: {ex.ParamName ?? "unknown"}" });
+        }
         catch (Exception ex)
         {
             Log.Information("❌ Gaming PC status check exception: {ex.Message}");
@@ -138,6 +143,11 @@ public static class GamingEndpoints
                     error = error
                 });
             }
+        }
+        catch (ArgumentException ex)
+        {
+            Log.Information("❌ Invalid argument for gaming toggle: {Message}", ex.Message);
+            return Results.BadRequest(new { error = $"Invalid parameter: {ex.ParamName ?? "unknown"}" });
         }
         catch (Exception ex)
         {

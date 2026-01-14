@@ -121,6 +121,11 @@ Relevant passage/context: {request.Context ?? "(none)"}";
 
             return Results.Ok(new LearnMoreResponse(detail ?? "No details returned."));
         }
+        catch (ArgumentException ex)
+        {
+            Log.Information("❌ Invalid argument for learn-more: {Message}", ex.Message);
+            return Results.BadRequest(new { error = $"Invalid parameter: {ex.ParamName ?? "unknown"}" });
+        }
         catch (Exception ex)
         {
             Log.Information("❌ OpenAI learn-more failed: {ex.Message}");

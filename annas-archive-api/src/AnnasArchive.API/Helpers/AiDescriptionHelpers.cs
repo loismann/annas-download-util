@@ -58,6 +58,11 @@ Focus on genre, themes, and general premise without revealing plot details or tw
 
             return description;
         }
+        catch (ArgumentException ex)
+        {
+            Log.Warning("[GPT-4] Invalid argument generating description: {ParamName}", ex.ParamName);
+            return "";
+        }
         catch (Exception ex)
         {
             Log.Warning("[GPT-4] Error generating description: {ErrorMessage}", ex.Message);

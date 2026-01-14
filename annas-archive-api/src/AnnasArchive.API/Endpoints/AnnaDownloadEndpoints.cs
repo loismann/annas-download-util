@@ -450,6 +450,11 @@ public static class AnnaDownloadEndpoints
                     accountFastInfo = acctInfo
                 });
             }
+            catch (ArgumentException ex)
+            {
+                Log.Information("❌ Invalid argument for send-to-boox: {Message}", ex.Message);
+                return Results.BadRequest(new { error = $"Invalid parameter: {ex.ParamName ?? "unknown"}" });
+            }
             catch (Exception ex)
             {
                 Log.Warning(" Dropbox upload failed: {ex.Message}");
@@ -588,6 +593,10 @@ public static class AnnaDownloadEndpoints
                 {
                     Log.Information("⚠️ Dropbox backup failed (non-critical): {ex}");
                 }
+                catch (ArgumentException ex)
+                {
+                    Log.Information("⚠️ Dropbox backup failed (non-critical, ArgumentException): {Message}", ex.Message);
+                }
                 catch (Exception ex)
                 {
                     Log.Information("⚠️ Dropbox backup failed (non-critical): {ex.Message}");
@@ -615,6 +624,11 @@ public static class AnnaDownloadEndpoints
                     dropboxPath     = dropboxPathResult,
                     accountFastInfo = counterInfo
                 });
+            }
+            catch (ArgumentException ex)
+            {
+                Log.Information("❌ Invalid argument for send-to-kindle: {Message}", ex.Message);
+                return Results.BadRequest(new { error = $"Invalid parameter: {ex.ParamName ?? "unknown"}" });
             }
             catch (Exception ex)
             {

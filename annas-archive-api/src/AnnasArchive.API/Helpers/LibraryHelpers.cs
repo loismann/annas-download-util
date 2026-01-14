@@ -231,6 +231,10 @@ public static class LibraryHelpers
                 Log.Information("[AddTags] No new tags to add for {fileName}");
             }
         }
+        catch (ArgumentException ex)
+        {
+            Log.Information("[AddTags] Invalid argument adding tags to {fileName}: {ex.ParamName}");
+        }
         catch (Exception ex)
         {
             Log.Information("[AddTags] Error adding tags to {fileName}: {ex.Message}");

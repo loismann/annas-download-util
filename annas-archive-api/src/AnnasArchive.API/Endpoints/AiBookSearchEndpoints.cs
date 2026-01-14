@@ -188,6 +188,11 @@ Do NOT include any markdown formatting, explanations, or text outside the JSON a
             Log.Information("✅ Author suggestions for '{request.BookTitle}': {authors.Count} authors found");
             return Results.Ok(new SuggestAuthorsResponse(authors));
         }
+        catch (ArgumentException ex)
+        {
+            Log.Information("❌ Invalid argument for suggest-authors: {Message}", ex.Message);
+            return Results.BadRequest(new { error = $"Invalid parameter: {ex.ParamName ?? "unknown"}" });
+        }
         catch (Exception ex)
         {
             Log.Information("❌ OpenAI suggest-authors failed: {ex.Message}");
@@ -529,6 +534,11 @@ Rules:
 
             return Results.Ok(new RelatedBooksResponse(sameSeries, otherSeries, seriesSummary));
         }
+        catch (ArgumentException ex)
+        {
+            Log.Information("❌ Invalid argument for related-books: {Message}", ex.Message);
+            return Results.BadRequest(new { error = $"Invalid parameter: {ex.ParamName ?? "unknown"}" });
+        }
         catch (Exception ex)
         {
             Log.Information("❌ OpenAI related-books failed: {ex.Message}");
@@ -852,6 +862,11 @@ Rules:
 
             return Results.Ok(new AiBookSearchResponse(summary, books));
         }
+        catch (ArgumentException ex)
+        {
+            Log.Information("❌ Invalid argument for book-search: {Message}", ex.Message);
+            return Results.BadRequest(new { error = $"Invalid parameter: {ex.ParamName ?? "unknown"}" });
+        }
         catch (Exception ex)
         {
             Log.Information("❌ OpenAI book-search failed: {ex.Message}");
@@ -1003,6 +1018,11 @@ Rules:
 
             Log.Information("Matched {MatchedCount} of {TotalCount} books", matches.Count(m => m.Status == "matched"), request.Books.Count);
             return Results.Ok(new MatchSeriesBooksResponse(matches));
+        }
+        catch (ArgumentException ex)
+        {
+            Log.Information("❌ Invalid argument for match-series-books: {Message}", ex.Message);
+            return Results.BadRequest(new { error = $"Invalid parameter: {ex.ParamName ?? "unknown"}" });
         }
         catch (Exception ex)
         {

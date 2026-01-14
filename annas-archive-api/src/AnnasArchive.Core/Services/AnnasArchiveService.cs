@@ -476,6 +476,11 @@ public class AnnaArchiveService
 
             return null;
         }
+        catch (ArgumentException ex)
+        {
+            Console.Error.WriteLine($"Invalid argument scraping download counter: {ex.ParamName}");
+            return null;
+        }
         catch (Exception ex)
         {
             // Log the error but don't crash

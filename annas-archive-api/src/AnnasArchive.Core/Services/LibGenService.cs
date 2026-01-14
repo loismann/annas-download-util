@@ -124,6 +124,11 @@ public class LibGenService
             Log.Information("[LibGen Fiction] Returning {BookCount} books", books.Count);
             return books;
         }
+        catch (ArgumentException ex)
+        {
+            Log.Warning("[LibGen Fiction] Invalid argument: {ParamName}", ex.ParamName);
+            return Enumerable.Empty<BookDto>();
+        }
         catch (Exception ex)
         {
             Log.Warning("[LibGen Fiction] ERROR: {ErrorMessage}", ex.Message);
@@ -195,6 +200,11 @@ public class LibGenService
 
             Log.Information("[LibGen General] Returning {BookCount} books", books.Count);
             return books;
+        }
+        catch (ArgumentException ex)
+        {
+            Log.Warning("[LibGen General] Invalid argument: {ParamName}", ex.ParamName);
+            return Enumerable.Empty<BookDto>();
         }
         catch (Exception ex)
         {
@@ -509,6 +519,10 @@ public class LibGenService
             catch (HttpRequestException ex)
             {
                 Log.Warning("[LibGen HTTP] HTTP error for {Domain}: {ErrorMessage}", domain, ex.Message);
+            }
+            catch (ArgumentException ex)
+            {
+                Log.Warning("[LibGen HTTP] Invalid argument for {Domain}: {ParamName}", domain, ex.ParamName);
             }
             catch (Exception ex)
             {

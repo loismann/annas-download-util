@@ -106,6 +106,10 @@ public class DownloadTrackingService : IDownloadTrackingService
                     Log.Information("[DownloadTracking] Initialized tracking file at {FilePath}", _trackingFilePath);
                 }
             }
+            catch (ArgumentException ex)
+            {
+                Log.Warning("Invalid argument initializing download tracking: {ParamName}", ex.ParamName);
+            }
             catch (Exception ex)
             {
                 Log.Warning("Failed to initialize download tracking: {ErrorMessage}", ex.Message);
@@ -133,6 +137,14 @@ public class DownloadTrackingService : IDownloadTrackingService
                 Downloads = new List<DownloadRecord>()
             };
         }
+        catch (ArgumentException ex)
+        {
+            Log.Warning("Invalid argument loading download tracking data: {ParamName}", ex.ParamName);
+            return new TrackingData
+            {
+                Downloads = new List<DownloadRecord>()
+            };
+        }
         catch (Exception ex)
         {
             Log.Warning("Failed to load download tracking data: {ErrorMessage}", ex.Message);
@@ -153,6 +165,10 @@ public class DownloadTrackingService : IDownloadTrackingService
                 WriteIndented = true
             });
             File.WriteAllText(_trackingFilePath, json);
+        }
+        catch (ArgumentException ex)
+        {
+            Log.Warning("Invalid argument saving download tracking data: {ParamName}", ex.ParamName);
         }
         catch (Exception ex)
         {

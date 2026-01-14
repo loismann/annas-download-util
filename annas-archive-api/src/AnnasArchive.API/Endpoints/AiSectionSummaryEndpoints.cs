@@ -471,6 +471,17 @@ Return format (JSON only, no explanation):
 
             Log.Information("✅ Detected {chunks.Count} sections for chapter {chapterId}");
         }
+        catch (ArgumentException ex)
+        {
+            Log.Information("❌ Invalid argument for chunk boundary detection: {Message}", ex.Message);
+            await ServerSentEventsHelper.SendEventAsync(context.Response, new
+            {
+                stage = "error",
+                stepNumber = 0,
+                totalSteps = 1,
+                message = $"Invalid parameter: {ex.ParamName ?? "unknown"}"
+            });
+        }
         catch (Exception ex)
         {
             Log.Information("❌ Chunk boundary detection failed: {ex.Message}");
@@ -722,6 +733,11 @@ Text to summarize:
             Log.Information("💾 Section summary cached successfully");
 
             return Results.Ok(result);
+        }
+        catch (ArgumentException ex)
+        {
+            Log.Information("❌ Invalid argument for section summary: {Message}", ex.Message);
+            return Results.BadRequest(new { error = $"Invalid parameter: {ex.ParamName ?? "unknown"}" });
         }
         catch (Exception ex)
         {

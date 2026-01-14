@@ -178,6 +178,11 @@ Return ONLY this JSON array:
                 .GroupBy(p => p.Id)
                 .ToDictionary(g => g.Key, g => g.First());
         }
+        catch (ArgumentException ex)
+        {
+            Log.Information($"Invalid argument parsing chapter labels JSON: {ex.ParamName}");
+            return null;
+        }
         catch (Exception ex)
         {
             Log.Information($"Failed to parse chapter labels JSON: {ex.Message}");

@@ -206,6 +206,11 @@ Then add a 'Definitions:' section. BE EXTREMELY THOROUGH with definitions - incl
 
             return Results.Ok(new SummarizeResponse(summary ?? "No summary returned."));
         }
+        catch (ArgumentException ex)
+        {
+            Log.Information("❌ Invalid argument for summarize: {Message}", ex.Message);
+            return Results.BadRequest(new { error = $"Invalid parameter: {ex.ParamName ?? "unknown"}" });
+        }
         catch (Exception ex)
         {
             Log.Information("❌ OpenAI summarize failed: {ex.Message}");

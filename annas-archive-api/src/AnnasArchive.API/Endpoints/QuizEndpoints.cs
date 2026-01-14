@@ -48,6 +48,10 @@ public static class QuizEndpoints
                 var saved = await storage.SaveSubjectAsync(subjectId, subject, token);
                 return Results.Ok(saved);
             }
+            catch (ArgumentException ex)
+            {
+                return Results.BadRequest(new { error = $"Invalid parameter: {ex.ParamName ?? "unknown"}" });
+            }
             catch (Exception ex)
             {
                 return Results.BadRequest(new { error = ex.Message });

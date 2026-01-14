@@ -101,6 +101,10 @@ static class LibraryEpubCache
         {
             await BuildIndexOnlyAsync(filePath, readerKey, cacheDir);
         }
+        catch (ArgumentException ex)
+        {
+            Log.Information($"[library] Invalid argument for quick index build {filePath}: {ex.ParamName}");
+        }
         catch (Exception ex)
         {
             Log.Information($"[library] Quick index build failed for {filePath}: {ex.Message}");
@@ -249,6 +253,13 @@ static class LibraryEpubCache
             if (File.Exists(errorPath))
                 File.Delete(errorPath);
         }
+        catch (ArgumentException ex)
+        {
+            var message = $"[library] Invalid argument building EPUB cache for {filePath}: {ex.ParamName}";
+            Log.Information(message);
+            await File.WriteAllTextAsync(errorPath, message);
+            throw;
+        }
         catch (Exception ex)
         {
             var message = $"[library] Failed to build EPUB cache for {filePath}: {ex}";
@@ -329,6 +340,11 @@ static class LibraryEpubCache
                 : book.Title;
             return (title, chapters);
         }
+        catch (ArgumentException ex)
+        {
+            Log.Information($"[library] Invalid argument parsing EPUB {label}: {ex.ParamName}");
+            throw;
+        }
         catch (Exception ex)
         {
             var fallback = TryBuildChaptersFromZipBytes(sourceBytes, label);
@@ -400,6 +416,10 @@ static class LibraryEpubCache
 
                 orderedHtml = spine;
             }
+            catch (ArgumentException ex)
+            {
+                Log.Information($"[epub] Invalid argument parsing OPF for tolerant fallback ({label}): {ex.ParamName}");
+            }
             catch (Exception ex)
             {
                 Log.Information($"[epub] Failed to parse OPF for tolerant fallback ({label}): {ex.Message}");
@@ -464,6 +484,11 @@ static class LibraryEpubCache
             }
 
             return entries.Count > 0;
+        }
+        catch (ArgumentException ex)
+        {
+            Log.Information($"[epub] Invalid argument reading zip entries for tolerant fallback ({label}): {ex.ParamName}");
+            return false;
         }
         catch (Exception ex)
         {
@@ -612,6 +637,11 @@ static class LibraryEpubCache
 
             zipOutput.Finish();
             return outputStream.ToArray();
+        }
+        catch (ArgumentException ex)
+        {
+            Log.Information($"[epub] Invalid argument for zip repair: {ex.ParamName}");
+            return null;
         }
         catch (Exception ex)
         {
@@ -845,6 +875,11 @@ static class LibraryEpubCache
             var (_, flatChapters) = await GetFlatChaptersAsync(ms.ToArray(), $"library:{filePath}", filePath);
             var target = flatChapters.FirstOrDefault(ch => ch.Id == chapterId);
             return target?.PlainText;
+        }
+        catch (ArgumentException ex)
+        {
+            Log.Information($"[library] Invalid argument reading chapter {chapterId} from {filePath}: {ex.ParamName}");
+            return null;
         }
         catch (Exception ex)
         {

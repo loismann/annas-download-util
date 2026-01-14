@@ -219,7 +219,7 @@ Create a character relationship network graph based ONLY on information in these
         }
     }
 
-    private static IResult HandleGetGraph([FromQuery] string dropboxPath)
+    private static IResult HandleGetGraph([FromQuery] string? dropboxPath)
     {
         if (string.IsNullOrWhiteSpace(dropboxPath))
             return Results.BadRequest(new { error = "Query parameter 'dropboxPath' is required." });

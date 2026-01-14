@@ -50,7 +50,7 @@ public static class BookSearchEndpoints
     }
 
     private static async Task<IResult> HandleBookSearch(
-        [FromQuery] string name,
+        [FromQuery] string? name,
         AnnaArchiveService svc,
         IValidationService validation,
         IConfiguration cfg,
@@ -75,7 +75,7 @@ public static class BookSearchEndpoints
     }
 
     private static async Task<IResult> HandleGoogleBooksDescription(
-        [FromQuery] string title,
+        [FromQuery] string? title,
         [FromQuery] string? author,
         IGoogleBooksService googleBooks)
     {
@@ -93,7 +93,7 @@ public static class BookSearchEndpoints
     }
 
     private static async Task<IResult> HandleOpenLibraryDescription(
-        [FromQuery] string title,
+        [FromQuery] string? title,
         [FromQuery] string? author,
         IOpenLibraryService openLibrary)
     {
@@ -111,7 +111,7 @@ public static class BookSearchEndpoints
     }
 
     private static async Task<IResult> HandleCoverLookup(
-        [FromQuery] string title,
+        [FromQuery] string? title,
         [FromQuery] string? author,
         IOpenLibraryService openLibrary,
         IGoogleBooksService googleBooks)

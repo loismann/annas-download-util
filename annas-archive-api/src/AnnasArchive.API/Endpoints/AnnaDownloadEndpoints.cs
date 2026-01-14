@@ -56,7 +56,7 @@ public static class AnnaDownloadEndpoints
 
     private static async Task<IResult> HandleGptDescription(
         HttpContext context,
-        [FromQuery] string title,
+        [FromQuery] string? title,
         [FromQuery] string? author,
         IHttpClientFactory httpFactory,
         IConfiguration cfg,
@@ -470,7 +470,7 @@ public static class AnnaDownloadEndpoints
         HttpContext context,
         [FromRoute] string md5,
         [FromQuery] string? title,
-        [FromQuery] string target,
+        [FromQuery] string? target,
         [FromQuery] string? coverUrl,
         AnnaArchiveService anna,
         IEmailService emailService,

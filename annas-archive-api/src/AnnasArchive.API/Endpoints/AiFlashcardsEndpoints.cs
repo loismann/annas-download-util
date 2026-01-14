@@ -41,7 +41,7 @@ public static class AiFlashcardsEndpoints
         return app;
     }
 
-    private static IResult HandleGetFlashcards([FromQuery] string path, IFlashcardService flashcardService)
+    private static IResult HandleGetFlashcards([FromQuery] string? path, IFlashcardService flashcardService)
     {
         if (string.IsNullOrWhiteSpace(path))
             return Results.BadRequest(new { error = "Query parameter 'path' is required." });
@@ -239,6 +239,11 @@ Return JSON array of flashcards for individual terms found in the passage.";
             }
             return Results.Ok(new FlashcardResult(cardsParsed));
         }
+        catch (ArgumentException ex)
+        {
+            Log.Information("❌ Invalid argument for flashcard creation: {Message}", ex.Message);
+            return Results.BadRequest(new { error = $"Invalid parameter: {ex.ParamName ?? "unknown"}" });
+        }
         catch (Exception ex)
         {
             Log.Information("❌ Flashcard create failed: {ex.Message}");
@@ -246,7 +251,7 @@ Return JSON array of flashcards for individual terms found in the passage.";
         }
     }
 
-    private static IResult HandleClearFlashcards([FromQuery] string path, IFlashcardService flashcardService)
+    private static IResult HandleClearFlashcards([FromQuery] string? path, IFlashcardService flashcardService)
     {
         if (string.IsNullOrWhiteSpace(path))
             return Results.BadRequest(new { error = "Query parameter 'path' is required." });
@@ -258,13 +263,19 @@ Return JSON array of flashcards for individual terms found in the passage.";
                 System.IO.File.Delete(filePath);
             return Results.Ok(new { cleared = true });
         }
-        catch
+        catch (ArgumentException ex)
         {
+            Log.Information("❌ Invalid argument for clearing flashcards: {Message}", ex.Message);
+            return Results.BadRequest(new { error = $"Invalid parameter: {ex.ParamName ?? "unknown"}" });
+        }
+        catch (Exception ex)
+        {
+            Log.Information("❌ Failed to clear flashcards: {Message}", ex.Message);
             return ApiResponse.InternalError("Failed to clear flashcards.");
         }
     }
 
-    private static IResult HandleDeleteFlashcard([FromQuery] string path, [FromQuery] string term, IFlashcardService flashcardService)
+    private static IResult HandleDeleteFlashcard([FromQuery] string? path, [FromQuery] string? term, IFlashcardService flashcardService)
     {
         if (string.IsNullOrWhiteSpace(path))
             return Results.BadRequest(new { error = "Query parameter 'path' is required." });
@@ -278,8 +289,14 @@ Return JSON array of flashcards for individual terms found in the passage.";
                 return Results.Ok(new { deleted = true });
             return Results.NotFound(new { error = "Flashcard not found." });
         }
-        catch
+        catch (ArgumentException ex)
         {
+            Log.Information("❌ Invalid argument for deleting flashcard: {Message}", ex.Message);
+            return Results.BadRequest(new { error = $"Invalid parameter: {ex.ParamName ?? "unknown"}" });
+        }
+        catch (Exception ex)
+        {
+            Log.Information("❌ Failed to delete flashcard: {Message}", ex.Message);
             return ApiResponse.InternalError("Failed to delete flashcard.");
         }
     }

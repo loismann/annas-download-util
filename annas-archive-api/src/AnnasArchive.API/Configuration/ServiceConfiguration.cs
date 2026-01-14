@@ -132,11 +132,11 @@ public static class ServiceConfiguration
     }
 
     /// <summary>
-    /// Configures all HTTP clients for external services.
+    /// Configures all HTTP clients for external services with resilience policies.
     /// </summary>
     public static IServiceCollection AddHttpClients(this IServiceCollection services, IConfiguration configuration)
     {
-        // Anna's Archive HTTP client
+        // Anna's Archive HTTP client (scraping with domain fallback)
         services.AddHttpClient<AnnaArchiveService>(c =>
         {
             c.BaseAddress = new Uri("https://annas-archive.org");
@@ -146,9 +146,10 @@ public static class ServiceConfiguration
             c.DefaultRequestHeaders.Add("Accept",
                 "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
             c.DefaultRequestHeaders.Add("Accept-Language", "en-US,en;q=0.9");
-        });
+        })
+        .AddScrapingResilience("AnnasArchive");
 
-        // LibGen HTTP client
+        // LibGen HTTP client (scraping with domain fallback)
         services.AddHttpClient<LibGenService>(c =>
         {
             c.BaseAddress = new Uri("https://libgen.rs");
@@ -159,9 +160,10 @@ public static class ServiceConfiguration
             c.DefaultRequestHeaders.Add("Accept",
                 "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
             c.DefaultRequestHeaders.Add("Accept-Language", "en-US,en;q=0.9");
-        });
+        })
+        .AddScrapingResilience("LibGen");
 
-        // OpenAI HTTP client
+        // OpenAI HTTP client (AI service with longer timeouts)
         services.AddHttpClient("OpenAI", (serviceProvider, client) =>
         {
             var cfg = serviceProvider.GetRequiredService<IConfiguration>();
@@ -170,26 +172,30 @@ public static class ServiceConfiguration
             client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
             client.DefaultRequestHeaders.Add("OpenAI-Beta", "responses=v1");
             client.Timeout = TimeSpan.FromMinutes(5);
-        });
+        })
+        .AddAiResilience("OpenAI");
 
-        // OpenLibrary HTTP Client
+        // OpenLibrary HTTP Client (external API)
         services.AddHttpClient("OpenLibrary", client =>
         {
             client.BaseAddress = new Uri("https://openlibrary.org/");
             client.Timeout = TimeSpan.FromSeconds(30);
             client.DefaultRequestHeaders.Add("User-Agent", "AnnaArchive/1.0");
-        });
+        })
+        .AddStandardResilience("OpenLibrary");
 
-        // Google Books HTTP Client
+        // Google Books HTTP Client (external API)
         services.AddHttpClient("GoogleBooks", client =>
         {
             client.BaseAddress = new Uri("https://www.googleapis.com/");
             client.Timeout = TimeSpan.FromSeconds(30);
             client.DefaultRequestHeaders.Add("User-Agent", "AnnaArchive/1.0");
-        });
+        })
+        .AddStandardResilience("GoogleBooks");
 
-        // Ebook Cover Service (with HTTP client)
-        services.AddHttpClient<IEbookCoverService, EbookCoverService>();
+        // Ebook Cover Service (with HTTP client and standard resilience)
+        services.AddHttpClient<IEbookCoverService, EbookCoverService>()
+            .AddStandardResilience("EbookCover");
 
         return services;
     }

@@ -27,6 +27,7 @@ if (app.Environment.IsDevelopment())
 
 // ─── Middleware ──────────────────────────────────────────────────────────
 app.UseCorrelationId();
+app.UseGlobalExceptionHandler();
 app.UseAppCors();
 app.UseSecurityHeaders();
 app.UseRequestBodySizeLimit();

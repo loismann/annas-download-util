@@ -100,7 +100,7 @@ public static class LibGenEndpoints
     }
 
     private static async Task<IResult> HandleLibGenSearch(
-        [FromQuery] string name,
+        [FromQuery] string? name,
         LibGenService svc,
         IValidationService validation,
         IConfiguration cfg,

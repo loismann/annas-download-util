@@ -21,7 +21,7 @@ public static class MediaEndpoints
         return app;
     }
 
-    private static async Task<IResult> HandleWikiImages([FromQuery] string term)
+    private static async Task<IResult> HandleWikiImages([FromQuery] string? term)
     {
         if (string.IsNullOrWhiteSpace(term))
             return Results.BadRequest(new { error = "Query parameter 'term' is required." });

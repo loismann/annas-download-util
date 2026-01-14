@@ -410,7 +410,7 @@ Then add a 'Definitions:' section. BE EXTREMELY THOROUGH with definitions - incl
     }
 
     private static IResult HandleGetChapterSummary(
-        [FromQuery] string dropboxPath,
+        [FromQuery] string? dropboxPath,
         [FromQuery] int chapterId)
     {
         if (string.IsNullOrWhiteSpace(dropboxPath) || chapterId < 0)
@@ -424,7 +424,7 @@ Then add a 'Definitions:' section. BE EXTREMELY THOROUGH with definitions - incl
     }
 
     private static IResult HandleDeleteChapterSummary(
-        [FromQuery] string dropboxPath,
+        [FromQuery] string? dropboxPath,
         [FromQuery] int chapterId)
     {
         if (string.IsNullOrWhiteSpace(dropboxPath) || chapterId < 0)
@@ -567,7 +567,7 @@ Chapter summary:
     }
 
     private static IResult HandleGetDummySummary(
-        [FromQuery] string dropboxPath,
+        [FromQuery] string? dropboxPath,
         [FromQuery] int chapterId)
     {
         if (string.IsNullOrWhiteSpace(dropboxPath) || chapterId < 0)
@@ -580,7 +580,7 @@ Chapter summary:
         return Results.Ok(cached);
     }
 
-    private static IResult HandleGetBookSummaries([FromQuery] string dropboxPath)
+    private static IResult HandleGetBookSummaries([FromQuery] string? dropboxPath)
     {
         if (string.IsNullOrWhiteSpace(dropboxPath))
             return Results.BadRequest(new { error = "dropboxPath is required." });

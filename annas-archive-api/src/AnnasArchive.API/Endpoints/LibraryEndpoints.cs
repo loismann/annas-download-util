@@ -247,7 +247,7 @@ public static class LibraryEndpoints
     }
 
     private static async Task<IResult> HandleGetCoverCandidates(
-        [FromQuery] string title,
+        [FromQuery] string? title,
         [FromQuery] string? author,
         IOpenLibraryService openLibrarySvc,
         IGoogleBooksService googleBooksSvc)
@@ -264,8 +264,8 @@ public static class LibraryEndpoints
     }
 
     private static async Task<IResult> HandleSendToKindle(
-        [FromQuery] string fileName,
-        [FromQuery] string target,
+        [FromQuery] string? fileName,
+        [FromQuery] string? target,
         [FromQuery] string? title,
         [FromQuery] bool toDropbox,
         IEmailService emailService,
@@ -461,7 +461,7 @@ public static class LibraryEndpoints
     }
 
     private static async Task<IResult> HandleToggleReaderByQuery(
-        [FromQuery] string fileName,
+        [FromQuery] string? fileName,
         [FromBody] LibraryBookReaderUpdate update)
     {
         var safeFileName = Path.GetFileName(fileName);
@@ -865,7 +865,7 @@ public static class LibraryEndpoints
     }
 
     private static async Task<IResult> HandleGetReaderChapters(
-        [FromQuery] string fileName,
+        [FromQuery] string? fileName,
         IHttpClientFactory httpFactory,
         IConfiguration cfg,
         IOpenAiModelHelper modelHelper,
@@ -907,7 +907,7 @@ public static class LibraryEndpoints
     }
 
     private static async Task<IResult> HandleGetReaderChapter(
-        [FromQuery] string fileName,
+        [FromQuery] string? fileName,
         [FromQuery] int chapterId,
         HttpContext context)
     {
@@ -960,7 +960,7 @@ public static class LibraryEndpoints
         return Results.Ok(response);
     }
 
-    private static async Task<IResult> HandleGetReaderStatus([FromQuery] string fileName)
+    private static async Task<IResult> HandleGetReaderStatus([FromQuery] string? fileName)
     {
         if (string.IsNullOrWhiteSpace(fileName))
             return Results.BadRequest(new { error = "fileName is required." });
@@ -1011,7 +1011,7 @@ public static class LibraryEndpoints
     }
 
     private static async Task<IResult> HandleReaderSearch(
-        [FromQuery] string fileName,
+        [FromQuery] string? fileName,
         [FromQuery] string? query,
         [FromQuery] string? q)
     {

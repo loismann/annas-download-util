@@ -66,6 +66,11 @@ public static class DropboxReaderEndpoints
             var epubs = await DropboxEpubCache.ListDropboxEpubsAsync(dropbox, folderPath);
             return Results.Ok(epubs);
         }
+        catch (ArgumentException ex)
+        {
+            Log.Information("❌ Invalid argument for listing EPUBs: {Message}", ex.Message);
+            return Results.BadRequest(new { error = $"Invalid parameter: {ex.ParamName ?? "unknown"}" });
+        }
         catch (Exception ex)
         {
             Log.Information("❌ Failed to list Dropbox EPUBs: {ex.Message}");
@@ -74,7 +79,7 @@ public static class DropboxReaderEndpoints
     }
 
     private static async Task<IResult> HandleGetChapters(
-        [FromQuery] string path,
+        [FromQuery] string? path,
         IValidationService validation,
         DropboxClient dropbox,
         IHttpClientFactory httpFactory,
@@ -121,6 +126,11 @@ public static class DropboxReaderEndpoints
             Log.Information("❌ Dropbox download failed: {ex.ErrorResponse}");
             return ApiResponse.InternalError("Unable to download EPUB from Dropbox.");
         }
+        catch (ArgumentException ex)
+        {
+            Log.Information("❌ Invalid argument for EPUB loading: {Message}", ex.Message);
+            return Results.BadRequest(new { error = $"Invalid parameter: {ex.ParamName ?? "unknown"}" });
+        }
         catch (Exception ex)
         {
             Log.Information("❌ Failed to load EPUB: {ex.Message}");
@@ -129,8 +139,8 @@ public static class DropboxReaderEndpoints
     }
 
     private static async Task<IResult> HandleGetChapter(
-        [FromQuery] string path,
-        [FromQuery] int chapterId,
+        [FromQuery] string? path,
+        [FromQuery] int? chapterId,
         IValidationService validation,
         DropboxClient dropbox)
     {
@@ -139,13 +149,13 @@ public static class DropboxReaderEndpoints
                 error = "Invalid Dropbox path. Must start with '/', end with '.epub', and be less than 500 characters."
             });
 
-        if (!validation.IsValidChapterId(chapterId))
-            return Results.BadRequest(new { error = "Chapter ID must be between 0 and 9999." });
+        if (!chapterId.HasValue || !validation.IsValidChapterId(chapterId.Value))
+            return Results.BadRequest(new { error = "Chapter ID is required and must be between 0 and 9999." });
 
         try
         {
             var (index, cacheDir) = await DropboxEpubCache.GetOrBuildChapterIndexAsync(dropbox, path);
-            var chapter = index.Chapters.FirstOrDefault(c => c.Id == chapterId);
+            var chapter = index.Chapters.FirstOrDefault(c => c.Id == chapterId.Value);
 
             if (chapter is null || string.IsNullOrWhiteSpace(chapter.FileName))
                 return ApiResponse.NotFound("Chapter not found.");
@@ -172,6 +182,11 @@ public static class DropboxReaderEndpoints
             Log.Information("❌ Dropbox download failed: {ex.ErrorResponse}");
             return ApiResponse.InternalError("Unable to download EPUB from Dropbox.");
         }
+        catch (ArgumentException ex)
+        {
+            Log.Information("❌ Invalid argument for chapter loading: {Message}", ex.Message);
+            return Results.BadRequest(new { error = $"Invalid parameter: {ex.ParamName ?? "unknown"}" });
+        }
         catch (Exception ex)
         {
             Log.Information("❌ Failed to load EPUB: {ex.Message}");
@@ -180,7 +195,7 @@ public static class DropboxReaderEndpoints
     }
 
     private static async Task<IResult> HandleGetStatus(
-        [FromQuery] string path,
+        [FromQuery] string? path,
         DropboxClient dropbox)
     {
         if (string.IsNullOrWhiteSpace(path))
@@ -194,6 +209,11 @@ public static class DropboxReaderEndpoints
             var status = await DropboxEpubCache.GetCacheStatusAsync(dropbox, path);
             return Results.Ok(status);
         }
+        catch (ArgumentException ex)
+        {
+            Log.Information("❌ Invalid argument for cache status: {Message}", ex.Message);
+            return Results.BadRequest(new { error = $"Invalid parameter: {ex.ParamName ?? "unknown"}" });
+        }
         catch (Exception ex)
         {
             Log.Information("❌ Failed to read cache status: {ex.Message}");
@@ -202,7 +222,7 @@ public static class DropboxReaderEndpoints
     }
 
     private static async Task<IResult> HandleStartIndexing(
-        [FromQuery] string path,
+        [FromQuery] string? path,
         DropboxClient dropbox)
     {
         if (string.IsNullOrWhiteSpace(path))
@@ -218,6 +238,11 @@ public static class DropboxReaderEndpoints
             await DropboxEpubCache.EnsureCacheBuildAsync(dropbox, path, cacheDir);
             return Results.Ok(new { started = true });
         }
+        catch (ArgumentException ex)
+        {
+            Log.Information("❌ Invalid argument for indexing: {Message}", ex.Message);
+            return Results.BadRequest(new { error = $"Invalid parameter: {ex.ParamName ?? "unknown"}" });
+        }
         catch (Exception ex)
         {
             Log.Information("❌ Failed to start indexing: {ex.Message}");
@@ -225,7 +250,7 @@ public static class DropboxReaderEndpoints
         }
     }
 
-    private static IResult HandleDeleteIndex([FromQuery] string path)
+    private static IResult HandleDeleteIndex([FromQuery] string? path)
     {
         if (string.IsNullOrWhiteSpace(path))
             return Results.BadRequest(new { error = "Query parameter 'path' is required." });
@@ -244,6 +269,11 @@ public static class DropboxReaderEndpoints
             Log.Information("🗑️ Cache deletion: EPUB={epubRemoved}, AI={aiRemoved}");
             return Results.Ok(new { epubCacheRemoved = epubRemoved, aiCacheRemoved = aiRemoved });
         }
+        catch (ArgumentException ex)
+        {
+            Log.Information("❌ Invalid argument for cache deletion: {Message}", ex.Message);
+            return Results.BadRequest(new { error = $"Invalid parameter: {ex.ParamName ?? "unknown"}" });
+        }
         catch (Exception ex)
         {
             Log.Information("❌ Failed to delete cache: {ex.Message}");
@@ -252,8 +282,8 @@ public static class DropboxReaderEndpoints
     }
 
     private static async Task<IResult> HandleSearch(
-        [FromQuery] string path,
-        [FromQuery] string query,
+        [FromQuery] string? path,
+        [FromQuery] string? query,
         DropboxClient dropbox)
     {
         if (string.IsNullOrWhiteSpace(path))
@@ -269,6 +299,11 @@ public static class DropboxReaderEndpoints
         {
             var matches = await DropboxEpubCache.SearchAsync(dropbox, path, query);
             return Results.Ok(matches);
+        }
+        catch (ArgumentException ex)
+        {
+            Log.Information("❌ Invalid argument for search: {Message}", ex.Message);
+            return Results.BadRequest(new { error = $"Invalid parameter: {ex.ParamName ?? "unknown"}" });
         }
         catch (Exception ex)
         {

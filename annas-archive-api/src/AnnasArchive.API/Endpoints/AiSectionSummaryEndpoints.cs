@@ -39,7 +39,7 @@ public static class AiSectionSummaryEndpoints
 
     private static async Task HandleChunkBoundaries(
         HttpContext context,
-        [FromQuery] string dropboxPath,
+        [FromQuery] string? dropboxPath,
         [FromQuery] int chapterId,
         DropboxClient dropbox,
         IHttpClientFactory httpFactory,
@@ -489,7 +489,7 @@ Return format (JSON only, no explanation):
     }
 
     private static IResult HandleGetSectionSummary(
-        [FromQuery] string dropboxPath,
+        [FromQuery] string? dropboxPath,
         [FromQuery] int chapterId,
         [FromQuery] int sectionIndex)
     {

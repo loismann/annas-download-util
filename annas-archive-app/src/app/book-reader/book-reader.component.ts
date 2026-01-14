@@ -69,7 +69,7 @@ interface ReadingPosition {
 }
 
 @Component({
-  selector: 'app-dropbox-reader',
+  selector: 'app-book-reader',
   standalone: true,
   imports: [
     CommonModule,
@@ -84,10 +84,10 @@ interface ReadingPosition {
     MatSliderModule,
     MatTooltipModule
   ],
-  templateUrl: './dropbox-reader.component.html',
-  styleUrls: ['./dropbox-reader.component.css']
+  templateUrl: './book-reader.component.html',
+  styleUrls: ['./book-reader.component.css']
 })
-export class DropboxReaderComponent implements OnInit, OnDestroy {
+export class BookReaderComponent implements OnInit, OnDestroy {
   private destroy$ = new Subject<void>();
 
   readerBooks: LibraryReaderBook[] = [];
@@ -114,6 +114,10 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
   private lastStatusPercent: number | null = null;
   private timeoutIds: any[] = [];
   private pendingRestorePosition: { readerKey: string; chapterId: number; wordOffset: number } | null = null;
+  private measurementEl: HTMLElement | null = null;
+  private resizeObserver: ResizeObserver | null = null;
+  private cachedPageSize: number | null = null;
+  private pageSizeCacheKey: string | null = null;
 
   bookSearchTerm = '';
   bookSearchResults: DropboxBookSearchResult[] = [];
@@ -276,6 +280,14 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
     // Clear all pending timeouts
     this.timeoutIds.forEach(id => clearTimeout(id));
     this.timeoutIds = [];
+
+    // Disconnect resize observer
+    this.resizeObserver?.disconnect();
+    this.resizeObserver = null;
+
+    // Remove measurement element
+    this.measurementEl?.remove();
+    this.measurementEl = null;
 
     // Unsubscribe from all observables
     this.destroy$.next();
@@ -785,14 +797,25 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
     return currentChapterIndex > 0;
   }
 
+  canPageForward(): boolean {
+    if (!this.chapterContent) return false;
+    // Can go forward if not on the last page of the chapter
+    const maxStart = Math.max(0, (this.totalPages - 1) * this.pageSizeWords);
+    if (this.wordOffset < maxStart) return true;
+    // On the last page - check if there's a next chapter
+    if (this.selectedChapterId === null) return false;
+    const currentChapterIndex = this.chapters.findIndex(ch => ch.id === this.selectedChapterId);
+    return currentChapterIndex !== -1 && currentChapterIndex < this.chapters.length - 1;
+  }
+
   pageForward(): void {
     if (!this.chapterContent) return;
     const totalPages = this.totalPages;
     const maxStart = Math.max(0, (totalPages - 1) * this.pageSizeWords);
     const newOffset = this.wordOffset + this.pageSizeWords;
 
-    // Check if we're moving past the last page
-    if (newOffset >= maxStart && this.selectedChapterId !== null) {
+    // Check if we're moving past the last page (only when BEYOND, not at last page)
+    if (newOffset > maxStart && this.selectedChapterId !== null) {
       // Try to advance to next chapter
       const currentChapterIndex = this.chapters.findIndex(ch => ch.id === this.selectedChapterId);
       if (currentChapterIndex !== -1 && currentChapterIndex < this.chapters.length - 1) {
@@ -1415,6 +1438,19 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
     if (cached) {
       this.applyChapterContent(cached);
       this.loadingContent = false;
+      // Still fetch to update cache, but don't re-apply (would reset word offset)
+      this.libraryApi.getLibraryReaderChapterContent(fileName, chapterId)
+        .pipe(takeUntil(this.destroy$))
+        .subscribe({
+          next: content => {
+            const normalized = this.normalizeChapterContent(content);
+            this.chapterContentCache.set(cacheKey, normalized);
+          },
+          error: err => {
+            this.logger.error('Failed to refresh chapter content', err);
+          }
+        });
+      return;
     }
 
     this.libraryApi.getLibraryReaderChapterContent(fileName, chapterId)
@@ -1505,26 +1541,27 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
   }
 
   private applyChapterContent(content: DropboxChapterContent): void {
+    // Invalidate page size cache when chapter changes
+    this.cachedPageSize = null;
+    this.pageSizeCacheKey = null;
+
     const computedWordCount = content.wordCount ?? this.countWords(content.content);
     this.chapterContent = {
       ...content,
       wordCount: computedWordCount
     };
+    // Check if we need to go to the last page (defer until after recalcPageSize)
+    const goToLastPage = this.pendingCharOffset === -1;
+
     if (this.pendingWordOffset != null) {
       const totalWords = computedWordCount;
       this.wordOffset = Math.max(0, Math.min(this.pendingWordOffset, totalWords));
       this.pendingWordOffset = null;
-    } else if (this.pendingCharOffset != null) {
-      if (this.pendingCharOffset === -1) {
-        // Special marker: go to last page
-        const totalPages = Math.max(1, Math.ceil(computedWordCount / this.pageSizeWords));
-        this.wordOffset = Math.max(0, (totalPages - 1) * this.pageSizeWords);
-        this.logger.log(`📖 Jumped to last page (offset ${this.wordOffset}) of chapter with ${computedWordCount} words`);
-      } else {
-        const slice = content.content.slice(0, Math.min(this.pendingCharOffset, content.content.length));
-        this.wordOffset = this.countWords(slice);
-      }
-    } else {
+    } else if (this.pendingCharOffset != null && !goToLastPage) {
+      // Handle character offset (but not -1, which is handled after recalcPageSize)
+      const slice = content.content.slice(0, Math.min(this.pendingCharOffset, content.content.length));
+      this.wordOffset = this.countWords(slice);
+    } else if (!goToLastPage) {
       this.wordOffset = 0;
     }
     this.pendingCharOffset = null;
@@ -1533,7 +1570,18 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
     if (this.selectedBookPath && this.selectedChapterId !== null && !this.chunkBoundaries && !this.loadingChunkBoundaries) {
       this.loadChunkBoundaries(this.selectedBookPath, this.selectedChapterId);
     }
-    this.timeoutIds.push(setTimeout(() => this.recalcPageSize(), 0));
+    this.timeoutIds.push(setTimeout(() => {
+      this.setupResizeObserver();
+      this.recalcPageSize();
+
+      // Now that page size is calculated, go to last page if needed
+      if (goToLastPage) {
+        const totalPages = this.totalPages;
+        this.wordOffset = Math.max(0, (totalPages - 1) * this.pageSizeWords);
+        this.logger.log(`📖 Jumped to last page (offset ${this.wordOffset}) of chapter with ${computedWordCount} words, pageSize=${this.pageSizeWords}`);
+        this.updateReadingPosition();
+      }
+    }, 0));
   }
 
   private fetchStatus(fileName: string, keepPolling: boolean = false): void {
@@ -2606,28 +2654,32 @@ DO NOT include common words. Only create flashcards for terms that significantly
   }
 
   private recalcPageSize(adjustOffset: boolean = true): void {
-    if (!this.textWindowRef) return;
+    if (!this.textWindowRef || !this.chapterContent) return;
     const el = this.textWindowRef.nativeElement;
-    const height = el.clientHeight;
-    const width = el.clientWidth;
-    if (!height || !width) return;
+    if (!el.clientHeight || !el.clientWidth) return;
 
-    const style = getComputedStyle(el);
-    const fontSize = parseFloat(style.fontSize) || this.fontSize;
-    const lineHeight = parseFloat(style.lineHeight) || (fontSize * 1.7);
-    const paddingY = parseFloat(style.paddingTop || '0') + parseFloat(style.paddingBottom || '0');
-    const availableHeight = Math.max(0, height - paddingY);
-    const lines = Math.max(3, Math.floor(availableHeight / lineHeight));
+    // Create cache key based on container dimensions and font size
+    const cacheKey = `${el.clientWidth}x${el.clientHeight}@${this.fontSize}`;
 
-    // Estimate words per line based on available width and font size
-    // Average character width is roughly 0.6 * fontSize for most fonts
-    const avgCharWidth = fontSize * 0.6;
-    const approxCharsPerLine = Math.max(16, Math.floor(width / avgCharWidth));
-    const approxWordsPerLine = Math.max(4, Math.floor(approxCharsPerLine / 6));
+    // Use cached page size if dimensions haven't changed
+    if (this.pageSizeCacheKey === cacheKey && this.cachedPageSize !== null) {
+      // Just ensure offset is valid
+      const totalPages = this.totalPages;
+      const maxStart = Math.max(0, (totalPages - 1) * this.pageSizeWords);
+      if (this.wordOffset > maxStart) {
+        this.wordOffset = maxStart;
+      }
+      return;
+    }
 
-    // Apply a safety factor to avoid overfilling a page (increased to fill more space)
-    const safetyFactor = 0.75;
-    const newSize = Math.max(20, Math.floor(lines * approxWordsPerLine * safetyFactor));
+    // Setup measurement element if needed
+    this.setupMeasurementElement();
+
+    const newSize = this.findOptimalPageSize();
+
+    // Update cache
+    this.cachedPageSize = newSize;
+    this.pageSizeCacheKey = cacheKey;
 
     if (newSize !== this.pageSizeWords) {
       const pageIndex = adjustOffset ? Math.floor(this.wordOffset / this.pageSizeWords) : 0;
@@ -2647,6 +2699,123 @@ DO NOT include common words. Only create flashcards for terms that significantly
     // Update current section index based on word offset
     this.updateCurrentSection();
     this.updateReadingPosition();
+  }
+
+  private setupMeasurementElement(): void {
+    const textWindow = this.textWindowRef?.nativeElement;
+    if (!textWindow) return;
+
+    if (!this.measurementEl) {
+      // Create measurement element matching text-window
+      this.measurementEl = document.createElement('div');
+      this.measurementEl.style.cssText = `
+        position: absolute;
+        left: -9999px;
+        top: 0;
+        overflow: hidden;
+        visibility: hidden;
+        pointer-events: none;
+      `;
+      document.body.appendChild(this.measurementEl);
+    }
+
+    // Update dimensions and styles to match current text window
+    const styles = getComputedStyle(textWindow);
+    this.measurementEl.style.width = `${textWindow.clientWidth}px`;
+    this.measurementEl.style.height = `${textWindow.clientHeight}px`;
+    this.measurementEl.style.fontSize = styles.fontSize;
+    this.measurementEl.style.fontFamily = styles.fontFamily;
+    this.measurementEl.style.lineHeight = styles.lineHeight;
+    this.measurementEl.style.padding = styles.padding;
+    this.measurementEl.style.boxSizing = 'border-box';
+  }
+
+  private doesTextOverflowAtOffset(wordCount: number, testOffset: number): boolean {
+    if (!this.measurementEl || !this.chapterContent) return false;
+
+    const testText = this.sliceByWords(
+      this.chapterContent.content,
+      testOffset,
+      wordCount
+    );
+
+    // Apply same formatting as highlightedVisibleText (without section annotations for speed)
+    const html = this.escapeHtml(testText).replace(/\n/g, '<br/>');
+    this.measurementEl.innerHTML = `<pre style="white-space: pre-wrap; word-wrap: break-word; margin: 0; line-height: inherit;">${html}</pre>`;
+
+    return this.measurementEl.scrollHeight > this.measurementEl.clientHeight;
+  }
+
+  private getEstimatedPageSize(): number {
+    // Quick estimation for binary search starting point
+    if (!this.textWindowRef) return 200;
+    const el = this.textWindowRef.nativeElement;
+    const styles = getComputedStyle(el);
+    const fontSize = parseFloat(styles.fontSize) || this.fontSize;
+    const lineHeight = parseFloat(styles.lineHeight) || (fontSize * 1.7);
+    const paddingY = parseFloat(styles.paddingTop || '0') + parseFloat(styles.paddingBottom || '0');
+    const availableHeight = Math.max(0, el.clientHeight - paddingY);
+    const lines = Math.max(3, Math.floor(availableHeight / lineHeight));
+    const avgCharWidth = fontSize * 0.6;
+    const approxCharsPerLine = Math.max(16, Math.floor(el.clientWidth / avgCharWidth));
+    const approxWordsPerLine = Math.max(4, Math.floor(approxCharsPerLine / 6));
+    return Math.max(20, Math.floor(lines * approxWordsPerLine));
+  }
+
+  private findOptimalPageSize(): number {
+    if (!this.chapterContent) return 200;
+
+    const totalChapterWords = this.countWords(this.chapterContent.content);
+    // Use fixed test offset (0) so page size is consistent across the chapter
+    const testOffset = 0;
+    const maxPossible = Math.min(totalChapterWords, 800); // Cap for performance
+
+    if (maxPossible <= 10) return maxPossible;
+
+    // Get estimation for binary search bounds
+    const estimate = this.getEstimatedPageSize();
+
+    // Binary search for optimal page size using text from chapter start
+    // Use wider range to ensure we find the true maximum (estimate can be inaccurate)
+    let low = Math.max(10, Math.floor(estimate * 0.3));
+    let high = Math.min(maxPossible, Math.ceil(estimate * 2.5));
+    let result = low;
+
+    // First check if our low value overflows - if so, we need to go lower
+    if (this.doesTextOverflowAtOffset(low, testOffset)) {
+      high = low;
+      low = 10;
+    }
+
+    while (low <= high) {
+      const mid = Math.floor((low + high) / 2);
+
+      if (this.doesTextOverflowAtOffset(mid, testOffset)) {
+        high = mid - 1;
+      } else {
+        result = mid;
+        low = mid + 1;
+      }
+    }
+
+    return Math.max(10, result);
+  }
+
+  private setupResizeObserver(): void {
+    if (this.resizeObserver || !this.textWindowRef) return;
+
+    let resizeTimeout: any;
+    this.resizeObserver = new ResizeObserver(() => {
+      // Debounce resize events
+      clearTimeout(resizeTimeout);
+      resizeTimeout = setTimeout(() => {
+        if (this.chapterContent) {
+          this.recalcPageSize();
+        }
+      }, 150);
+    });
+
+    this.resizeObserver.observe(this.textWindowRef.nativeElement);
   }
 
   // ─── Section/Chunk boundary methods ──────────────────────────────────────

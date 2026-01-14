@@ -559,14 +559,16 @@
 }
 
 .analysis-combo {
-  display: inline-flex;
+  display: flex;
   align-items: stretch;
-  gap: 0;
-  height: 48px;
+  flex-wrap: wrap;
+  gap: 8px;
+  width: 100%;
 }
 
 .analysis-mode-select {
   min-width: 180px;
+  flex: 1 1 180px;
 }
 
 :host ::ng-deep .analysis-mode-select .mat-mdc-select-trigger {
@@ -578,8 +580,6 @@
   display: inline-flex;
   align-items: center;
   justify-content: space-between;
-  border-top-right-radius: 0;
-  border-bottom-right-radius: 0;
 }
 
 :host ::ng-deep .analysis-mode-select .mat-mdc-select-value,
@@ -677,18 +677,18 @@
   line-height: 1;
   padding: 0 20px;
   font-size: 14px;
-  border-radius: 0 12px 12px 0;
+  border-radius: 12px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
   margin: 0;
-  border-left: none;
   border: 1px solid rgba(144, 180, 255, 0.8);
   background: rgba(255, 255, 255, 0.06);
   color: #a5b4fc;
   max-width: none;
-  min-width: 260px;
+  min-width: 200px;
+  flex: 1 1 200px;
   overflow: hidden;
 }
 

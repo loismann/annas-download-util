@@ -549,7 +549,7 @@
           • <span class="page-indicator-muted">Book: {{ currentBookPage }} / {{ totalBookPages }}</span>
           • <span class="page-indicator-muted">{{ bookProgressPercent }}%</span>
         </div>
-        <button mat-icon-button aria-label="Next page" (click)="pageForward()" [disabled]="wordOffset + pageSizeWords >= (chapterContent ? chapterContent.wordCount : 0)">
+        <button mat-icon-button aria-label="Next page" (click)="pageForward()" [disabled]="!canPageForward()">
           <mat-icon>chevron_right</mat-icon>
         </button>
       </div>

@@ -1,11 +1,11 @@
 /**
- * Unit tests for chapter summary numbering logic in DropboxReaderComponent
+ * Unit tests for chapter summary numbering logic in BookReaderComponent
  *
  * These tests verify that displayChapterNumber is calculated correctly based on
  * the filtered chapters array index (not the raw EPUB chapter ID).
  */
 
-describe('DropboxReaderComponent - Chapter Summary Number Calculation', () => {
+describe('BookReaderComponent - Chapter Summary Number Calculation', () => {
   /**
    * Helper function that mimics the calculation logic in the component
    */
@@ -167,7 +167,7 @@ describe('DropboxReaderComponent - Chapter Summary Number Calculation', () => {
  * - Merges new vocab with existing vocab
  * - Avoids duplicates
  */
-describe('DropboxReaderComponent - Chapter Vocabulary Generation', () => {
+describe('BookReaderComponent - Chapter Vocabulary Generation', () => {
   describe('generateChapterVocab validation', () => {
     it('should require chapter content to be loaded', () => {
       const hasChapterContent = false;
@@ -273,6 +273,174 @@ describe('DropboxReaderComponent - Chapter Vocabulary Generation', () => {
       const chapterKnownWords = allKnownWords.slice(-200);
 
       expect(chapterKnownWords.length).toBe(50);
+    });
+  });
+});
+
+/**
+ * Unit tests for dynamic pagination with overflow detection
+ *
+ * These tests verify the binary search algorithm for finding optimal page size
+ * and the estimation logic for initial bounds.
+ */
+describe('BookReaderComponent - Dynamic Pagination', () => {
+  /**
+   * Helper: Simulates the binary search logic from findOptimalPageSize
+   */
+  function binarySearchOptimalSize(
+    doesOverflow: (wordCount: number) => boolean,
+    estimate: number,
+    maxPossible: number
+  ): number {
+    let low = Math.max(10, Math.floor(estimate * 0.3));
+    let high = Math.min(maxPossible, Math.ceil(estimate * 2.5));
+
+    // Handle case where maxPossible is smaller than our initial low bound
+    if (high < low) {
+      low = 10;
+    }
+
+    let result = low;
+
+    // Check if low value overflows - need to expand search range downward
+    if (doesOverflow(low)) {
+      high = low;
+      low = 10;
+      result = low; // Reset result after adjusting bounds
+    }
+
+    while (low <= high) {
+      const mid = Math.floor((low + high) / 2);
+      if (doesOverflow(mid)) {
+        high = mid - 1;
+      } else {
+        result = mid;
+        low = mid + 1;
+      }
+    }
+
+    return Math.max(10, result);
+  }
+
+  describe('binary search for optimal page size', () => {
+    it('should find exact overflow boundary', () => {
+      // Simulate: text overflows at 150+ words
+      const overflowThreshold = 150;
+      const doesOverflow = (count: number) => count >= overflowThreshold;
+
+      const result = binarySearchOptimalSize(doesOverflow, 200, 500);
+
+      // Should find 149 (largest that doesn't overflow)
+      expect(result).toBe(149);
+    });
+
+    it('should handle when estimate is too high', () => {
+      // Simulate: text overflows at 80+ words, but estimate is 200
+      const overflowThreshold = 80;
+      const doesOverflow = (count: number) => count >= overflowThreshold;
+
+      const result = binarySearchOptimalSize(doesOverflow, 200, 500);
+
+      expect(result).toBe(79);
+    });
+
+    it('should handle when estimate is too low', () => {
+      // Simulate: text overflows at 400+ words, estimate is 200
+      const overflowThreshold = 400;
+      const doesOverflow = (count: number) => count >= overflowThreshold;
+
+      const result = binarySearchOptimalSize(doesOverflow, 200, 500);
+
+      // Should find 399 (one less than overflow threshold)
+      expect(result).toBe(399);
+    });
+
+    it('should respect minimum of 10 words', () => {
+      // Simulate: text always overflows (very small container)
+      const doesOverflow = () => true;
+
+      const result = binarySearchOptimalSize(doesOverflow, 200, 500);
+
+      expect(result).toBe(10);
+    });
+
+    it('should handle when nothing overflows', () => {
+      // Simulate: nothing overflows (large container)
+      const doesOverflow = () => false;
+
+      const result = binarySearchOptimalSize(doesOverflow, 200, 500);
+
+      // Should return high bound (estimate * 2.5 = 500, capped at maxPossible)
+      expect(result).toBe(500);
+    });
+
+    it('should respect maxPossible cap', () => {
+      // Simulate: nothing overflows, but only 50 words remaining in chapter
+      const doesOverflow = () => false;
+
+      const result = binarySearchOptimalSize(doesOverflow, 200, 50);
+
+      // Should be capped at maxPossible
+      expect(result).toBe(50);
+    });
+  });
+
+  describe('page size estimation', () => {
+    /**
+     * Helper: Simulates getEstimatedPageSize calculation
+     */
+    function estimatePageSize(
+      containerHeight: number,
+      containerWidth: number,
+      fontSize: number,
+      lineHeight: number,
+      paddingY: number
+    ): number {
+      const availableHeight = Math.max(0, containerHeight - paddingY);
+      const lines = Math.max(3, Math.floor(availableHeight / lineHeight));
+      const avgCharWidth = fontSize * 0.6;
+      const approxCharsPerLine = Math.max(16, Math.floor(containerWidth / avgCharWidth));
+      const approxWordsPerLine = Math.max(4, Math.floor(approxCharsPerLine / 6));
+      return Math.max(20, Math.floor(lines * approxWordsPerLine));
+    }
+
+    it('should calculate reasonable estimate for typical desktop container', () => {
+      // Desktop: 600px height, 800px width, 16px font, 27.2px line height, 60px padding
+      const estimate = estimatePageSize(600, 800, 16, 27.2, 60);
+
+      // Should give roughly 300-400 words
+      expect(estimate).toBeGreaterThan(100);
+      expect(estimate).toBeLessThan(600);
+    });
+
+    it('should decrease estimate when font size increases', () => {
+      const smallFont = estimatePageSize(600, 800, 14, 23.8, 60);
+      const largeFont = estimatePageSize(600, 800, 24, 40.8, 60);
+
+      expect(largeFont).toBeLessThan(smallFont);
+    });
+
+    it('should increase estimate when container is larger', () => {
+      const smallContainer = estimatePageSize(400, 600, 16, 27.2, 60);
+      const largeContainer = estimatePageSize(800, 1000, 16, 27.2, 60);
+
+      expect(largeContainer).toBeGreaterThan(smallContainer);
+    });
+
+    it('should enforce minimum of 20 words', () => {
+      // Very small container
+      const estimate = estimatePageSize(100, 100, 28, 47.6, 80);
+
+      expect(estimate).toBeGreaterThanOrEqual(20);
+    });
+
+    it('should enforce minimum of 3 lines', () => {
+      // Container with small available height
+      const estimate = estimatePageSize(100, 800, 16, 27.2, 80);
+
+      // With 20px available height and 27.2px line height, would be < 1 line
+      // but minimum is enforced to 3 lines
+      expect(estimate).toBeGreaterThanOrEqual(20);
     });
   });
 });

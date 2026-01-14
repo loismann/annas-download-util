@@ -289,6 +289,9 @@ public static class ServiceConfiguration
             o.SerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase);
         services.AddCors();
 
+        // AI job lock service for preventing duplicate concurrent AI operations
+        services.AddSingleton<IAiJobLockService, AiJobLockService>();
+
         return services;
     }
 }

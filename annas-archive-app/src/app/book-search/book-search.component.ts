@@ -16,12 +16,14 @@ import { MatSlideToggleModule } from '@angular/material/slide-toggle';
 import { MatTooltipModule } from '@angular/material/tooltip';
 
 import {
-  AnnaArchiveApiService,
-  DownloadMemberResponse,
-  SendToBooxResponse,
+  AiApiService,
   AuthorSuggestion,
   AiBookSearchResult
-} from '../services/anna-archive-api.service';
+} from '../services/ai-api.service';
+import {
+  BookSearchApiService,
+  SendToTargetResponse
+} from '../services/book-search-api.service';
 
 import { AuthService } from '../services/auth.service';
 import { LoggerService } from '../services/logger.service';
@@ -99,7 +101,8 @@ export class BookSearchComponent implements OnInit, OnDestroy {
   private coverLookupsInFlight = new Set<string>();
 
   constructor(
-    private api: AnnaArchiveApiService,
+    private aiApi: AiApiService,
+    private bookSearchApi: BookSearchApiService,
     public authService: AuthService,
     private dialog: MatDialog,
     private http: HttpClient,
@@ -143,7 +146,7 @@ export class BookSearchComponent implements OnInit, OnDestroy {
 
   /* ───────── domain health management ───────── */
   private fetchDomainHealth(): void {
-    this.api.getSlumHealth().subscribe({
+    this.bookSearchApi.getSlumHealth().subscribe({
       next: (data) => {
         this.parseDomainHealth(data);
       },
@@ -154,13 +157,13 @@ export class BookSearchComponent implements OnInit, OnDestroy {
   }
 
   private fetchDomainHealthObservable() {
-    return this.api.getSlumHealth().pipe(
+    return this.bookSearchApi.getSlumHealth().pipe(
       tap((data: any) => this.parseDomainHealth(data))
     );
   }
 
   private fetchMirrorHealth(): void {
-    this.api.getMirrorHealth().subscribe({
+    this.bookSearchApi.getMirrorHealth().subscribe({
       next: (data) => {
         this.parseMirrorHealth(data);
       },
@@ -235,7 +238,7 @@ export class BookSearchComponent implements OnInit, OnDestroy {
 
   /* ───────── download counter management ───────── */
   private fetchDownloadStatus(): void {
-    this.api.getDownloadStatus().subscribe({
+    this.bookSearchApi.getDownloadStatus().subscribe({
       next: (resp) => {
         if (resp.accountFastInfo) {
           this.updateFromServer(resp.accountFastInfo.downloadsLeft, resp.accountFastInfo.downloadsPerDay);
@@ -318,8 +321,8 @@ export class BookSearchComponent implements OnInit, OnDestroy {
     // Keep selectedFormat so it persists across searches
 
     const searchObservable = this.useLibGen
-      ? this.api.searchBooksLibGen(searchQuery, false)
-      : this.api.searchBooks(searchQuery, false);
+      ? this.bookSearchApi.searchBooksLibGen(searchQuery, false)
+      : this.bookSearchApi.searchBooks(searchQuery, false);
 
     searchObservable.subscribe({
       next: books => {
@@ -364,7 +367,7 @@ export class BookSearchComponent implements OnInit, OnDestroy {
     const authorString = book.authors?.join(';');
 
     const libraryObservable = this.useLibGen
-      ? this.api.sendToLibraryLibGen(
+      ? this.bookSearchApi.sendToLibraryLibGen(
           book.md5,
           book.title,
           coverUrl,
@@ -374,7 +377,7 @@ export class BookSearchComponent implements OnInit, OnDestroy {
           book.source,
           book.description ?? undefined
         )
-      : this.api.sendToLibrary(
+      : this.bookSearchApi.sendToLibrary(
           book.md5,
           book.title,
           coverUrl,
@@ -400,7 +403,7 @@ export class BookSearchComponent implements OnInit, OnDestroy {
   private sendToLibrarySilently(book: BookDto, coverUrl?: string): void {
     const authorString = book.authors?.join(';');
     const libraryObservable = this.useLibGen
-      ? this.api.sendToLibraryLibGen(
+      ? this.bookSearchApi.sendToLibraryLibGen(
           book.md5,
           book.title,
           coverUrl,
@@ -410,7 +413,7 @@ export class BookSearchComponent implements OnInit, OnDestroy {
           book.source,
           book.description ?? undefined
         )
-      : this.api.sendToLibrary(
+      : this.bookSearchApi.sendToLibrary(
           book.md5,
           book.title,
           coverUrl,
@@ -444,8 +447,8 @@ export class BookSearchComponent implements OnInit, OnDestroy {
 
     this.sendToLibrarySilently(book, coverUrl);
 
-    this.api.sendToBoox(book.md5, book.title, coverUrl).subscribe({
-      next: (resp: SendToBooxResponse) => {
+    this.bookSearchApi.sendToBoox(book.md5, book.title, coverUrl).subscribe({
+      next: (resp: SendToTargetResponse) => {
         if (resp.accountFastInfo) {
           this.updateFromServer(resp.accountFastInfo.downloadsLeft, resp.accountFastInfo.downloadsPerDay);
         }
@@ -470,8 +473,8 @@ export class BookSearchComponent implements OnInit, OnDestroy {
 
     this.sendToLibrarySilently(book, coverUrl);
 
-    this.api.sendToKindle(book.md5, book.title, 'dad', coverUrl).subscribe({
-      next: (resp: SendToBooxResponse) => {
+    this.bookSearchApi.sendToKindle(book.md5, book.title, 'dad', coverUrl).subscribe({
+      next: (resp: SendToTargetResponse) => {
         if (resp.accountFastInfo) {
           this.updateFromServer(resp.accountFastInfo.downloadsLeft, resp.accountFastInfo.downloadsPerDay);
         }
@@ -496,8 +499,8 @@ export class BookSearchComponent implements OnInit, OnDestroy {
 
     this.sendToLibrarySilently(book, coverUrl);
 
-    this.api.sendToKindle(book.md5, book.title, 'mom', coverUrl).subscribe({
-      next: (resp: SendToBooxResponse) => {
+    this.bookSearchApi.sendToKindle(book.md5, book.title, 'mom', coverUrl).subscribe({
+      next: (resp: SendToTargetResponse) => {
         if (resp.accountFastInfo) {
           this.updateFromServer(resp.accountFastInfo.downloadsLeft, resp.accountFastInfo.downloadsPerDay);
         }
@@ -556,7 +559,7 @@ export class BookSearchComponent implements OnInit, OnDestroy {
 
     this.coverLookupsInFlight.add(book.md5);
     const author = book.authors?.[0];
-    this.api.fetchCover(book.title, author).subscribe({
+    this.bookSearchApi.fetchCover(book.title, author).subscribe({
       next: (resp) => {
         if (resp.coverUrl) {
           if (!book.coverCandidates) {
@@ -635,7 +638,7 @@ export class BookSearchComponent implements OnInit, OnDestroy {
     const author = book.authors?.[0];
 
     // Try Google Books first
-    this.api.fetchDescriptionFromGoogleBooks(book.title, author).subscribe({
+    this.bookSearchApi.fetchDescriptionFromGoogleBooks(book.title, author).subscribe({
       next: (resp) => {
         if (resp.description) {
           book.description = resp.description;
@@ -655,7 +658,7 @@ export class BookSearchComponent implements OnInit, OnDestroy {
   private tryOpenLibrary(book: BookDto): void {
     const author = book.authors?.[0];
 
-    this.api.fetchDescriptionFromOpenLibrary(book.title, author).subscribe({
+    this.bookSearchApi.fetchDescriptionFromOpenLibrary(book.title, author).subscribe({
       next: (resp) => {
         if (resp.description) {
           book.description = resp.description;
@@ -675,7 +678,7 @@ export class BookSearchComponent implements OnInit, OnDestroy {
   private tryGPT4(book: BookDto): void {
     const author = book.authors?.[0];
 
-    this.api.fetchDescriptionFromGPT4(book.title, author).subscribe({
+    this.bookSearchApi.fetchDescriptionFromGPT4(book.title, author).subscribe({
       next: (resp) => {
         if (resp.description) {
           book.description = resp.description;
@@ -715,7 +718,7 @@ export class BookSearchComponent implements OnInit, OnDestroy {
 
     this.latestAuthorQuery = bookTitle;
     this.loadingAuthors = true;
-    this.api.suggestAuthors(bookTitle).subscribe({
+    this.aiApi.suggestAuthors(bookTitle).subscribe({
       next: (resp) => {
         if (bookTitle !== this.latestAuthorQuery) {
           return;
@@ -787,7 +790,7 @@ export class BookSearchComponent implements OnInit, OnDestroy {
     dialogRef.componentInstance.addStatus('Requesting related books...');
 
     // Fetch related books
-    this.api.getRelatedBooks(this.searchTerm.trim(), this.selectedAuthor).subscribe({
+    this.aiApi.getRelatedBooks(this.searchTerm.trim(), this.selectedAuthor).subscribe({
       next: (resp) => {
         dialogRef.componentInstance.data.sameSeries = resp.sameSeries;
         dialogRef.componentInstance.data.otherSeries = resp.otherSeries;
@@ -862,7 +865,7 @@ export class BookSearchComponent implements OnInit, OnDestroy {
     dialogRef.componentInstance.clearStatus();
     dialogRef.componentInstance.addStatus('Thinking…');
 
-    this.api.aiBookSearch(query).subscribe({
+    this.aiApi.aiBookSearch(query).subscribe({
       next: (resp: AiBookSearchResult) => {
         const results = (resp.books ?? []).map((book, index) => ({
           title: book.title,

@@ -1,6 +1,6 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { LibraryComponent } from './library.component';
-import { AnnaArchiveApiService } from '../services/anna-archive-api.service';
+import { LibraryApiService } from '../services/library-api.service';
 import { MatDialog } from '@angular/material/dialog';
 import { AuthService } from '../services/auth.service';
 import { of, throwError } from 'rxjs';
@@ -9,12 +9,12 @@ import { BookEditDialogResult } from '../components/book-edit-dialog/book-edit-d
 describe('LibraryComponent', () => {
   let component: LibraryComponent;
   let fixture: ComponentFixture<LibraryComponent>;
-  let mockApiService: jasmine.SpyObj<AnnaArchiveApiService>;
+  let mockLibraryApiService: jasmine.SpyObj<LibraryApiService>;
   let mockDialog: jasmine.SpyObj<MatDialog>;
   let mockAuthService: jasmine.SpyObj<AuthService>;
 
   beforeEach(async () => {
-    mockApiService = jasmine.createSpyObj('AnnaArchiveApiService', [
+    mockLibraryApiService = jasmine.createSpyObj('LibraryApiService', [
       'getLibraryBooks',
       'updateLibraryBookMetadata',
       'updateLibraryBookCover',
@@ -29,13 +29,13 @@ describe('LibraryComponent', () => {
     mockAuthService = jasmine.createSpyObj('AuthService', ['isAdmin']);
 
     // Default mock returns
-    mockApiService.getLibraryBooks.and.returnValue(of([]));
+    mockLibraryApiService.getLibraryBooks.and.returnValue(of([]));
     mockAuthService.isAdmin.and.returnValue(true);
 
     await TestBed.configureTestingModule({
       imports: [LibraryComponent],
       providers: [
-        { provide: AnnaArchiveApiService, useValue: mockApiService },
+        { provide: LibraryApiService, useValue: mockLibraryApiService },
         { provide: MatDialog, useValue: mockDialog },
         { provide: AuthService, useValue: mockAuthService }
       ]
@@ -88,8 +88,16 @@ describe('LibraryComponent', () => {
       };
 
       mockDialog.open.and.returnValue(mockDialogRef as any);
-      mockApiService.updateLibraryBookMetadata.and.returnValue(of({}));
-      mockApiService.updateLibraryBookCover.and.returnValue(
+      mockLibraryApiService.updateLibraryBookMetadata.and.returnValue(of({
+        fileName: 'test-book.epub',
+        title: 'Test Book',
+        authors: ['Test Author'],
+        format: 'EPUB',
+        fileSize: '1.2 MB',
+        primaryGenre: 'Fiction',
+        tags: ['test']
+      }));
+      mockLibraryApiService.updateLibraryBookCover.and.returnValue(
         of({ coverUrl: newCoverUrl })
       );
 
@@ -98,7 +106,7 @@ describe('LibraryComponent', () => {
 
       // Assert - Cover update should be called
       setTimeout(() => {
-        expect(mockApiService.updateLibraryBookCover).toHaveBeenCalledWith(
+        expect(mockLibraryApiService.updateLibraryBookCover).toHaveBeenCalledWith(
           'test-book.epub',
           newCoverUrl
         );
@@ -151,14 +159,22 @@ describe('LibraryComponent', () => {
       };
 
       mockDialog.open.and.returnValue(mockDialogRef as any);
-      mockApiService.updateLibraryBookMetadata.and.returnValue(of({}));
+      mockLibraryApiService.updateLibraryBookMetadata.and.returnValue(of({
+        fileName: 'test-book.epub',
+        title: 'Test Book',
+        authors: ['Test Author'],
+        format: 'EPUB',
+        fileSize: '1.2 MB',
+        primaryGenre: 'Fiction',
+        tags: ['test']
+      }));
 
       // Act
       component.onCoverClick(testBook);
 
       // Assert - Cover update should NOT be called
       setTimeout(() => {
-        expect(mockApiService.updateLibraryBookCover).not.toHaveBeenCalled();
+        expect(mockLibraryApiService.updateLibraryBookCover).not.toHaveBeenCalled();
         done();
       }, 50);
     });
@@ -205,8 +221,16 @@ describe('LibraryComponent', () => {
       };
 
       mockDialog.open.and.returnValue(mockDialogRef as any);
-      mockApiService.updateLibraryBookMetadata.and.returnValue(of({}));
-      mockApiService.updateLibraryBookCover.and.returnValue(
+      mockLibraryApiService.updateLibraryBookMetadata.and.returnValue(of({
+        fileName: 'test-book.epub',
+        title: 'Test Book',
+        authors: ['Test Author'],
+        format: 'EPUB',
+        fileSize: '1.2 MB',
+        primaryGenre: 'Fiction',
+        tags: ['test']
+      }));
+      mockLibraryApiService.updateLibraryBookCover.and.returnValue(
         throwError(() => new Error('API Error'))
       );
 
@@ -265,8 +289,16 @@ describe('LibraryComponent', () => {
       };
 
       mockDialog.open.and.returnValue(mockDialogRef as any);
-      mockApiService.updateLibraryBookMetadata.and.returnValue(of({}));
-      mockApiService.updateLibraryBookCover.and.returnValue(
+      mockLibraryApiService.updateLibraryBookMetadata.and.returnValue(of({
+        fileName: 'test-book.epub',
+        title: 'Test Book',
+        authors: ['Test Author'],
+        format: 'EPUB',
+        fileSize: '1.2 MB',
+        primaryGenre: 'Fiction',
+        tags: ['test']
+      }));
+      mockLibraryApiService.updateLibraryBookCover.and.returnValue(
         of({ coverUrl: newCoverUrl })
       );
 
@@ -384,7 +416,7 @@ describe('LibraryComponent', () => {
         }
       ];
 
-      mockApiService.getLibraryBooks.and.returnValue(of(testBooks));
+      mockLibraryApiService.getLibraryBooks.and.returnValue(of(testBooks));
 
       // Act - trigger ngOnInit which loads books and builds genre list
       component.ngOnInit();

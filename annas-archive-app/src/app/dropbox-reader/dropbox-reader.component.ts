@@ -35,7 +35,8 @@ import {
   LibraryReaderBook,
   UserTokenUsage
 } from '../models/dropbox-epub.model';
-import { AnnaArchiveApiService } from '../services/anna-archive-api.service';
+import { AiApiService } from '../services/ai-api.service';
+import { LibraryApiService } from '../services/library-api.service';
 import { VocabularyService, VocabularyWord } from '../services/vocabulary.service';
 import { AuthService } from '../services/auth.service';
 import { LoggerService } from '../services/logger.service';
@@ -220,7 +221,8 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
   }
 
   constructor(
-    private api: AnnaArchiveApiService,
+    private aiApi: AiApiService,
+    private libraryApi: LibraryApiService,
     private vocabularyService: VocabularyService,
     private sanitizer: DomSanitizer,
     private authService: AuthService,
@@ -242,7 +244,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
     this.refreshTokenUsage();
 
     // Load all users' usage
-    this.api.getAllUsersTokenUsage().subscribe({
+    this.aiApi.getAllUsersTokenUsage().subscribe({
       next: (usage) => {
         this.allUsersUsage = usage;
       },
@@ -569,7 +571,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
         notes: ''
       }));
 
-      this.api.saveSectionVocab(this.selectedBookPath, this.selectedChapterId, this.currentSectionIndex, remainingVocab)
+      this.aiApi.saveSectionVocab(this.selectedBookPath, this.selectedChapterId, this.currentSectionIndex, remainingVocab)
         .pipe(takeUntil(this.destroy$))
         .subscribe({
           next: () => this.logger.log(`💾 Updated backend cached vocab after removing '${term}' (${remainingVocab.length} remaining)`),
@@ -829,7 +831,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
 
   startIndexing(): void {
     if (!this.selectedBookFileName) return;
-    this.api.startLibraryReaderIndex(this.selectedBookFileName)
+    this.libraryApi.startLibraryReaderIndex(this.selectedBookFileName)
       .pipe(takeUntil(this.destroy$))
       .subscribe({
       next: () => {
@@ -845,7 +847,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
 
   deleteIndex(): void {
     if (!this.selectedBookFileName) return;
-    this.api.deleteLibraryReaderIndex(this.selectedBookFileName)
+    this.libraryApi.deleteLibraryReaderIndex(this.selectedBookFileName)
       .pipe(takeUntil(this.destroy$))
       .subscribe({
       next: () => {
@@ -875,7 +877,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
       return;
     }
 
-    this.api.searchLibraryReaderBook(this.selectedBookFileName, term)
+    this.libraryApi.searchLibraryReaderBook(this.selectedBookFileName, term)
       .pipe(takeUntil(this.destroy$))
       .subscribe({
       next: results => {
@@ -1003,7 +1005,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
       knownWords
     };
 
-    this.api.summarizeText(payload)
+    this.aiApi.summarizeText(payload)
       .pipe(takeUntil(this.destroy$))
       .subscribe({
       next: resp => {
@@ -1165,7 +1167,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
       forceRegenerate: !!this.ultraChapterSummary
     };
 
-    this.api.generateUltraChapterSummary(payload)
+    this.aiApi.generateUltraChapterSummary(payload)
       .pipe(takeUntil(this.destroy$))
       .subscribe({
       next: resp => {
@@ -1270,7 +1272,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
     this.loadingBooks = true;
     this.error = null;
 
-    this.api.getLibraryReaderBooks()
+    this.libraryApi.getLibraryReaderBooks()
       .pipe(takeUntil(this.destroy$))
       .subscribe({
       next: books => {
@@ -1291,7 +1293,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
     this.loadingChapters = true;
     this.chapters = [];
 
-    this.api.getLibraryReaderChapters(fileName)
+    this.libraryApi.getLibraryReaderChapters(fileName)
       .pipe(takeUntil(this.destroy$))
       .subscribe({
       next: resp => {
@@ -1347,7 +1349,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
       this.loadingContent = false;
     }
 
-    this.api.getLibraryReaderChapterContent(fileName, chapterId)
+    this.libraryApi.getLibraryReaderChapterContent(fileName, chapterId)
       .pipe(takeUntil(this.destroy$))
       .subscribe({
       next: content => {
@@ -1467,7 +1469,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
   }
 
   private fetchStatus(fileName: string, keepPolling: boolean = false): void {
-    this.api.getLibraryReaderStatus(fileName)
+    this.libraryApi.getLibraryReaderStatus(fileName)
       .pipe(takeUntil(this.destroy$))
       .subscribe({
       next: status => {
@@ -1631,7 +1633,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
     if (!confirmRemove) return;
 
     const fileName = this.selectedBookFileName;
-    this.api.updateLibraryBookReaderEnabled(fileName, false)
+    this.libraryApi.updateLibraryBookReaderEnabled(fileName, false)
       .pipe(takeUntil(this.destroy$))
       .subscribe({
         next: () => {
@@ -1723,7 +1725,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
       return;
     }
 
-    this.api.getFullChapterSummary(this.selectedBookPath, this.selectedChapterId)
+    this.aiApi.getFullChapterSummary(this.selectedBookPath, this.selectedChapterId)
       .pipe(takeUntil(this.destroy$))
       .subscribe({
       next: resp => {
@@ -1749,7 +1751,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
     this.ultraChapterSummary = null;
     this.ultraSummaryTokens = null;
 
-    this.api.getUltraChapterSummary(this.selectedBookPath, this.selectedChapterId)
+    this.aiApi.getUltraChapterSummary(this.selectedBookPath, this.selectedChapterId)
       .pipe(takeUntil(this.destroy$))
       .subscribe({
       next: resp => {
@@ -1769,7 +1771,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
   }
 
   private refreshTokenUsage(): void {
-    this.api.getTokenUsage()
+    this.aiApi.getTokenUsage()
       .pipe(takeUntil(this.destroy$))
       .subscribe({
       next: usage => {
@@ -1868,7 +1870,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
     this.loadingLearnMore = true;
     this.logger.log(`Fetching learn more for "${payload.term}"`);
 
-    this.api.learnMore(payload)
+    this.aiApi.learnMore(payload)
       .pipe(takeUntil(this.destroy$))
       .subscribe({
       next: resp => {
@@ -1885,7 +1887,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
           const articleTitle = this.getWikipediaTitleFromUrl(firstWikiUrl);
           this.logger.log(`Fetching images for Wikipedia article: "${articleTitle}"`);
 
-          this.api.getWikiImages(articleTitle)
+          this.aiApi.getWikiImages(articleTitle)
             .pipe(takeUntil(this.destroy$))
             .subscribe({
             next: wiki => {
@@ -1958,7 +1960,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
       this.flashcards = [];
       return;
     }
-    this.api.getFlashcards(this.selectedBookPath)
+    this.aiApi.getFlashcards(this.selectedBookPath)
       .pipe(takeUntil(this.destroy$))
       .subscribe({
       next: cards => (this.flashcards = cards || []),
@@ -1968,7 +1970,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
 
   clearFlashcards(): void {
     if (!this.selectedBookPath) return;
-    this.api.clearFlashcards(this.selectedBookPath)
+    this.aiApi.clearFlashcards(this.selectedBookPath)
       .pipe(takeUntil(this.destroy$))
       .subscribe({
       next: () => (this.flashcards = []),
@@ -1981,7 +1983,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
     const bookPath = this.vocabFilter !== 'all' ? this.vocabFilter : this.selectedBookPath;
     if (!bookPath) return;
 
-    this.api.deleteFlashcard(bookPath, card.term)
+    this.aiApi.deleteFlashcard(bookPath, card.term)
       .pipe(takeUntil(this.destroy$))
       .subscribe({
         next: () => {
@@ -2042,7 +2044,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
       context: this.analysisText ?? undefined,
       saveToLibrary: true
     };
-    this.api.createFlashcard(payload)
+    this.aiApi.createFlashcard(payload)
       .pipe(takeUntil(this.destroy$))
       .subscribe({
       next: cards => {
@@ -2104,7 +2106,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
       this.flashcards = [];
       return;
     }
-    this.api.getFlashcards(bookPath)
+    this.aiApi.getFlashcards(bookPath)
       .pipe(takeUntil(this.destroy$))
       .subscribe({
         next: cards => (this.flashcards = cards || []),
@@ -2141,7 +2143,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
           this.logger.log(`✅ ${message}`);
 
           // Delete flashcards for the book
-          this.api.clearFlashcards(this.vocabFilter)
+          this.aiApi.clearFlashcards(this.vocabFilter)
             .pipe(takeUntil(this.destroy$))
             .subscribe({
               next: () => {
@@ -2342,7 +2344,7 @@ DO NOT create a card for every word. Only create cards for terms that add educat
       knownWords: knownWords
     };
 
-    this.api.createFlashcard(flashcardPayload)
+    this.aiApi.createFlashcard(flashcardPayload)
       .pipe(takeUntil(this.destroy$))
       .subscribe({
       next: cards => {
@@ -2370,7 +2372,7 @@ DO NOT create a card for every word. Only create cards for terms that add educat
 
           // Save merged vocab to section cache
           if (this.selectedBookPath && this.selectedChapterId !== null) {
-            this.api.saveSectionVocab(
+            this.aiApi.saveSectionVocab(
               this.selectedBookPath,
               this.selectedChapterId,
               sectionIndex,
@@ -2436,7 +2438,7 @@ DO NOT include common words. Only create flashcards for terms that significantly
       knownWords: knownWords
     };
 
-    this.api.createFlashcard(flashcardPayload)
+    this.aiApi.createFlashcard(flashcardPayload)
       .pipe(takeUntil(this.destroy$))
       .subscribe({
         next: cards => {
@@ -2787,7 +2789,7 @@ DO NOT include common words. Only create flashcards for terms that significantly
     };
 
     // Step 1: Generate summary (fast)
-    this.api.generateSectionSummary(summaryPayload)
+    this.aiApi.generateSectionSummary(summaryPayload)
       .pipe(takeUntil(this.destroy$))
       .subscribe({
       next: summary => {
@@ -2843,7 +2845,7 @@ DO NOT include common words. Only create flashcards for terms that significantly
       saveToLibrary: false
     };
 
-    this.api.createFlashcard(flashcardPayload)
+    this.aiApi.createFlashcard(flashcardPayload)
       .pipe(takeUntil(this.destroy$))
       .subscribe({
       next: cards => {
@@ -2856,7 +2858,7 @@ DO NOT include common words. Only create flashcards for terms that significantly
 
         // Save vocab to cache
         if (this.selectedBookPath && this.selectedChapterId !== null && cards.length > 0) {
-          this.api.saveSectionVocab(this.selectedBookPath, this.selectedChapterId, sectionIndex, cards)
+          this.aiApi.saveSectionVocab(this.selectedBookPath, this.selectedChapterId, sectionIndex, cards)
             .pipe(takeUntil(this.destroy$))
             .subscribe({
             next: () => this.logger.log(`💾 Saved ${cards.length} vocab cards to cache`),
@@ -2911,7 +2913,7 @@ DO NOT include common words. Only create flashcards for terms that significantly
     }
 
     // Try to load from server cache (GET endpoint - no generation)
-    this.api.getCachedSectionSummary(this.selectedBookPath, this.selectedChapterId, sectionIndex)
+    this.aiApi.getCachedSectionSummary(this.selectedBookPath, this.selectedChapterId, sectionIndex)
       .pipe(takeUntil(this.destroy$))
       .subscribe({
       next: summary => {

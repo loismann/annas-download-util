@@ -2,6 +2,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { RelatedBooksModalComponent, RelatedBooksModalData } from './related-books-modal.component';
 import { MAT_DIALOG_DATA, MatDialogRef } from '@angular/material/dialog';
 import { AnnaArchiveApiService } from '../services/anna-archive-api.service';
+import { AiApiService } from '../services/ai-api.service';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { of } from 'rxjs';
 
@@ -10,6 +11,7 @@ describe('RelatedBooksModalComponent', () => {
   let fixture: ComponentFixture<RelatedBooksModalComponent>;
   let mockDialogRef: jasmine.SpyObj<MatDialogRef<RelatedBooksModalComponent>>;
   let mockApiService: jasmine.SpyObj<AnnaArchiveApiService>;
+  let mockAiApiService: jasmine.SpyObj<AiApiService>;
 
   const mockDialogData: RelatedBooksModalData = {
     bookTitle: 'Test Book',
@@ -25,11 +27,13 @@ describe('RelatedBooksModalComponent', () => {
     mockDialogRef = jasmine.createSpyObj('MatDialogRef', ['close']);
     mockApiService = jasmine.createSpyObj('AnnaArchiveApiService', [
       'searchBooks',
-      'matchSeriesBooks',
       'sendToLibrary',
       'sendToBoox',
       'sendToKindle',
       'fetchCover'
+    ]);
+    mockAiApiService = jasmine.createSpyObj('AiApiService', [
+      'matchSeriesBooks'
     ]);
 
     // Default mock implementations
@@ -43,7 +47,8 @@ describe('RelatedBooksModalComponent', () => {
       providers: [
         { provide: MatDialogRef, useValue: mockDialogRef },
         { provide: MAT_DIALOG_DATA, useValue: mockDialogData },
-        { provide: AnnaArchiveApiService, useValue: mockApiService }
+        { provide: AnnaArchiveApiService, useValue: mockApiService },
+        { provide: AiApiService, useValue: mockAiApiService }
       ]
     }).compileComponents();
 

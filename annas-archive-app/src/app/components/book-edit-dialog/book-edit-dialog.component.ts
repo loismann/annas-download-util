@@ -13,7 +13,7 @@ import { COMMA, ENTER } from '@angular/cdk/keycodes';
 import { MatChipInputEvent } from '@angular/material/chips';
 import { Router } from '@angular/router';
 import { GenreMappingService } from '../../services/genre-mapping.service';
-import { AnnaArchiveApiService } from '../../services/anna-archive-api.service';
+import { LibraryApiService } from '../../services/library-api.service';
 import { LoggerService } from '../../services/logger.service';
 
 export interface BookEditDialogData {
@@ -97,7 +97,7 @@ export class BookEditDialogComponent implements OnInit {
     public dialogRef: MatDialogRef<BookEditDialogComponent>,
     @Inject(MAT_DIALOG_DATA) public data: BookEditDialogData,
     private genreMappingService: GenreMappingService,
-    private api: AnnaArchiveApiService,
+    private libraryApi: LibraryApiService,
     private router: Router,
     private logger: LoggerService
   ) {
@@ -133,7 +133,7 @@ export class BookEditDialogComponent implements OnInit {
     }
 
     this.summaryLoading = true;
-    this.api.getLibraryBookSummary(this.data.fileName).subscribe({
+    this.libraryApi.getLibraryBookSummary(this.data.fileName).subscribe({
       next: (resp) => {
         this.summary = resp.summary;
         this.summarySource = resp.source;
@@ -267,7 +267,7 @@ export class BookEditDialogComponent implements OnInit {
     if (!ok) return;
 
     this.isDeleting = true;
-    this.api.deleteLibraryBook(this.data.fileName).subscribe({
+    this.libraryApi.deleteLibraryBook(this.data.fileName).subscribe({
       next: () => {
         this.dialogRef.close({ deleted: true } as BookEditDialogResult);
       },
@@ -284,7 +284,7 @@ export class BookEditDialogComponent implements OnInit {
     }
 
     this.readerState = 'sending';
-    this.api.updateLibraryBookReaderEnabled(this.data.fileName, true).subscribe({
+    this.libraryApi.updateLibraryBookReaderEnabled(this.data.fileName, true).subscribe({
       next: (resp) => {
         this.data.readerEnabled = resp?.enabled ?? true;
         this.readerState = this.data.readerEnabled ? 'success' : 'error';
@@ -322,7 +322,7 @@ export class BookEditDialogComponent implements OnInit {
       this.momsKindleState = 'sending';
     }
 
-    this.api.sendLibraryToKindle(this.data.fileName, this.title, target).subscribe({
+    this.libraryApi.sendLibraryToKindle(this.data.fileName, this.title, target).subscribe({
       next: (resp) => {
         const success = resp?.success ?? true;
         if (target === 'dad') {
@@ -346,7 +346,7 @@ export class BookEditDialogComponent implements OnInit {
     if (!this.data.canSendToKindle) return;
 
     this.dropboxState = 'sending';
-    this.api.sendLibraryToKindle(this.data.fileName, this.title, 'dad', true).subscribe({
+    this.libraryApi.sendLibraryToKindle(this.data.fileName, this.title, 'dad', true).subscribe({
       next: (resp) => {
         const success = resp?.success ?? true;
         this.dropboxState = success ? 'success' : 'error';
@@ -368,7 +368,7 @@ export class BookEditDialogComponent implements OnInit {
     this.coverCandidatesLoading = true;
     this.coverCandidatesError = null;
 
-    this.api.fetchLibraryCoverCandidates(title, author).subscribe({
+    this.libraryApi.fetchLibraryCoverCandidates(title, author).subscribe({
       next: (resp) => {
         const urls = Array.from(new Set(resp.covers || []));
         this.applyCoverCandidates(urls)

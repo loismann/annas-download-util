@@ -46,7 +46,10 @@ public class EndpointIntegrationTests : IClassFixture<WebApplicationFactory<Prog
                     ["Auth:AccessCodeHash"] = "$2a$12$test", // Dummy BCrypt hash
                     ["Anna:MemberKey"] = "test-member-key",
                     ["OpenAI:ApiKey"] = "test-openai-key",
-                    ["Dropbox:AccessToken"] = "test-dropbox-token",
+                    // Dropbox OAuth2 configuration (required by StartupValidation)
+                    ["Dropbox:AppKey"] = "test-app-key",
+                    ["Dropbox:AppSecret"] = "test-app-secret",
+                    ["Dropbox:RefreshToken"] = "test-refresh-token",
                     ["Kindle:EmailAddress"] = "test@example.com",
                     ["Kindle:SmtpServer"] = "smtp.test.com",
                     ["Kindle:SmtpPort"] = "587",

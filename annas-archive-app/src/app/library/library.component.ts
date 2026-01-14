@@ -10,7 +10,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MatDialog } from '@angular/material/dialog';
-import { AnnaArchiveApiService } from '../services/anna-archive-api.service';
+import { LibraryApiService } from '../services/library-api.service';
 import { BookEditDialogComponent, BookEditDialogData, BookEditDialogResult } from '../components/book-edit-dialog/book-edit-dialog.component';
 import { BulkEditDialogComponent, BookBulkEditDialogData, BookBulkEditDialogResult } from '../components/bulk-edit-dialog/bulk-edit-dialog.component';
 import { AuthService } from '../services/auth.service';
@@ -88,7 +88,7 @@ export class LibraryComponent implements OnInit {
   @ViewChild('libraryGrid') libraryGrid?: ElementRef<HTMLDivElement>;
 
   constructor(
-    private api: AnnaArchiveApiService,
+    private libraryApi: LibraryApiService,
     private dialog: MatDialog,
     public authService: AuthService,
     private zone: NgZone,
@@ -97,7 +97,7 @@ export class LibraryComponent implements OnInit {
   ) {}
 
   ngOnInit(): void {
-    this.api.getLibraryBooks().subscribe({
+    this.libraryApi.getLibraryBooks().subscribe({
       next: (books) => {
         this.books = (books ?? []).map(book => ({
           ...book,
@@ -440,7 +440,7 @@ export class LibraryComponent implements OnInit {
         this.genres = this.buildGenreList(this.books);
 
         // Update on backend
-        this.api.updateLibraryBookMetadata(book.fileName, {
+        this.libraryApi.updateLibraryBookMetadata(book.fileName, {
           primaryGenre: result.primaryGenre ?? book.primaryGenre ?? 'Uncategorized',
           tags: result.tags ?? book.tags ?? [],
           series: result.series ?? book.series ?? null,
@@ -457,7 +457,7 @@ export class LibraryComponent implements OnInit {
 
         if (result.coverUrl) {
           this.logger.log('[library] Updating cover for', book.fileName, 'with URL:', result.coverUrl);
-          this.api.updateLibraryBookCover(book.fileName, result.coverUrl).subscribe({
+          this.libraryApi.updateLibraryBookCover(book.fileName, result.coverUrl).subscribe({
             next: (resp) => {
               this.logger.log('[library] Cover update response:', resp);
               if (resp?.coverUrl) {
@@ -494,7 +494,7 @@ export class LibraryComponent implements OnInit {
       book.momsKindleState = 'sending';
     }
 
-    this.api.sendLibraryToKindle(book.fileName, book.title, target).subscribe({
+    this.libraryApi.sendLibraryToKindle(book.fileName, book.title, target).subscribe({
       next: (resp) => {
         const success = resp?.success ?? true;
         if (target === 'dad') {
@@ -520,7 +520,7 @@ export class LibraryComponent implements OnInit {
     if (book.dadsKindleState === 'sending') return;
 
     book.dadsKindleState = 'sending';
-    this.api.sendLibraryToKindle(book.fileName, book.title, 'dad', true).subscribe({
+    this.libraryApi.sendLibraryToKindle(book.fileName, book.title, 'dad', true).subscribe({
       next: (resp) => {
         const success = resp?.success ?? true;
         book.dadsKindleState = success ? 'success' : 'error';
@@ -539,7 +539,7 @@ export class LibraryComponent implements OnInit {
     if (nextRating === current) return;
 
     book.personalRating = nextRating;
-    this.api.updateLibraryBookRatings(book.fileName, {
+    this.libraryApi.updateLibraryBookRatings(book.fileName, {
       personalRating: nextRating
     }).subscribe({
       next: () => {
@@ -605,7 +605,7 @@ export class LibraryComponent implements OnInit {
     const second = window.confirm('Are you really sure? This will remove all genres and tags.');
     if (!second) return;
 
-    this.api.wipeLibraryGenres().subscribe({
+    this.libraryApi.wipeLibraryGenres().subscribe({
       next: () => {
         this.books = this.books.map(book => ({
           ...book,
@@ -674,7 +674,7 @@ export class LibraryComponent implements OnInit {
         }
 
         // Update on backend
-        this.api.updateLibraryBookMetadata(book.fileName, {
+        this.libraryApi.updateLibraryBookMetadata(book.fileName, {
           primaryGenre: result.primaryGenre ?? book.primaryGenre ?? 'Uncategorized',
           tags: result.tags ?? book.tags ?? [],
           series: result.series ?? book.series ?? null,

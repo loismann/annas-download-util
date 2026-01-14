@@ -1,7 +1,7 @@
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MatButtonModule } from '@angular/material/button';
-import { AnnaArchiveApiService } from '../services/anna-archive-api.service';
+import { GamingApiService } from '../services/gaming-api.service';
 
 interface TerminalLine {
   text: string;
@@ -219,7 +219,7 @@ export class GamingControlComponent implements OnInit {
   pcOnline: boolean | null = null; // null = unknown, true = online, false = offline
 
   constructor(
-    private apiService: AnnaArchiveApiService
+    private gamingApi: GamingApiService
   ) {}
 
   ngOnInit(): void {
@@ -230,7 +230,7 @@ export class GamingControlComponent implements OnInit {
   }
 
   checkPCStatus(): void {
-    this.apiService.getGamingPCStatus().subscribe({
+    this.gamingApi.getGamingPCStatus().subscribe({
       next: (response) => {
         this.pcOnline = response.isOnline;
         const status = response.isOnline ? 'ONLINE' : 'OFFLINE';
@@ -283,7 +283,7 @@ export class GamingControlComponent implements OnInit {
     this.addLine('  Target MAC: 04:7C:16:EA:C7:58', 'info', 800);
     this.addLine('  Target IP: 192.168.0.80', 'info', 1000);
 
-    this.apiService.toggleGamingPC(1).subscribe({
+    this.gamingApi.toggleGamingPC(1).subscribe({
       next: (response) => {
         this.loading = false;
         this.action = null;
@@ -343,7 +343,7 @@ export class GamingControlComponent implements OnInit {
     this.addLine('→ Sending sleep command to gaming PC...', 'info', 600);
     this.addLine('  Target IP: 192.168.0.80', 'info', 800);
 
-    this.apiService.toggleGamingPC(2).subscribe({
+    this.gamingApi.toggleGamingPC(2).subscribe({
       next: (response) => {
         this.loading = false;
         this.action = null;

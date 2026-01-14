@@ -3,10 +3,9 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { finalize, map, tap, timeout, catchError } from 'rxjs/operators';
 import { LoggerService } from './logger.service';
-
 import { BookDto } from '../models/book-dto.model';
 
-/* ─────────────── existing member-download shape ──────────────── */
+/* ─────────────── Download response shapes ──────────────── */
 export interface DownloadMemberResponse {
   downloadUrl: string;
   accountFastInfo: {
@@ -15,8 +14,7 @@ export interface DownloadMemberResponse {
   } | null;
 }
 
-/* ─────────────── new send-to-boox shape (via Dropbox) ─────────────────────── */
-export interface SendToBooxResponse {
+export interface SendToTargetResponse {
   success: boolean;
   dropboxPath?: string;
   dropboxFileId?: string;
@@ -27,20 +25,29 @@ export interface SendToBooxResponse {
   } | null;
 }
 
+/* ─────────────── Cover and description lookup ─────────────────────── */
 export interface CoverLookupResponse {
   coverUrl: string | null;
-}
-
-export interface CoverCandidatesResponse {
-  covers: string[];
 }
 
 export interface DescriptionLookupResponse {
   description: string | null;
 }
 
+/* ─────────────── Download status ─────────────────────── */
+export interface DownloadStatusResponse {
+  accountFastInfo: {
+    downloadsLeft: number;
+    downloadsPerDay: number;
+  } | null;
+}
+
+/**
+ * Service for book search, download, and metadata operations.
+ * Handles both Anna's Archive and LibGen sources.
+ */
 @Injectable({ providedIn: 'root' })
-export class AnnaArchiveApiService {
+export class BookSearchApiService {
   private readonly isLocalDev = window.location.hostname === 'localhost';
   private readonly apiHost = this.isLocalDev
     ? 'http://localhost:5001'
@@ -53,13 +60,18 @@ export class AnnaArchiveApiService {
     private logger: LoggerService
   ) {
     if (this.isLocalDev) {
-      this.logger.log('🔧 LOCAL DEV MODE - Using localhost API endpoints');
+      this.logger.log('[BookSearchApiService] LOCAL DEV MODE - Using localhost API endpoints');
     }
   }
 
   /* ══════════════════════════════════════════════════════════════
-     Search – always return an array, even when the API sent 1 obj
+     ANNA'S ARCHIVE ENDPOINTS
      ══════════════════════════════════════════════════════════════ */
+
+  /**
+   * Search for books on Anna's Archive.
+   * Always returns an array, even when the API returns a single object.
+   */
   searchBooks(name: string, exact: boolean): Observable<BookDto[]> {
     const params = new HttpParams()
       .set('name', name)
@@ -88,9 +100,10 @@ export class AnnaArchiveApiService {
       );
   }
 
-  /* ══════════════════════════════════════════════════════════════
-     Member download – downloads file with optional cover replacement
-     ══════════════════════════════════════════════════════════════ */
+  /**
+   * Download a book file using member credentials.
+   * Optionally replaces the cover with a custom URL.
+   */
   downloadMember(md5: string, title: string, coverUrl?: string): Observable<Blob> {
     let params = new HttpParams().set('title', title);
     if (coverUrl) {
@@ -103,6 +116,9 @@ export class AnnaArchiveApiService {
     );
   }
 
+  /**
+   * Send a book to the local library.
+   */
   sendToLibrary(
     md5: string,
     title: string,
@@ -112,39 +128,51 @@ export class AnnaArchiveApiService {
     fileSize?: string,
     source?: string,
     description?: string
-  ): Observable<any> {
+  ): Observable<SendToTargetResponse> {
     let params = new HttpParams().set('title', title);
-    if (coverUrl) {
-      params = params.set('coverUrl', coverUrl);
-    }
-    if (authors) {
-      params = params.set('authors', authors);
-    }
-    if (format) {
-      params = params.set('format', format);
-    }
-    if (fileSize) {
-      params = params.set('fileSize', fileSize);
-    }
-    if (source) {
-      params = params.set('source', source);
-    }
-    if (description) {
-      params = params.set('description', description);
-    }
-    return this.http.post(
+    if (coverUrl) params = params.set('coverUrl', coverUrl);
+    if (authors) params = params.set('authors', authors);
+    if (format) params = params.set('format', format);
+    if (fileSize) params = params.set('fileSize', fileSize);
+    if (source) params = params.set('source', source);
+    if (description) params = params.set('description', description);
+
+    return this.http.post<SendToTargetResponse>(
       `${this.baseUrl}/book/${md5}/send-to-library`,
       null,
       { params }
     );
   }
 
-  /* ══════════════════════════════════════════════════════════════
-     Check download status – returns current download counter
-     ══════════════════════════════════════════════════════════════ */
-  getDownloadStatus(): Observable<{ accountFastInfo: { downloadsLeft: number; downloadsPerDay: number } | null }> {
-    return this.http.get<{ accountFastInfo: { downloadsLeft: number; downloadsPerDay: number } | null }>(
-      `${this.baseUrl}/download-status`
+  /**
+   * Send a book to Boox device via Dropbox.
+   */
+  sendToBoox(md5: string, title: string, coverUrl?: string): Observable<SendToTargetResponse> {
+    let params = new HttpParams().set('title', title);
+    if (coverUrl) {
+      params = params.set('coverUrl', coverUrl);
+    }
+    return this.http.post<SendToTargetResponse>(
+      `${this.baseUrl}/book/${md5}/send-to-boox`,
+      null,
+      { params }
+    );
+  }
+
+  /**
+   * Send a book to Kindle via email.
+   */
+  sendToKindle(md5: string, title: string, target: 'dad' | 'mom', coverUrl?: string): Observable<SendToTargetResponse> {
+    let params = new HttpParams()
+      .set('title', title)
+      .set('target', target);
+    if (coverUrl) {
+      params = params.set('coverUrl', coverUrl);
+    }
+    return this.http.post<SendToTargetResponse>(
+      `${this.baseUrl}/book/${md5}/send-to-kindle`,
+      null,
+      { params }
     );
   }
 
@@ -152,9 +180,10 @@ export class AnnaArchiveApiService {
      LIBGEN ENDPOINTS
      ══════════════════════════════════════════════════════════════ */
 
-  /* ══════════════════════════════════════════════════════════════
-     LibGen Search – searches LibGen instead of Anna's Archive
-     ══════════════════════════════════════════════════════════════ */
+  /**
+   * Search for books on LibGen.
+   * Always returns an array, even when the API returns a single object.
+   */
   searchBooksLibGen(name: string, exact: boolean): Observable<BookDto[]> {
     const params = new HttpParams()
       .set('name', name)
@@ -167,7 +196,7 @@ export class AnnaArchiveApiService {
     return this.http
       .get<BookDto | BookDto[]>(`${this.libgenBaseUrl}/book`, { params })
       .pipe(
-        timeout(60000), // 60 second timeout for the entire request
+        timeout(60000),
         map(res => (Array.isArray(res) ? res : [res])),
         tap(list => {
           const sample = list.slice(0, 3).map(b => ({
@@ -191,9 +220,9 @@ export class AnnaArchiveApiService {
       );
   }
 
-  /* ══════════════════════════════════════════════════════════════
-     LibGen Member download – downloads file with optional cover replacement
-     ══════════════════════════════════════════════════════════════ */
+  /**
+   * Download a book file from LibGen using member credentials.
+   */
   downloadMemberLibGen(md5: string, title: string, coverUrl?: string): Observable<Blob> {
     let params = new HttpParams().set('title', title);
     if (coverUrl) {
@@ -206,6 +235,9 @@ export class AnnaArchiveApiService {
     );
   }
 
+  /**
+   * Send a book from LibGen to the local library.
+   */
   sendToLibraryLibGen(
     md5: string,
     title: string,
@@ -215,27 +247,16 @@ export class AnnaArchiveApiService {
     fileSize?: string,
     source?: string,
     description?: string
-  ): Observable<any> {
+  ): Observable<SendToTargetResponse> {
     let params = new HttpParams().set('title', title);
-    if (coverUrl) {
-      params = params.set('coverUrl', coverUrl);
-    }
-    if (authors) {
-      params = params.set('authors', authors);
-    }
-    if (format) {
-      params = params.set('format', format);
-    }
-    if (fileSize) {
-      params = params.set('fileSize', fileSize);
-    }
-    if (source) {
-      params = params.set('source', source);
-    }
-    if (description) {
-      params = params.set('description', description);
-    }
-    return this.http.post(
+    if (coverUrl) params = params.set('coverUrl', coverUrl);
+    if (authors) params = params.set('authors', authors);
+    if (format) params = params.set('format', format);
+    if (fileSize) params = params.set('fileSize', fileSize);
+    if (source) params = params.set('source', source);
+    if (description) params = params.set('description', description);
+
+    return this.http.post<SendToTargetResponse>(
       `${this.libgenBaseUrl}/book/${md5}/send-to-library`,
       null,
       { params }
@@ -243,16 +264,37 @@ export class AnnaArchiveApiService {
   }
 
   /* ══════════════════════════════════════════════════════════════
-     SLUM Health Status – proxied through backend to avoid CORS
+     STATUS & HEALTH ENDPOINTS
      ══════════════════════════════════════════════════════════════ */
-  getSlumHealth(): Observable<any> {
-    return this.http.get<any>(`${this.baseUrl}/slum-health`);
+
+  /**
+   * Get current download status (remaining downloads).
+   */
+  getDownloadStatus(): Observable<DownloadStatusResponse> {
+    return this.http.get<DownloadStatusResponse>(`${this.baseUrl}/download-status`);
   }
 
-  getMirrorHealth(): Observable<any> {
-    return this.http.get<any>(`${this.baseUrl}/mirror-health`);
+  /**
+   * Check SLUM service health (proxied through backend to avoid CORS).
+   */
+  getSlumHealth(): Observable<unknown> {
+    return this.http.get<unknown>(`${this.baseUrl}/slum-health`);
   }
 
+  /**
+   * Check mirror service health.
+   */
+  getMirrorHealth(): Observable<unknown> {
+    return this.http.get<unknown>(`${this.baseUrl}/mirror-health`);
+  }
+
+  /* ══════════════════════════════════════════════════════════════
+     COVER & DESCRIPTION LOOKUP
+     ══════════════════════════════════════════════════════════════ */
+
+  /**
+   * Fetch cover URL for a book from external sources.
+   */
   fetchCover(title: string, author?: string): Observable<CoverLookupResponse> {
     let params = new HttpParams().set('title', title);
     if (author) {
@@ -264,6 +306,9 @@ export class AnnaArchiveApiService {
     );
   }
 
+  /**
+   * Fetch book description from Google Books.
+   */
   fetchDescriptionFromGoogleBooks(title: string, author?: string): Observable<DescriptionLookupResponse> {
     let params = new HttpParams().set('title', title);
     if (author) {
@@ -275,6 +320,9 @@ export class AnnaArchiveApiService {
     );
   }
 
+  /**
+   * Fetch book description from OpenLibrary.
+   */
   fetchDescriptionFromOpenLibrary(title: string, author?: string): Observable<DescriptionLookupResponse> {
     let params = new HttpParams().set('title', title);
     if (author) {
@@ -286,6 +334,9 @@ export class AnnaArchiveApiService {
     );
   }
 
+  /**
+   * Fetch book description from GPT-4.
+   */
   fetchDescriptionFromGPT4(title: string, author?: string): Observable<DescriptionLookupResponse> {
     let params = new HttpParams().set('title', title);
     if (author) {
@@ -296,40 +347,4 @@ export class AnnaArchiveApiService {
       { params }
     );
   }
-
-  /* ══════════════════════════════════════════════════════════════
-     NEW  ➜  Send the file to Dropbox for Boox sync
-     – passes book title so backend can name it correctly
-     – optionally passes coverUrl for cover replacement
-     ══════════════════════════════════════════════════════════════ */
-  sendToBoox(md5: string, title: string, coverUrl?: string): Observable<SendToBooxResponse> {
-    let params = new HttpParams().set('title', title);
-    if (coverUrl) {
-      params = params.set('coverUrl', coverUrl);
-    }
-    return this.http.post<SendToBooxResponse>(
-      `${this.baseUrl}/book/${md5}/send-to-boox`,
-      null,
-      { params }
-    );
-  }
-
-  /* ══════════════════════════════════════════════════════════════
-     NEW  ➜  Send the file to Kindle via email
-     – optionally passes coverUrl for cover replacement
-     ══════════════════════════════════════════════════════════════ */
-  sendToKindle(md5: string, title: string, target: 'dad' | 'mom', coverUrl?: string): Observable<SendToBooxResponse> {
-    let params = new HttpParams()
-      .set('title', title)
-      .set('target', target);
-    if (coverUrl) {
-      params = params.set('coverUrl', coverUrl);
-    }
-    return this.http.post<SendToBooxResponse>(
-      `${this.baseUrl}/book/${md5}/send-to-kindle`,
-      null,
-      { params }
-    );
-  }
-
 }

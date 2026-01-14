@@ -1,8 +1,10 @@
 using System.Diagnostics;
+using System.Net.Http;
 using System.Text.Json;
 using AnnasArchive.API.Helpers;
 using AnnasArchive.Core.Models;
 using AnnasArchive.Core.Services;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Serilog;
 
@@ -61,17 +63,34 @@ public static class BookSearchEndpoints
                 error = "Query parameter 'name' is required and must be between 1 and 500 characters."
             });
 
-        var searchLimit = cfg.GetValue<int>("Anna:SearchLimit", 25);
-        var books = (await svc.SearchAsync(name, searchLimit, exact)).ToList();
+        try
+        {
+            var searchLimit = cfg.GetValue<int>("Anna:SearchLimit", 25);
+            var books = (await svc.SearchAsync(name, searchLimit, exact)).ToList();
 
-        if (exact)
-            books = books
-                .Where(b => string.Equals(b.Title?.Trim(), name.Trim(), StringComparison.OrdinalIgnoreCase))
-                .ToList();
+            if (exact)
+                books = books
+                    .Where(b => string.Equals(b.Title?.Trim(), name.Trim(), StringComparison.OrdinalIgnoreCase))
+                    .ToList();
 
-        return books.Any()
-            ? books.Count == 1 ? Results.Ok(books[0]) : Results.Ok(books)
-            : ApiResponse.NotFound("No books found matching that name.");
+            return books.Any()
+                ? books.Count == 1 ? Results.Ok(books[0]) : Results.Ok(books)
+                : ApiResponse.NotFound("No books found matching that name.");
+        }
+        catch (HttpRequestException ex)
+        {
+            Log.Warning("Book search failed due to external service error: {Message}", ex.Message);
+            return Results.Json(
+                new { error = "External search service unavailable", details = ex.Message },
+                statusCode: StatusCodes.Status503ServiceUnavailable);
+        }
+        catch (TaskCanceledException ex) when (ex.InnerException is TimeoutException)
+        {
+            Log.Warning("Book search timed out: {Message}", ex.Message);
+            return Results.Json(
+                new { error = "Search request timed out" },
+                statusCode: StatusCodes.Status503ServiceUnavailable);
+        }
     }
 
     private static async Task<IResult> HandleGoogleBooksDescription(

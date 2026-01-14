@@ -1,6 +1,8 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { BookSearchComponent } from './book-search.component';
 import { AnnaArchiveApiService } from '../services/anna-archive-api.service';
+import { BookSearchApiService } from '../services/book-search-api.service';
+import { AiApiService } from '../services/ai-api.service';
 import { AuthService } from '../services/auth.service';
 import { MatDialog } from '@angular/material/dialog';
 import { of, throwError, NEVER, Subject } from 'rxjs';
@@ -12,6 +14,8 @@ describe('BookSearchComponent', () => {
   let component: BookSearchComponent;
   let fixture: ComponentFixture<BookSearchComponent>;
   let mockApiService: jasmine.SpyObj<AnnaArchiveApiService>;
+  let mockBookSearchApiService: jasmine.SpyObj<BookSearchApiService>;
+  let mockAiApiService: jasmine.SpyObj<AiApiService>;
   let mockAuthService: jasmine.SpyObj<AuthService>;
   let mockDialog: jasmine.SpyObj<MatDialog>;
 
@@ -36,9 +40,26 @@ describe('BookSearchComponent', () => {
   });
 
   beforeEach(async () => {
+    // AnnaArchiveApiService - core book operations (no AI methods)
     mockApiService = jasmine.createSpyObj('AnnaArchiveApiService', [
       'searchBooks',
+      'sendToLibrary',
+      'sendToBoox',
+      'sendToKindle',
+      'fetchCover'
+    ]);
+
+    // AiApiService - AI-related methods
+    mockAiApiService = jasmine.createSpyObj('AiApiService', [
       'suggestAuthors',
+      'getRelatedBooks',
+      'aiBookSearch'
+    ]);
+
+    // BookSearchApiService - search, download, cover, description methods
+    mockBookSearchApiService = jasmine.createSpyObj('BookSearchApiService', [
+      'searchBooks',
+      'searchBooksLibGen',
       'sendToBoox',
       'sendToLibrary',
       'sendToLibraryLibGen',
@@ -46,7 +67,10 @@ describe('BookSearchComponent', () => {
       'getDownloadStatus',
       'getMirrorHealth',
       'getSlumHealth',
-      'getRelatedBooks'
+      'fetchCover',
+      'fetchDescriptionFromGoogleBooks',
+      'fetchDescriptionFromOpenLibrary',
+      'fetchDescriptionFromGPT4'
     ]);
 
     mockAuthService = jasmine.createSpyObj('AuthService', ['isAuthenticated', 'isAdmin']);
@@ -67,11 +91,13 @@ describe('BookSearchComponent', () => {
       afterClosed: () => NEVER
     };
     mockDialog.open.and.returnValue(defaultDialogRef as any);
-    mockApiService.getDownloadStatus.and.returnValue(of({
+
+    // BookSearchApiService mock implementations
+    mockBookSearchApiService.getDownloadStatus.and.returnValue(of({
       accountFastInfo: { downloadsLeft: 50, downloadsPerDay: 100 }
     }));
 
-    mockApiService.getMirrorHealth.and.returnValue(of({
+    mockBookSearchApiService.getMirrorHealth.and.returnValue(of({
       mirrors: {
         org: { health: '95%', cert_exp: '90 days' },
         se: { health: '92%', cert_exp: '85 days' },
@@ -81,7 +107,7 @@ describe('BookSearchComponent', () => {
       }
     }));
 
-    mockApiService.getSlumHealth.and.returnValue(of({
+    mockBookSearchApiService.getSlumHealth.and.returnValue(of({
       mirrors: {
         org: { health: '95%', cert_exp: '90 days' },
         se: { health: '92%', cert_exp: '85 days' },
@@ -99,6 +125,8 @@ describe('BookSearchComponent', () => {
       ],
       providers: [
         { provide: AnnaArchiveApiService, useValue: mockApiService },
+        { provide: BookSearchApiService, useValue: mockBookSearchApiService },
+        { provide: AiApiService, useValue: mockAiApiService },
         { provide: AuthService, useValue: mockAuthService },
         { provide: MatDialog, useValue: mockDialog }
       ]
@@ -286,7 +314,7 @@ describe('BookSearchComponent', () => {
       fixture.detectChanges(); // triggers ngOnInit
 
       // Assert
-      expect(mockApiService.getDownloadStatus).toHaveBeenCalled();
+      expect(mockBookSearchApiService.getDownloadStatus).toHaveBeenCalled();
     });
 
     it('should fetch mirror health on init', () => {
@@ -294,14 +322,14 @@ describe('BookSearchComponent', () => {
       fixture.detectChanges(); // triggers ngOnInit
 
       // Assert
-      expect(mockApiService.getSlumHealth).toHaveBeenCalled();
+      expect(mockBookSearchApiService.getSlumHealth).toHaveBeenCalled();
     });
   });
 
   describe('Download counter', () => {
     it('should update download counter from server response', () => {
       // Arrange - Create fresh component with new mock values
-      mockApiService.getDownloadStatus.and.returnValue(of({
+      mockBookSearchApiService.getDownloadStatus.and.returnValue(of({
         accountFastInfo: { downloadsLeft: 25, downloadsPerDay: 100 }
       }));
 
@@ -518,7 +546,7 @@ describe('BookSearchComponent', () => {
       component.selectedAuthor = 'Test Author';
 
       // Setup required API mock
-      mockApiService.getRelatedBooks.and.returnValue(of({ sameSeries: [], otherSeries: [], seriesSummary: null }));
+      mockAiApiService.getRelatedBooks.and.returnValue(of({ sameSeries: [], otherSeries: [], seriesSummary: null }));
 
       component.openRelatedBooksModal();
 
@@ -544,7 +572,7 @@ describe('BookSearchComponent', () => {
         afterClosed: () => dialogCloseSubject.asObservable()
       };
       mockDialog.open.and.returnValue(mockDialogRef as any);
-      mockApiService.getRelatedBooks.and.returnValue(of({ sameSeries: [], otherSeries: [], seriesSummary: null }));
+      mockAiApiService.getRelatedBooks.and.returnValue(of({ sameSeries: [], otherSeries: [], seriesSummary: null }));
 
       component.openRelatedBooksModal();
       expect(component.relatedBooksModalOpen).toBe(true);
@@ -583,7 +611,7 @@ describe('BookSearchComponent', () => {
 
   describe('AI Book Search - Description Source Mapping', () => {
     beforeEach(() => {
-      mockApiService.aiBookSearch = jasmine.createSpy('aiBookSearch');
+      mockAiApiService.aiBookSearch = jasmine.createSpy('aiBookSearch');
     });
 
     it('should map descriptionSource from API response to dialog data', (done) => {
@@ -610,7 +638,7 @@ describe('BookSearchComponent', () => {
         ]
       };
 
-      mockApiService.aiBookSearch.and.returnValue(of(mockApiResponse));
+      mockAiApiService.aiBookSearch.and.returnValue(of(mockApiResponse));
 
       const dialogRef = {
         componentInstance: {
@@ -654,7 +682,7 @@ describe('BookSearchComponent', () => {
         ]
       };
 
-      mockApiService.aiBookSearch.and.returnValue(of(mockApiResponse));
+      mockAiApiService.aiBookSearch.and.returnValue(of(mockApiResponse));
 
       const dialogRef = {
         componentInstance: {
@@ -695,7 +723,7 @@ describe('BookSearchComponent', () => {
         ]
       };
 
-      mockApiService.aiBookSearch.and.returnValue(of(mockApiResponse));
+      mockAiApiService.aiBookSearch.and.returnValue(of(mockApiResponse));
 
       const dialogRef = {
         componentInstance: {
@@ -752,7 +780,7 @@ describe('BookSearchComponent', () => {
         ]
       };
 
-      mockApiService.aiBookSearch.and.returnValue(of(mockApiResponse));
+      mockAiApiService.aiBookSearch.and.returnValue(of(mockApiResponse));
 
       const dialogRef = {
         componentInstance: {
@@ -797,7 +825,7 @@ describe('BookSearchComponent', () => {
         ]
       };
 
-      mockApiService.aiBookSearch.and.returnValue(of(mockApiResponse));
+      mockAiApiService.aiBookSearch.and.returnValue(of(mockApiResponse));
 
       const dialogRef = {
         componentInstance: {

@@ -12,12 +12,13 @@ import { MatSelectModule } from '@angular/material/select';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import {
+  AiApiService,
   SeriesBook,
   AuthorSeriesInfo,
-  AnnaArchiveApiService,
   BookWithCandidates,
   CandidateBook
-} from '../services/anna-archive-api.service';
+} from '../services/ai-api.service';
+import { AnnaArchiveApiService } from '../services/anna-archive-api.service';
 import { BookDto } from '../models/book-dto.model';
 import { firstValueFrom } from 'rxjs';
 import { LoggerService } from '../services/logger.service';
@@ -80,7 +81,8 @@ export class RelatedBooksModalComponent {
   constructor(
     public dialogRef: MatDialogRef<RelatedBooksModalComponent>,
     @Inject(MAT_DIALOG_DATA) public data: RelatedBooksModalData,
-    private api: AnnaArchiveApiService,
+    private aiApi: AiApiService,
+    private annaApi: AnnaArchiveApiService,
     private logger: LoggerService
   ) {}
 
@@ -178,7 +180,7 @@ export class RelatedBooksModalComponent {
 
     for (const book of this.selectedBooks) {
       try {
-        const searchResults = await firstValueFrom(this.api.searchBooks(book.title, false));
+        const searchResults = await firstValueFrom(this.annaApi.searchBooks(book.title, false));
 
         // Convert BookDto[] to CandidateBook[]
         const candidates: CandidateBook[] = (searchResults ?? []).map(result => ({
@@ -207,7 +209,7 @@ export class RelatedBooksModalComponent {
     // Step 2: Use GPT to intelligently match books
     try {
       const matchResponse = await firstValueFrom(
-        this.api.matchSeriesBooks({
+        this.aiApi.matchSeriesBooks({
           seriesName: undefined,  // Could extract from data if available
           author: author,
           preferredFormat: format === 'ALL' ? undefined : format,
@@ -337,7 +339,7 @@ export class RelatedBooksModalComponent {
         const trySaveToLibrary = async (): Promise<boolean> => {
           try {
             await firstValueFrom(
-              this.api.sendToLibrary(
+              this.annaApi.sendToLibrary(
                 selected.md5,
                 selected.title,
                 coverUrl,
@@ -361,19 +363,19 @@ export class RelatedBooksModalComponent {
             : `✗ Library failed: ${selected.title}`;
         } else if (action === 'dropbox') {
           await trySaveToLibrary();
-          const resp = await firstValueFrom(this.api.sendToBoox(selected.md5, selected.title, coverUrl));
+          const resp = await firstValueFrom(this.annaApi.sendToBoox(selected.md5, selected.title, coverUrl));
           this.sendLog[this.sendLog.length - 1] = resp?.success
             ? `✓ Sent to Dropbox: ${selected.title}`
             : `✗ Dropbox failed: ${selected.title}`;
         } else if (action === 'kindle-dad') {
           await trySaveToLibrary();
-          const resp = await firstValueFrom(this.api.sendToKindle(selected.md5, selected.title, 'dad', coverUrl));
+          const resp = await firstValueFrom(this.annaApi.sendToKindle(selected.md5, selected.title, 'dad', coverUrl));
           this.sendLog[this.sendLog.length - 1] = resp?.success
             ? `✓ Sent to Dad's Kindle: ${selected.title}`
             : `✗ Dad's Kindle failed: ${selected.title} - ${resp?.message || 'Unknown error'}`;
         } else {
           await trySaveToLibrary();
-          const resp = await firstValueFrom(this.api.sendToKindle(selected.md5, selected.title, 'mom', coverUrl));
+          const resp = await firstValueFrom(this.annaApi.sendToKindle(selected.md5, selected.title, 'mom', coverUrl));
           this.sendLog[this.sendLog.length - 1] = resp?.success
             ? `✓ Sent to Mom's Kindle: ${selected.title}`
             : `✗ Mom's Kindle failed: ${selected.title} - ${resp?.message || 'Unknown error'}`;
@@ -522,7 +524,7 @@ export class RelatedBooksModalComponent {
       return;
     }
 
-    this.api.fetchCover(title, this.data.author).subscribe({
+    this.annaApi.fetchCover(title, this.data.author).subscribe({
       next: (resp) => {
         if (resp?.coverUrl) {
           book.coverUrl = resp.coverUrl;
@@ -543,7 +545,7 @@ export class RelatedBooksModalComponent {
       return;
     }
 
-    this.api.fetchCover(title, this.data.author).subscribe({
+    this.annaApi.fetchCover(title, this.data.author).subscribe({
       next: (resp) => {
         if (resp?.coverUrl) {
           book.coverUrl = resp.coverUrl;

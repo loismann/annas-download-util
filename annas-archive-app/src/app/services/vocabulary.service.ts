@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { BehaviorSubject, Observable } from 'rxjs';
-import { AnnaArchiveApiService } from './anna-archive-api.service';
+import { AiApiService } from './ai-api.service';
 import { LoggerService } from './logger.service';
 
 export interface VocabularyWord {
@@ -33,7 +33,7 @@ export class VocabularyService {
   public studyWords$: Observable<Map<string, string>> = this.studyWordsSubject.asObservable();
 
   constructor(
-    private apiService: AnnaArchiveApiService,
+    private aiApi: AiApiService,
     private logger: LoggerService
   ) {
     this.loadFromServer();
@@ -70,7 +70,7 @@ export class VocabularyService {
   private loadFromServer(): void {
     this.logger.log('🔄 [loadFromServer] Initializing vocabulary service, fetching from server...');
 
-    this.apiService.getKnownWords().subscribe({
+    this.aiApi.getKnownWords().subscribe({
       next: (wordsWithBooks) => {
         this.logger.log(`📥 [loadFromServer] Received known words from API:`, wordsWithBooks);
 
@@ -94,7 +94,7 @@ export class VocabularyService {
       }
     });
 
-    this.apiService.getStudyWords().subscribe({
+    this.aiApi.getStudyWords().subscribe({
       next: (wordsWithBooks) => {
         this.logger.log(`📥 [loadFromServer] Received study words from API:`, wordsWithBooks);
 
@@ -238,7 +238,7 @@ export class VocabularyService {
 
     // Persist to server with bookId
     this.logger.log(`🌐 [markAsKnown] Calling API to persist to server with bookId='${bookId}'...`);
-    this.apiService.addKnownWord(normalizedTerm, bookId).subscribe({
+    this.aiApi.addKnownWord(normalizedTerm, bookId).subscribe({
       next: (response) => {
         this.logger.log(`✅ [markAsKnown] Server confirmed: '${normalizedTerm}' marked as known for book '${bookId}'`, response);
       },
@@ -322,7 +322,7 @@ export class VocabularyService {
 
     // Persist to server with bookId
     this.logger.log(`🌐 [markAsUnknown] Calling API to persist to server with bookId='${bookId}'...`);
-    this.apiService.addStudyWord(normalizedTerm, definition, bookId).subscribe({
+    this.aiApi.addStudyWord(normalizedTerm, definition, bookId).subscribe({
       next: (response) => {
         this.logger.log(`✅ [markAsUnknown] Server confirmed: '${normalizedTerm}' marked as study word for book '${bookId}'`, response);
       },
@@ -429,14 +429,14 @@ export class VocabularyService {
 
     // Clear known words on server
     knownWords.forEach(term => {
-      this.apiService.removeKnownWord(term).subscribe({
+      this.aiApi.removeKnownWord(term).subscribe({
         error: (err) => this.logger.error(`Failed to remove known word "${term}"`, err)
       });
     });
 
     // Clear study words on server
     studyWords.forEach(term => {
-      this.apiService.removeStudyWord(term).subscribe({
+      this.aiApi.removeStudyWord(term).subscribe({
         error: (err) => this.logger.error(`Failed to remove study word "${term}"`, err)
       });
     });
@@ -449,7 +449,7 @@ export class VocabularyService {
     this.knownWordsSubject.next(new Set());
 
     knownWords.forEach(term => {
-      this.apiService.removeKnownWord(term).subscribe({
+      this.aiApi.removeKnownWord(term).subscribe({
         error: (err) => this.logger.error(`Failed to remove known word "${term}"`, err)
       });
     });
@@ -460,7 +460,7 @@ export class VocabularyService {
     this.studyWordsSubject.next(new Map());
 
     studyWords.forEach(term => {
-      this.apiService.removeStudyWord(term).subscribe({
+      this.aiApi.removeStudyWord(term).subscribe({
         error: (err) => this.logger.error(`Failed to remove study word "${term}"`, err)
       });
     });
@@ -473,7 +473,7 @@ export class VocabularyService {
     const bookName = this.bookNames.get(bookId) || bookId;
 
     // Call API to delete all vocabulary for this book
-    this.apiService.deleteBookVocab(bookId).subscribe({
+    this.aiApi.deleteBookVocab(bookId).subscribe({
       next: (response) => {
         this.logger.log(`✅ [deleteBook] Server confirmed deletion:`, response);
 

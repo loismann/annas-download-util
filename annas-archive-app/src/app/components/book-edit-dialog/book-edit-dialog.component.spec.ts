@@ -2,7 +2,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { BookEditDialogComponent, BookEditDialogData } from './book-edit-dialog.component';
 import { MAT_DIALOG_DATA, MatDialogRef } from '@angular/material/dialog';
 import { GenreMappingService } from '../../services/genre-mapping.service';
-import { AnnaArchiveApiService } from '../../services/anna-archive-api.service';
+import { LibraryApiService } from '../../services/library-api.service';
 import { Router } from '@angular/router';
 import { of } from 'rxjs';
 import { BrowserAnimationsModule } from '@angular/platform-browser/animations';
@@ -12,7 +12,7 @@ describe('BookEditDialogComponent', () => {
   let fixture: ComponentFixture<BookEditDialogComponent>;
   let mockDialogRef: jasmine.SpyObj<MatDialogRef<BookEditDialogComponent>>;
   let mockGenreMappingService: jasmine.SpyObj<GenreMappingService>;
-  let mockApiService: jasmine.SpyObj<AnnaArchiveApiService>;
+  let mockLibraryApiService: jasmine.SpyObj<LibraryApiService>;
   let mockRouter: jasmine.SpyObj<Router>;
 
   const testDialogData: BookEditDialogData = {
@@ -32,13 +32,13 @@ describe('BookEditDialogComponent', () => {
   beforeEach(async () => {
     mockDialogRef = jasmine.createSpyObj('MatDialogRef', ['close']);
     mockGenreMappingService = jasmine.createSpyObj('GenreMappingService', ['getStandardGenres']);
-    mockApiService = jasmine.createSpyObj('AnnaArchiveApiService', [
+    mockLibraryApiService = jasmine.createSpyObj('LibraryApiService', [
       'deleteLibraryBook',
       'sendLibraryToKindle',
       'updateLibraryBookReaderEnabled',
       'getLibraryBookSummary'
     ]);
-    mockApiService.getLibraryBookSummary.and.returnValue(of({ summary: null, source: null }));
+    mockLibraryApiService.getLibraryBookSummary.and.returnValue(of({ summary: null, source: null }));
     mockRouter = jasmine.createSpyObj('Router', ['navigate']);
 
     mockGenreMappingService.getStandardGenres.and.returnValue([
@@ -53,7 +53,7 @@ describe('BookEditDialogComponent', () => {
         { provide: MatDialogRef, useValue: mockDialogRef },
         { provide: MAT_DIALOG_DATA, useValue: testDialogData },
         { provide: GenreMappingService, useValue: mockGenreMappingService },
-        { provide: AnnaArchiveApiService, useValue: mockApiService },
+        { provide: LibraryApiService, useValue: mockLibraryApiService },
         { provide: Router, useValue: mockRouter }
       ]
     }).compileComponents();

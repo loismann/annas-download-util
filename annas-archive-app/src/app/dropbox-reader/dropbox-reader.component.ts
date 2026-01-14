@@ -22,6 +22,8 @@ import { MatDialog } from '@angular/material/dialog';
 import { ActivatedRoute, Router } from '@angular/router';
 import { CharacterGraphModalComponent } from '../character-graph-modal/character-graph-modal.component';
 import { ConfirmDialogComponent } from '../components/confirm-dialog/confirm-dialog.component';
+import { DeleteCacheDialogComponent, DeleteCacheDialogResult } from '../components/delete-cache-dialog/delete-cache-dialog.component';
+import { firstValueFrom } from 'rxjs';
 
 import {
   DropboxBookSearchResult,
@@ -846,6 +848,28 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
   }
 
   deleteIndex(): void {
+    if (!this.selectedBookFileName || !this.selectedBookPath) return;
+
+    const bookTitle = this.selectedBook?.title ?? 'this book';
+    const summaryCount = this.fullChapterSummaryCache.size;
+
+    const dialogRef = this.dialog.open(DeleteCacheDialogComponent, {
+      data: {
+        bookTitle,
+        summaryCount,
+        onExport: () => this.exportSummaries()
+      },
+      panelClass: 'delete-cache-dialog-panel'
+    });
+
+    dialogRef.afterClosed().subscribe((result: DeleteCacheDialogResult | undefined) => {
+      if (result === 'delete') {
+        this.performDeleteIndex();
+      }
+    });
+  }
+
+  private performDeleteIndex(): void {
     if (!this.selectedBookFileName) return;
     this.libraryApi.deleteLibraryReaderIndex(this.selectedBookFileName)
       .pipe(takeUntil(this.destroy$))
@@ -861,6 +885,50 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
         this.error = 'Unable to delete cache.';
       }
     });
+  }
+
+  async exportSummaries(): Promise<void> {
+    if (!this.selectedBookPath) return;
+
+    try {
+      const summaries = await firstValueFrom(this.aiApi.getAllCachedSummaries(this.selectedBookPath));
+      const bookTitle = this.selectedBook?.title ?? 'Unknown Book';
+
+      // Format summaries as text
+      let textContent = `# Chapter Summaries\n`;
+      textContent += `Book: ${bookTitle}\n`;
+      textContent += `Exported: ${new Date().toLocaleString()}\n`;
+      textContent += `${'='.repeat(60)}\n\n`;
+
+      const chapterIds = Object.keys(summaries).map(Number).sort((a, b) => a - b);
+
+      for (const chapterId of chapterIds) {
+        const chapterData = summaries[chapterId];
+        const summaryText = chapterData?.summary ?? '';
+
+        if (summaryText) {
+          textContent += `## Chapter ${chapterId}\n\n`;
+          textContent += `${summaryText}\n\n`;
+          textContent += `${'-'.repeat(40)}\n\n`;
+        }
+      }
+
+      // Create and download the file
+      const blob = new Blob([textContent], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${bookTitle.replace(/[^a-zA-Z0-9]/g, '_')}_summaries.txt`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      this.logger.log(`Exported ${chapterIds.length} chapter summaries for "${bookTitle}"`);
+    } catch (err) {
+      this.logger.error('Failed to export summaries', err);
+      throw err;
+    }
   }
 
   searchWholeBook(): void {

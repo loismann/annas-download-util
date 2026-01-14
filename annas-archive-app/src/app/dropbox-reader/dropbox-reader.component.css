@@ -1200,6 +1200,16 @@
   font-size: 16px;
 }
 
+.status-btn-export {
+  gap: 6px;
+}
+
+.status-btn-export mat-icon {
+  font-size: 18px;
+  width: 18px;
+  height: 18px;
+}
+
 .reading-tools-section {
   margin: 16px 0;
 }

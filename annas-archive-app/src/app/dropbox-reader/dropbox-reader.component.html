@@ -276,6 +276,11 @@
             (click)="startIndexing()" [disabled]="!selectedBookPath || (status && status.inProgress)">
             Cache
           </button>
+          <button mat-stroked-button color="primary" class="status-btn status-btn-export"
+            (click)="exportSummaries()" [disabled]="!selectedBookPath || !status?.chaptersCached">
+            <mat-icon>download</mat-icon>
+            Export
+          </button>
           <button mat-flat-button color="warn" class="status-btn status-btn-warn"
             (click)="deleteIndex()" [disabled]="!selectedBookPath">
             Delete

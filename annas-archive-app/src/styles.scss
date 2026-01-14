@@ -29,12 +29,11 @@ button {
 /* Material dropdown panel overrides for CDK overlay */
 /* These must be global since panels render outside component scope */
 
-/* Author dropdown panel styling - expand leftwards, max 600px width with wrapping */
+/* Author dropdown panel styling - expand rightward from left edge, max 600px width with wrapping */
 .author-select-panel {
   max-width: 600px !important;
-  transform-origin: top right !important;
-  /* Shift panel to align right edges - 360px is the max width of the form field */
-  transform: translateX(calc(360px - 600px)) !important;
+  transform-origin: top left !important;
+  /* No transform needed - panel expands rightward from left edge by default */
 }
 
 .author-select-panel mat-option,
@@ -121,6 +120,15 @@ button {
   position: fixed !important;
   width: 100% !important;
   overflow-y: scroll !important;
+}
+
+/* Delete Cache Dialog */
+.delete-cache-dialog-panel .mat-mdc-dialog-container {
+  padding: 0 !important;
+}
+
+.delete-cache-dialog-panel .mdc-dialog__surface {
+  border-radius: 12px !important;
 }
 
 /* …any other global styles… */

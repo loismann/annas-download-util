@@ -1,0 +1,66 @@
+<div class="delete-cache-dialog">
+  <div class="warning-icon">
+    <mat-icon>warning</mat-icon>
+  </div>
+
+  <h2 class="dialog-title">Delete Cache?</h2>
+
+  <div class="dialog-content">
+    <p class="warning-text">
+      <strong>This action cannot be undone.</strong>
+    </p>
+
+    <p class="explanation">
+      Deleting the cache for <strong>"{{ data.bookTitle }}"</strong> will permanently remove:
+    </p>
+
+    <ul class="deletion-list">
+      <li>
+        <mat-icon>summarize</mat-icon>
+        <span>{{ data.summaryCount }} chapter summaries</span>
+      </li>
+      <li>
+        <mat-icon>psychology</mat-icon>
+        <span>All section summaries</span>
+      </li>
+      <li>
+        <mat-icon>hub</mat-icon>
+        <span>Character relationship graph</span>
+      </li>
+      <li>
+        <mat-icon>segment</mat-icon>
+        <span>Chapter indexing data</span>
+      </li>
+    </ul>
+
+    <p class="explanation">
+      Summaries are directly tied to chapter indexing. If you re-index, all summaries must be regenerated from scratch.
+    </p>
+
+    <div class="export-section" *ngIf="data.summaryCount > 0">
+      <p class="export-prompt">Want to save your summaries before deleting?</p>
+      <button
+        mat-stroked-button
+        class="export-button"
+        (click)="onExport()"
+        [disabled]="exporting || exported">
+        <mat-spinner *ngIf="exporting" diameter="18"></mat-spinner>
+        <mat-icon *ngIf="!exporting && !exported">download</mat-icon>
+        <mat-icon *ngIf="exported" class="success-icon">check_circle</mat-icon>
+        <span *ngIf="!exporting && !exported">Export Summaries</span>
+        <span *ngIf="exporting">Exporting...</span>
+        <span *ngIf="exported">Exported!</span>
+      </button>
+    </div>
+  </div>
+
+  <div class="dialog-actions">
+    <button mat-stroked-button class="cancel-button" (click)="onCancel()">
+      Cancel
+    </button>
+    <button mat-raised-button class="delete-button" (click)="onDelete()">
+      <mat-icon>delete_forever</mat-icon>
+      Delete Cache
+    </button>
+  </div>
+</div>

@@ -65,7 +65,6 @@
           name="selectedAuthor"
           [disabled]="aiSearchExpanded || loadingAuthors || authorSuggestions.length === 0"
           panelClass="author-select-panel"
-          xPosition="before"
         >
           <mat-option value="">All Authors</mat-option>
           <mat-option *ngFor="let suggestion of authorSuggestions" [value]="suggestion.author">

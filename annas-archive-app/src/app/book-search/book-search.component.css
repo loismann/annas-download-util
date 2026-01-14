@@ -487,8 +487,108 @@
 
   /* ─── RESPONSIVE: Tablet and Mobile ─────────────── */
 
-  /* Small tablets (iPad Mini) and phones: 768px and below - Single column stacked */
-  @media (max-width: 768px) {
+  /* Large tablets landscape (iPad Pro 12.9" landscape 1366px+, large desktops) */
+  /* Default styles apply - full padding, inline buttons */
+
+  /* Medium tablets (iPad Air/Pro landscape ~1180-1366px, iPad Pro 12.9" portrait 1024px) */
+  @media (max-width: 1366px) {
+    .search-results {
+      padding: 3rem 0;
+    }
+
+    .results-inner {
+      width: 90%;
+    }
+
+    :host ::ng-deep mat-card.book-card .info .mat-card-header {
+      padding: 24px 24px 0 24px;
+    }
+
+    :host ::ng-deep mat-card.book-card .info .mat-card-content {
+      padding: 0 24px 16px 24px;
+    }
+
+    :host ::ng-deep mat-card.book-card .info .mat-card-actions,
+    :host ::ng-deep mat-card.book-card .info .action-buttons {
+      padding: 16px 24px 24px 24px;
+      flex-wrap: wrap;
+    }
+
+    :host ::ng-deep mat-card.book-card .info .mat-card-actions button,
+    :host ::ng-deep mat-card.book-card .info .action-buttons button {
+      flex: 1 1 calc(50% - 4px);
+      min-width: calc(50% - 4px);
+    }
+  }
+
+  /* Smaller tablets (iPad Air/Pro portrait ~820-1024px, iPad Mini landscape ~1133px) */
+  @media (max-width: 1180px) {
+    :host ::ng-deep mat-card.book-card .cover {
+      flex: 0 0 140px;
+      width: 140px;
+      height: 210px;
+    }
+
+    :host ::ng-deep mat-card.book-card .info .mat-card-header {
+      padding: 16px 16px 0 16px;
+    }
+
+    :host ::ng-deep mat-card.book-card .info .mat-card-content {
+      padding: 0 16px 12px 16px;
+    }
+
+    :host ::ng-deep mat-card.book-card .info .mat-card-actions,
+    :host ::ng-deep mat-card.book-card .info .action-buttons {
+      padding: 12px 16px 16px 16px;
+    }
+
+    :host ::ng-deep mat-card.book-card .info .mat-card-actions button,
+    :host ::ng-deep mat-card.book-card .info .action-buttons button {
+      font-size: 11px;
+      padding: 6px 2px;
+    }
+
+    :host ::ng-deep mat-card.book-card .book-description .description-text {
+      padding-right: 30px;
+      font-size: 0.85rem;
+    }
+  }
+
+  /* iPad Mini portrait and smaller tablets portrait (744-820px) - still 2-column but tighter */
+  @media (min-width: 745px) and (max-width: 834px) {
+    .results-inner {
+      width: 95%;
+    }
+
+    :host ::ng-deep mat-card.book-card .cover {
+      flex: 0 0 100px;
+      width: 100px;
+      height: 150px;
+    }
+
+    :host ::ng-deep mat-card.book-card .info .mat-card-header {
+      padding: 12px 12px 0 12px;
+    }
+
+    :host ::ng-deep mat-card.book-card .info .mat-card-content {
+      padding: 0 12px 8px 12px;
+    }
+
+    :host ::ng-deep mat-card.book-card .info .mat-card-actions,
+    :host ::ng-deep mat-card.book-card .info .action-buttons {
+      padding: 8px 12px 12px 12px;
+      gap: 6px;
+    }
+
+    :host ::ng-deep mat-card.book-card .info .mat-card-actions button,
+    :host ::ng-deep mat-card.book-card .info .action-buttons button {
+      font-size: 10px;
+      min-height: 32px;
+    }
+  }
+
+  /* Small tablets (iPad Mini) and phones: 744px and below - Single column stacked */
+  @media (max-width: 744px) {
     .search-wrapper {
       grid-template-columns: 1fr;
       grid-template-rows: auto 1fr;

@@ -4,7 +4,7 @@ import { MAT_DIALOG_DATA, MatDialogRef, MatDialogModule } from '@angular/materia
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
-import { AnnaArchiveApiService } from '../services/anna-archive-api.service';
+import { AiApiService } from '../services/ai-api.service';
 import { CharacterGraphResponse } from '../models/dropbox-epub.model';
 import { LoggerService } from '../services/logger.service';
 
@@ -34,7 +34,7 @@ export class CharacterGraphModalComponent implements OnInit, AfterViewInit, OnDe
   constructor(
     public dialogRef: MatDialogRef<CharacterGraphModalComponent>,
     @Inject(MAT_DIALOG_DATA) public data: CharacterGraphModalData,
-    private api: AnnaArchiveApiService,
+    private aiApi: AiApiService,
     private logger: LoggerService
   ) {}
 
@@ -57,7 +57,7 @@ export class CharacterGraphModalComponent implements OnInit, AfterViewInit, OnDe
     this.error = null;
 
     // Try to load existing graph first
-    this.api.getCharacterGraph(this.data.dropboxPath).subscribe({
+    this.aiApi.getCharacterGraph(this.data.dropboxPath).subscribe({
       next: response => {
         // Check if graph needs updating
         if (response.needsUpdate) {
@@ -83,7 +83,7 @@ export class CharacterGraphModalComponent implements OnInit, AfterViewInit, OnDe
 
     this.logger.log('📊 Generating character graph for', this.data.bookTitle);
 
-    this.api.generateCharacterGraph({
+    this.aiApi.generateCharacterGraph({
       dropboxPath: this.data.dropboxPath,
       bookTitle: this.data.bookTitle,
       context: `A novel titled "${this.data.bookTitle}"`

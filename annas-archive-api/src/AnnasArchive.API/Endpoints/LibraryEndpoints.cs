@@ -1016,8 +1016,16 @@ public static class LibraryEndpoints
         if (!string.Equals(Path.GetExtension(fileName), ".epub", StringComparison.OrdinalIgnoreCase))
             return Results.BadRequest(new { error = "Reader supports EPUB files only." });
         var readerKey = ResolveReaderKey(fileName, AiContentCache.GetExistingSummaryKeys());
-        var removed = LibraryEpubCache.DeleteCache(readerKey);
-        return Results.Ok(new { success = removed });
+
+        // Delete EPUB chapter cache
+        var epubCacheRemoved = LibraryEpubCache.DeleteCache(readerKey);
+        Log.Information("[library] EPUB cache deleted for {ReaderKey}: {Removed}", readerKey, epubCacheRemoved);
+
+        // Delete ALL AI-generated content (summaries, character graphs, section summaries, etc.)
+        var aiCacheRemoved = AiContentCache.DeleteAllAiCacheForBook(readerKey);
+        Log.Information("[library] AI cache deleted for {ReaderKey}: {Removed}", readerKey, aiCacheRemoved);
+
+        return Results.Ok(new { success = epubCacheRemoved || aiCacheRemoved });
     }
 
     private static async Task<IResult> HandleReaderSearch(

@@ -447,6 +447,7 @@
   overflow-y: auto;
   overflow-x: hidden;
   height: 100%;
+  min-width: 280px;
 }
 
 .reader-theme-light.text-window,
@@ -551,6 +552,7 @@
   gap: 10px;
   flex-wrap: wrap;
   justify-content: center;
+  width: 100%;
 }
 
 .analysis-label {
@@ -617,21 +619,18 @@
 
 .analysis-pane.reader-theme-light .summary-btn {
   border: 1px solid #475569;
-  border-left: none;
   background: #f8fafc;
   color: #1d3070;
 }
 
 .analysis-pane.reader-theme-sepia .summary-btn {
   border: 1px solid #8b6b3f;
-  border-left: none;
   background: #efd8b4;
   color: #2d2014;
 }
 
 .analysis-pane.reader-theme-dark .summary-btn {
   border: 1px solid rgba(144, 180, 255, 0.85);
-  border-left: none;
   background: rgba(255, 255, 255, 0.08);
   color: #a5b4fc;
 }
@@ -1159,21 +1158,21 @@
 
 .status-actions {
   display: flex;
-  gap: 14px;
+  gap: 10px;
   justify-content: center;
-  padding: 12px 0 18px;
+  padding: 8px 0 12px;
   flex-wrap: nowrap;
 }
 
 .status-actions button {
-  padding: 8px 12px;
-  min-width: 96px;
-  height: 50px;
+  padding: 5px 8px;
+  min-width: 67px;
+  height: 35px;
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 12px;
+  border-radius: 8px;
 }
 
 :host ::ng-deep .status-actions .mdc-button__label {
@@ -1186,28 +1185,28 @@
 }
 
 :host ::ng-deep .status-actions .mdc-button {
-  min-height: 50px;
+  min-height: 35px;
   width: auto;
   padding: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 12px;
+  border-radius: 8px;
 }
 
 .status-btn {
-  font-weight: 700;
-  font-size: 16px;
+  font-weight: 600;
+  font-size: 12px;
 }
 
 .status-btn-export {
-  gap: 6px;
+  gap: 4px;
 }
 
 .status-btn-export mat-icon {
-  font-size: 18px;
-  width: 18px;
-  height: 18px;
+  font-size: 14px;
+  width: 14px;
+  height: 14px;
 }
 
 .reading-tools-section {

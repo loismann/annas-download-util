@@ -681,14 +681,27 @@ Keep your summary thorough but focused (2-5 paragraphs depending on complexity).
 Text to summarize:
 {sectionText}";
 
+            // Safely read config values with fallbacks
+            int maxTokens = 2000; // Default for section summary
+            double temp = 0.5;    // Default temperature
+            try
+            {
+                maxTokens = cfg.GetValue<int>("AI:MaxCompletionTokens:SectionSummary", 2000);
+                temp = cfg.GetValue<double>("AI:Temperature:SectionSummary", 0.5);
+            }
+            catch (Exception configEx)
+            {
+                Log.Information("⚠️ Config read error (using defaults): {configEx.Message}");
+            }
+
             var payload = modelHelper.BuildChatCompletionPayload(
                 model,
                 new object[]
                 {
                     new { role = "user", content = prompt }
                 },
-                maxCompletionTokens: cfg.GetValue<int>("AI:MaxCompletionTokens:SectionSummary"),
-                temperature: cfg.GetValue<double>("AI:Temperature:SectionSummary")
+                maxCompletionTokens: maxTokens,
+                temperature: temp
             );
 
             Log.Information("📤 Sending request to OpenAI Chat Completions API...");

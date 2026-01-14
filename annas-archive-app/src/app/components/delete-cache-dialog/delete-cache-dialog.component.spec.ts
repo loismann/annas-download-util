@@ -12,6 +12,8 @@ describe('DeleteCacheDialogComponent', () => {
   const mockDialogData: DeleteCacheDialogData = {
     bookTitle: 'Test Book',
     summaryCount: 5,
+    sectionSummaryCount: 3,
+    indexedChaptersCount: 10,
     onExport: jasmine.createSpy('onExport').and.returnValue(Promise.resolve())
   };
 

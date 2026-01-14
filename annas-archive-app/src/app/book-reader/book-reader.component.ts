@@ -23,6 +23,7 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { CharacterGraphModalComponent } from '../character-graph-modal/character-graph-modal.component';
 import { ConfirmDialogComponent } from '../components/confirm-dialog/confirm-dialog.component';
 import { DeleteCacheDialogComponent, DeleteCacheDialogResult } from '../components/delete-cache-dialog/delete-cache-dialog.component';
+import { RemoveFromReaderDialogComponent, RemoveFromReaderDialogResult } from '../components/remove-from-reader-dialog/remove-from-reader-dialog.component';
 import { firstValueFrom } from 'rxjs';
 
 import {
@@ -875,11 +876,15 @@ export class BookReaderComponent implements OnInit, OnDestroy {
 
     const bookTitle = this.selectedBook?.title ?? 'this book';
     const summaryCount = this.fullChapterSummaryCache.size;
+    const sectionSummaryCount = this.sectionSummaries.size;
+    const indexedChaptersCount = this.status?.chaptersCached ?? 0;
 
     const dialogRef = this.dialog.open(DeleteCacheDialogComponent, {
       data: {
         bookTitle,
         summaryCount,
+        sectionSummaryCount,
+        indexedChaptersCount,
         onExport: () => this.exportSummaries()
       },
       panelClass: 'delete-cache-dialog-panel'
@@ -1743,12 +1748,23 @@ export class BookReaderComponent implements OnInit, OnDestroy {
 
   removeFromReader(): void {
     if (!this.selectedBookFileName) return;
-    const confirmRemove = typeof window !== 'undefined'
-      ? window.confirm('Remove this book from the reader list?')
-      : true;
-    if (!confirmRemove) return;
 
+    const bookTitle = this.selectedBook?.title ?? 'this book';
     const fileName = this.selectedBookFileName;
+
+    const dialogRef = this.dialog.open(RemoveFromReaderDialogComponent, {
+      data: { bookTitle },
+      panelClass: 'remove-from-reader-dialog-panel'
+    });
+
+    dialogRef.afterClosed().subscribe((result: RemoveFromReaderDialogResult | undefined) => {
+      if (result === 'remove') {
+        this.performRemoveFromReader(fileName);
+      }
+    });
+  }
+
+  private performRemoveFromReader(fileName: string): void {
     this.libraryApi.updateLibraryBookReaderEnabled(fileName, false)
       .pipe(takeUntil(this.destroy$))
       .subscribe({

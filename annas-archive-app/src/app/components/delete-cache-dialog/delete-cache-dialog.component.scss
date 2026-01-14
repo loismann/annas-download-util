@@ -91,6 +91,29 @@
   }
 }
 
+.preserved-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin: 0 0 16px 0;
+  color: #065f46;
+  font-size: 13px;
+  line-height: 1.5;
+
+  mat-icon {
+    font-size: 18px;
+    width: 18px;
+    height: 18px;
+    color: #10b981;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+}
+
 .export-section {
   background: #eff6ff;
   border: 1px solid #bfdbfe;

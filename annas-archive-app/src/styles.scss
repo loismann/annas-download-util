@@ -131,4 +131,13 @@ button {
   border-radius: 12px !important;
 }
 
+/* Remove from Reader Dialog */
+.remove-from-reader-dialog-panel .mat-mdc-dialog-container {
+  padding: 0 !important;
+}
+
+.remove-from-reader-dialog-panel .mdc-dialog__surface {
+  border-radius: 16px !important;
+}
+
 /* …any other global styles… */

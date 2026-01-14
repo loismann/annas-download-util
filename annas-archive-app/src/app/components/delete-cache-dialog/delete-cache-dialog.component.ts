@@ -8,6 +8,8 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 export interface DeleteCacheDialogData {
   bookTitle: string;
   summaryCount: number;
+  sectionSummaryCount: number;
+  indexedChaptersCount: number;
   onExport: () => Promise<void>;
 }
 

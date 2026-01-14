@@ -329,13 +329,15 @@ test.describe('Reader - Book Selection', () => {
     await chaptersResponsePromise;
     await page.waitForTimeout(500);
 
-    // Set up dialog handler to auto-accept the confirmation
-    page.once('dialog', dialog => dialog.accept());
-
-    // Click remove button
-    const removeButton = page.locator('button').filter({ hasText: /Remove from Reader/i });
+    // Click remove button in sidebar
+    const removeButton = page.locator('button.reader-remove-button');
     await expect(removeButton).toBeEnabled();
     await removeButton.click();
+
+    // Wait for the Material dialog to appear and click the confirm button
+    const dialogConfirmButton = page.locator('.remove-from-reader-dialog button').filter({ hasText: /Remove from Reader/i });
+    await expect(dialogConfirmButton).toBeVisible();
+    await dialogConfirmButton.click();
 
     // Wait for the remove operation to complete
     await page.waitForTimeout(1000);

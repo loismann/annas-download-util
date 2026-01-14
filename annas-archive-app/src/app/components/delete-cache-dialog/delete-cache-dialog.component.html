@@ -3,39 +3,40 @@
     <mat-icon>warning</mat-icon>
   </div>
 
-  <h2 class="dialog-title">Delete Cache?</h2>
+  <h2 class="dialog-title">Delete Reader Data?</h2>
 
   <div class="dialog-content">
     <p class="warning-text">
-      <strong>This action cannot be undone.</strong>
+      <strong>This will permanently delete all reader data for this book.</strong>
     </p>
 
     <p class="explanation">
-      Deleting the cache for <strong>"{{ data.bookTitle }}"</strong> will permanently remove:
+      The following data for <strong>"{{ data.bookTitle }}"</strong> will be removed:
     </p>
 
     <ul class="deletion-list">
       <li>
         <mat-icon>summarize</mat-icon>
-        <span>{{ data.summaryCount }} chapter summaries</span>
+        <span>{{ data.summaryCount }} chapter {{ data.summaryCount === 1 ? 'summary' : 'summaries' }}</span>
       </li>
       <li>
         <mat-icon>psychology</mat-icon>
-        <span>All section summaries</span>
+        <span>{{ data.sectionSummaryCount }} section {{ data.sectionSummaryCount === 1 ? 'summary' : 'summaries' }}</span>
       </li>
       <li>
         <mat-icon>hub</mat-icon>
-        <span>Character relationship graph</span>
+        <span>Character relationship graph (if generated)</span>
       </li>
       <li>
         <mat-icon>segment</mat-icon>
-        <span>Chapter indexing data</span>
+        <span>{{ data.indexedChaptersCount }} indexed {{ data.indexedChaptersCount === 1 ? 'chapter' : 'chapters' }}</span>
       </li>
     </ul>
 
-    <p class="explanation">
-      Summaries are directly tied to chapter indexing. If you re-index, all summaries must be regenerated from scratch.
-    </p>
+    <div class="preserved-note">
+      <mat-icon>check_circle</mat-icon>
+      <span>The book file remains in your library and can be re-added to the reader anytime. However, all summaries will need to be regenerated.</span>
+    </div>
 
     <div class="export-section" *ngIf="data.summaryCount > 0">
       <p class="export-prompt">Want to save your summaries before deleting?</p>
@@ -60,7 +61,7 @@
     </button>
     <button mat-raised-button class="delete-button" (click)="onDelete()">
       <mat-icon>delete_forever</mat-icon>
-      Delete Cache
+      Delete Reader Data
     </button>
   </div>
 </div>

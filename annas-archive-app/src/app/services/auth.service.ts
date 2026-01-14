@@ -3,6 +3,7 @@ import { isPlatformBrowser } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
 import { BehaviorSubject, Observable } from 'rxjs';
 import { tap } from 'rxjs/operators';
+import { LoggerService } from './logger.service';
 
 export interface LoginRequest {
   code: string;
@@ -39,7 +40,8 @@ export class AuthService {
 
   constructor(
     private http: HttpClient,
-    @Inject(PLATFORM_ID) platformId: Object
+    @Inject(PLATFORM_ID) platformId: Object,
+    private logger: LoggerService
   ) {
     this.isBrowser = isPlatformBrowser(platformId);
     // Initialize AFTER isBrowser is set
@@ -127,7 +129,7 @@ export class AuthService {
       // The userId is stored in the 'nameid' claim (ClaimTypes.NameIdentifier)
       return decodedPayload.nameid || decodedPayload['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier'] || null;
     } catch (e) {
-      console.error('Failed to decode JWT token:', e);
+      this.logger.error('Failed to decode JWT token:', e);
       return null;
     }
   }

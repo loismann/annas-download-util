@@ -6,6 +6,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { AnnaArchiveApiService } from '../services/anna-archive-api.service';
 import { CharacterGraphResponse } from '../models/dropbox-epub.model';
+import { LoggerService } from '../services/logger.service';
 
 declare var anychart: any;
 
@@ -33,7 +34,8 @@ export class CharacterGraphModalComponent implements OnInit, AfterViewInit, OnDe
   constructor(
     public dialogRef: MatDialogRef<CharacterGraphModalComponent>,
     @Inject(MAT_DIALOG_DATA) public data: CharacterGraphModalData,
-    private api: AnnaArchiveApiService
+    private api: AnnaArchiveApiService,
+    private logger: LoggerService
   ) {}
 
   ngOnInit(): void {
@@ -59,10 +61,10 @@ export class CharacterGraphModalComponent implements OnInit, AfterViewInit, OnDe
       next: response => {
         // Check if graph needs updating
         if (response.needsUpdate) {
-          console.log(`📊 Graph is stale (${response.summaryCount} → ${response.currentSummaryCount} summaries). Regenerating...`);
+          this.logger.log(`📊 Graph is stale (${response.summaryCount} → ${response.currentSummaryCount} summaries). Regenerating...`);
           this.generateGraph();
         } else {
-          console.log(`✅ Using cached graph (${response.summaryCount} summaries)`);
+          this.logger.log(`✅ Using cached graph (${response.summaryCount} summaries)`);
           this.graphData = response;
           this.loading = false;
           setTimeout(() => this.renderGraph(), 100);
@@ -79,7 +81,7 @@ export class CharacterGraphModalComponent implements OnInit, AfterViewInit, OnDe
     this.loading = true;
     this.error = null;
 
-    console.log('📊 Generating character graph for', this.data.bookTitle);
+    this.logger.log('📊 Generating character graph for', this.data.bookTitle);
 
     this.api.generateCharacterGraph({
       dropboxPath: this.data.dropboxPath,
@@ -90,10 +92,10 @@ export class CharacterGraphModalComponent implements OnInit, AfterViewInit, OnDe
         this.graphData = graph;
         this.loading = false;
         setTimeout(() => this.renderGraph(), 100);
-        console.log('✅ Character graph generated:', graph);
+        this.logger.log('✅ Character graph generated:', graph);
       },
       error: err => {
-        console.error('Failed to generate character graph', err);
+        this.logger.error('Failed to generate character graph', err);
         this.error = 'Failed to generate character graph. Please try again.';
         this.loading = false;
       }
@@ -160,7 +162,7 @@ export class CharacterGraphModalComponent implements OnInit, AfterViewInit, OnDe
 
     const container = document.getElementById('character-graph-container');
     if (!container) {
-      console.error('Graph container not found');
+      this.logger.error('Graph container not found');
       return;
     }
 
@@ -259,37 +261,37 @@ export class CharacterGraphModalComponent implements OnInit, AfterViewInit, OnDe
 
     // Add click listeners
     this.chart.listen('click', (e: any) => {
-      console.log('Click event:', e);
-      console.log('domTarget:', e.domTarget);
-      console.log('domTarget.tag:', e.domTarget?.tag);
-      console.log('tag.type:', e.domTarget?.tag?.type);
+      this.logger.log('Click event:', e);
+      this.logger.log('domTarget:', e.domTarget);
+      this.logger.log('domTarget.tag:', e.domTarget?.tag);
+      this.logger.log('tag.type:', e.domTarget?.tag?.type);
 
       if (e.domTarget && e.domTarget.tag) {
         const tagType = e.domTarget.tag.type;
-        console.log(`Detected click on: ${tagType}`);
+        this.logger.log(`Detected click on: ${tagType}`);
 
         if (tagType === 'node') {
           this.onNodeClick(e.domTarget.tag.id);
         } else if (tagType === 'edge') {
-          console.log('Edge tag:', e.domTarget.tag);
+          this.logger.log('Edge tag:', e.domTarget.tag);
           // Parse edge index from ID (format: "edge_0", "edge_1", etc.)
           const edgeId = e.domTarget.tag.id;
           const edgeIndex = parseInt(edgeId.split('_')[1], 10);
 
-          console.log('Edge ID:', edgeId, 'Parsed index:', edgeIndex);
+          this.logger.log('Edge ID:', edgeId, 'Parsed index:', edgeIndex);
 
           if (!isNaN(edgeIndex) && this.graphData && this.graphData.edges[edgeIndex]) {
             const edge = this.graphData.edges[edgeIndex];
-            console.log('Found edge at index', edgeIndex, ':', edge);
+            this.logger.log('Found edge at index', edgeIndex, ':', edge);
             this.onEdgeClick(edge.from, edge.to);
           } else {
-            console.warn('Edge index not found or invalid. ID:', edgeId, 'Index:', edgeIndex);
+            this.logger.warn('Edge index not found or invalid. ID:', edgeId, 'Index:', edgeIndex);
           }
         } else {
-          console.warn('Unknown tag type:', tagType);
+          this.logger.warn('Unknown tag type:', tagType);
         }
       } else {
-        console.warn('No domTarget or tag found in click event');
+        this.logger.warn('No domTarget or tag found in click event');
       }
     });
 
@@ -302,22 +304,22 @@ export class CharacterGraphModalComponent implements OnInit, AfterViewInit, OnDe
     this.chart.container(container);
     this.chart.draw();
 
-    console.log('✅ Graph rendered');
+    this.logger.log('✅ Graph rendered');
   }
 
   onNodeClick(nodeId: string): void {
     this.selectedNodeId = nodeId;
     this.selectedEdge = null;
     this.detailsVisible = true;
-    console.log('Node clicked:', nodeId);
+    this.logger.log('Node clicked:', nodeId);
   }
 
   onEdgeClick(from: string, to: string): void {
     this.selectedEdge = { from, to };
     this.selectedNodeId = null;
     this.detailsVisible = true;
-    console.log('Edge clicked:', from, '->', to);
-    console.log('Available edges:', this.graphData?.edges);
+    this.logger.log('Edge clicked:', from, '->', to);
+    this.logger.log('Available edges:', this.graphData?.edges);
   }
 
   getSelectedNode() {
@@ -336,7 +338,7 @@ export class CharacterGraphModalComponent implements OnInit, AfterViewInit, OnDe
       return null;
     }
 
-    console.log('Looking for edge:', this.selectedEdge);
+    this.logger.log('Looking for edge:', this.selectedEdge);
 
     // Find edge - check both directions since edges are bidirectional
     const edge = this.graphData.edges.find(e => {
@@ -346,10 +348,10 @@ export class CharacterGraphModalComponent implements OnInit, AfterViewInit, OnDe
     });
 
     if (edge) {
-      console.log('Found edge:', edge);
+      this.logger.log('Found edge:', edge);
     } else {
-      console.warn('Edge not found! Looking for:', this.selectedEdge);
-      console.log('Available edges:', this.graphData.edges.map(e => ({ from: e.from, to: e.to, label: e.label })));
+      this.logger.warn('Edge not found! Looking for:', this.selectedEdge);
+      this.logger.log('Available edges:', this.graphData.edges.map(e => ({ from: e.from, to: e.to, label: e.label })));
     }
 
     return edge || null;

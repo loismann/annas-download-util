@@ -4,6 +4,7 @@ using AnnasArchive.API.Helpers;
 using AnnasArchive.API.Models;
 using AnnasArchive.Core.Services;
 using Microsoft.AspNetCore.Mvc;
+using Serilog;
 
 namespace AnnasArchive.API.Endpoints;
 
@@ -149,7 +150,7 @@ Return JSON array of flashcards for individual terms found in the passage.";
             if (!response.IsSuccessStatusCode)
             {
                 var body = await response.Content.ReadAsStringAsync();
-                Console.WriteLine($"❌ OpenAI flashcard failed status={(int)response.StatusCode} body={body}");
+                Log.Information("❌ OpenAI flashcard failed status={(int)response.StatusCode} body={body}");
                 return Results.Problem($"OpenAI request failed: {(int)response.StatusCode}");
             }
 
@@ -190,12 +191,12 @@ Return JSON array of flashcards for individual terms found in the passage.";
                     PropertyNameCaseInsensitive = true
                 }) ?? throw new Exception("Invalid flashcard JSON array");
 
-                Console.WriteLine($"✅ Successfully parsed {cardsParsed.Count} flashcards from AI response");
+                Log.Information("✅ Successfully parsed {cardsParsed.Count} flashcards from AI response");
             }
             catch (Exception parseEx)
             {
-                Console.WriteLine($"⚠️ Failed to parse flashcards as array: {parseEx.Message}");
-                Console.WriteLine($"   AI response: {content.Substring(0, Math.Min(200, content.Length))}...");
+                Log.Information("⚠️ Failed to parse flashcards as array: {parseEx.Message}");
+                Log.Information("   AI response: {content.Substring(0, Math.Min(200, content.Length))}...");
 
                 try
                 {
@@ -207,18 +208,18 @@ Return JSON array of flashcards for individual terms found in the passage.";
                     if (single != null)
                     {
                         cardsParsed = new List<FlashcardItem> { single };
-                        Console.WriteLine($"✅ Parsed single flashcard");
+                        Log.Information("✅ Parsed single flashcard");
                     }
                     else
                         throw new Exception("Invalid flashcard JSON");
                 }
                 catch (Exception singleEx)
                 {
-                    Console.WriteLine($"❌ Failed to parse flashcards: {singleEx.Message}");
+                    Log.Information("❌ Failed to parse flashcards: {singleEx.Message}");
                     // Don't create a fallback card - return empty list
                     // This prevents creating giant vocab cards with entire text
                     cardsParsed = new List<FlashcardItem>();
-                    Console.WriteLine($"⚠️ Returning empty flashcard list due to parsing failure");
+                    Log.Information("⚠️ Returning empty flashcard list due to parsing failure");
                 }
             }
 
@@ -240,7 +241,7 @@ Return JSON array of flashcards for individual terms found in the passage.";
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"❌ Flashcard create failed: {ex.Message}");
+            Log.Information("❌ Flashcard create failed: {ex.Message}");
             return ApiResponse.InternalError("Failed to create flashcard.");
         }
     }

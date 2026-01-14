@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using HtmlAgilityPack;
 using AnnasArchive.Core.Models;
+using Serilog;
 
 namespace AnnasArchive.Core.Services;
 
@@ -33,33 +34,33 @@ public class LibGenService
 
     public async Task<IEnumerable<BookDto>> SearchAsync(string query, int limit = 50, bool exact = false)
     {
-        Console.WriteLine($"[LibGen] SearchAsync called with query='{query}', limit={limit}, exact={exact}");
+        Log.Information("[LibGen] SearchAsync called with query={Query}, limit={Limit}, exact={Exact}", query, limit, exact);
 
         if (limit <= 0)
         {
-            Console.WriteLine($"[LibGen] Invalid limit: {limit}");
+            Log.Warning("[LibGen] Invalid limit: {Limit}", limit);
             return Enumerable.Empty<BookDto>();
         }
 
         var trimmedQuery = query?.Trim() ?? string.Empty;
         if (string.IsNullOrWhiteSpace(trimmedQuery))
         {
-            Console.WriteLine("[LibGen] Empty query after trim");
+            Log.Information("[LibGen] Empty query after trim");
             return Enumerable.Empty<BookDto>();
         }
 
-        Console.WriteLine($"[LibGen] Trying general search first...");
+        Log.Information("[LibGen] Trying general search first...");
         // Try general search first (more reliable), then fall back to fiction search
         var generalResults = await SearchGeneralAsync(trimmedQuery, limit, exact);
         if (generalResults.Any())
         {
-            Console.WriteLine($"[LibGen] General search returned {generalResults.Count()} results");
+            Log.Information("[LibGen] General search returned {ResultCount} results", generalResults.Count());
             return generalResults;
         }
 
-        Console.WriteLine($"[LibGen] General search returned no results, trying fiction search...");
+        Log.Information("[LibGen] General search returned no results, trying fiction search...");
         var fictionResults = await SearchFictionAsync(trimmedQuery, limit, exact);
-        Console.WriteLine($"[LibGen] Fiction search returned {fictionResults.Count()} results");
+        Log.Information("[LibGen] Fiction search returned {ResultCount} results", fictionResults.Count());
         return fictionResults;
     }
 
@@ -69,10 +70,10 @@ public class LibGenService
         {
             var searchQuery = exact ? $"\"{query}\"" : query;
             var url = $"/fiction/?q={Uri.EscapeDataString(searchQuery)}&criteria=&language=&format=";
-            Console.WriteLine($"[LibGen Fiction] Fetching: {url}");
+            Log.Information("[LibGen Fiction] Fetching: {Url}", url);
 
             var html = await GetStringWithFallbackAsync(url);
-            Console.WriteLine($"[LibGen Fiction] Received HTML response, length: {html.Length}");
+            Log.Information("[LibGen Fiction] Received HTML response, length: {Length}", html.Length);
 
             var doc = new HtmlDocument();
             doc.LoadHtml(html);
@@ -83,23 +84,23 @@ public class LibGenService
                 .Take(limit)
                 .ToList() ?? new List<HtmlNode>();
 
-            Console.WriteLine($"[LibGen Fiction] Found {rows.Count} table rows");
+            Log.Information("[LibGen Fiction] Found {RowCount} table rows", rows.Count);
 
             if (rows.Count == 0)
             {
-                Console.WriteLine("[LibGen Fiction] No rows found, trying alternative selector...");
+                Log.Information("[LibGen Fiction] No rows found, trying alternative selector...");
                 // Try alternative selectors
                 var altRows = doc.DocumentNode
                     .SelectNodes("//table//tbody/tr")?
                     .Take(limit)
                     .ToList() ?? new List<HtmlNode>();
-                Console.WriteLine($"[LibGen Fiction] Alternative selector found {altRows.Count} rows");
+                Log.Information("[LibGen Fiction] Alternative selector found {RowCount} rows", altRows.Count);
 
                 if (altRows.Count == 0)
                 {
                     // Log HTML snippet for debugging
                     var snippet = html.Length > 500 ? html.Substring(0, 500) : html;
-                    Console.WriteLine($"[LibGen Fiction] HTML snippet: {snippet}...");
+                    Log.Debug("[LibGen Fiction] HTML snippet: {Snippet}...", snippet);
                 }
 
                 return Enumerable.Empty<BookDto>();
@@ -111,22 +112,22 @@ public class LibGenService
                 var book = ParseFictionRow(row);
                 if (book != null)
                 {
-                    Console.WriteLine($"[LibGen Fiction] Parsed book: {book.Title}");
+                    Log.Information("[LibGen Fiction] Parsed book: {Title}", book.Title);
                     books.Add(book);
                 }
                 else
                 {
-                    Console.WriteLine($"[LibGen Fiction] Failed to parse row");
+                    Log.Warning("[LibGen Fiction] Failed to parse row");
                 }
             }
 
-            Console.WriteLine($"[LibGen Fiction] Returning {books.Count} books");
+            Log.Information("[LibGen Fiction] Returning {BookCount} books", books.Count);
             return books;
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[LibGen Fiction] ERROR: {ex.Message}");
-            Console.WriteLine($"[LibGen Fiction] Stack trace: {ex.StackTrace}");
+            Log.Warning("[LibGen Fiction] ERROR: {ErrorMessage}", ex.Message);
+            Log.Debug("[LibGen Fiction] Stack trace: {StackTrace}", ex.StackTrace);
             return Enumerable.Empty<BookDto>();
         }
     }
@@ -137,10 +138,10 @@ public class LibGenService
         {
             var searchQuery = exact ? $"\"{query}\"" : query;
             var url = $"/index.php?req={Uri.EscapeDataString(searchQuery)}&lg_topic=libgen&open=0&view=simple&res=25&phrase=1&column=def";
-            Console.WriteLine($"[LibGen General] Fetching: {url}");
+            Log.Information("[LibGen General] Fetching: {Url}", url);
 
             var html = await GetStringWithFallbackAsync(url);
-            Console.WriteLine($"[LibGen General] Received HTML response, length: {html.Length}");
+            Log.Information("[LibGen General] Received HTML response, length: {Length}", html.Length);
 
             var doc = new HtmlDocument();
             doc.LoadHtml(html);
@@ -155,23 +156,23 @@ public class LibGenService
                 .Take(limit)
                 .ToList() ?? new List<HtmlNode>();
 
-            Console.WriteLine($"[LibGen General] Found {rowList.Count} table rows");
+            Log.Information("[LibGen General] Found {RowCount} table rows", rowList.Count);
 
             if (rowList.Count == 0)
             {
-                Console.WriteLine("[LibGen General] No rows found, trying alternative selector...");
+                Log.Information("[LibGen General] No rows found, trying alternative selector...");
                 // Try alternative selectors
                 var altRows = doc.DocumentNode
                     .SelectNodes("//table[@rules='rows']//tr[position()>1]")?
                     .Take(limit)
                     .ToList() ?? new List<HtmlNode>();
-                Console.WriteLine($"[LibGen General] Alternative selector found {altRows.Count} rows");
+                Log.Information("[LibGen General] Alternative selector found {RowCount} rows", altRows.Count);
 
                 if (altRows.Count == 0)
                 {
                     // Log HTML snippet for debugging
                     var snippet = html.Length > 500 ? html.Substring(0, 500) : html;
-                    Console.WriteLine($"[LibGen General] HTML snippet: {snippet}...");
+                    Log.Debug("[LibGen General] HTML snippet: {Snippet}...", snippet);
                 }
 
                 return Enumerable.Empty<BookDto>();
@@ -183,22 +184,22 @@ public class LibGenService
                 var book = ParseGeneralRow(row);
                 if (book != null)
                 {
-                    Console.WriteLine($"[LibGen General] Parsed book: {book.Title}");
+                    Log.Information("[LibGen General] Parsed book: {Title}", book.Title);
                     books.Add(book);
                 }
                 else
                 {
-                    Console.WriteLine($"[LibGen General] Failed to parse row");
+                    Log.Warning("[LibGen General] Failed to parse row");
                 }
             }
 
-            Console.WriteLine($"[LibGen General] Returning {books.Count} books");
+            Log.Information("[LibGen General] Returning {BookCount} books", books.Count);
             return books;
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[LibGen General] ERROR: {ex.Message}");
-            Console.WriteLine($"[LibGen General] Stack trace: {ex.StackTrace}");
+            Log.Warning("[LibGen General] ERROR: {ErrorMessage}", ex.Message);
+            Log.Debug("[LibGen General] Stack trace: {StackTrace}", ex.StackTrace);
             return Enumerable.Empty<BookDto>();
         }
     }
@@ -210,7 +211,7 @@ public class LibGenService
             var cells = row.SelectNodes("./td")?.ToList();
             if (cells == null || cells.Count < 9)
             {
-                Console.WriteLine($"[LibGen Fiction Parse] Row has {cells?.Count ?? 0} cells, need at least 9");
+                Log.Warning("[LibGen Fiction Parse] Row has {CellCount} cells, need at least 9", cells?.Count ?? 0);
                 return null;
             }
 
@@ -472,7 +473,7 @@ public class LibGenService
 
     private async Task<HttpResponseMessage> GetWithFallbackAsync(string pathAndQuery)
     {
-        Console.WriteLine($"[LibGen HTTP] Starting fallback request for: {pathAndQuery}");
+        Log.Information("[LibGen HTTP] Starting fallback request for: {PathAndQuery}", pathAndQuery);
         HttpResponseMessage? lastResponse = null;
         var domainIndex = 0;
 
@@ -480,50 +481,50 @@ public class LibGenService
         {
             domainIndex++;
             var uri = new Uri($"{domain}{pathAndQuery}");
-            Console.WriteLine($"[LibGen HTTP] Attempt {domainIndex}/{BaseDomains.Length} - Trying: {uri}");
+            Log.Information("[LibGen HTTP] Attempt {AttemptNumber}/{TotalDomains} - Trying: {Uri}", domainIndex, BaseDomains.Length, uri);
 
             try
             {
                 var resp = await _http.GetAsync(uri);
-                Console.WriteLine($"[LibGen HTTP] ✓ Response received: {resp.StatusCode}");
+                Log.Information("[LibGen HTTP] Response received: {StatusCode}", resp.StatusCode);
 
                 if (resp.IsSuccessStatusCode)
                 {
-                    Console.WriteLine($"[LibGen HTTP] ✓ Success! Using domain: {domain}");
+                    Log.Information("[LibGen HTTP] Success! Using domain: {Domain}", domain);
                     return resp;
                 }
 
-                Console.WriteLine($"[LibGen HTTP] ✗ Non-success status {resp.StatusCode}, trying next domain...");
+                Log.Warning("[LibGen HTTP] Non-success status {StatusCode}, trying next domain...", resp.StatusCode);
                 lastResponse?.Dispose();
                 lastResponse = resp;
             }
             catch (TaskCanceledException ex) when (ex.InnerException is TimeoutException)
             {
-                Console.WriteLine($"[LibGen HTTP] ✗ Timeout for {domain} - trying next domain...");
+                Log.Warning("[LibGen HTTP] Timeout for {Domain} - trying next domain...", domain);
             }
             catch (TaskCanceledException)
             {
-                Console.WriteLine($"[LibGen HTTP] ✗ Request cancelled for {domain} - trying next domain...");
+                Log.Warning("[LibGen HTTP] Request cancelled for {Domain} - trying next domain...", domain);
             }
             catch (HttpRequestException ex)
             {
-                Console.WriteLine($"[LibGen HTTP] ✗ HTTP error for {domain}: {ex.Message}");
+                Log.Warning("[LibGen HTTP] HTTP error for {Domain}: {ErrorMessage}", domain, ex.Message);
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[LibGen HTTP] ✗ Unexpected error for {domain}: {ex.GetType().Name} - {ex.Message}");
+                Log.Warning("[LibGen HTTP] Unexpected error for {Domain}: {ExceptionType} - {ErrorMessage}", domain, ex.GetType().Name, ex.Message);
             }
         }
 
         if (lastResponse != null)
         {
             var status = (int)lastResponse.StatusCode;
-            Console.WriteLine($"[LibGen HTTP] ✗ All {BaseDomains.Length} domains failed. Last status: {status}");
+            Log.Warning("[LibGen HTTP] All {DomainCount} domains failed. Last status: {Status}", BaseDomains.Length, status);
             lastResponse.Dispose();
             throw new HttpRequestException($"Request failed with status {status} for all LibGen domains");
         }
 
-        Console.WriteLine($"[LibGen HTTP] ✗ All {BaseDomains.Length} domains failed with no response.");
+        Log.Warning("[LibGen HTTP] All {DomainCount} domains failed with no response.", BaseDomains.Length);
         throw new HttpRequestException("Request failed for all LibGen domains - all timed out or threw exceptions");
     }
 }

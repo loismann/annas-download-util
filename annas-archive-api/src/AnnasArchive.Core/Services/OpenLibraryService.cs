@@ -6,6 +6,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Caching.Memory;
+using Serilog;
 
 namespace AnnasArchive.Core.Services;
 
@@ -28,14 +29,14 @@ public class OpenLibraryService : IOpenLibraryService
         var workKey = await FindWorkKeyAsync(title, author, isbn);
         if (workKey == null)
         {
-            Console.WriteLine($"[OpenLibrary] Could not find work key for '{title}' by {author}");
+            Log.Information("[OpenLibrary] Could not find work key for {Title} by {Author}", title, author);
             return null;
         }
 
         var description = await TryGetWorkDescriptionAsync(workKey);
         if (!string.IsNullOrWhiteSpace(description))
         {
-            Console.WriteLine($"[OpenLibrary] Found description from Works API for '{title}'");
+            Log.Information("[OpenLibrary] Found description from Works API for {Title}", title);
             return description;
         }
 
@@ -45,7 +46,7 @@ public class OpenLibraryService : IOpenLibraryService
             description = await TryGetEditionDescriptionAsync(editionKey);
             if (!string.IsNullOrWhiteSpace(description))
             {
-                Console.WriteLine($"[OpenLibrary] Found description from Edition API for '{title}'");
+                Log.Information("[OpenLibrary] Found description from Edition API for {Title}", title);
                 return description;
             }
         }
@@ -53,11 +54,11 @@ public class OpenLibraryService : IOpenLibraryService
         description = await TryGetFirstSentenceAsync(title, author);
         if (!string.IsNullOrWhiteSpace(description))
         {
-            Console.WriteLine($"[OpenLibrary] Found first_sentence from Search API for '{title}'");
+            Log.Information("[OpenLibrary] Found first_sentence from Search API for {Title}", title);
             return description;
         }
 
-        Console.WriteLine($"[OpenLibrary] No description found for '{title}' by {author}");
+        Log.Information("[OpenLibrary] No description found for {Title} by {Author}", title, author);
         return null;
     }
 
@@ -332,7 +333,7 @@ public class OpenLibraryService : IOpenLibraryService
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[OpenLibrary] Error finding work key: {ex.Message}");
+            Log.Warning("[OpenLibrary] Error finding work key: {ErrorMessage}", ex.Message);
             return null;
         }
     }
@@ -362,7 +363,7 @@ public class OpenLibraryService : IOpenLibraryService
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[OpenLibrary] Error getting work description: {ex.Message}");
+            Log.Warning("[OpenLibrary] Error getting work description: {ErrorMessage}", ex.Message);
             return null;
         }
     }
@@ -392,7 +393,7 @@ public class OpenLibraryService : IOpenLibraryService
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[OpenLibrary] Error finding edition key: {ex.Message}");
+            Log.Warning("[OpenLibrary] Error finding edition key: {ErrorMessage}", ex.Message);
             return null;
         }
     }
@@ -422,7 +423,7 @@ public class OpenLibraryService : IOpenLibraryService
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[OpenLibrary] Error getting edition description: {ex.Message}");
+            Log.Warning("[OpenLibrary] Error getting edition description: {ErrorMessage}", ex.Message);
             return null;
         }
     }
@@ -460,7 +461,7 @@ public class OpenLibraryService : IOpenLibraryService
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[OpenLibrary] Error getting first sentence: {ex.Message}");
+            Log.Warning("[OpenLibrary] Error getting first sentence: {ErrorMessage}", ex.Message);
             return null;
         }
     }

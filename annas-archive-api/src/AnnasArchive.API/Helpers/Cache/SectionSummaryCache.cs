@@ -1,6 +1,7 @@
 using System.Text.Json;
 using AnnasArchive.API.Models;
 using AnnasArchive.Core.Services;
+using Serilog;
 
 namespace AnnasArchive.API.Helpers.Cache;
 
@@ -28,7 +29,7 @@ public static class SectionSummaryCache
         var data = new ChunkBoundariesResponse(chapterId, chunks, DateTime.UtcNow);
         var json = JsonSerializer.Serialize(data, JsonOptions);
         File.WriteAllText(path, json);
-        Console.WriteLine($"Saved chunk boundaries to: {path}");
+        Log.Information("Saved chunk boundaries to: {Path}", path);
     }
 
     public static ChunkBoundariesResponse? LoadChunkBoundaries(string dropboxPath, int chapterId)
@@ -43,7 +44,7 @@ public static class SectionSummaryCache
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Failed to load chunk boundaries from {path}: {ex.Message}");
+            Log.Warning("Failed to load chunk boundaries from {Path}: {ErrorMessage}", path, ex.Message);
             return null;
         }
     }
@@ -66,7 +67,7 @@ public static class SectionSummaryCache
         var path = GetSectionSummaryCachePath(dropboxPath, chapterId, sectionIndex);
         var json = JsonSerializer.Serialize(summaryData, JsonOptions);
         File.WriteAllText(path, json);
-        Console.WriteLine($"Saved section summary to: {path}");
+        Log.Information("Saved section summary to: {Path}", path);
     }
 
     public static SectionSummaryResponse? LoadSectionSummary(string dropboxPath, int chapterId, int sectionIndex)
@@ -81,7 +82,7 @@ public static class SectionSummaryCache
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Failed to load section summary from {path}: {ex.Message}");
+            Log.Warning("Failed to load section summary from {Path}: {ErrorMessage}", path, ex.Message);
             return null;
         }
     }
@@ -125,7 +126,7 @@ public static class SectionSummaryCache
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"Failed to load section summary from {sectionFile}: {ex.Message}");
+                    Log.Warning("Failed to load section summary from {FilePath}: {ErrorMessage}", sectionFile, ex.Message);
                 }
             }
         }
@@ -151,7 +152,7 @@ public static class SectionSummaryCache
         var path = GetSectionVocabCachePath(dropboxPath, chapterId, sectionIndex);
         var json = JsonSerializer.Serialize(vocabCards, JsonOptions);
         File.WriteAllText(path, json);
-        Console.WriteLine($"Saved section vocab to: {path}");
+        Log.Information("Saved section vocab to: {Path}", path);
     }
 
     public static List<FlashcardItem>? LoadSectionVocab(string dropboxPath, int chapterId, int sectionIndex)
@@ -166,7 +167,7 @@ public static class SectionSummaryCache
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Failed to load section vocab from {path}: {ex.Message}");
+            Log.Warning("Failed to load section vocab from {Path}: {ErrorMessage}", path, ex.Message);
             return null;
         }
     }

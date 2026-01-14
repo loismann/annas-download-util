@@ -14,6 +14,7 @@ import { MatChipInputEvent } from '@angular/material/chips';
 import { Router } from '@angular/router';
 import { GenreMappingService } from '../../services/genre-mapping.service';
 import { AnnaArchiveApiService } from '../../services/anna-archive-api.service';
+import { LoggerService } from '../../services/logger.service';
 
 export interface BookEditDialogData {
   title: string;
@@ -97,7 +98,8 @@ export class BookEditDialogComponent implements OnInit {
     @Inject(MAT_DIALOG_DATA) public data: BookEditDialogData,
     private genreMappingService: GenreMappingService,
     private api: AnnaArchiveApiService,
-    private router: Router
+    private router: Router,
+    private logger: LoggerService
   ) {
     const fromLibrary = (data.availableGenres ?? []).filter(Boolean);
     this.genres = fromLibrary.length > 0
@@ -179,7 +181,7 @@ export class BookEditDialogComponent implements OnInit {
       ? this.selectedCoverUrl
       : null;
 
-    console.log('[BookEditDialog] Saving with:', {
+    this.logger.log('[BookEditDialog] Saving with:', {
       selectedCoverUrl: this.selectedCoverUrl,
       dataCoverUrl: this.data.coverUrl,
       willSendCoverUrl: coverUrl

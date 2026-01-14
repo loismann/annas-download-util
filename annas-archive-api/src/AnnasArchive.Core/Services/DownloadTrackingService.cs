@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using Serilog;
 
 namespace AnnasArchive.Core.Services;
 
@@ -61,7 +62,7 @@ public class DownloadTrackingService : IDownloadTrackingService
 
             SaveTrackingDataUnsafe(data);
 
-            Console.WriteLine($"[DownloadTracking] Recorded download for {userEmail}, MD5: {md5}");
+            Log.Information("[DownloadTracking] Recorded download for {UserEmail}, MD5: {Md5}", userEmail, md5);
         }
     }
 
@@ -102,12 +103,12 @@ public class DownloadTrackingService : IDownloadTrackingService
                         Downloads = new List<DownloadRecord>()
                     };
                     SaveTrackingDataUnsafe(initialData);
-                    Console.WriteLine($"[DownloadTracking] Initialized tracking file at {_trackingFilePath}");
+                    Log.Information("[DownloadTracking] Initialized tracking file at {FilePath}", _trackingFilePath);
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"⚠️ Failed to initialize download tracking: {ex.Message}");
+                Log.Warning("Failed to initialize download tracking: {ErrorMessage}", ex.Message);
             }
         }
     }
@@ -134,7 +135,7 @@ public class DownloadTrackingService : IDownloadTrackingService
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"⚠️ Failed to load download tracking data: {ex.Message}");
+            Log.Warning("Failed to load download tracking data: {ErrorMessage}", ex.Message);
             return new TrackingData
             {
                 Downloads = new List<DownloadRecord>()
@@ -155,7 +156,7 @@ public class DownloadTrackingService : IDownloadTrackingService
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"⚠️ Failed to save download tracking data: {ex.Message}");
+            Log.Warning("Failed to save download tracking data: {ErrorMessage}", ex.Message);
         }
     }
 
@@ -178,7 +179,7 @@ public class DownloadTrackingService : IDownloadTrackingService
         if (removedCount > 0)
         {
             SaveTrackingDataUnsafe(data);
-            Console.WriteLine($"[DownloadTracking] Cleaned up {removedCount} old download record(s)");
+            Log.Information("[DownloadTracking] Cleaned up {RemovedCount} old download record(s)", removedCount);
         }
     }
 }

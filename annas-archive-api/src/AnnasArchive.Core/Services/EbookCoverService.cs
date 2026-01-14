@@ -5,6 +5,7 @@ using System.Linq;
 using System.Net.Http;
 using System.Threading.Tasks;
 using ICSharpCode.SharpZipLib.Zip;
+using Serilog;
 
 namespace AnnasArchive.Core.Services;
 
@@ -39,7 +40,7 @@ public class EbookCoverService : IEbookCoverService
     {
         if (!IsFormatSupported(format))
         {
-            Console.WriteLine($"[EbookCoverService] Format '{format}' not supported for cover replacement");
+            Log.Information("[EbookCoverService] Format {Format} not supported for cover replacement", format);
             return ebookStream;
         }
 
@@ -60,12 +61,12 @@ public class EbookCoverService : IEbookCoverService
                 return await ReplaceEpubCoverAsync(ebookStream, coverUrl);
             }
 
-            Console.WriteLine($"[EbookCoverService] Format '{format}' not implemented");
+            Log.Information("[EbookCoverService] Format {Format} not implemented", format);
             return ebookStream;
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[EbookCoverService] Failed to replace cover: {ex.Message}");
+            Log.Warning("[EbookCoverService] Failed to replace cover: {ErrorMessage}", ex.Message);
 
             // Reset stream position if possible
             if (ebookStream.CanSeek)
@@ -79,7 +80,7 @@ public class EbookCoverService : IEbookCoverService
 
     private async Task<Stream> ReplaceEpubCoverAsync(Stream ebookStream, string coverUrl)
     {
-        Console.WriteLine($"[EbookCoverService] Starting EPUB cover replacement from {coverUrl}");
+        Log.Information("[EbookCoverService] Starting EPUB cover replacement from {CoverUrl}", coverUrl);
 
         // Download cover image
         byte[] coverImageData;
@@ -88,11 +89,11 @@ public class EbookCoverService : IEbookCoverService
         {
             coverImageData = await _httpClient.GetByteArrayAsync(coverUrl);
             coverExtension = DetermineImageExtension(coverUrl, coverImageData);
-            Console.WriteLine($"[EbookCoverService] Downloaded cover: {coverImageData.Length} bytes, extension: {coverExtension}");
+            Log.Information("[EbookCoverService] Downloaded cover: {ByteCount} bytes, extension: {Extension}", coverImageData.Length, coverExtension);
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[EbookCoverService] Failed to download cover: {ex.Message}");
+            Log.Warning("[EbookCoverService] Failed to download cover: {ErrorMessage}", ex.Message);
             return ebookStream;
         }
 
@@ -127,7 +128,7 @@ public class EbookCoverService : IEbookCoverService
                     {
                         existingCoverEntry = entry;
                         coverEntryPath = entry.Name;
-                        Console.WriteLine($"[EbookCoverService] Found existing cover at: {coverEntryPath}");
+                        Log.Information("[EbookCoverService] Found existing cover at: {CoverPath}", coverEntryPath);
                         break;
                     }
                 }
@@ -136,7 +137,7 @@ public class EbookCoverService : IEbookCoverService
                 if (coverEntryPath == null)
                 {
                     coverEntryPath = $"cover{coverExtension}";
-                    Console.WriteLine($"[EbookCoverService] No existing cover found, using default path: {coverEntryPath}");
+                    Log.Information("[EbookCoverService] No existing cover found, using default path: {CoverPath}", coverEntryPath);
                 }
                 else
                 {
@@ -155,7 +156,7 @@ public class EbookCoverService : IEbookCoverService
                 DateTime timestamp = referenceEntry?.DateTime ?? DateTime.Now;
                 int externalFileAttributes = referenceEntry?.ExternalFileAttributes ?? 0;
 
-                Console.WriteLine($"[EbookCoverService] Using metadata - HostSystem: {hostSystem}, Timestamp: {timestamp:yyyy-MM-dd HH:mm:ss}");
+                Log.Information("[EbookCoverService] Using metadata - HostSystem: {HostSystem}, Timestamp: {Timestamp:yyyy-MM-dd HH:mm:ss}", hostSystem, timestamp);
 
                 // Create output ZIP with SharpZipLib
                 using (var outputZipStream = new ZipOutputStream(outputStream))
@@ -174,7 +175,7 @@ public class EbookCoverService : IEbookCoverService
                         // Skip the old cover entry
                         if (existingCoverEntry != null && entry.Name == existingCoverEntry.Name)
                         {
-                            Console.WriteLine($"[EbookCoverService] Skipping old cover: {entry.Name}");
+                            Log.Information("[EbookCoverService] Skipping old cover: {EntryName}", entry.Name);
                             continue;
                         }
 
@@ -205,7 +206,7 @@ public class EbookCoverService : IEbookCoverService
                         copiedCount++;
                     }
 
-                    Console.WriteLine($"[EbookCoverService] Copied {copiedCount} entries");
+                    Log.Information("[EbookCoverService] Copied {CopiedCount} entries", copiedCount);
 
                     // Add the new cover image with metadata matching the original archive
                     var coverEntry = new ZipEntry(coverEntryPath)
@@ -216,8 +217,8 @@ public class EbookCoverService : IEbookCoverService
                         CompressionMethod = CompressionMethod.Deflated
                     };
 
-                    Console.WriteLine($"[EbookCoverService] Adding new cover at: {coverEntryPath}");
-                    Console.WriteLine($"[EbookCoverService] Cover metadata - HostSystem: {coverEntry.HostSystem}, DateTime: {coverEntry.DateTime}");
+                    Log.Information("[EbookCoverService] Adding new cover at: {CoverPath}", coverEntryPath);
+                    Log.Information("[EbookCoverService] Cover metadata - HostSystem: {HostSystem}, DateTime: {DateTime}", coverEntry.HostSystem, coverEntry.DateTime);
 
                     outputZipStream.PutNextEntry(coverEntry);
                     await outputZipStream.WriteAsync(coverImageData, 0, coverImageData.Length);
@@ -229,13 +230,13 @@ public class EbookCoverService : IEbookCoverService
             }
 
             outputStream.Position = 0;
-            Console.WriteLine($"[EbookCoverService] Successfully replaced EPUB cover, output size: {outputStream.Length} bytes");
+            Log.Information("[EbookCoverService] Successfully replaced EPUB cover, output size: {ByteCount} bytes", outputStream.Length);
             return outputStream;
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[EbookCoverService] Failed to process EPUB: {ex.Message}");
-            Console.WriteLine($"[EbookCoverService] Stack trace: {ex.StackTrace}");
+            Log.Warning("[EbookCoverService] Failed to process EPUB: {ErrorMessage}", ex.Message);
+            Log.Debug("[EbookCoverService] Stack trace: {StackTrace}", ex.StackTrace);
 
             // Reset stream position if possible
             if (ebookStream.CanSeek)

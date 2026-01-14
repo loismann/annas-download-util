@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using Serilog;
 
 namespace AnnasArchive.Core.Services;
 
@@ -80,7 +81,7 @@ public class TokenUsageService : ITokenUsageService
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"⚠️ Failed to load usage for {file}: {ex.Message}");
+                    Log.Warning("Failed to load usage for {FilePath}: {ErrorMessage}", file, ex.Message);
                 }
             }
 
@@ -131,11 +132,11 @@ public class TokenUsageService : ITokenUsageService
                         }
                         catch (Exception ex)
                         {
-                            Console.WriteLine($"⚠️ Failed to delete {file}: {ex.Message}");
+                            Log.Warning("Failed to delete {FilePath}: {ErrorMessage}", file, ex.Message);
                         }
                     }
                 }
-                Console.WriteLine("📅 Reset all user token usage counters");
+                Log.Information("Reset all user token usage counters");
             }
             else
             {
@@ -147,7 +148,7 @@ public class TokenUsageService : ITokenUsageService
                     LastResetDate = DateTime.UtcNow
                 };
                 SaveUsageUnsafe(userId, data);
-                Console.WriteLine($"📅 Reset token usage counter for user: {userId}");
+                Log.Information("Reset token usage counter for user: {UserId}", userId);
             }
         }
     }
@@ -200,7 +201,7 @@ public class TokenUsageService : ITokenUsageService
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"⚠️ Failed to save token usage for {userId}: {ex.Message}");
+            Log.Warning("Failed to save token usage for {UserId}: {ErrorMessage}", userId, ex.Message);
         }
     }
 
@@ -216,7 +217,7 @@ public class TokenUsageService : ITokenUsageService
 
         if (shouldReset)
         {
-            Console.WriteLine($"📅 Auto-resetting token usage for {userId} (last reset: {lastReset:yyyy-MM-dd}, now: {now:yyyy-MM-dd})");
+            Log.Information("Auto-resetting token usage for {UserId} (last reset: {LastReset:yyyy-MM-dd}, now: {Now:yyyy-MM-dd})", userId, lastReset, now);
             data.PromptTokens = 0;
             data.CompletionTokens = 0;
             data.LastResetDate = now;

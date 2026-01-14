@@ -13,6 +13,7 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Xml.Linq;
+using Serilog;
 using HtmlAgilityPack;
 using Microsoft.Extensions.Hosting;
 
@@ -212,8 +213,8 @@ public class LibraryWatcherService : BackgroundService
             ["aiEnrichedAt"] = existing?.AiEnrichedAt
         };
 
-        Console.WriteLine($"[LibraryWatcher] Processing {Path.GetFileName(filePath)}");
-        Console.WriteLine($"[LibraryWatcher]   Existing CoverUrl: {existing?.CoverUrl}");
+        Log.Information($"[LibraryWatcher] Processing {Path.GetFileName(filePath)}");
+        Log.Information($"[LibraryWatcher]   Existing CoverUrl: {existing?.CoverUrl}");
 
         if (ext.Equals(".epub", StringComparison.OrdinalIgnoreCase))
         {
@@ -316,9 +317,9 @@ public class LibraryWatcherService : BackgroundService
             WriteIndented = true
         });
 
-        Console.WriteLine($"[LibraryWatcher]   Final CoverUrl before write: {meta["coverUrl"]}");
+        Log.Information($"[LibraryWatcher]   Final CoverUrl before write: {meta["coverUrl"]}");
         await File.WriteAllTextAsync(metaPath, json, token);
-        Console.WriteLine($"[LibraryWatcher]   WROTE metadata to {metaPath}");
+        Log.Information($"[LibraryWatcher]   WROTE metadata to {metaPath}");
     }
 
     private async Task<bool> WaitForStableFileAsync(string filePath, CancellationToken token)

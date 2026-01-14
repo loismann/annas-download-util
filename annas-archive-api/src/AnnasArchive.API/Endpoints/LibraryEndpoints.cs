@@ -5,6 +5,7 @@ using AnnasArchive.Core.Services;
 using Dropbox.Api;
 using Dropbox.Api.Files;
 using Microsoft.AspNetCore.Mvc;
+using Serilog;
 
 namespace AnnasArchive.API.Endpoints;
 
@@ -210,7 +211,7 @@ public static class LibraryEndpoints
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[library] Skipping file {filePath}: {ex.Message}");
+                Log.Information("[library] Skipping file {filePath}: {ex.Message}");
             }
         }
 
@@ -362,13 +363,13 @@ public static class LibraryEndpoints
             var updatedJson = JsonSerializer.Serialize(meta, jsonOptions);
             await File.WriteAllTextAsync(metaPath, updatedJson);
 
-            Console.WriteLine($"[library] Updated metadata for {safeFileName}: Genre={meta.PrimaryGenre}, Tags={string.Join(", ", meta.Tags)}, Series={meta.Series}");
+            Log.Information("[library] Updated metadata for {safeFileName}: Genre={meta.PrimaryGenre}, Tags={string.Join(", ", meta.Tags)}, Series={meta.Series}");
 
             return Results.Ok(new { success = true, message = "Metadata updated successfully." });
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[library] Failed to update metadata for {safeFileName}: {ex.Message}");
+            Log.Information("[library] Failed to update metadata for {safeFileName}: {ex.Message}");
             return Results.Problem("Failed to update metadata.");
         }
     }
@@ -411,13 +412,13 @@ public static class LibraryEndpoints
             var updatedJson = JsonSerializer.Serialize(meta, jsonOptions);
             await File.WriteAllTextAsync(metaPath, updatedJson);
 
-            Console.WriteLine($"[library] Updated ratings for {safeFileName}: Goodreads={meta.GoodreadsRating}, Personal={meta.PersonalRating}");
+            Log.Information("[library] Updated ratings for {safeFileName}: Goodreads={meta.GoodreadsRating}, Personal={meta.PersonalRating}");
 
             return Results.Ok(new { success = true, message = "Ratings updated successfully." });
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[library] Failed to update ratings for {safeFileName}: {ex.Message}");
+            Log.Information("[library] Failed to update ratings for {safeFileName}: {ex.Message}");
             return Results.Problem("Failed to update ratings.");
         }
     }
@@ -454,7 +455,7 @@ public static class LibraryEndpoints
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[library] Failed to update reader flag for {safeFileName}: {ex.Message}");
+            Log.Information("[library] Failed to update reader flag for {safeFileName}: {ex.Message}");
             return Results.Problem("Failed to update reader flag.");
         }
     }
@@ -494,7 +495,7 @@ public static class LibraryEndpoints
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[library] Failed to update reader flag for {safeFileName}: {ex.Message}");
+            Log.Information("[library] Failed to update reader flag for {safeFileName}: {ex.Message}");
             return Results.Problem("Failed to update reader flag.");
         }
     }
@@ -578,7 +579,7 @@ public static class LibraryEndpoints
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[library] Failed to download cover: {ex.Message}");
+            Log.Information("[library] Failed to download cover: {ex.Message}");
             return Results.Problem("Failed to download cover image.");
         }
 
@@ -610,24 +611,24 @@ public static class LibraryEndpoints
         {
             var jsonOptions = LibraryHelpers.CreateLibraryJsonOptions();
             var json = await File.ReadAllTextAsync(metaPath);
-            Console.WriteLine($"[library-cover] READ metadata for {safeFileName}:");
-            Console.WriteLine($"[library-cover]   Existing JSON: {json.Substring(0, Math.Min(200, json.Length))}...");
+            Log.Information("[library-cover] READ metadata for {safeFileName}:");
+            Log.Information("[library-cover]   Existing JSON: {json.Substring(0, Math.Min(200, json.Length))}...");
 
             var meta = JsonSerializer.Deserialize<LibraryBookMeta>(json, jsonOptions);
 
             if (meta == null)
                 return Results.BadRequest(new { error = "Invalid metadata file." });
 
-            Console.WriteLine($"[library-cover]   Deserialized CoverUrl: {meta.CoverUrl}");
+            Log.Information("[library-cover]   Deserialized CoverUrl: {meta.CoverUrl}");
 
             var updated = meta with { CoverUrl = $"_covers/{coverFileName}" };
-            Console.WriteLine($"[library-cover]   NEW CoverUrl: {updated.CoverUrl}");
+            Log.Information("[library-cover]   NEW CoverUrl: {updated.CoverUrl}");
 
             var updatedJson = JsonSerializer.Serialize(updated, jsonOptions);
-            Console.WriteLine($"[library-cover]   Serialized JSON: {updatedJson.Substring(0, Math.Min(200, updatedJson.Length))}...");
+            Log.Information("[library-cover]   Serialized JSON: {updatedJson.Substring(0, Math.Min(200, updatedJson.Length))}...");
 
             await File.WriteAllTextAsync(metaPath, updatedJson);
-            Console.WriteLine($"[library-cover] WROTE metadata to {metaPath}");
+            Log.Information("[library-cover] WROTE metadata to {metaPath}");
 
             var baseUrl = $"{context.Request.Scheme}://{context.Request.Host}";
             var normalized = LibraryHelpers.NormalizeLibraryCoverUrl(updated.CoverUrl, baseUrl);
@@ -636,8 +637,8 @@ public static class LibraryEndpoints
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[library] Failed to update cover metadata for {safeFileName}: {ex.Message}");
-            Console.WriteLine($"[library] Stack trace: {ex.StackTrace}");
+            Log.Information("[library] Failed to update cover metadata for {safeFileName}: {ex.Message}");
+            Log.Information("[library] Stack trace: {ex.StackTrace}");
             return Results.Problem("Failed to update cover metadata.");
         }
     }
@@ -702,7 +703,7 @@ public static class LibraryEndpoints
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[library-summary] Google Books lookup failed: {ex.Message}");
+                Log.Information("[library-summary] Google Books lookup failed: {ex.Message}");
             }
 
             // 2. Try Open Library if Google failed
@@ -752,7 +753,7 @@ public static class LibraryEndpoints
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"[library-summary] Open Library lookup failed: {ex.Message}");
+                    Log.Information("[library-summary] Open Library lookup failed: {ex.Message}");
                 }
             }
 
@@ -774,7 +775,7 @@ public static class LibraryEndpoints
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"[library-summary] GPT-4 generation failed: {ex.Message}");
+                    Log.Information("[library-summary] GPT-4 generation failed: {ex.Message}");
                 }
             }
 
@@ -791,12 +792,12 @@ public static class LibraryEndpoints
                         var updated = meta with { Description = summary };
                         var updatedJson = JsonSerializer.Serialize(updated, jsonOptions);
                         await File.WriteAllTextAsync(metaPath, updatedJson);
-                        Console.WriteLine($"[library-summary] Saved summary for {safeFileName} (source: {source})");
+                        Log.Information("[library-summary] Saved summary for {safeFileName} (source: {source})");
                     }
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"[library-summary] Failed to save summary: {ex.Message}");
+                    Log.Information("[library-summary] Failed to save summary: {ex.Message}");
                 }
             }
 
@@ -804,7 +805,7 @@ public static class LibraryEndpoints
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[library-summary] Error: {ex.Message}");
+            Log.Information("[library-summary] Error: {ex.Message}");
             return Results.Problem("Failed to get summary.");
         }
     }
@@ -942,7 +943,7 @@ public static class LibraryEndpoints
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[library] Failed to persist chapter cache for {safeFileName} chapter {chapterId}: {ex.Message}");
+                Log.Information("[library] Failed to persist chapter cache for {safeFileName} chapter {chapterId}: {ex.Message}");
             }
 
             var fallbackResponse = new DropboxChapterContentDto(
@@ -1068,7 +1069,7 @@ public static class LibraryEndpoints
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[library] Failed to delete book {safeFileName}: {ex.Message}");
+            Log.Information("[library] Failed to delete book {safeFileName}: {ex.Message}");
             return Results.Problem("Failed to delete book.");
         }
     }

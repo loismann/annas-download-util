@@ -38,6 +38,7 @@ import {
 import { AnnaArchiveApiService } from '../services/anna-archive-api.service';
 import { VocabularyService, VocabularyWord } from '../services/vocabulary.service';
 import { AuthService } from '../services/auth.service';
+import { LoggerService } from '../services/logger.service';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { marked } from 'marked';
 import { Subject } from 'rxjs';
@@ -226,7 +227,8 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
     private ngZone: NgZone,
     private dialog: MatDialog,
     private router: Router,
-    private route: ActivatedRoute
+    private route: ActivatedRoute,
+    private logger: LoggerService
   ) {}
 
   ngOnInit(): void {
@@ -244,7 +246,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
       next: (usage) => {
         this.allUsersUsage = usage;
       },
-      error: (err) => console.error('[reader] Failed to load all users usage:', err)
+      error: (err) => this.logger.error('[reader] Failed to load all users usage:', err)
     });
 
     // Subscribe to vocabulary changes for real-time updates
@@ -447,21 +449,21 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
   }
 
   private parseSummaryOnce(summary: string): void {
-    console.log('parseSummaryOnce called with:', summary.substring(0, 200));
+    this.logger.log('parseSummaryOnce called with:', summary.substring(0, 200));
 
     // Find "Definitions:" in a flexible way (no dependency on preceding newline)
     const defRegex = /definitions?\s*:/i;
     const match = defRegex.exec(summary);
 
     if (match) {
-      console.log('Found definitions section at index:', match.index);
+      this.logger.log('Found definitions section at index:', match.index);
       const defIndex = match.index;
       this.analysisText = summary.substring(0, defIndex).trim();
       const definitionsSection = summary.substring(defIndex + match[0].length).trim();
-      console.log('Definitions section:', definitionsSection.substring(0, 200));
+      this.logger.log('Definitions section:', definitionsSection.substring(0, 200));
       this.vocabularyWords = this.parseVocabulary(definitionsSection);
     } else {
-      console.log('No definitions section found');
+      this.logger.log('No definitions section found');
       this.analysisText = summary.trim();
       this.vocabularyWords = [];
     }
@@ -489,7 +491,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
     // **Term**: Definition
     // 1. Term: Definition (numbered)
     const lines = definitionsText.split('\n');
-    console.log(`Parsing ${lines.length} lines for vocabulary`);
+    this.logger.log(`Parsing ${lines.length} lines for vocabulary`);
 
     for (const line of lines) {
       const trimmed = line.trim();
@@ -513,19 +515,19 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
         const definition = match[2].trim();
         const normalized = this.vocabularyService.normalizeForMatch(term);
 
-        console.log(`Found vocab: "${term}" -> "${definition.substring(0, 50)}..."`);
+        this.logger.log(`Found vocab: "${term}" -> "${definition.substring(0, 50)}..."`);
 
         // Only add if not already known and has valid content
         if (normalized && definition && !this.vocabularyService.isKnown(normalized) && !added.has(normalized)) {
           words.push({ term, definition });
           added.add(normalized);
         } else if (this.vocabularyService.isKnown(normalized)) {
-          console.log(`Skipping known word: "${term}"`);
+          this.logger.log(`Skipping known word: "${term}"`);
         }
       }
     }
 
-    console.log(`Total vocabulary words parsed: ${words.length}`);
+    this.logger.log(`Total vocabulary words parsed: ${words.length}`);
     return words;
   }
 
@@ -553,7 +555,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
       const summary = this.sectionSummaries.get(this.currentSectionIndex);
       if (summary && summary.vocab) {
         summary.vocab = summary.vocab.filter(v => v.term !== term);
-        console.log(`🗑️ Removed '${term}' from in-memory cache (${summary.vocab.length} remaining)`);
+        this.logger.log(`🗑️ Removed '${term}' from in-memory cache (${summary.vocab.length} remaining)`);
       }
     }
 
@@ -570,8 +572,8 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
       this.api.saveSectionVocab(this.selectedBookPath, this.selectedChapterId, this.currentSectionIndex, remainingVocab)
         .pipe(takeUntil(this.destroy$))
         .subscribe({
-          next: () => console.log(`💾 Updated backend cached vocab after removing '${term}' (${remainingVocab.length} remaining)`),
-          error: err => console.error('Failed to update vocab cache after removal', err)
+          next: () => this.logger.log(`💾 Updated backend cached vocab after removing '${term}' (${remainingVocab.length} remaining)`),
+          error: err => this.logger.error('Failed to update vocab cache after removal', err)
         });
     }
   }
@@ -791,7 +793,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
       const currentChapterIndex = this.chapters.findIndex(ch => ch.id === this.selectedChapterId);
       if (currentChapterIndex !== -1 && currentChapterIndex < this.chapters.length - 1) {
         const nextChapter = this.chapters[currentChapterIndex + 1];
-        console.log(`📖 End of chapter ${this.selectedChapterId} reached, advancing to chapter ${nextChapter.id}`);
+        this.logger.log(`📖 End of chapter ${this.selectedChapterId} reached, advancing to chapter ${nextChapter.id}`);
         this.onChapterSelected(nextChapter.id);
         return;
       }
@@ -812,7 +814,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
       const currentChapterIndex = this.chapters.findIndex(ch => ch.id === this.selectedChapterId);
       if (currentChapterIndex > 0) {
         const prevChapter = this.chapters[currentChapterIndex - 1];
-        console.log(`📖 Start of chapter ${this.selectedChapterId} reached, going back to chapter ${prevChapter.id}`);
+        this.logger.log(`📖 Start of chapter ${this.selectedChapterId} reached, going back to chapter ${prevChapter.id}`);
         // Store that we want to go to the last page of the previous chapter
         this.pendingCharOffset = -1; // Special marker for "last page"
     this.onChapterSelected(prevChapter.id, true);
@@ -835,7 +837,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
         this.fetchStatus(this.selectedBookFileName!, true);
       },
       error: err => {
-        console.error('Failed to start indexing', err);
+        this.logger.error('Failed to start indexing', err);
         this.error = 'Unable to start indexing.';
       }
     });
@@ -853,7 +855,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
         this.stopStatusPolling();
       },
       error: err => {
-        console.error('Failed to delete cache', err);
+        this.logger.error('Failed to delete cache', err);
         this.error = 'Unable to delete cache.';
       }
     });
@@ -883,7 +885,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
         }
       },
       error: err => {
-        console.error('Failed to search book', err);
+        this.logger.error('Failed to search book', err);
         this.bookSearchError = 'Search failed.';
       }
     });
@@ -990,7 +992,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
     // Limit to 100 most recent/varied known words to avoid overwhelming the AI
     const knownWords = allKnownWords.slice(-100);
 
-    console.log(`Summarizing chunk starting at word ${chunkStartWord} (${text.split(' ').length} words) with ${knownWords.length} known words excluded`);
+    this.logger.log(`Summarizing chunk starting at word ${chunkStartWord} (${text.split(' ').length} words) with ${knownWords.length} known words excluded`);
 
     const payload = {
       text,
@@ -1011,7 +1013,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
         this.refreshTokenUsage();
       },
       error: err => {
-        console.error('Failed to summarize', err);
+        this.logger.error('Failed to summarize', err);
         this.summary = 'Summarization failed.';
         this.loadingSummary = false;
         this.refreshTokenUsage();
@@ -1025,7 +1027,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
     // Check if summary already exists in cache
     const cached = this.fullChapterSummaryCache.get(this.selectedChapterId);
     if (cached && !force) {
-      console.log('Chapter summary already exists. Use the existing summary.');
+      this.logger.log('Chapter summary already exists. Use the existing summary.');
       return;
     }
     if (force && cached) {
@@ -1095,7 +1097,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
       const readStream = async (): Promise<void> => {
         const { done, value } = await reader!.read();
         if (done) {
-          console.log('SSE stream complete');
+          this.logger.log('SSE stream complete');
           return;
         }
 
@@ -1118,10 +1120,10 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
 
             try {
               const parsed = JSON.parse(data);
-              console.log(`SSE ${currentEvent}:`, parsed);
+              this.logger.log(`SSE ${currentEvent}:`, parsed);
               this.handleSSEEvent(parsed);
             } catch (e) {
-              console.error('Failed to parse SSE data:', data, e);
+              this.logger.error('Failed to parse SSE data:', data, e);
             }
           }
         }
@@ -1131,7 +1133,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
 
       return readStream();
     }).catch(err => {
-      console.error('Failed to summarize full chapter', err);
+      this.logger.error('Failed to summarize full chapter', err);
       this.fullChapterSummary = 'Full chapter summary failed.';
       this.chapterSummaryProgress = {
         stage: 'error',
@@ -1178,20 +1180,20 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
         this.loadingUltraChapterSummary = false;
       },
       error: err => {
-        console.error('Ultra summary failed', err);
+        this.logger.error('Ultra summary failed', err);
         this.loadingUltraChapterSummary = false;
       }
     });
   }
 
   private handleSSEEvent(event: any): void {
-    console.log('Handling SSE event:', event);
+    this.logger.log('Handling SSE event:', event);
 
     // Run inside Angular zone to trigger change detection
     this.ngZone.run(() => {
       if (event.stage && event.stepNumber !== undefined) {
         // Progress event
-        console.log(`Progress: ${event.stage} ${event.stepNumber}/${event.totalSteps}`);
+        this.logger.log(`Progress: ${event.stage} ${event.stepNumber}/${event.totalSteps}`);
         this.chapterSummaryProgress = {
           stage: event.stage as any,
           currentStep: event.stepNumber,
@@ -1201,7 +1203,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
         };
       } else if (event.summary) {
         // Complete event
-        console.log('Summary complete! Length:', event.summary.length);
+        this.logger.log('Summary complete! Length:', event.summary.length);
         this.fullChapterSummary = event.summary;
         this.fullSummaryTokens = {
           total: event.totalTokens,
@@ -1237,7 +1239,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
         this.timeoutIds.push(setTimeout(() => this.chapterSummaryProgress = null, 5000));
       } else if (event.message && event.error) {
         // Error event
-        console.error('Error event:', event);
+        this.logger.error('Error event:', event);
         this.chapterSummaryProgress = {
           stage: 'error',
           currentStep: event.stepNumber || 0,
@@ -1248,7 +1250,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
         this.loadingFullChapterSummary = false;
         this.refreshTokenUsage();
       } else {
-        console.warn('Unknown SSE event format:', event);
+        this.logger.warn('Unknown SSE event format:', event);
       }
     });
   }
@@ -1278,7 +1280,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
         this.applyPendingSelection();
       },
       error: err => {
-        console.error('Failed to load reader library books', err);
+        this.logger.error('Failed to load reader library books', err);
         this.error = 'Unable to load reader books.';
         this.loadingBooks = false;
       }
@@ -1317,7 +1319,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
         this.applyPendingChapterSelection();
       },
       error: err => {
-        console.error('Failed to load EPUB chapters', err);
+        this.logger.error('Failed to load EPUB chapters', err);
         this.error = 'Unable to load chapters for this book.';
         this.loadingChapters = false;
       }
@@ -1357,7 +1359,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
         }
       },
       error: err => {
-        console.error('Failed to load chapter content', err);
+        this.logger.error('Failed to load chapter content', err);
         this.error = 'Unable to load chapter content.';
         this.loadingContent = false;
       }
@@ -1447,7 +1449,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
         // Special marker: go to last page
         const totalPages = Math.max(1, Math.ceil(computedWordCount / this.pageSizeWords));
         this.wordOffset = Math.max(0, (totalPages - 1) * this.pageSizeWords);
-        console.log(`📖 Jumped to last page (offset ${this.wordOffset}) of chapter with ${computedWordCount} words`);
+        this.logger.log(`📖 Jumped to last page (offset ${this.wordOffset}) of chapter with ${computedWordCount} words`);
       } else {
         const slice = content.content.slice(0, Math.min(this.pendingCharOffset, content.content.length));
         this.wordOffset = this.countWords(slice);
@@ -1494,7 +1496,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
         }
       },
       error: err => {
-        console.error('Failed to fetch status', err);
+        this.logger.error('Failed to fetch status', err);
         this.stopStatusPolling();
       }
     });
@@ -1642,7 +1644,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
           this.resetSelectedBookState();
         },
         error: err => {
-          console.error('Failed to remove book from reader', err);
+          this.logger.error('Failed to remove book from reader', err);
           this.error = 'Unable to remove book from reader.';
         }
       });
@@ -1774,7 +1776,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
         this.tokenUsage = usage;
       },
       error: err => {
-        console.error('Failed to fetch token usage', err);
+        this.logger.error('Failed to fetch token usage', err);
       }
     });
   }
@@ -1847,7 +1849,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
 
     // Retrieve cached definition if available
     const cachedDefinition = this.vocabularyService.getCachedDefinition(term) || '';
-    console.log(`🔄 [moveKnownToStudy] Moving '${term}' to study with cached definition: '${cachedDefinition}'`);
+    this.logger.log(`🔄 [moveKnownToStudy] Moving '${term}' to study with cached definition: '${cachedDefinition}'`);
 
     this.vocabularyService.markAsUnknown(term, cachedDefinition, bookId);
     this.refreshVocabLists();
@@ -1864,31 +1866,31 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
 
   private fetchLearnMoreAndImages(payload: any, cacheResult: boolean): void {
     this.loadingLearnMore = true;
-    console.log(`Fetching learn more for "${payload.term}"`);
+    this.logger.log(`Fetching learn more for "${payload.term}"`);
 
     this.api.learnMore(payload)
       .pipe(takeUntil(this.destroy$))
       .subscribe({
       next: resp => {
-        console.log(`Learn more response received for "${payload.term}"`);
+        this.logger.log(`Learn more response received for "${payload.term}"`);
         const cleaned = this.cleanModelHtml(resp.detail);
 
         // Extract Wikipedia URLs from the content
         const wikiUrls = this.extractWikipediaUrls(cleaned);
-        console.log(`Found ${wikiUrls.length} Wikipedia URLs:`, wikiUrls);
+        this.logger.log(`Found ${wikiUrls.length} Wikipedia URLs:`, wikiUrls);
 
         if (wikiUrls.length > 0) {
           // Fetch images from the first Wikipedia URL
           const firstWikiUrl = wikiUrls[0];
           const articleTitle = this.getWikipediaTitleFromUrl(firstWikiUrl);
-          console.log(`Fetching images for Wikipedia article: "${articleTitle}"`);
+          this.logger.log(`Fetching images for Wikipedia article: "${articleTitle}"`);
 
           this.api.getWikiImages(articleTitle)
             .pipe(takeUntil(this.destroy$))
             .subscribe({
             next: wiki => {
               const images = wiki?.images || [];
-              console.log(`Wiki images received:`, images.length, 'images', images);
+              this.logger.log(`Wiki images received:`, images.length, 'images', images);
               this.learnMoreImages = images;
               this.learnMoreContent = cleaned;
               this.learnMoreSafeContent = this.sanitizer.bypassSecurityTrustHtml(cleaned);
@@ -1898,7 +1900,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
               this.loadingLearnMore = false;
             },
             error: err => {
-              console.error(`Wiki images lookup failed:`, err);
+              this.logger.error(`Wiki images lookup failed:`, err);
               this.learnMoreImages = [];
               this.learnMoreContent = cleaned;
               this.learnMoreSafeContent = this.sanitizer.bypassSecurityTrustHtml(cleaned);
@@ -1909,7 +1911,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
             }
           });
         } else {
-          console.log('No Wikipedia URLs found in content');
+          this.logger.log('No Wikipedia URLs found in content');
           this.learnMoreImages = [];
           this.learnMoreContent = cleaned;
           this.learnMoreSafeContent = this.sanitizer.bypassSecurityTrustHtml(cleaned);
@@ -1920,7 +1922,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
         }
       },
       error: (err) => {
-        console.error(`Learn more failed for "${payload.term}":`, err);
+        this.logger.error(`Learn more failed for "${payload.term}":`, err);
         this.learnMoreContent = 'Failed to load details.';
         this.learnMoreSafeContent = this.learnMoreContent;
         this.learnMoreImages = [];
@@ -2027,7 +2029,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
     // Use the current book from reader, or fall back to vocab filter if no book is selected
     const bookPath = this.selectedBookPath || (this.vocabFilter !== 'all' ? this.vocabFilter : null);
     if (!bookPath) {
-      console.warn('No book selected for flashcard creation');
+      this.logger.warn('No book selected for flashcard creation');
       return;
     }
 
@@ -2136,17 +2138,17 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
       // Delete vocabulary for the book
       this.vocabularyService.deleteBook(this.vocabFilter, (success, message) => {
         if (success) {
-          console.log(`✅ ${message}`);
+          this.logger.log(`✅ ${message}`);
 
           // Delete flashcards for the book
           this.api.clearFlashcards(this.vocabFilter)
             .pipe(takeUntil(this.destroy$))
             .subscribe({
               next: () => {
-                console.log(`✅ Deleted flashcards for "${bookName}"`);
+                this.logger.log(`✅ Deleted flashcards for "${bookName}"`);
               },
               error: (err) => {
-                console.error(`❌ Failed to delete flashcards:`, err);
+                this.logger.error(`❌ Failed to delete flashcards:`, err);
               }
             });
 
@@ -2299,7 +2301,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
 
     // Check if we're in section mode and have a valid section
     if (this.currentSectionIndex === null) {
-      console.warn('⚠️ Cannot create vocab - no section selected');
+      this.logger.warn('⚠️ Cannot create vocab - no section selected');
       return;
     }
 
@@ -2312,7 +2314,7 @@ export class DropboxReaderComponent implements OnInit, OnDestroy {
     const wordCount = text.split(/\s+/).length;
     const isSingleWord = wordCount === 1;
 
-    console.log(`🔤 Creating vocab from selection: ${isSingleWord ? 'single word' : `${wordCount} words`}`);
+    this.logger.log(`🔤 Creating vocab from selection: ${isSingleWord ? 'single word' : `${wordCount} words`}`);
 
     const allKnownWords = this.vocabularyService.getKnownWordsForPrompt();
     const knownWords = allKnownWords.slice(-100);
@@ -2344,14 +2346,14 @@ DO NOT create a card for every word. Only create cards for terms that add educat
       .pipe(takeUntil(this.destroy$))
       .subscribe({
       next: cards => {
-        console.log(`✅ Generated ${cards.length} vocabulary card(s) from selection`);
+        this.logger.log(`✅ Generated ${cards.length} vocabulary card(s) from selection`);
 
         // Merge new cards with existing section vocab (avoid duplicates)
         const existingTerms = new Set(this.vocabularyWords.map(v => v.term.toLowerCase()));
         const newCards = cards.filter(card => !existingTerms.has(card.term.toLowerCase()));
 
         if (newCards.length === 0) {
-          console.log('ℹ️ All generated cards already exist in current section');
+          this.logger.log('ℹ️ All generated cards already exist in current section');
         } else {
           // Add new cards to vocabulary display
           const newVocabWords = newCards.map(card => ({
@@ -2377,7 +2379,7 @@ DO NOT create a card for every word. Only create cards for terms that add educat
               .pipe(takeUntil(this.destroy$))
               .subscribe({
               next: () => {
-                console.log(`💾 Saved ${newCards.length} new vocab card(s) to section ${sectionIndex} cache`);
+                this.logger.log(`💾 Saved ${newCards.length} new vocab card(s) to section ${sectionIndex} cache`);
 
                 // Update in-memory section summary with new vocab
                 const summary = this.sectionSummaries.get(sectionIndex);
@@ -2388,7 +2390,7 @@ DO NOT create a card for every word. Only create cards for terms that add educat
                   });
                 }
               },
-              error: err => console.error('Failed to save vocab to cache', err)
+              error: err => this.logger.error('Failed to save vocab to cache', err)
             });
           }
         }
@@ -2398,7 +2400,7 @@ DO NOT create a card for every word. Only create cards for terms that add educat
         this.selectedText = null;
       },
       error: err => {
-        console.error('Failed to generate vocabulary cards from selection', err);
+        this.logger.error('Failed to generate vocabulary cards from selection', err);
         this.loadingSelectionVocab = false;
         this.refreshTokenUsage();
       }
@@ -2407,11 +2409,11 @@ DO NOT create a card for every word. Only create cards for terms that add educat
 
   generateChapterVocab(): void {
     if (!this.chapterContent || !this.selectedBookPath || this.selectedChapterId === null || this.loadingChapterVocab) {
-      console.warn('⚠️ Cannot generate chapter vocab - missing required data');
+      this.logger.warn('⚠️ Cannot generate chapter vocab - missing required data');
       return;
     }
 
-    console.log('📚 Generating vocabulary for entire chapter');
+    this.logger.log('📚 Generating vocabulary for entire chapter');
     this.loadingChapterVocab = true;
 
     const allKnownWords = this.vocabularyService.getKnownWordsForPrompt();
@@ -2438,28 +2440,28 @@ DO NOT include common words. Only create flashcards for terms that significantly
       .pipe(takeUntil(this.destroy$))
       .subscribe({
         next: cards => {
-          console.log(`✅ Generated ${cards.length} chapter-level vocabulary card(s)`);
+          this.logger.log(`✅ Generated ${cards.length} chapter-level vocabulary card(s)`);
 
           // Merge new cards with existing vocab (avoid duplicates)
           const existingTerms = new Set(this.vocabularyWords.map(v => v.term.toLowerCase()));
           const newCards = cards.filter(card => !existingTerms.has(card.term.toLowerCase()));
 
           if (newCards.length === 0) {
-            console.log('ℹ️ All generated chapter vocab cards already exist');
+            this.logger.log('ℹ️ All generated chapter vocab cards already exist');
           } else {
             const newVocabWords = newCards.map(card => ({
               term: card.term,
               definition: card.definition
             }));
             this.vocabularyWords = [...this.vocabularyWords, ...newVocabWords];
-            console.log(`➕ Added ${newCards.length} new chapter vocab terms to display`);
+            this.logger.log(`➕ Added ${newCards.length} new chapter vocab terms to display`);
           }
 
           this.loadingChapterVocab = false;
           this.refreshTokenUsage();
         },
         error: err => {
-          console.error('Failed to generate chapter vocabulary', err);
+          this.logger.error('Failed to generate chapter vocabulary', err);
           this.loadingChapterVocab = false;
           this.refreshTokenUsage();
         }
@@ -2631,7 +2633,7 @@ DO NOT include common words. Only create flashcards for terms that significantly
             this.loadingChunkBoundaries = false;
             this.chunkBoundariesProgress = null;
             this.updateCurrentSection();
-            console.log(`✅ Loaded ${data.chunks.length} cached chunk boundaries for chapter ${chapterId}`);
+            this.logger.log(`✅ Loaded ${data.chunks.length} cached chunk boundaries for chapter ${chapterId}`);
 
             // Auto-load cached summary for current section (if it exists)
             if (this.currentSectionIndex !== null) {
@@ -2649,7 +2651,7 @@ DO NOT include common words. Only create flashcards for terms that significantly
       const readStream = async (): Promise<void> => {
         const { done, value } = await reader!.read();
         if (done) {
-          console.log('SSE stream complete');
+          this.logger.log('SSE stream complete');
           return;
         }
 
@@ -2664,10 +2666,10 @@ DO NOT include common words. Only create flashcards for terms that significantly
 
             try {
               const parsed = JSON.parse(data);
-              console.log('SSE event:', parsed);
+              this.logger.log('SSE event:', parsed);
               this.handleChunkBoundarySSEEvent(parsed);
             } catch (e) {
-              console.error('Failed to parse SSE data:', data, e);
+              this.logger.error('Failed to parse SSE data:', data, e);
             }
           }
         }
@@ -2677,7 +2679,7 @@ DO NOT include common words. Only create flashcards for terms that significantly
 
       return readStream();
     }).catch(err => {
-      console.error('Failed to load chunk boundaries', err);
+      this.logger.error('Failed to load chunk boundaries', err);
       this.ngZone.run(() => {
         this.chunkBoundariesProgress = {
           stage: 'error',
@@ -2695,7 +2697,7 @@ DO NOT include common words. Only create flashcards for terms that significantly
     this.ngZone.run(() => {
       if (event.stage && event.stepNumber !== undefined) {
         // Progress event
-        console.log(`Boundary detection: ${event.stage} ${event.stepNumber}/${event.totalSteps}`);
+        this.logger.log(`Boundary detection: ${event.stage} ${event.stepNumber}/${event.totalSteps}`);
         this.chunkBoundariesProgress = {
           stage: event.stage as any,
           currentStep: event.stepNumber,
@@ -2705,7 +2707,7 @@ DO NOT include common words. Only create flashcards for terms that significantly
         };
       } else if (event.chapterId !== undefined && event.chunks) {
         // Complete event
-        console.log('Boundary detection complete! Sections:', event.chunks.length);
+        this.logger.log('Boundary detection complete! Sections:', event.chunks.length);
         this.chunkBoundaries = event as ChunkBoundariesResponse;
         this.chunkBoundariesProgress = {
           stage: 'complete',
@@ -2725,7 +2727,7 @@ DO NOT include common words. Only create flashcards for terms that significantly
         this.timeoutIds.push(setTimeout(() => this.chunkBoundariesProgress = null, 3000));
       } else if (event.error) {
         // Error event
-        console.error('Boundary detection error:', event);
+        this.logger.error('Boundary detection error:', event);
         this.chunkBoundariesProgress = {
           stage: 'error',
           currentStep: event.stepNumber || 0,
@@ -2769,7 +2771,7 @@ DO NOT include common words. Only create flashcards for terms that significantly
     // If regenerating (summary already exists), remove old summary and clear vocab
     const isRegenerating = this.sectionSummaries.has(sectionIndex);
     if (isRegenerating) {
-      console.log(`🔄 Regenerating summary for section ${sectionIndex}`);
+      this.logger.log(`🔄 Regenerating summary for section ${sectionIndex}`);
       this.sectionSummaries.delete(sectionIndex);
       this.vocabularyWords = [];
     }
@@ -2792,7 +2794,7 @@ DO NOT include common words. Only create flashcards for terms that significantly
         this.sectionSummaries.set(sectionIndex, summary);
         this.loadingSectionSummary = false;
         this.refreshTokenUsage();
-        console.log(`✅ Generated summary for section ${sectionIndex}`);
+        this.logger.log(`✅ Generated summary for section ${sectionIndex}`);
 
         // Clear vocabulary while we generate it
         this.vocabularyWords = [];
@@ -2801,8 +2803,8 @@ DO NOT include common words. Only create flashcards for terms that significantly
         this.generateSectionVocabulary(sectionIndex);
       },
       error: err => {
-        console.error('Failed to generate section summary', err);
-        console.error('Error details:', {
+        this.logger.error('Failed to generate section summary', err);
+        this.logger.error('Error details:', {
           status: err.status,
           statusText: err.statusText,
           message: err.error?.error || err.message,
@@ -2827,7 +2829,7 @@ DO NOT include common words. Only create flashcards for terms that significantly
     const limitedWords = sectionWords.slice(0, 1000);
     const sectionText = limitedWords.join(' ');
 
-    console.log(`🔤 Generating vocabulary cards for section ${sectionIndex} (${limitedWords.length} words)...`);
+    this.logger.log(`🔤 Generating vocabulary cards for section ${sectionIndex} (${limitedWords.length} words)...`);
 
     // Get known words to exclude from vocabulary
     const allKnownWords = this.vocabularyService.getKnownWordsForPrompt();
@@ -2850,22 +2852,22 @@ DO NOT include common words. Only create flashcards for terms that significantly
           term: card.term,
           definition: card.definition
         }));
-        console.log(`✅ Generated ${cards.length} vocabulary cards for section ${sectionIndex}`);
+        this.logger.log(`✅ Generated ${cards.length} vocabulary cards for section ${sectionIndex}`);
 
         // Save vocab to cache
         if (this.selectedBookPath && this.selectedChapterId !== null && cards.length > 0) {
           this.api.saveSectionVocab(this.selectedBookPath, this.selectedChapterId, sectionIndex, cards)
             .pipe(takeUntil(this.destroy$))
             .subscribe({
-            next: () => console.log(`💾 Saved ${cards.length} vocab cards to cache`),
-            error: err => console.error('Failed to save vocab to cache', err)
+            next: () => this.logger.log(`💾 Saved ${cards.length} vocab cards to cache`),
+            error: err => this.logger.error('Failed to save vocab to cache', err)
           });
         }
 
         this.refreshTokenUsage();
       },
       error: err => {
-        console.error('Failed to generate vocabulary cards', err);
+        this.logger.error('Failed to generate vocabulary cards', err);
         this.vocabularyWords = [];
         this.refreshTokenUsage();
       }
@@ -2893,7 +2895,7 @@ DO NOT include common words. Only create flashcards for terms that significantly
 
     // Check if summary is already loaded in memory
     if (this.sectionSummaries.has(sectionIndex)) {
-      console.log(`✅ Summary for section ${sectionIndex} already in memory`);
+      this.logger.log(`✅ Summary for section ${sectionIndex} already in memory`);
       // Still need to load vocab if it exists in the cached summary
       const summary = this.sectionSummaries.get(sectionIndex);
       if (summary?.vocab && summary.vocab.length > 0) {
@@ -2901,7 +2903,7 @@ DO NOT include common words. Only create flashcards for terms that significantly
           term: card.term,
           definition: card.definition
         }));
-        console.log(`✅ Loaded ${summary.vocab.length} vocab cards from memory`);
+        this.logger.log(`✅ Loaded ${summary.vocab.length} vocab cards from memory`);
       } else {
         this.vocabularyWords = [];
       }
@@ -2914,7 +2916,7 @@ DO NOT include common words. Only create flashcards for terms that significantly
       .subscribe({
       next: summary => {
         this.sectionSummaries.set(sectionIndex, summary);
-        console.log(`✅ Auto-loaded cached summary for section ${sectionIndex}`);
+        this.logger.log(`✅ Auto-loaded cached summary for section ${sectionIndex}`);
 
         // Load vocab if available in cached summary
         if (summary.vocab && summary.vocab.length > 0) {
@@ -2922,7 +2924,7 @@ DO NOT include common words. Only create flashcards for terms that significantly
             term: card.term,
             definition: card.definition
           }));
-          console.log(`✅ Auto-loaded ${summary.vocab.length} vocab cards for section ${sectionIndex}`);
+          this.logger.log(`✅ Auto-loaded ${summary.vocab.length} vocab cards for section ${sectionIndex}`);
         } else {
           // Clear vocab if this section doesn't have any cached
           this.vocabularyWords = [];
@@ -2933,7 +2935,7 @@ DO NOT include common words. Only create flashcards for terms that significantly
       },
       error: () => {
         // No cached summary exists, that's fine - user will need to click "Generate"
-        console.log(`ℹ️ No cached summary for section ${sectionIndex}`);
+        this.logger.log(`ℹ️ No cached summary for section ${sectionIndex}`);
         // Clear vocab since there's no cached summary
         this.vocabularyWords = [];
       }

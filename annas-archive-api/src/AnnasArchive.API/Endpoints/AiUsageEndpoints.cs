@@ -1,6 +1,7 @@
 using AnnasArchive.API.Helpers;
 using AnnasArchive.API.Models;
 using AnnasArchive.Core.Services;
+using Serilog;
 
 namespace AnnasArchive.API.Endpoints;
 
@@ -100,7 +101,7 @@ public static class AiUsageEndpoints
     private static IResult HandleResetUsage(ITokenUsageService tokenUsage)
     {
         tokenUsage.Reset();
-        Console.WriteLine("✅ Token usage counter has been reset");
+        Log.Information("Token usage counter has been reset");
         return Results.Ok(new { success = true, message = "Token usage counter has been reset" });
     }
 }

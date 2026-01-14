@@ -1,6 +1,7 @@
 import { Injectable } from '@angular/core';
 import { BehaviorSubject, Observable } from 'rxjs';
 import { AnnaArchiveApiService } from './anna-archive-api.service';
+import { LoggerService } from './logger.service';
 
 export interface VocabularyWord {
   term: string;
@@ -31,7 +32,10 @@ export class VocabularyService {
   public knownWords$: Observable<Set<string>> = this.knownWordsSubject.asObservable();
   public studyWords$: Observable<Map<string, string>> = this.studyWordsSubject.asObservable();
 
-  constructor(private apiService: AnnaArchiveApiService) {
+  constructor(
+    private apiService: AnnaArchiveApiService,
+    private logger: LoggerService
+  ) {
     this.loadFromServer();
     this.loadClientOnlyStorage();
   }
@@ -64,11 +68,11 @@ export class VocabularyService {
   }
 
   private loadFromServer(): void {
-    console.log('🔄 [loadFromServer] Initializing vocabulary service, fetching from server...');
+    this.logger.log('🔄 [loadFromServer] Initializing vocabulary service, fetching from server...');
 
     this.apiService.getKnownWords().subscribe({
       next: (wordsWithBooks) => {
-        console.log(`📥 [loadFromServer] Received known words from API:`, wordsWithBooks);
+        this.logger.log(`📥 [loadFromServer] Received known words from API:`, wordsWithBooks);
 
         // Store book associations
         this.knownWordsWithBooks.clear();
@@ -83,16 +87,16 @@ export class VocabularyService {
         });
 
         this.knownWordsSubject.next(normalized);
-        console.log(`✅ [loadFromServer] Loaded ${normalized.size} known words with book associations`, Array.from(normalized));
+        this.logger.log(`✅ [loadFromServer] Loaded ${normalized.size} known words with book associations`, Array.from(normalized));
       },
       error: (err) => {
-        console.error('❌ [loadFromServer] Failed to load known words from server:', err);
+        this.logger.error('❌ [loadFromServer] Failed to load known words from server:', err);
       }
     });
 
     this.apiService.getStudyWords().subscribe({
       next: (wordsWithBooks) => {
-        console.log(`📥 [loadFromServer] Received study words from API:`, wordsWithBooks);
+        this.logger.log(`📥 [loadFromServer] Received study words from API:`, wordsWithBooks);
 
         // Store book associations
         this.studyWordsWithBooks.clear();
@@ -115,10 +119,10 @@ export class VocabularyService {
 
         this.studyWordsSubject.next(map);
         this.saveClientOnlyStorage(); // Save cached definitions to localStorage
-        console.log(`✅ [loadFromServer] Loaded ${map.size} study words with book associations`, Array.from(map.entries()));
+        this.logger.log(`✅ [loadFromServer] Loaded ${map.size} study words with book associations`, Array.from(map.entries()));
       },
       error: (err) => {
-        console.error('❌ [loadFromServer] Failed to load study words from server:', err);
+        this.logger.error('❌ [loadFromServer] Failed to load study words from server:', err);
       }
     });
   }
@@ -154,10 +158,10 @@ export class VocabularyService {
             this.definitionsCache.set(normalized, definition);
           }
         });
-        console.log(`💿 [loadClientOnlyStorage] Loaded ${this.definitionsCache.size} cached definitions`);
+        this.logger.log(`💿 [loadClientOnlyStorage] Loaded ${this.definitionsCache.size} cached definitions`);
       }
     } catch (error) {
-      console.error('Failed to load client-only vocabulary data', error);
+      this.logger.error('Failed to load client-only vocabulary data', error);
     }
   }
 
@@ -175,31 +179,31 @@ export class VocabularyService {
       this.definitionsCache.forEach((definition, term) => (definitions[term] = definition));
       localStorage.setItem(this.DEFINITIONS_CACHE_KEY, JSON.stringify(definitions));
     } catch (error) {
-      console.error('Failed to save client-only vocabulary data', error);
+      this.logger.error('Failed to save client-only vocabulary data', error);
     }
   }
 
   markAsKnown(term: string, bookId?: string, definition?: string): void {
-    console.log(`📗 [markAsKnown] Called with term='${term}', bookId='${bookId}', definition='${definition}'`);
+    this.logger.log(`📗 [markAsKnown] Called with term='${term}', bookId='${bookId}', definition='${definition}'`);
     const normalizedTerm = this.normalizeTerm(term);
     if (!normalizedTerm) {
-      console.warn(`⚠️ [markAsKnown] Normalized term is empty, skipping`);
+      this.logger.warn(`⚠️ [markAsKnown] Normalized term is empty, skipping`);
       return;
     }
-    console.log(`🔤 [markAsKnown] Normalized term: '${normalizedTerm}'`);
+    this.logger.log(`🔤 [markAsKnown] Normalized term: '${normalizedTerm}'`);
 
     // Cache the definition permanently (even when marking as known, so it's available later)
     if (definition && definition.trim()) {
       this.definitionsCache.set(normalizedTerm, definition);
       this.saveClientOnlyStorage();
-      console.log(`💿 [markAsKnown] Cached definition for '${normalizedTerm}'`);
+      this.logger.log(`💿 [markAsKnown] Cached definition for '${normalizedTerm}'`);
     } else if (!this.definitionsCache.has(normalizedTerm)) {
       // If no definition provided, try to get it from study words
       const studyDef = this.studyWordsSubject.value.get(normalizedTerm);
       if (studyDef) {
         this.definitionsCache.set(normalizedTerm, studyDef);
         this.saveClientOnlyStorage();
-        console.log(`💿 [markAsKnown] Cached definition from study list for '${normalizedTerm}'`);
+        this.logger.log(`💿 [markAsKnown] Cached definition from study list for '${normalizedTerm}'`);
       }
     }
 
@@ -209,14 +213,14 @@ export class VocabularyService {
     const wasAlreadyKnown = known.has(normalizedTerm);
     known.add(normalizedTerm);
     this.knownWordsSubject.next(known);
-    console.log(`💾 [markAsKnown] Updated local state (wasAlreadyKnown=${wasAlreadyKnown}, totalKnown=${known.size})`);
+    this.logger.log(`💾 [markAsKnown] Updated local state (wasAlreadyKnown=${wasAlreadyKnown}, totalKnown=${known.size})`);
 
     // Update book association maps immediately for filtering
     if (bookId) {
       const existingBooks = this.knownWordsWithBooks.get(normalizedTerm) || [];
       if (!existingBooks.includes(bookId)) {
         this.knownWordsWithBooks.set(normalizedTerm, [...existingBooks, bookId]);
-        console.log(`📚 [markAsKnown] Added book association: '${normalizedTerm}' -> book '${bookId}'`);
+        this.logger.log(`📚 [markAsKnown] Added book association: '${normalizedTerm}' -> book '${bookId}'`);
       }
     }
 
@@ -225,21 +229,21 @@ export class VocabularyService {
     if (study.has(normalizedTerm)) {
       study.delete(normalizedTerm);
       this.studyWordsSubject.next(study);
-      console.log(`🔄 [markAsKnown] Removed from study list`);
+      this.logger.log(`🔄 [markAsKnown] Removed from study list`);
 
       // Remove from study books association
       this.studyWordsWithBooks.delete(normalizedTerm);
-      console.log(`📚 [markAsKnown] Removed from study book associations`);
+      this.logger.log(`📚 [markAsKnown] Removed from study book associations`);
     }
 
     // Persist to server with bookId
-    console.log(`🌐 [markAsKnown] Calling API to persist to server with bookId='${bookId}'...`);
+    this.logger.log(`🌐 [markAsKnown] Calling API to persist to server with bookId='${bookId}'...`);
     this.apiService.addKnownWord(normalizedTerm, bookId).subscribe({
       next: (response) => {
-        console.log(`✅ [markAsKnown] Server confirmed: '${normalizedTerm}' marked as known for book '${bookId}'`, response);
+        this.logger.log(`✅ [markAsKnown] Server confirmed: '${normalizedTerm}' marked as known for book '${bookId}'`, response);
       },
       error: (err) => {
-        console.error(`❌ [markAsKnown] Failed to mark "${normalizedTerm}" as known:`, err);
+        this.logger.error(`❌ [markAsKnown] Failed to mark "${normalizedTerm}" as known:`, err);
         // Rollback on error
         const rolledBack = new Set(this.knownWordsSubject.value);
         rolledBack.delete(normalizedTerm);
@@ -255,25 +259,25 @@ export class VocabularyService {
             this.knownWordsWithBooks.delete(normalizedTerm);
           }
         }
-        console.log(`↩️ [markAsKnown] Rolled back local state and book associations`);
+        this.logger.log(`↩️ [markAsKnown] Rolled back local state and book associations`);
       }
     });
   }
 
   markAsUnknown(term: string, definition: string, bookId?: string): void {
-    console.log(`📕 [markAsUnknown] Called with term='${term}', definition='${definition}', bookId='${bookId}'`);
+    this.logger.log(`📕 [markAsUnknown] Called with term='${term}', definition='${definition}', bookId='${bookId}'`);
     const normalizedTerm = this.normalizeTerm(term);
     if (!normalizedTerm) {
-      console.warn(`⚠️ [markAsUnknown] Normalized term is empty, skipping`);
+      this.logger.warn(`⚠️ [markAsUnknown] Normalized term is empty, skipping`);
       return;
     }
-    console.log(`🔤 [markAsUnknown] Normalized term: '${normalizedTerm}'`);
+    this.logger.log(`🔤 [markAsUnknown] Normalized term: '${normalizedTerm}'`);
 
     // Cache the definition permanently (even if empty, we'll try to retrieve it later if needed)
     if (definition && definition.trim()) {
       this.definitionsCache.set(normalizedTerm, definition);
       this.saveClientOnlyStorage();
-      console.log(`💿 [markAsUnknown] Cached definition for '${normalizedTerm}'`);
+      this.logger.log(`💿 [markAsUnknown] Cached definition for '${normalizedTerm}'`);
     }
 
     // Update local state immediately for UI responsiveness
@@ -282,7 +286,7 @@ export class VocabularyService {
     const wasAlreadyStudy = study.has(normalizedTerm);
     study.set(normalizedTerm, definition);
     this.studyWordsSubject.next(study);
-    console.log(`💾 [markAsUnknown] Updated local state (wasAlreadyStudy=${wasAlreadyStudy}, totalStudy=${study.size})`);
+    this.logger.log(`💾 [markAsUnknown] Updated local state (wasAlreadyStudy=${wasAlreadyStudy}, totalStudy=${study.size})`);
 
     // Update book association maps immediately for filtering
     if (bookId) {
@@ -301,7 +305,7 @@ export class VocabularyService {
           books: [bookId]
         });
       }
-      console.log(`📚 [markAsUnknown] Added study book association: '${normalizedTerm}' -> book '${bookId}'`);
+      this.logger.log(`📚 [markAsUnknown] Added study book association: '${normalizedTerm}' -> book '${bookId}'`);
     }
 
     // Create new Set instance to trigger BehaviorSubject emission
@@ -309,21 +313,21 @@ export class VocabularyService {
     if (known.has(normalizedTerm)) {
       known.delete(normalizedTerm);
       this.knownWordsSubject.next(known);
-      console.log(`🔄 [markAsUnknown] Removed from known list`);
+      this.logger.log(`🔄 [markAsUnknown] Removed from known list`);
 
       // Remove from known books association
       this.knownWordsWithBooks.delete(normalizedTerm);
-      console.log(`📚 [markAsUnknown] Removed from known book associations`);
+      this.logger.log(`📚 [markAsUnknown] Removed from known book associations`);
     }
 
     // Persist to server with bookId
-    console.log(`🌐 [markAsUnknown] Calling API to persist to server with bookId='${bookId}'...`);
+    this.logger.log(`🌐 [markAsUnknown] Calling API to persist to server with bookId='${bookId}'...`);
     this.apiService.addStudyWord(normalizedTerm, definition, bookId).subscribe({
       next: (response) => {
-        console.log(`✅ [markAsUnknown] Server confirmed: '${normalizedTerm}' marked as study word for book '${bookId}'`, response);
+        this.logger.log(`✅ [markAsUnknown] Server confirmed: '${normalizedTerm}' marked as study word for book '${bookId}'`, response);
       },
       error: (err) => {
-        console.error(`❌ [markAsUnknown] Failed to mark "${normalizedTerm}" as study word:`, err);
+        this.logger.error(`❌ [markAsUnknown] Failed to mark "${normalizedTerm}" as study word:`, err);
         // Rollback on error
         const rolledBack = new Map(this.studyWordsSubject.value);
         rolledBack.delete(normalizedTerm);
@@ -341,7 +345,7 @@ export class VocabularyService {
             }
           }
         }
-        console.log(`↩️ [markAsUnknown] Rolled back local state and book associations`);
+        this.logger.log(`↩️ [markAsUnknown] Rolled back local state and book associations`);
       }
     });
   }
@@ -377,7 +381,7 @@ export class VocabularyService {
     // If no filter or filter is 'all', return all known words
     if (!filterBookId || filterBookId === 'all') {
       const allWords = Array.from(this.knownWordsSubject.value);
-      console.log(`📚 [getKnownWords] No filter - returning all ${allWords.length} known words`);
+      this.logger.log(`📚 [getKnownWords] No filter - returning all ${allWords.length} known words`);
       return allWords;
     }
 
@@ -389,7 +393,7 @@ export class VocabularyService {
       }
     });
 
-    console.log(`📚 [getKnownWords] Filter='${filterBookId}': found ${filtered.length} words out of ${this.knownWordsSubject.value.size} total known`, filtered.slice(0, 5));
+    this.logger.log(`📚 [getKnownWords] Filter='${filterBookId}': found ${filtered.length} words out of ${this.knownWordsSubject.value.size} total known`, filtered.slice(0, 5));
     return filtered;
   }
 
@@ -397,7 +401,7 @@ export class VocabularyService {
     // If no filter or filter is 'all', return all study words
     if (!filterBookId || filterBookId === 'all') {
       const allWords = new Map(this.studyWordsSubject.value);
-      console.log(`📚 [getUnknownWords] No filter - returning all ${allWords.size} study words`);
+      this.logger.log(`📚 [getUnknownWords] No filter - returning all ${allWords.size} study words`);
       return allWords;
     }
 
@@ -410,7 +414,7 @@ export class VocabularyService {
     });
 
     const sampleTerms = Array.from(filtered.keys()).slice(0, 5);
-    console.log(`📚 [getUnknownWords] Filter='${filterBookId}': found ${filtered.size} words out of ${this.studyWordsSubject.value.size} total study`, sampleTerms);
+    this.logger.log(`📚 [getUnknownWords] Filter='${filterBookId}': found ${filtered.size} words out of ${this.studyWordsSubject.value.size} total study`, sampleTerms);
     return filtered;
   }
 
@@ -426,14 +430,14 @@ export class VocabularyService {
     // Clear known words on server
     knownWords.forEach(term => {
       this.apiService.removeKnownWord(term).subscribe({
-        error: (err) => console.error(`Failed to remove known word "${term}"`, err)
+        error: (err) => this.logger.error(`Failed to remove known word "${term}"`, err)
       });
     });
 
     // Clear study words on server
     studyWords.forEach(term => {
       this.apiService.removeStudyWord(term).subscribe({
-        error: (err) => console.error(`Failed to remove study word "${term}"`, err)
+        error: (err) => this.logger.error(`Failed to remove study word "${term}"`, err)
       });
     });
 
@@ -446,7 +450,7 @@ export class VocabularyService {
 
     knownWords.forEach(term => {
       this.apiService.removeKnownWord(term).subscribe({
-        error: (err) => console.error(`Failed to remove known word "${term}"`, err)
+        error: (err) => this.logger.error(`Failed to remove known word "${term}"`, err)
       });
     });
   }
@@ -457,13 +461,13 @@ export class VocabularyService {
 
     studyWords.forEach(term => {
       this.apiService.removeStudyWord(term).subscribe({
-        error: (err) => console.error(`Failed to remove study word "${term}"`, err)
+        error: (err) => this.logger.error(`Failed to remove study word "${term}"`, err)
       });
     });
   }
 
   deleteBook(bookId: string, callback?: (success: boolean, message: string) => void): void {
-    console.log(`🗑️ [deleteBook] Deleting all vocabulary for book '${bookId}'`);
+    this.logger.log(`🗑️ [deleteBook] Deleting all vocabulary for book '${bookId}'`);
 
     // Get book name before deleting
     const bookName = this.bookNames.get(bookId) || bookId;
@@ -471,7 +475,7 @@ export class VocabularyService {
     // Call API to delete all vocabulary for this book
     this.apiService.deleteBookVocab(bookId).subscribe({
       next: (response) => {
-        console.log(`✅ [deleteBook] Server confirmed deletion:`, response);
+        this.logger.log(`✅ [deleteBook] Server confirmed deletion:`, response);
 
         // Remove book from bookNames map
         this.bookNames.delete(bookId);
@@ -484,7 +488,7 @@ export class VocabularyService {
         if (callback) callback(true, message);
       },
       error: (err) => {
-        console.error(`❌ [deleteBook] Failed to delete book vocabulary:`, err);
+        this.logger.error(`❌ [deleteBook] Failed to delete book vocabulary:`, err);
         if (callback) callback(false, 'Failed to delete book vocabulary');
       }
     });
@@ -506,7 +510,7 @@ export class VocabularyService {
     const normalized = this.normalizeTerm(term);
     if (!normalized) return undefined;
     const cached = this.definitionsCache.get(normalized);
-    console.log(`💿 [getCachedDefinition] Looking up '${term}' (normalized: '${normalized}'): ${cached ? 'FOUND' : 'NOT FOUND'}`);
+    this.logger.log(`💿 [getCachedDefinition] Looking up '${term}' (normalized: '${normalized}'): ${cached ? 'FOUND' : 'NOT FOUND'}`);
     return cached;
   }
 
@@ -514,7 +518,7 @@ export class VocabularyService {
     const normalized = this.normalizeTerm(term);
     if (!normalized) return undefined;
     const definition = this.studyWordsSubject.value.get(normalized);
-    console.log(`📕 [getStudyWordDefinition] Looking up '${term}' (normalized: '${normalized}'): ${definition ? 'FOUND' : 'NOT FOUND'}`);
+    this.logger.log(`📕 [getStudyWordDefinition] Looking up '${term}' (normalized: '${normalized}'): ${definition ? 'FOUND' : 'NOT FOUND'}`);
     return definition;
   }
 

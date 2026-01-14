@@ -7,6 +7,7 @@ import { MatMenuModule } from '@angular/material/menu';
 import { MatIconModule } from '@angular/material/icon';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { AuthService, UserActivity } from './services/auth.service';
+import { LoggerService } from './services/logger.service';
 import { VERSION } from './version';
 import { Subscription, interval } from 'rxjs';
 import { switchMap, filter } from 'rxjs/operators';
@@ -133,7 +134,8 @@ export class AppComponent implements OnInit, OnDestroy {
 
   constructor(
     public authService: AuthService,
-    private router: Router
+    private router: Router,
+    private logger: LoggerService
   ) {}
 
   ngOnInit(): void {
@@ -161,7 +163,7 @@ export class AppComponent implements OnInit, OnDestroy {
         this.userActivity = activity;
       },
       error: (err) => {
-        console.error('Failed to fetch user activity:', err);
+        this.logger.error('Failed to fetch user activity:', err);
         this.userActivity = [];
       }
     });

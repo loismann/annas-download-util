@@ -5,6 +5,7 @@ using AnnasArchive.Core.Services;
 using Dropbox.Api;
 using Dropbox.Api.Files;
 using Microsoft.AspNetCore.Mvc;
+using Serilog;
 
 namespace AnnasArchive.API.Endpoints;
 
@@ -70,7 +71,7 @@ public static class AnnaDownloadEndpoints
         var tokenLimitResult = TokenLimitHelpers.CheckTokenLimit(cfg, tokenUsage, context);
         if (tokenLimitResult is not null) return tokenLimitResult;
 
-        Console.WriteLine($"📖 GPT-4 description lookup: title='{title}', author='{author}'");
+        Log.Information("📖 GPT-4 description lookup: title='{title}', author='{author}'");
 
         using var http = httpFactory.CreateClient("OpenAI");
         var model = modelSelection.GetModelFast();
@@ -87,7 +88,7 @@ public static class AnnaDownloadEndpoints
         if (userId != null)
             tokenUsage.AddUsage(userId, 150, 50);
 
-        Console.WriteLine(string.IsNullOrEmpty(description)
+        Log.Information(string.IsNullOrEmpty(description)
             ? $"⚠️ GPT-4 description not generated for '{title}'"
             : $"✅ GPT-4 description generated for '{title}'");
 
@@ -161,7 +162,7 @@ public static class AnnaDownloadEndpoints
 
         // Record successful download in our tracking system
         downloadTracking.RecordDownload(md5, userName);
-        Console.WriteLine($"[download-member] Recorded download for user {userName}, MD5: {md5}");
+        Log.Information("[download-member] Recorded download for user {userName}, MD5: {md5}");
 
         // Get updated download status
         var (currentDownloadsLeft, currentDownloadsPerDay) = downloadTracking.GetDownloadStatus();
@@ -176,12 +177,12 @@ public static class AnnaDownloadEndpoints
                 var ext = Path.GetExtension(fileName).TrimStart('.');
                 if (coverService.IsFormatSupported(ext))
                 {
-                    Console.WriteLine($"[download-member] Attempting cover replacement for {fileName}");
+                    Log.Information("[download-member] Attempting cover replacement for {fileName}");
                     ebookStream = await coverService.ReplaceCoverAsync(ebookStream, coverUrl, ext);
                 }
                 else
                 {
-                    Console.WriteLine($"[download-member] Format {ext} not supported for cover replacement, skipping");
+                    Log.Information("[download-member] Format {ext} not supported for cover replacement, skipping");
                 }
             }
 
@@ -253,7 +254,7 @@ public static class AnnaDownloadEndpoints
 
         // Record successful download in our tracking system
         downloadTracking.RecordDownload(md5, userName);
-        Console.WriteLine($"[library-anna] Recorded download for user {userName}, MD5: {md5}");
+        Log.Information("[library-anna] Recorded download for user {userName}, MD5: {md5}");
 
         // Get updated download status
         var (currentDownloadsLeft, currentDownloadsPerDay) = downloadTracking.GetDownloadStatus();
@@ -272,12 +273,12 @@ public static class AnnaDownloadEndpoints
                 var ext = Path.GetExtension(fileName).TrimStart('.');
                 if (coverService.IsFormatSupported(ext))
                 {
-                    Console.WriteLine($"[library-anna] Attempting cover replacement for {fileName}");
+                    Log.Information("[library-anna] Attempting cover replacement for {fileName}");
                     ebookStream = await coverService.ReplaceCoverAsync(ebookStream, coverUrl, ext);
                 }
                 else
                 {
-                    Console.WriteLine($"[library-anna] Format {ext} not supported for cover replacement, skipping");
+                    Log.Information("[library-anna] Format {ext} not supported for cover replacement, skipping");
                 }
             }
 
@@ -362,12 +363,12 @@ public static class AnnaDownloadEndpoints
                 var ext = Path.GetExtension(fileName).TrimStart('.');
                 if (coverService.IsFormatSupported(ext))
                 {
-                    Console.WriteLine($"[send-to-boox] Attempting cover replacement for {fileName}");
+                    Log.Information("[send-to-boox] Attempting cover replacement for {fileName}");
                     ebookStream = await coverService.ReplaceCoverAsync(ebookStream, coverUrl, ext);
                 }
                 else
                 {
-                    Console.WriteLine($"[send-to-boox] Format {ext} not supported for cover replacement, skipping");
+                    Log.Information("[send-to-boox] Format {ext} not supported for cover replacement, skipping");
                 }
             }
 
@@ -375,7 +376,7 @@ public static class AnnaDownloadEndpoints
 
             try
             {
-                Console.WriteLine($"Uploading '{fileName}' to Dropbox: {uploadPath}");
+                Log.Information("Uploading '{fileName}' to Dropbox: {uploadPath}");
 
                 var uploaded = await dropbox.Files.UploadAsync(
                     uploadPath,
@@ -383,7 +384,7 @@ public static class AnnaDownloadEndpoints
                     body: stream
                 );
 
-                Console.WriteLine($"✅ Dropbox upload successful! File: {uploaded.PathDisplay}");
+                Log.Information(" Dropbox upload successful! File: {uploaded.PathDisplay}");
 
                 // Get user name from auth context
                 var userName = context.User?.FindFirst(ClaimTypes.Email)?.Value
@@ -392,7 +393,7 @@ public static class AnnaDownloadEndpoints
 
                 // Record successful download in our tracking system
                 downloadTracking.RecordDownload(md5, userName);
-                Console.WriteLine($"[send-to-boox] Recorded download for user {userName}, MD5: {md5}");
+                Log.Information("[send-to-boox] Recorded download for user {userName}, MD5: {md5}");
 
                 // Get updated download tracking status
                 var (downloadsLeft, downloadsPerDay) = downloadTracking.GetDownloadStatus();
@@ -409,7 +410,7 @@ public static class AnnaDownloadEndpoints
             catch (Dropbox.Api.ApiException<UploadError> ex)
             {
                 var details = ex.ErrorResponse?.ToString() ?? ex.ToString();
-                Console.WriteLine($"❌ Dropbox upload failed: {ex.Message}{(string.IsNullOrWhiteSpace(details) ? "" : $" | Details: {details}")}");
+                Log.Warning("Dropbox upload failed: {ErrorMessage} | Details: {Details}", ex.Message, details ?? "N/A");
 
                 return Results.Ok(new
                 {
@@ -421,7 +422,7 @@ public static class AnnaDownloadEndpoints
             catch (Dropbox.Api.HttpException ex)
             {
                 var details = ex.ToString();
-                Console.WriteLine($"❌ Dropbox upload failed (HTTP {ex.StatusCode}): {ex.Message} | Uri: {ex.RequestUri} | Details: {details}");
+                Log.Warning(" Dropbox upload failed (HTTP {ex.StatusCode}): {ex.Message} | Uri: {ex.RequestUri} | Details: {details}");
                 return Results.Ok(new
                 {
                     success         = false,
@@ -431,7 +432,7 @@ public static class AnnaDownloadEndpoints
             }
             catch (Dropbox.Api.DropboxException ex)
             {
-                Console.WriteLine($"❌ Dropbox upload failed (DropboxException): {ex}");
+                Log.Warning(" Dropbox upload failed (DropboxException): {ex}");
                 return Results.Ok(new
                 {
                     success         = false,
@@ -441,7 +442,7 @@ public static class AnnaDownloadEndpoints
             }
             catch (HttpRequestException ex)
             {
-                Console.WriteLine($"❌ Dropbox upload failed (HTTP): {ex}");
+                Log.Warning(" Dropbox upload failed (HTTP): {ex}");
                 return Results.Ok(new
                 {
                     success         = false,
@@ -451,7 +452,7 @@ public static class AnnaDownloadEndpoints
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"❌ Dropbox upload failed: {ex.Message}");
+                Log.Warning(" Dropbox upload failed: {ex.Message}");
 
                 return Results.Ok(new
                 {
@@ -523,12 +524,12 @@ public static class AnnaDownloadEndpoints
                     var ext = Path.GetExtension(fileName).TrimStart('.');
                     if (coverService.IsFormatSupported(ext))
                     {
-                        Console.WriteLine($"[send-to-kindle] Attempting cover replacement for {fileName}");
+                        Log.Information("[send-to-kindle] Attempting cover replacement for {fileName}");
                         ebookStream = await coverService.ReplaceCoverAsync(ebookStream, coverUrl, ext);
                     }
                     else
                     {
-                        Console.WriteLine($"[send-to-kindle] Format {ext} not supported for cover replacement, skipping");
+                        Log.Information("[send-to-kindle] Format {ext} not supported for cover replacement, skipping");
                     }
                 }
 
@@ -561,7 +562,7 @@ public static class AnnaDownloadEndpoints
 
                     using (var fileStream = new FileStream(tempFilePath, FileMode.Open, FileAccess.Read, FileShare.Read))
                     {
-                        Console.WriteLine($"[send-to-kindle] Uploading '{fileName}' to Dropbox: {dropboxPath}");
+                        Log.Information("[send-to-kindle] Uploading '{fileName}' to Dropbox: {dropboxPath}");
 
                         var uploaded = await dropbox.Files.UploadAsync(
                             dropboxPath,
@@ -571,25 +572,25 @@ public static class AnnaDownloadEndpoints
 
                         dropboxPathResult = uploaded.PathDisplay;
                         dropboxSuccess = true;
-                        Console.WriteLine($"✅ Dropbox backup successful! Path: {dropboxPathResult}");
+                        Log.Information(" Dropbox backup successful! Path: {dropboxPathResult}");
                     }
                 }
                 catch (Dropbox.Api.ApiException<UploadError> ex)
                 {
                     var details = ex.ErrorResponse?.ToString() ?? ex.ToString();
-                    Console.WriteLine($"⚠️ Dropbox backup failed (non-critical): {ex.Message} | Details: {details}");
+                    Log.Information("⚠️ Dropbox backup failed (non-critical): {ex.Message} | Details: {details}");
                 }
                 catch (Dropbox.Api.HttpException ex)
                 {
-                    Console.WriteLine($"⚠️ Dropbox backup failed (non-critical, HTTP {ex.StatusCode}): {ex.Message}");
+                    Log.Information("⚠️ Dropbox backup failed (non-critical, HTTP {ex.StatusCode}): {ex.Message}");
                 }
                 catch (Dropbox.Api.DropboxException ex)
                 {
-                    Console.WriteLine($"⚠️ Dropbox backup failed (non-critical): {ex}");
+                    Log.Information("⚠️ Dropbox backup failed (non-critical): {ex}");
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"⚠️ Dropbox backup failed (non-critical): {ex.Message}");
+                    Log.Information("⚠️ Dropbox backup failed (non-critical): {ex.Message}");
                 }
 
                 // Get user name from auth context
@@ -599,7 +600,7 @@ public static class AnnaDownloadEndpoints
 
                 // Record successful download in our tracking system
                 downloadTracking.RecordDownload(md5, userName);
-                Console.WriteLine($"[send-to-kindle] Recorded download for user {userName}, MD5: {md5}");
+                Log.Information("[send-to-kindle] Recorded download for user {userName}, MD5: {md5}");
 
                 // Get updated download tracking status
                 var (downloadsLeft, downloadsPerDay) = downloadTracking.GetDownloadStatus();
@@ -617,7 +618,7 @@ public static class AnnaDownloadEndpoints
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"❌ Send to Kindle failed: {ex.Message}");
+                Log.Warning(" Send to Kindle failed: {ex.Message}");
                 return Results.Ok(new
                 {
                     success         = false,

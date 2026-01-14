@@ -5,6 +5,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { QuizApiService } from './quiz-api.service';
 import { QuizIndex, QuizQuestion, QuizSubject } from './quiz.models';
 import { scoreAnswer } from './quiz-utils';
+import { LoggerService } from '../services/logger.service';
 
 interface QuizOptionDisplay {
   id: string;
@@ -71,7 +72,10 @@ export class QuizComponent implements OnInit, OnDestroy {
 
   private audioCtx?: AudioContext;
 
-  constructor(private quizApi: QuizApiService) {}
+  constructor(
+    private quizApi: QuizApiService,
+    private logger: LoggerService
+  ) {}
 
   ngOnInit(): void {
     this.loadIndex();
@@ -101,7 +105,7 @@ export class QuizComponent implements OnInit, OnDestroy {
         }
       },
       error: err => {
-        console.error(err);
+        this.logger.error(err);
         this.status = 'error';
       }
     });
@@ -120,7 +124,7 @@ export class QuizComponent implements OnInit, OnDestroy {
         this.resetQuizSession();
       },
       error: err => {
-        console.error(err);
+        this.logger.error(err);
         this.status = 'error';
       }
     });

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Serilog;
 
 namespace AnnasArchive.API.Helpers.Cache;
 
@@ -32,7 +33,7 @@ public static class ChapterSummaryCache
         var path = GetChapterSummaryCachePath(dropboxPath, chapterId);
         var json = JsonSerializer.Serialize(summaryData, JsonOptions);
         File.WriteAllText(path, json);
-        Console.WriteLine($"Saved chapter summary to: {path}");
+        Log.Information("Saved chapter summary to: {Path}", path);
     }
 
     public static void SaveUltraChapterSummary(string dropboxPath, int chapterId, object summaryData)
@@ -40,7 +41,7 @@ public static class ChapterSummaryCache
         var path = GetUltraChapterSummaryCachePath(dropboxPath, chapterId);
         var json = JsonSerializer.Serialize(summaryData, JsonOptions);
         File.WriteAllText(path, json);
-        Console.WriteLine($"Saved ultra chapter summary to: {path}");
+        Log.Information("Saved ultra chapter summary to: {Path}", path);
     }
 
     public static T? LoadChapterSummary<T>(string dropboxPath, int chapterId) where T : class
@@ -55,7 +56,7 @@ public static class ChapterSummaryCache
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Failed to load chapter summary from {path}: {ex.Message}");
+            Log.Warning("Failed to load chapter summary from {Path}: {ErrorMessage}", path, ex.Message);
             return null;
         }
     }
@@ -72,7 +73,7 @@ public static class ChapterSummaryCache
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Failed to load ultra chapter summary from {path}: {ex.Message}");
+            Log.Warning("Failed to load ultra chapter summary from {Path}: {ErrorMessage}", path, ex.Message);
             return null;
         }
     }
@@ -95,7 +96,7 @@ public static class ChapterSummaryCache
         if (File.Exists(path))
         {
             File.Delete(path);
-            Console.WriteLine($"Deleted chapter summary: {path}");
+            Log.Information("Deleted chapter summary: {Path}", path);
         }
     }
 
@@ -105,7 +106,7 @@ public static class ChapterSummaryCache
         if (File.Exists(path))
         {
             File.Delete(path);
-            Console.WriteLine($"Deleted ultra chapter summary: {path}");
+            Log.Information("Deleted ultra chapter summary: {Path}", path);
         }
     }
 
@@ -136,12 +137,12 @@ public static class ChapterSummaryCache
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"Failed to load summary from {file}: {ex.Message}");
+                    Log.Warning("Failed to load summary from {FilePath}: {ErrorMessage}", file, ex.Message);
                 }
             }
         }
 
-        Console.WriteLine($"Loaded {result.Count} cached summaries for book: {dropboxPath}");
+        Log.Information("Loaded {Count} cached summaries for book: {DropboxPath}", result.Count, dropboxPath);
         return result;
     }
 

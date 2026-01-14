@@ -9,6 +9,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
 
 import { AuthService } from '../services/auth.service';
+import { LoggerService } from '../services/logger.service';
 
 @Component({
   selector: 'app-login',
@@ -31,7 +32,8 @@ export class LoginComponent {
 
   constructor(
     private authService: AuthService,
-    private router: Router
+    private router: Router,
+    private logger: LoggerService
   ) {}
 
   onLogin(): void {
@@ -56,7 +58,7 @@ export class LoginComponent {
         } else {
           this.error = 'Login failed. Please try again.';
         }
-        console.error('Login error:', err);
+        this.logger.error('Login error:', err);
       }
     });
   }

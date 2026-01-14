@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
+using Serilog;
 
 namespace AnnasArchive.API.Endpoints;
 
@@ -30,7 +31,7 @@ public static class GamingEndpoints
 
         try
         {
-            Console.WriteLine($"→ Checking gaming PC status at {pcIp}");
+            Log.Information("→ Checking gaming PC status at {pcIp}");
 
             // Use ping to check if PC is reachable
             var process = new Process
@@ -50,7 +51,7 @@ public static class GamingEndpoints
             await process.WaitForExitAsync();
 
             var isOnline = process.ExitCode == 0;
-            Console.WriteLine($"✅ Gaming PC status: {(isOnline ? "ONLINE" : "OFFLINE")}");
+            Log.Information("Gaming PC status: {Status}", isOnline ? "ONLINE" : "OFFLINE");
 
             return Results.Ok(new
             {
@@ -61,7 +62,7 @@ public static class GamingEndpoints
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"❌ Gaming PC status check exception: {ex.Message}");
+            Log.Information("❌ Gaming PC status check exception: {ex.Message}");
             return Results.Ok(new
             {
                 isOnline = false,
@@ -89,7 +90,7 @@ public static class GamingEndpoints
         try
         {
             var actionName = action == 1 ? "wake" : "sleep";
-            Console.WriteLine($"→ Gaming PC {actionName} request received");
+            Log.Information("→ Gaming PC {actionName} request received");
 
             // SSH into Synology and run the wake-steam.sh script
             var process = new Process
@@ -114,8 +115,8 @@ public static class GamingEndpoints
 
             if (process.ExitCode == 0)
             {
-                Console.WriteLine($"✅ Gaming PC {actionName} successful");
-                Console.WriteLine(output);
+                Log.Information("✅ Gaming PC {actionName} successful");
+                Log.Information(output);
                 return Results.Ok(new
                 {
                     success = true,
@@ -128,7 +129,7 @@ public static class GamingEndpoints
             }
             else
             {
-                Console.WriteLine($"❌ Gaming PC {actionName} failed: {error}");
+                Log.Information("❌ Gaming PC {actionName} failed: {error}");
                 return Results.Ok(new
                 {
                     success = false,
@@ -140,7 +141,7 @@ public static class GamingEndpoints
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"❌ Gaming PC control exception: {ex.Message}");
+            Log.Information("❌ Gaming PC control exception: {ex.Message}");
             return Results.Problem("An error occurred while controlling the gaming PC.");
         }
     }

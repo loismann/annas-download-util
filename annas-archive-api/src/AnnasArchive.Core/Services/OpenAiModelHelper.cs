@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Serilog;
 
 namespace AnnasArchive.Core.Services;
 
@@ -51,24 +52,24 @@ public class OpenAiModelHelper : IOpenAiModelHelper
             {
                 payload["reasoning_effort"] = "none";
                 payload["temperature"] = temperature.Value;
-                Console.WriteLine($"🔧 GPT-5 model: Using temperature={temperature.Value} with reasoning_effort=none");
+                Log.Information("GPT-5 model: Using temperature={Temperature} with reasoning_effort=none", temperature.Value);
             }
             else if (!string.IsNullOrWhiteSpace(reasoningEffort))
             {
                 payload["reasoning_effort"] = reasoningEffort;
-                Console.WriteLine($"🔧 GPT-5 model: Using reasoning_effort={reasoningEffort} (no temperature)");
+                Log.Information("GPT-5 model: Using reasoning_effort={ReasoningEffort} (no temperature)", reasoningEffort);
             }
             else
             {
                 // Default to "none" for GPT-5.2
                 payload["reasoning_effort"] = "none";
-                Console.WriteLine($"🔧 GPT-5 model: Using default reasoning_effort=none");
+                Log.Information("GPT-5 model: Using default reasoning_effort=none");
             }
         }
         else if (IsO1Family(model))
         {
             // o1 family: no temperature support, reasoning is built-in
-            Console.WriteLine($"🔧 o1 model: No temperature or reasoning_effort parameters");
+            Log.Information("o1 model: No temperature or reasoning_effort parameters");
             // o1 models don't support temperature, top_p, or explicit reasoning_effort
         }
         else
@@ -77,7 +78,7 @@ public class OpenAiModelHelper : IOpenAiModelHelper
             if (temperature.HasValue)
             {
                 payload["temperature"] = temperature.Value;
-                Console.WriteLine($"🔧 GPT-4 model: Using temperature={temperature.Value}");
+                Log.Information("GPT-4 model: Using temperature={Temperature}", temperature.Value);
             }
         }
 

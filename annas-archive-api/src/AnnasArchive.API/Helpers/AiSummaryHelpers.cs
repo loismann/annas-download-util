@@ -2,6 +2,7 @@ using System.Text.Json;
 using AnnasArchive.API.Models;
 using AnnasArchive.Core.Services;
 using Dropbox.Api;
+using Serilog;
 
 namespace AnnasArchive.API.Helpers;
 
@@ -118,7 +119,7 @@ Write 300-400 words that assume the reader is intelligent but may lack specializ
             if (!chunkResponse.IsSuccessStatusCode)
             {
                 var body = await chunkResponse.Content.ReadAsStringAsync();
-                Console.WriteLine($"❌ OpenAI chunk summary failed status={(int)chunkResponse.StatusCode} body={body}");
+                Log.Information("❌ OpenAI chunk summary failed status={(int)chunkResponse.StatusCode} body={body}");
                 await ServerSentEventsHelper.SendEventAsync(response, new
                 {
                     stage = "chunks",
@@ -133,10 +134,10 @@ Write 300-400 words that assume the reader is intelligent but may lack specializ
             using var stream = await chunkResponse.Content.ReadAsStreamAsync();
             using var doc = await JsonDocument.ParseAsync(stream);
 
-            Console.WriteLine($"🔍 Chunk {i + 1} response JSON: {doc.RootElement.GetRawText()}");
+            Log.Information("🔍 Chunk {i + 1} response JSON: {doc.RootElement.GetRawText()}");
 
             var chunkSummary = aiResponseParser.ExtractText(doc.RootElement) ?? string.Empty;
-            Console.WriteLine($"🔍 Chunk {i + 1} extracted summary length: {chunkSummary.Length}");
+            Log.Information("🔍 Chunk {i + 1} extracted summary length: {chunkSummary.Length}");
 
             chunkSummaries.Add(chunkSummary);
 
@@ -217,7 +218,7 @@ Write 400-500 words. Maintain educational depth while creating a flowing narrati
             if (!sectionResponse.IsSuccessStatusCode)
             {
                 var body = await sectionResponse.Content.ReadAsStringAsync();
-                Console.WriteLine($"❌ OpenAI section summary failed status={(int)sectionResponse.StatusCode} body={body}");
+                Log.Information("❌ OpenAI section summary failed status={(int)sectionResponse.StatusCode} body={body}");
                 await ServerSentEventsHelper.SendEventAsync(response, new
                 {
                     stage = "sections",
@@ -319,7 +320,7 @@ Write as if teaching an intelligent student. Define specialized terms, explain r
         if (!finalResponse.IsSuccessStatusCode)
         {
             var body = await finalResponse.Content.ReadAsStringAsync();
-            Console.WriteLine($"❌ OpenAI final summary failed status={(int)finalResponse.StatusCode} body={body}");
+            Log.Information("❌ OpenAI final summary failed status={(int)finalResponse.StatusCode} body={body}");
             await ServerSentEventsHelper.SendEventAsync(response, new
             {
                 stage = "final",
@@ -334,10 +335,10 @@ Write as if teaching an intelligent student. Define specialized terms, explain r
         using var finalStream = await finalResponse.Content.ReadAsStreamAsync();
         using var finalDoc = await JsonDocument.ParseAsync(finalStream);
 
-        Console.WriteLine($"🔍 Final response JSON: {finalDoc.RootElement.GetRawText()}");
+        Log.Information("🔍 Final response JSON: {finalDoc.RootElement.GetRawText()}");
 
         string finalSummary = aiResponseParser.ExtractText(finalDoc.RootElement) ?? "No summary returned.";
-        Console.WriteLine($"🔍 Extracted summary length: {finalSummary.Length}");
+        Log.Information("🔍 Extracted summary length: {finalSummary.Length}");
 
         var promptTokens = 0;
         var completionTokens = 0;

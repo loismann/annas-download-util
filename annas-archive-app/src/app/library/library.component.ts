@@ -14,6 +14,7 @@ import { AnnaArchiveApiService } from '../services/anna-archive-api.service';
 import { BookEditDialogComponent, BookEditDialogData, BookEditDialogResult } from '../components/book-edit-dialog/book-edit-dialog.component';
 import { BulkEditDialogComponent, BookBulkEditDialogData, BookBulkEditDialogResult } from '../components/bulk-edit-dialog/bulk-edit-dialog.component';
 import { AuthService } from '../services/auth.service';
+import { LoggerService } from '../services/logger.service';
 
 interface LibraryBook {
   title: string;
@@ -91,7 +92,8 @@ export class LibraryComponent implements OnInit {
     private dialog: MatDialog,
     public authService: AuthService,
     private zone: NgZone,
-    private cdr: ChangeDetectorRef
+    private cdr: ChangeDetectorRef,
+    private logger: LoggerService
   ) {}
 
   ngOnInit(): void {
@@ -107,7 +109,7 @@ export class LibraryComponent implements OnInit {
         setTimeout(() => this.onGridScroll(), 0);
       },
       error: (err) => {
-        console.error('[library] failed to load books', err);
+        this.logger.error('[library] failed to load books', err);
         this.error = 'Failed to load library.';
         this.loading = false;
       }
@@ -299,7 +301,7 @@ export class LibraryComponent implements OnInit {
       if (!book) return;
       const nextLetter = this.getBookLetter(book);
       if (!this.availableLetters.includes(nextLetter)) {
-        console.debug('[library-alpha] letter not in available set', {
+        this.logger.debug('[library-alpha] letter not in available set', {
           nextLetter,
           idx,
           title: book.title
@@ -307,7 +309,7 @@ export class LibraryComponent implements OnInit {
       }
       if (nextLetter !== this.activeLetter) {
         this.zone.run(() => {
-          console.debug('[library-alpha] active letter changed', {
+          this.logger.debug('[library-alpha] active letter changed', {
             from: this.activeLetter,
             to: nextLetter,
             scrollTop,
@@ -446,35 +448,35 @@ export class LibraryComponent implements OnInit {
           authors: result.authors
         }).subscribe({
           next: () => {
-            console.log('[library] Updated book metadata:', book.fileName);
+            this.logger.log('[library] Updated book metadata:', book.fileName);
           },
           error: (err) => {
-            console.error('[library] Failed to update book metadata:', err);
+            this.logger.error('[library] Failed to update book metadata:', err);
           }
         });
 
         if (result.coverUrl) {
-          console.log('[library] Updating cover for', book.fileName, 'with URL:', result.coverUrl);
+          this.logger.log('[library] Updating cover for', book.fileName, 'with URL:', result.coverUrl);
           this.api.updateLibraryBookCover(book.fileName, result.coverUrl).subscribe({
             next: (resp) => {
-              console.log('[library] Cover update response:', resp);
+              this.logger.log('[library] Cover update response:', resp);
               if (resp?.coverUrl) {
                 // Add cache-busting timestamp to force browser to reload the image
                 const timestamp = new Date().getTime();
                 const separator = resp.coverUrl.includes('?') ? '&' : '?';
                 book.coverUrl = `${resp.coverUrl}${separator}t=${timestamp}`;
-                console.log('[library] Cover updated successfully to:', book.coverUrl);
+                this.logger.log('[library] Cover updated successfully to:', book.coverUrl);
               } else {
-                console.warn('[library] Cover update succeeded but no coverUrl in response');
+                this.logger.warn('[library] Cover update succeeded but no coverUrl in response');
               }
             },
             error: (err) => {
-              console.error('[library] Failed to update book cover:', err);
-              console.error('[library] Error details:', err.error);
+              this.logger.error('[library] Failed to update book cover:', err);
+              this.logger.error('[library] Error details:', err.error);
             }
           });
         } else {
-          console.log('[library] No coverUrl in result, skipping cover update');
+          this.logger.log('[library] No coverUrl in result, skipping cover update');
         }
       }
     });
@@ -502,7 +504,7 @@ export class LibraryComponent implements OnInit {
         }
       },
       error: (err) => {
-        console.error('[library] send-to-kindle failed', err);
+        this.logger.error('[library] send-to-kindle failed', err);
         if (target === 'dad') {
           book.dadsKindleState = 'error';
         } else {
@@ -524,7 +526,7 @@ export class LibraryComponent implements OnInit {
         book.dadsKindleState = success ? 'success' : 'error';
       },
       error: (err) => {
-        console.error('[library] send-to-dropbox failed', err);
+        this.logger.error('[library] send-to-dropbox failed', err);
         book.dadsKindleState = 'error';
       }
     });
@@ -541,10 +543,10 @@ export class LibraryComponent implements OnInit {
       personalRating: nextRating
     }).subscribe({
       next: () => {
-        console.log('[library] Updated personal rating:', book.fileName, nextRating);
+        this.logger.log('[library] Updated personal rating:', book.fileName, nextRating);
       },
       error: (err) => {
-        console.error('[library] Failed to update personal rating:', err);
+        this.logger.error('[library] Failed to update personal rating:', err);
       }
     });
   }
@@ -613,7 +615,7 @@ export class LibraryComponent implements OnInit {
         this.genres = this.buildGenreList(this.books);
       },
       error: (err) => {
-        console.error('[library] Failed to wipe genres', err);
+        this.logger.error('[library] Failed to wipe genres', err);
       }
     });
   }
@@ -680,10 +682,10 @@ export class LibraryComponent implements OnInit {
           authors: result.authors ?? book.authors
         }).subscribe({
           next: () => {
-            console.log('[library] Updated book metadata:', book.fileName);
+            this.logger.log('[library] Updated book metadata:', book.fileName);
           },
           error: (err) => {
-            console.error('[library] Failed to update book metadata:', err);
+            this.logger.error('[library] Failed to update book metadata:', err);
           }
         });
       }

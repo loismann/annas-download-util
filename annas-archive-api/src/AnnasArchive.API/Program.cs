@@ -10,6 +10,9 @@ builder.Configuration
        .AddJsonFile($"appsettings.{builder.Environment.EnvironmentName}.json", optional: true, reloadOnChange: true)
        .AddEnvironmentVariables();
 
+// ─── Logging ─────────────────────────────────────────────────────────────
+builder.AddSerilogLogging();
+
 // ─── Register all application services ───────────────────────────────────
 builder.Services.AddApplicationServices(builder.Configuration);
 
@@ -23,6 +26,7 @@ if (app.Environment.IsDevelopment())
 }
 
 // ─── Middleware ──────────────────────────────────────────────────────────
+app.UseCorrelationId();
 app.UseAppCors();
 app.UseSecurityHeaders();
 app.UseRequestBodySizeLimit();

@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using Serilog;
 
 namespace AnnasArchive.API.Configuration;
 
@@ -273,7 +274,7 @@ public static class ServiceConfiguration
                 string.IsNullOrWhiteSpace(refreshToken))
                 throw new InvalidOperationException("Dropbox is not configured. Please set Dropbox:AppKey, Dropbox:AppSecret, and Dropbox:RefreshToken in appsettings.json");
 
-            Console.WriteLine("✅ Dropbox client initialized with refresh-token auth");
+            Log.Information("Dropbox client initialized with refresh-token auth");
             return new DropboxClient(refreshToken, appKey, appSecret);
         });
 

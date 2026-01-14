@@ -5,6 +5,7 @@ using AnnasArchive.API.Models;
 using AnnasArchive.Core.Models;
 using AnnasArchive.Core.Services;
 using Microsoft.AspNetCore.Mvc;
+using Serilog;
 
 namespace AnnasArchive.API.Endpoints;
 
@@ -71,11 +72,11 @@ public static class LibGenEndpoints
         var extNoDot = ext.TrimStart('.');
         if (coverService.IsFormatSupported(extNoDot))
         {
-            Console.WriteLine($"[{logPrefix}] Attempting cover replacement");
+            Log.Information("[{logPrefix}] Attempting cover replacement");
             return await coverService.ReplaceCoverAsync(ebookStream, coverUrl, extNoDot);
         }
 
-        Console.WriteLine($"[{logPrefix}] Format {extNoDot} not supported for cover replacement, skipping");
+        Log.Information("[{logPrefix}] Format {extNoDot} not supported for cover replacement, skipping");
         return ebookStream;
     }
 
@@ -105,20 +106,20 @@ public static class LibGenEndpoints
         IConfiguration cfg,
         [FromQuery] bool exact = false)
     {
-        Console.WriteLine($"[API LibGen Search] Received request: name='{name}', exact={exact}");
+        Log.Information("[API LibGen Search] Received request: name='{name}', exact={exact}");
 
         if (!validation.IsValidSearchQuery(name))
         {
-            Console.WriteLine($"[API LibGen Search] Validation failed for query: '{name}'");
+            Log.Information("[API LibGen Search] Validation failed for query: '{name}'");
             return Results.BadRequest(new {
                 error = "Query parameter 'name' is required and must be between 1 and 500 characters."
             });
         }
 
         var searchLimit = cfg.GetValue<int>("Anna:SearchLimit", 25);
-        Console.WriteLine($"[API LibGen Search] Calling LibGenService.SearchAsync...");
+        Log.Information("[API LibGen Search] Calling LibGenService.SearchAsync...");
         var books = (await svc.SearchAsync(name, searchLimit, exact)).ToList();
-        Console.WriteLine($"[API LibGen Search] Service returned {books.Count} books");
+        Log.Information("[API LibGen Search] Service returned {books.Count} books");
 
         if (exact)
         {
@@ -126,18 +127,18 @@ public static class LibGenEndpoints
             books = books
                 .Where(b => string.Equals(b.Title?.Trim(), name.Trim(), StringComparison.OrdinalIgnoreCase))
                 .ToList();
-            Console.WriteLine($"[API LibGen Search] After exact filter: {books.Count} books (was {originalCount})");
+            Log.Information("[API LibGen Search] After exact filter: {books.Count} books (was {originalCount})");
         }
 
         if (books.Any())
         {
             var result = books.Count == 1 ? Results.Ok(books[0]) : Results.Ok(books);
-            Console.WriteLine($"[API LibGen Search] Returning {books.Count} books");
+            Log.Information("[API LibGen Search] Returning {books.Count} books");
             return result;
         }
         else
         {
-            Console.WriteLine($"[API LibGen Search] No books found, returning 404");
+            Log.Information("[API LibGen Search] No books found, returning 404");
             return ApiResponse.NotFound("No books found matching that name.");
         }
     }
@@ -163,22 +164,22 @@ public static class LibGenEndpoints
             return Results.BadRequest(new { error = "Title too long. Maximum 500 characters." });
 
         var userName = GetUserName(context);
-        Console.WriteLine($"📚 [LibGen] Downloading book {md5} for user {userName}...");
+        Log.Information(" [LibGen] Downloading book {md5} for user {userName}...");
 
         var resp = await libgen.GetDownloadResponseAsync(md5, HttpCompletionOption.ResponseHeadersRead);
         if (resp == null || !resp.IsSuccessStatusCode)
         {
             var (downloadsLeft, downloadsPerDay) = downloadTracking.GetDownloadStatus();
-            Console.WriteLine($"❌ [LibGen] Failed to download book {md5}");
+            Log.Warning(" [LibGen] Failed to download book {md5}");
             return Results.Ok(new { success = false, message = "Failed to download book from LibGen.", accountFastInfo = new AccountFastDownloadInfoDto(downloadsLeft, downloadsPerDay) });
         }
 
         var downloadUrl = await libgen.GetDownloadUrlAsync(md5);
         var (_, ext, fileName) = BuildFileInfo(title, md5, downloadUrl, resp);
-        Console.WriteLine($"✅ [LibGen] Downloaded: {fileName}");
+        Log.Information(" [LibGen] Downloaded: {fileName}");
 
         downloadTracking.RecordDownload(md5, userName);
-        Console.WriteLine($"[download-libgen] Recorded download for user {userName}, MD5: {md5}");
+        Log.Information("[download-libgen] Recorded download for user {userName}, MD5: {md5}");
 
         using (resp)
         {
@@ -211,13 +212,13 @@ public static class LibGenEndpoints
 
         var userName = GetUserName(context);
         var userTag = LibraryHelpers.ResolveUserLibraryTag(context);
-        Console.WriteLine($"📚 [LibGen] Saving book {md5} to library for user {userName}...");
+        Log.Information(" [LibGen] Saving book {md5} to library for user {userName}...");
 
         var resp = await libgen.GetDownloadResponseAsync(md5, HttpCompletionOption.ResponseHeadersRead);
         if (resp == null || !resp.IsSuccessStatusCode)
         {
             var (downloadsLeft, downloadsPerDay) = downloadTracking.GetDownloadStatus();
-            Console.WriteLine($"❌ [LibGen] Failed to download book {md5}");
+            Log.Warning(" [LibGen] Failed to download book {md5}");
             return Results.Ok(new { success = false, message = "Failed to download book from LibGen.", accountFastInfo = new AccountFastDownloadInfoDto(downloadsLeft, downloadsPerDay) });
         }
 
@@ -225,7 +226,7 @@ public static class LibGenEndpoints
         var (_, ext, fileName) = BuildFileInfo(title, md5, downloadUrl, resp);
 
         downloadTracking.RecordDownload(md5, userName);
-        Console.WriteLine($"[library-libgen] Recorded download for user {userName}, MD5: {md5}");
+        Log.Information("[library-libgen] Recorded download for user {userName}, MD5: {md5}");
 
         var (currentDownloadsLeft, currentDownloadsPerDay) = downloadTracking.GetDownloadStatus();
         var trackingInfo = new AccountFastDownloadInfoDto(currentDownloadsLeft, currentDownloadsPerDay);

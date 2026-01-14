@@ -9,6 +9,7 @@ using System.Xml.Linq;
 using AnnasArchive.API.Models;
 using ICSharpCode.SharpZipLib.Zip;
 using Microsoft.Extensions.Caching.Memory;
+using Serilog;
 using VersOne.Epub;
 using VersOne.Epub.Schema;
 
@@ -102,7 +103,7 @@ static class LibraryEpubCache
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[library] Quick index build failed for {filePath}: {ex.Message}");
+            Log.Information($"[library] Quick index build failed for {filePath}: {ex.Message}");
         }
 
         var fresh = await TryReadIndex(metaPath);
@@ -251,7 +252,7 @@ static class LibraryEpubCache
         catch (Exception ex)
         {
             var message = $"[library] Failed to build EPUB cache for {filePath}: {ex}";
-            Console.WriteLine(message);
+            Log.Information(message);
             await File.WriteAllTextAsync(errorPath, message);
             throw;
         }
@@ -282,7 +283,7 @@ static class LibraryEpubCache
                     var repaired = TryRepairZip(workingBytes);
                     if (repaired != null)
                     {
-                        Console.WriteLine($"[epub] Repaired zip structure for {label}");
+                        Log.Information($"[epub] Repaired zip structure for {label}");
                         workingBytes = repaired;
                         zipRepairAttempted = true;
                         continue;
@@ -304,7 +305,7 @@ static class LibraryEpubCache
                     throw;
                 }
 
-                Console.WriteLine($"[epub] Missing content '{missingPath}' in {label}. Injecting placeholder.");
+                Log.Information($"[epub] Missing content '{missingPath}' in {label}. Injecting placeholder.");
                 workingBytes = EnsureZipEntry(workingBytes, missingPath);
                 added.Add(missingPath);
             }
@@ -401,7 +402,7 @@ static class LibraryEpubCache
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[epub] Failed to parse OPF for tolerant fallback ({label}): {ex.Message}");
+                Log.Information($"[epub] Failed to parse OPF for tolerant fallback ({label}): {ex.Message}");
             }
         }
 
@@ -430,7 +431,7 @@ static class LibraryEpubCache
         if (chapters.Count == 0)
             return null;
 
-        Console.WriteLine($"[epub] Tolerant fallback used for {label}. Chapters={chapters.Count}");
+        Log.Information($"[epub] Tolerant fallback used for {label}. Chapters={chapters.Count}");
         return (bookTitle, chapters);
     }
 
@@ -466,7 +467,7 @@ static class LibraryEpubCache
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[epub] Failed to read zip entries for tolerant fallback ({label}): {ex.Message}");
+            Log.Information($"[epub] Failed to read zip entries for tolerant fallback ({label}): {ex.Message}");
             return false;
         }
     }
@@ -614,7 +615,7 @@ static class LibraryEpubCache
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[epub] Zip repair failed: {ex.Message}");
+            Log.Information($"[epub] Zip repair failed: {ex.Message}");
             return null;
         }
     }
@@ -678,7 +679,7 @@ static class LibraryEpubCache
         }
         catch (InvalidDataException ex)
         {
-            Console.WriteLine($"[epub] Invalid zip structure while adding '{entryPath}': {ex.Message}");
+            Log.Information($"[epub] Invalid zip structure while adding '{entryPath}': {ex.Message}");
             return sourceBytes;
         }
     }
@@ -847,7 +848,7 @@ static class LibraryEpubCache
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[library] Failed to read chapter {chapterId} from {filePath}: {ex.Message}");
+            Log.Information($"[library] Failed to read chapter {chapterId} from {filePath}: {ex.Message}");
             return null;
         }
     }

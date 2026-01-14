@@ -1,6 +1,7 @@
 using System.Net.Http.Json;
 using System.Text.Json;
 using AnnasArchive.Core.Services;
+using Serilog;
 
 namespace AnnasArchive.API.Helpers;
 
@@ -59,7 +60,7 @@ Focus on genre, themes, and general premise without revealing plot details or tw
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[GPT-4] Error generating description: {ex.Message}");
+            Log.Warning("[GPT-4] Error generating description: {ErrorMessage}", ex.Message);
             return "";
         }
     }

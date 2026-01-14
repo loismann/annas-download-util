@@ -1,3 +1,5 @@
+using Serilog;
+
 namespace AnnasArchive.API.Helpers.Cache;
 
 /// <summary>
@@ -110,16 +112,16 @@ public static class AiCacheBase
                 {
                     Directory.Delete(dirPath, recursive: true);
                     deletedCount++;
-                    Console.WriteLine($"Deleted {description}: {dirPath}");
+                    Log.Information("Deleted {Description}: {DirPath}", description, dirPath);
                 }
             }
 
-            Console.WriteLine($"Deleted {deletedCount} AI cache directories for book");
+            Log.Information("Deleted {DeletedCount} AI cache directories for book", deletedCount);
             return deletedCount > 0;
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Failed to delete AI cache: {ex.Message}");
+            Log.Warning("Failed to delete AI cache: {ErrorMessage}", ex.Message);
             return false;
         }
     }

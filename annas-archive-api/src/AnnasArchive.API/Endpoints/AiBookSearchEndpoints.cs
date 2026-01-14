@@ -4,6 +4,7 @@ using AnnasArchive.API.Helpers;
 using AnnasArchive.API.Models;
 using AnnasArchive.Core.Services;
 using Microsoft.AspNetCore.Mvc;
+using Serilog;
 
 namespace AnnasArchive.API.Endpoints;
 
@@ -71,7 +72,7 @@ public static class AiBookSearchEndpoints
                 var openLibraryAuthors = await FetchAuthorsFromOpenLibraryAsync(request.BookTitle, httpFactory);
                 if (openLibraryAuthors.Count > 0)
                 {
-                    Console.WriteLine($"✅ Author suggestions (OpenLibrary) for '{request.BookTitle}': {openLibraryAuthors.Count} authors found");
+                    Log.Information("✅ Author suggestions (OpenLibrary) for '{request.BookTitle}': {openLibraryAuthors.Count} authors found");
                     return Results.Ok(new SuggestAuthorsResponse(openLibraryAuthors));
                 }
             }
@@ -122,7 +123,7 @@ Do NOT include any markdown formatting, explanations, or text outside the JSON a
             if (!response.IsSuccessStatusCode)
             {
                 var body = await response.Content.ReadAsStringAsync();
-                Console.WriteLine($"❌ OpenAI suggest-authors failed status={(int)response.StatusCode} body={body}");
+                Log.Information("❌ OpenAI suggest-authors failed status={(int)response.StatusCode} body={body}");
                 return Results.Problem($"OpenAI request failed: {(int)response.StatusCode}");
             }
 
@@ -178,18 +179,18 @@ Do NOT include any markdown formatting, explanations, or text outside the JSON a
                 }
                 catch (JsonException ex)
                 {
-                    Console.WriteLine($"⚠️ Failed to parse author suggestions JSON: {ex.Message}");
-                    Console.WriteLine($"Raw text: {rawText}");
+                    Log.Information("⚠️ Failed to parse author suggestions JSON: {ex.Message}");
+                    Log.Information("Raw text: {rawText}");
                     // Return empty array on parse failure
                 }
             }
 
-            Console.WriteLine($"✅ Author suggestions for '{request.BookTitle}': {authors.Count} authors found");
+            Log.Information("✅ Author suggestions for '{request.BookTitle}': {authors.Count} authors found");
             return Results.Ok(new SuggestAuthorsResponse(authors));
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"❌ OpenAI suggest-authors failed: {ex.Message}");
+            Log.Information("❌ OpenAI suggest-authors failed: {ex.Message}");
             return ApiResponse.InternalError("Failed to suggest authors.");
         }
     }
@@ -275,7 +276,7 @@ Rules:
             if (!response.IsSuccessStatusCode)
             {
                 var body = await response.Content.ReadAsStringAsync();
-                Console.WriteLine($"❌ OpenAI related-books failed status={(int)response.StatusCode} body={body}");
+                Log.Information("❌ OpenAI related-books failed status={(int)response.StatusCode} body={body}");
                 return Results.Problem($"OpenAI request failed: {(int)response.StatusCode}");
             }
 
@@ -393,8 +394,8 @@ Rules:
                 }
                 catch (JsonException ex)
                 {
-                    Console.WriteLine($"⚠️ Failed to parse related books JSON: {ex.Message}");
-                    Console.WriteLine($"Raw text: {rawText}");
+                    Log.Information("⚠️ Failed to parse related books JSON: {ex.Message}");
+                    Log.Information("Raw text: {rawText}");
                 }
             }
 
@@ -422,17 +423,17 @@ Rules:
                     if (matches.Count > sameSeries.Count)
                     {
                         sameSeries = matches;
-                        Console.WriteLine($"✅ Series expanded via search: {matches.Count} titles");
+                        Log.Information("✅ Series expanded via search: {matches.Count} titles");
                     }
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"⚠️ Series expansion failed: {ex.Message}");
+                    Log.Information("⚠️ Series expansion failed: {ex.Message}");
                 }
             }
 
             // ───────── Fetch descriptions (Google Books -> OpenLibrary -> GPT-4) ─────────
-            Console.WriteLine("[Books API] Fetching descriptions for books...");
+            Log.Information("[Books API] Fetching descriptions for books...");
 
             // Process sameSeries books
             for (int i = 0; i < sameSeries.Count; i++)
@@ -448,7 +449,7 @@ Rules:
                     if (!string.IsNullOrWhiteSpace(gbDescription))
                     {
                         sameSeries[i] = new SeriesBook(book.Title, book.Order, gbDescription, book.CoverUrl, "googlebooks");
-                        Console.WriteLine($"[GoogleBooks] ✓ Got description for '{book.Title}'");
+                        Log.Information("[GoogleBooks] ✓ Got description for '{book.Title}'");
                     }
                     else
                     {
@@ -458,7 +459,7 @@ Rules:
                         if (!string.IsNullOrWhiteSpace(olDescription))
                         {
                             sameSeries[i] = new SeriesBook(book.Title, book.Order, olDescription, book.CoverUrl, "openlibrary");
-                            Console.WriteLine($"[OpenLibrary] ✓ Got description for '{book.Title}'");
+                            Log.Information("[OpenLibrary] ✓ Got description for '{book.Title}'");
                         }
                         else
                         {
@@ -466,7 +467,7 @@ Rules:
                             var gptDescription = await AiDescriptionHelpers.GenerateNoSpoilerDescriptionAsync(
                                 book.Title, request.Author, http, model, modelHelper, aiResponseParser);
                             sameSeries[i] = new SeriesBook(book.Title, book.Order, gptDescription, book.CoverUrl, "gpt");
-                            Console.WriteLine($"[GPT-4] ✓ Generated description for '{book.Title}'");
+                            Log.Information("[GPT-4] ✓ Generated description for '{book.Title}'");
                         }
                     }
                 }
@@ -488,7 +489,7 @@ Rules:
                         if (!string.IsNullOrWhiteSpace(gbDescription))
                         {
                             updatedBooks.Add(new SeriesBook(book.Title, book.Order, gbDescription, book.CoverUrl, "googlebooks"));
-                            Console.WriteLine($"[GoogleBooks] ✓ Got description for '{book.Title}'");
+                            Log.Information("[GoogleBooks] ✓ Got description for '{book.Title}'");
                         }
                         else
                         {
@@ -498,14 +499,14 @@ Rules:
                             if (!string.IsNullOrWhiteSpace(olDescription))
                             {
                                 updatedBooks.Add(new SeriesBook(book.Title, book.Order, olDescription, book.CoverUrl, "openlibrary"));
-                                Console.WriteLine($"[OpenLibrary] ✓ Got description for '{book.Title}'");
+                                Log.Information("[OpenLibrary] ✓ Got description for '{book.Title}'");
                             }
                             else
                             {
                                 var gptDescription = await AiDescriptionHelpers.GenerateNoSpoilerDescriptionAsync(
                                     book.Title, request.Author, http, model, modelHelper, aiResponseParser);
                                 updatedBooks.Add(new SeriesBook(book.Title, book.Order, gptDescription, book.CoverUrl, "gpt"));
-                                Console.WriteLine($"[GPT-4] ✓ Generated description for '{book.Title}'");
+                                Log.Information("[GPT-4] ✓ Generated description for '{book.Title}'");
                             }
                         }
                     }
@@ -524,13 +525,13 @@ Rules:
                 );
             }
 
-            Console.WriteLine($"✅ Related books for '{request.BookTitle}': {sameSeries.Count} series books, {otherSeries.Count} other series");
+            Log.Information("✅ Related books for '{request.BookTitle}': {sameSeries.Count} series books, {otherSeries.Count} other series");
 
             return Results.Ok(new RelatedBooksResponse(sameSeries, otherSeries, seriesSummary));
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"❌ OpenAI related-books failed: {ex.Message}");
+            Log.Information("❌ OpenAI related-books failed: {ex.Message}");
             return ApiResponse.InternalError("Failed to get related books.");
         }
     }
@@ -618,7 +619,7 @@ Rules:
             if (!response.IsSuccessStatusCode)
             {
                 var body = await response.Content.ReadAsStringAsync();
-                Console.WriteLine($"❌ OpenAI book-search failed status={(int)response.StatusCode} body={body}");
+                Log.Information("❌ OpenAI book-search failed status={(int)response.StatusCode} body={body}");
                 return Results.Problem($"OpenAI request failed: {(int)response.StatusCode}");
             }
 
@@ -656,9 +657,9 @@ Rules:
             {
                 var rawPreview = rawText.Length > 2000 ? rawText[..2000] + "…" : rawText;
                 var cleanPreview = cleaned.Length > 2000 ? cleaned[..2000] + "…" : cleaned;
-                Console.WriteLine($"❌ AI book-search JSON parse failed: {ex.Message}");
-                Console.WriteLine($"❌ AI book-search raw preview: {rawPreview}");
-                Console.WriteLine($"❌ AI book-search cleaned preview: {cleanPreview}");
+                Log.Information("❌ AI book-search JSON parse failed: {ex.Message}");
+                Log.Information("❌ AI book-search raw preview: {rawPreview}");
+                Log.Information("❌ AI book-search cleaned preview: {cleanPreview}");
                 return Results.BadRequest(new { error = "AI response could not be parsed. Try again or simplify the query." });
             }
 
@@ -696,7 +697,7 @@ Rules:
                     {
                         bookSummary = gbDescription;
                         descriptionSource = "googlebooks";
-                        Console.WriteLine($"[GoogleBooks] ✓ Got description for '{title}' by {author}");
+                        Log.Information("[GoogleBooks] ✓ Got description for '{title}' by {author}");
                     }
                     else
                     {
@@ -707,7 +708,7 @@ Rules:
                         {
                             bookSummary = olDescription;
                             descriptionSource = "openlibrary";
-                            Console.WriteLine($"[OpenLibrary] ✓ Got description for '{title}' by {author}");
+                            Log.Information("[OpenLibrary] ✓ Got description for '{title}' by {author}");
                         }
                         else if (string.IsNullOrWhiteSpace(gptSummary))
                         {
@@ -715,13 +716,13 @@ Rules:
                             bookSummary = await AiDescriptionHelpers.GenerateNoSpoilerDescriptionAsync(
                                 title, author, http, model, modelHelper, aiResponseParser);
                             descriptionSource = "gpt";
-                            Console.WriteLine($"[GPT-4] ✓ Generated fallback description for '{title}'");
+                            Log.Information("[GPT-4] ✓ Generated fallback description for '{title}'");
                         }
                         else
                         {
                             // Use GPT summary as fallback
                             descriptionSource = "gpt";
-                            Console.WriteLine($"[GPT-4] ✓ Using GPT-generated description for '{title}' (no external sources)");
+                            Log.Information("[GPT-4] ✓ Using GPT-generated description for '{title}' (no external sources)");
                         }
                     }
 
@@ -810,7 +811,7 @@ Rules:
                                 {
                                     bookSummary = gbDescription;
                                     descriptionSource = "googlebooks";
-                                    Console.WriteLine($"[GoogleBooks] ✓ Got description for '{title}' by {author} (retry)");
+                                    Log.Information("[GoogleBooks] ✓ Got description for '{title}' by {author} (retry)");
                                 }
                                 else
                                 {
@@ -821,7 +822,7 @@ Rules:
                                     {
                                         bookSummary = olDescription;
                                         descriptionSource = "openlibrary";
-                                        Console.WriteLine($"[OpenLibrary] ✓ Got description for '{title}' by {author} (retry)");
+                                        Log.Information("[OpenLibrary] ✓ Got description for '{title}' by {author} (retry)");
                                     }
                                     else if (string.IsNullOrWhiteSpace(gptSummary))
                                     {
@@ -829,13 +830,13 @@ Rules:
                                         bookSummary = await AiDescriptionHelpers.GenerateNoSpoilerDescriptionAsync(
                                             title, author, http, model, modelHelper, aiResponseParser);
                                         descriptionSource = "gpt";
-                                        Console.WriteLine($"[GPT-4] ✓ Generated fallback description for '{title}' (retry)");
+                                        Log.Information("[GPT-4] ✓ Generated fallback description for '{title}' (retry)");
                                     }
                                     else
                                     {
                                         // Use GPT summary as fallback
                                         descriptionSource = "gpt";
-                                        Console.WriteLine($"[GPT-4] ✓ Using GPT-generated description for '{title}' (retry, no external sources)");
+                                        Log.Information("[GPT-4] ✓ Using GPT-generated description for '{title}' (retry, no external sources)");
                                     }
                                 }
 
@@ -853,7 +854,7 @@ Rules:
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"❌ OpenAI book-search failed: {ex.Message}");
+            Log.Information("❌ OpenAI book-search failed: {ex.Message}");
             return ApiResponse.InternalError("Failed to run AI book search.");
         }
     }
@@ -939,7 +940,7 @@ Rules:
             if (!response.IsSuccessStatusCode)
             {
                 var body = await response.Content.ReadAsStringAsync();
-                Console.WriteLine($"❌ OpenAI match-series-books failed status={(int)response.StatusCode} body={body}");
+                Log.Information("❌ OpenAI match-series-books failed status={(int)response.StatusCode} body={body}");
                 return Results.Problem($"OpenAI request failed: {(int)response.StatusCode}");
             }
 
@@ -995,17 +996,17 @@ Rules:
                 }
                 catch (JsonException ex)
                 {
-                    Console.WriteLine($"⚠️ Failed to parse series match JSON: {ex.Message}");
-                    Console.WriteLine($"Raw text: {rawText}");
+                    Log.Information("⚠️ Failed to parse series match JSON: {ex.Message}");
+                    Log.Information("Raw text: {rawText}");
                 }
             }
 
-            Console.WriteLine($"✅ Matched {matches.Count(m => m.Status == "matched")} of {request.Books.Count} books");
+            Log.Information("Matched {MatchedCount} of {TotalCount} books", matches.Count(m => m.Status == "matched"), request.Books.Count);
             return Results.Ok(new MatchSeriesBooksResponse(matches));
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"❌ OpenAI match-series-books failed: {ex.Message}");
+            Log.Warning("OpenAI match-series-books failed: {ErrorMessage}", ex.Message);
             return ApiResponse.InternalError("Failed to match series books.");
         }
     }

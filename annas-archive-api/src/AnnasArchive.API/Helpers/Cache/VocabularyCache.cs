@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Serilog;
 
 namespace AnnasArchive.API.Helpers.Cache;
 
@@ -77,16 +78,16 @@ public static class VocabularyCache
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Failed to load known words from {path}: {ex.Message}");
-            Console.WriteLine($"Deleting incompatible vocabulary file and starting fresh...");
+            Log.Warning("Failed to load known words from {Path}: {ErrorMessage}", path, ex.Message);
+            Log.Information("Deleting incompatible vocabulary file and starting fresh...");
             try
             {
                 File.Delete(path);
-                Console.WriteLine($"Deleted old known-words.json, will create new book-aware format on first save");
+                Log.Information("Deleted old known-words.json, will create new book-aware format on first save");
             }
             catch (Exception deleteEx)
             {
-                Console.WriteLine($"Failed to delete old file: {deleteEx.Message}");
+                Log.Warning("Failed to delete old file: {ErrorMessage}", deleteEx.Message);
             }
             return new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
         }
@@ -97,7 +98,7 @@ public static class VocabularyCache
         var path = GetKnownWordsPath();
         var json = JsonSerializer.Serialize(knownWords, JsonOptions);
         File.WriteAllText(path, json);
-        Console.WriteLine($"Saved {knownWords.Count} known words to: {path}");
+        Log.Information("Saved {Count} known words to: {Path}", knownWords.Count, path);
     }
 
     /// <summary>
@@ -145,16 +146,16 @@ public static class VocabularyCache
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Failed to load study words from {path}: {ex.Message}");
-            Console.WriteLine($"Deleting incompatible vocabulary file and starting fresh...");
+            Log.Warning("Failed to load study words from {Path}: {ErrorMessage}", path, ex.Message);
+            Log.Information("Deleting incompatible vocabulary file and starting fresh...");
             try
             {
                 File.Delete(path);
-                Console.WriteLine($"Deleted old study-words.json, will create new book-aware format on first save");
+                Log.Information("Deleted old study-words.json, will create new book-aware format on first save");
             }
             catch (Exception deleteEx)
             {
-                Console.WriteLine($"Failed to delete old file: {deleteEx.Message}");
+                Log.Warning("Failed to delete old file: {ErrorMessage}", deleteEx.Message);
             }
             return new Dictionary<string, (string, List<string>)>(StringComparer.OrdinalIgnoreCase);
         }
@@ -177,7 +178,7 @@ public static class VocabularyCache
 
         var json = JsonSerializer.Serialize(data, JsonOptions);
         File.WriteAllText(path, json);
-        Console.WriteLine($"Saved {studyWords.Count} study words to: {path}");
+        Log.Information("Saved {Count} study words to: {Path}", studyWords.Count, path);
     }
 
     #endregion

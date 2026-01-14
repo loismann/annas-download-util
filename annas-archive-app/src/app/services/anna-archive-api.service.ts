@@ -2,6 +2,7 @@ import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { finalize, map, tap, timeout, catchError } from 'rxjs/operators';
+import { LoggerService } from './logger.service';
 
 import { BookDto } from '../models/book-dto.model';
 import {
@@ -176,9 +177,12 @@ export class AnnaArchiveApiService {
   private readonly aiBaseUrl = `${this.apiHost}/api/ai`;
   private readonly gamingBaseUrl = `${this.apiHost}/api/gaming`;
 
-  constructor(private http: HttpClient) {
+  constructor(
+    private http: HttpClient,
+    private logger: LoggerService
+  ) {
     if (this.isLocalDev) {
-      console.log('🔧 LOCAL DEV MODE - Using localhost API endpoints');
+      this.logger.log('🔧 LOCAL DEV MODE - Using localhost API endpoints');
     }
   }
 
@@ -191,8 +195,8 @@ export class AnnaArchiveApiService {
       .set('exact', exact.toString());
 
     const label = `searchBooks:${name}:${exact}`;
-    console.time(label);
-    console.log('[searchBooks] start', { name, exact });
+    this.logger.debug('timer-start: ' + label);
+    this.logger.log('[searchBooks] start', { name, exact });
 
     return this.http
       .get<BookDto | BookDto[]>(`${this.baseUrl}/book`, { params })
@@ -204,11 +208,11 @@ export class AnnaArchiveApiService {
             md5: b.md5,
             format: b.format,
           }));
-          console.log('[searchBooks] result', { count: list.length, sample });
+          this.logger.log('[searchBooks] result', { count: list.length, sample });
         }),
         finalize(() => {
-          console.timeEnd(label);
-          console.log('[searchBooks] done');
+          this.logger.debug('timer-end: ' + label);
+          this.logger.log('[searchBooks] done');
         })
       );
   }
@@ -286,8 +290,8 @@ export class AnnaArchiveApiService {
       .set('exact', exact.toString());
 
     const label = `searchBooksLibGen:${name}:${exact}`;
-    console.time(label);
-    console.log('[searchBooksLibGen] start', { name, exact });
+    this.logger.debug('timer-start: ' + label);
+    this.logger.log('[searchBooksLibGen] start', { name, exact });
 
     return this.http
       .get<BookDto | BookDto[]>(`${this.libgenBaseUrl}/book`, { params })
@@ -300,18 +304,18 @@ export class AnnaArchiveApiService {
             md5: b.md5,
             format: b.format,
           }));
-          console.log('[searchBooksLibGen] result', { count: list.length, sample });
+          this.logger.log('[searchBooksLibGen] result', { count: list.length, sample });
         }),
         catchError(error => {
-          console.error('[searchBooksLibGen] ERROR:', error);
+          this.logger.error('[searchBooksLibGen] ERROR:', error);
           if (error.name === 'TimeoutError') {
-            console.error('[searchBooksLibGen] Request timed out after 60 seconds');
+            this.logger.error('[searchBooksLibGen] Request timed out after 60 seconds');
           }
           throw error;
         }),
         finalize(() => {
-          console.timeEnd(label);
-          console.log('[searchBooksLibGen] done');
+          this.logger.debug('timer-end: ' + label);
+          this.logger.log('[searchBooksLibGen] done');
         })
       );
   }

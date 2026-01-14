@@ -24,6 +24,7 @@ import {
 } from '../services/anna-archive-api.service';
 
 import { AuthService } from '../services/auth.service';
+import { LoggerService } from '../services/logger.service';
 import { BookDto } from '../models/book-dto.model';
 import { Subject } from 'rxjs';
 import { debounceTime, distinctUntilChanged, takeUntil, tap } from 'rxjs/operators';
@@ -101,7 +102,8 @@ export class BookSearchComponent implements OnInit, OnDestroy {
     private api: AnnaArchiveApiService,
     public authService: AuthService,
     private dialog: MatDialog,
-    private http: HttpClient
+    private http: HttpClient,
+    private logger: LoggerService
   ) {
     // Set up debounced author fetching
     this.searchTermSubject.pipe(
@@ -146,7 +148,7 @@ export class BookSearchComponent implements OnInit, OnDestroy {
         this.parseDomainHealth(data);
       },
       error: (err) => {
-        console.error('[domain-health] Failed to fetch SLUM data', err);
+        this.logger.error('[domain-health] Failed to fetch SLUM data', err);
       }
     });
   }
@@ -163,7 +165,7 @@ export class BookSearchComponent implements OnInit, OnDestroy {
         this.parseMirrorHealth(data);
       },
       error: (err) => {
-        console.error('[domain-health] Failed to fetch mirror health data', err);
+        this.logger.error('[domain-health] Failed to fetch mirror health data', err);
       }
     });
   }
@@ -240,7 +242,7 @@ export class BookSearchComponent implements OnInit, OnDestroy {
         }
       },
       error: (err) => {
-        console.error('[download-counter] Failed to fetch status', err);
+        this.logger.error('[download-counter] Failed to fetch status', err);
       }
     });
   }
@@ -248,7 +250,7 @@ export class BookSearchComponent implements OnInit, OnDestroy {
   private updateFromServer(serverLeft: number, serverPerDay: number): void {
     this.downloadsLeft = serverLeft;
     this.downloadsPerDay = serverPerDay;
-    console.log('[download-counter] Updated from server', {
+    this.logger.log('[download-counter] Updated from server', {
       downloadsLeft: this.downloadsLeft,
       downloadsPerDay: this.downloadsPerDay
     });
@@ -304,7 +306,7 @@ export class BookSearchComponent implements OnInit, OnDestroy {
       searchQuery = `${searchQuery} ${this.selectedAuthor}`;
     }
 
-    console.log('[book-search] submit', {
+    this.logger.log('[book-search] submit', {
       term: this.searchTerm.trim(),
       author: this.selectedAuthor,
       searchQuery,
@@ -333,7 +335,7 @@ export class BookSearchComponent implements OnInit, OnDestroy {
         this.fetchBookDescriptions();
       },
       error: err => {
-        console.error('[Book Search] Error:', err);
+        this.logger.error('[Book Search] Error:', err);
         if (err.name === 'TimeoutError') {
           this.error = `Search timed out. ${this.useLibGen ? 'LibGen' : "Anna's Archive"} may be slow or unavailable.`;
         } else if (err.status === 404) {
@@ -343,7 +345,7 @@ export class BookSearchComponent implements OnInit, OnDestroy {
         } else {
           this.error = `Error fetching books from ${this.useLibGen ? 'LibGen' : "Anna's Archive"}: ${err.message || err.statusText || 'Unknown error'}`;
         }
-        console.error(err);
+        this.logger.error(err);
         this.loading = false;
       },
     });
@@ -388,7 +390,7 @@ export class BookSearchComponent implements OnInit, OnDestroy {
         book.libraryState = 'success';
       },
       error: err => {
-        console.error('Send-to-library failed', err);
+        this.logger.error('Send-to-library failed', err);
         book.libraryState = 'error';
         this.error = 'Send to library failed.';
       }
@@ -424,7 +426,7 @@ export class BookSearchComponent implements OnInit, OnDestroy {
         book.libraryState = 'success';
       },
       error: err => {
-        console.error('Send-to-library failed', err);
+        this.logger.error('Send-to-library failed', err);
         book.libraryState = 'error';
       }
     });
@@ -450,7 +452,7 @@ export class BookSearchComponent implements OnInit, OnDestroy {
         book.sendState = resp.success ? 'success' : 'error';
       },
       error: err => {
-        console.error('Send-to-Boox failed', err);
+        this.logger.error('Send-to-Boox failed', err);
         book.sendState = 'error';
       }
     });
@@ -476,7 +478,7 @@ export class BookSearchComponent implements OnInit, OnDestroy {
         book.dadsKindleState = resp.success ? 'success' : 'error';
       },
       error: err => {
-        console.error('Send-to-Dad\'s-Kindle failed', err);
+        this.logger.error('Send-to-Dad\'s-Kindle failed', err);
         book.dadsKindleState = 'error';
       }
     });
@@ -502,7 +504,7 @@ export class BookSearchComponent implements OnInit, OnDestroy {
         book.momsKindleState = resp.success ? 'success' : 'error';
       },
       error: err => {
-        console.error('Send-to-Mom\'s-Kindle failed', err);
+        this.logger.error('Send-to-Mom\'s-Kindle failed', err);
         book.momsKindleState = 'error';
       }
     });
@@ -681,7 +683,7 @@ export class BookSearchComponent implements OnInit, OnDestroy {
         }
       },
       error: (err) => {
-        console.error('Failed to fetch description from GPT-4', err);
+        this.logger.error('Failed to fetch description from GPT-4', err);
         // No more fallbacks - book will remain without description
       }
     });
@@ -720,13 +722,13 @@ export class BookSearchComponent implements OnInit, OnDestroy {
         }
         this.authorSuggestions = resp.authors;
         this.loadingAuthors = false;
-        console.log('[author-suggestions]', { bookTitle, authors: resp.authors });
+        this.logger.log('[author-suggestions]', { bookTitle, authors: resp.authors });
       },
       error: (err) => {
         if (bookTitle !== this.latestAuthorQuery) {
           return;
         }
-        console.error('Failed to fetch author suggestions', err);
+        this.logger.error('Failed to fetch author suggestions', err);
         this.authorSuggestions = [];
         this.loadingAuthors = false;
       }
@@ -796,10 +798,10 @@ export class BookSearchComponent implements OnInit, OnDestroy {
         );
         // queueCoverLookups will set loading = false when all lookups complete
         dialogRef.componentInstance.queueCoverLookups();
-        console.log('[related-books]', resp);
+        this.logger.log('[related-books]', resp);
       },
       error: (err) => {
-        console.error('Failed to fetch related books', err);
+        this.logger.error('Failed to fetch related books', err);
         dialogRef.componentInstance.data.loading = false;
         dialogRef.componentInstance.addStatus('Failed to fetch related books.');
       }

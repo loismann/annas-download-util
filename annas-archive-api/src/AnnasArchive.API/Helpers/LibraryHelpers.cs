@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using System.Text.Json;
 using AnnasArchive.API.Models;
+using Serilog;
 
 namespace AnnasArchive.API.Helpers;
 
@@ -189,7 +190,7 @@ public static class LibraryHelpers
         var metaPath = Path.Combine(libraryRoot, fileName + ".meta.json");
         if (!File.Exists(metaPath))
         {
-            Console.WriteLine($"[AddTags] Metadata file not found for {fileName}, skipping tag addition");
+            Log.Information("[AddTags] Metadata file not found for {fileName}, skipping tag addition");
             return;
         }
 
@@ -201,7 +202,7 @@ public static class LibraryHelpers
 
             if (meta == null)
             {
-                Console.WriteLine($"[AddTags] Failed to deserialize metadata for {fileName}");
+                Log.Information("[AddTags] Failed to deserialize metadata for {fileName}");
                 return;
             }
 
@@ -214,7 +215,7 @@ public static class LibraryHelpers
                 if (existingTags.Add(tag))
                 {
                     tagsAdded = true;
-                    Console.WriteLine($"[AddTags] Adding tag '{tag}' to {fileName}");
+                    Log.Information("[AddTags] Adding tag '{tag}' to {fileName}");
                 }
             }
 
@@ -223,16 +224,16 @@ public static class LibraryHelpers
                 meta.Tags = existingTags.ToArray();
                 var updatedJson = JsonSerializer.Serialize(meta, jsonOptions);
                 await File.WriteAllTextAsync(metaPath, updatedJson);
-                Console.WriteLine($"[AddTags] Successfully updated tags for {fileName}: {string.Join(", ", meta.Tags)}");
+                Log.Information("[AddTags] Successfully updated tags for {fileName}: {string.Join(", ", meta.Tags)}");
             }
             else
             {
-                Console.WriteLine($"[AddTags] No new tags to add for {fileName}");
+                Log.Information("[AddTags] No new tags to add for {fileName}");
             }
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[AddTags] Error adding tags to {fileName}: {ex.Message}");
+            Log.Information("[AddTags] Error adding tags to {fileName}: {ex.Message}");
         }
     }
 }

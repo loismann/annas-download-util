@@ -4,6 +4,7 @@ using AnnasArchive.API.Helpers;
 using AnnasArchive.Core.Models;
 using AnnasArchive.Core.Services;
 using Microsoft.AspNetCore.Mvc;
+using Serilog;
 
 namespace AnnasArchive.API.Endpoints;
 
@@ -81,10 +82,10 @@ public static class BookSearchEndpoints
         if (string.IsNullOrWhiteSpace(title))
             return Results.BadRequest(new { error = "title is required." });
 
-        Console.WriteLine($"Google Books description lookup: title='{title}', author='{author}'");
+        Log.Information("Google Books description lookup: title='{title}', author='{author}'");
         var description = await googleBooks.GetBookDescriptionAsync(title, author ?? "");
 
-        Console.WriteLine(description is null
+        Log.Information(description is null
             ? $"Google Books description not found for '{title}'"
             : $"Google Books description found for '{title}'");
 
@@ -99,10 +100,10 @@ public static class BookSearchEndpoints
         if (string.IsNullOrWhiteSpace(title))
             return Results.BadRequest(new { error = "title is required." });
 
-        Console.WriteLine($"OpenLibrary description lookup: title='{title}', author='{author}'");
+        Log.Information("OpenLibrary description lookup: title='{title}', author='{author}'");
         var description = await openLibrary.GetBookDescriptionAsync(title, author ?? "");
 
-        Console.WriteLine(description is null
+        Log.Information(description is null
             ? $"OpenLibrary description not found for '{title}'"
             : $"OpenLibrary description found for '{title}'");
 
@@ -118,11 +119,11 @@ public static class BookSearchEndpoints
         if (string.IsNullOrWhiteSpace(title))
             return Results.BadRequest(new { error = "title is required." });
 
-        Console.WriteLine($"Cover lookup: title='{title}', author='{author}'");
+        Log.Information("Cover lookup: title='{title}', author='{author}'");
         var cover = await openLibrary.GetCoverUrlAsync(title, author)
                     ?? await googleBooks.GetCoverUrlAsync(title, author);
 
-        Console.WriteLine(cover is null
+        Log.Information(cover is null
             ? $"Cover lookup failed for '{title}'"
             : $"Cover lookup found for '{title}': {cover}");
 
@@ -151,19 +152,19 @@ public static class BookSearchEndpoints
             using var http = httpFactory.CreateClient();
             http.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
 
-            Console.WriteLine("[slum-health] Fetching status page data...");
+            Log.Information("[slum-health] Fetching status page data...");
             var statusResponse = await http.GetAsync("https://open-slum.org/api/status-page/slum");
             if (!statusResponse.IsSuccessStatusCode)
             {
-                Console.WriteLine($"[slum-health] Failed to fetch status page: {statusResponse.StatusCode}");
+                Log.Information("[slum-health] Failed to fetch status page: {statusResponse.StatusCode}");
                 return Results.Json(new { success = false, error = "Failed to fetch status page data" });
             }
 
-            Console.WriteLine("[slum-health] Fetching heartbeat data...");
+            Log.Information("[slum-health] Fetching heartbeat data...");
             var heartbeatResponse = await http.GetAsync("https://open-slum.org/api/status-page/heartbeat/slum");
             if (!heartbeatResponse.IsSuccessStatusCode)
             {
-                Console.WriteLine($"[slum-health] Failed to fetch heartbeat: {heartbeatResponse.StatusCode}");
+                Log.Information("[slum-health] Failed to fetch heartbeat: {heartbeatResponse.StatusCode}");
                 return Results.Json(new { success = false, error = "Failed to fetch heartbeat data" });
             }
 
@@ -222,12 +223,12 @@ public static class BookSearchEndpoints
                 }
             }
 
-            Console.WriteLine($"[slum-health] Returning {result.Count} monitors");
+            Log.Information("[slum-health] Returning {result.Count} monitors");
             return Results.Json(result);
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[slum-health] Error: {ex.Message}");
+            Log.Information("[slum-health] Error: {ex.Message}");
             return Results.Json(new { success = false, error = ex.Message });
         }
     }

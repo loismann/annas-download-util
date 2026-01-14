@@ -10,6 +10,7 @@ using AnnasArchive.API.Models;
 using Dropbox.Api;
 using Dropbox.Api.Files;
 using ICSharpCode.SharpZipLib.Zip;
+using Serilog;
 using VersOne.Epub;
 using ZipArchive = System.IO.Compression.ZipArchive;
 using ZipArchiveMode = System.IO.Compression.ZipArchiveMode;
@@ -248,7 +249,7 @@ public static class DropboxEpubCache
         catch (Exception ex)
         {
             var message = $"[dropbox] Failed to build EPUB cache for {dropboxPath}: {ex}";
-            Console.WriteLine(message);
+            Log.Information(message);
             await File.WriteAllTextAsync(errorPath, message);
             throw;
         }
@@ -279,7 +280,7 @@ public static class DropboxEpubCache
                     var repaired = TryRepairZip(workingBytes);
                     if (repaired != null)
                     {
-                        Console.WriteLine($"[epub] Repaired zip structure for {label}");
+                        Log.Information($"[epub] Repaired zip structure for {label}");
                         workingBytes = repaired;
                         zipRepairAttempted = true;
                         continue;
@@ -301,7 +302,7 @@ public static class DropboxEpubCache
                     throw;
                 }
 
-                Console.WriteLine($"[epub] Missing content '{missingPath}' in {label}. Injecting placeholder.");
+                Log.Information($"[epub] Missing content '{missingPath}' in {label}. Injecting placeholder.");
                 workingBytes = EnsureZipEntry(workingBytes, missingPath);
                 added.Add(missingPath);
             }
@@ -397,7 +398,7 @@ public static class DropboxEpubCache
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[epub] Failed to parse OPF for tolerant fallback ({label}): {ex.Message}");
+                Log.Information($"[epub] Failed to parse OPF for tolerant fallback ({label}): {ex.Message}");
             }
         }
 
@@ -426,7 +427,7 @@ public static class DropboxEpubCache
         if (chapters.Count == 0)
             return null;
 
-        Console.WriteLine($"[epub] Tolerant fallback used for {label}. Chapters={chapters.Count}");
+        Log.Information($"[epub] Tolerant fallback used for {label}. Chapters={chapters.Count}");
         return (bookTitle, chapters);
     }
 
@@ -462,7 +463,7 @@ public static class DropboxEpubCache
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[epub] Failed to read zip entries for tolerant fallback ({label}): {ex.Message}");
+            Log.Information($"[epub] Failed to read zip entries for tolerant fallback ({label}): {ex.Message}");
             return false;
         }
     }
@@ -610,7 +611,7 @@ public static class DropboxEpubCache
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[epub] Zip repair failed: {ex.Message}");
+            Log.Information($"[epub] Zip repair failed: {ex.Message}");
             return null;
         }
     }
@@ -674,7 +675,7 @@ public static class DropboxEpubCache
         }
         catch (InvalidDataException ex)
         {
-            Console.WriteLine($"[epub] Invalid zip structure while adding '{entryPath}': {ex.Message}");
+            Log.Information($"[epub] Invalid zip structure while adding '{entryPath}': {ex.Message}");
             return sourceBytes;
         }
     }

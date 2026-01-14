@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
+using Serilog;
 
 namespace AnnasArchive.API.Endpoints;
 
@@ -116,7 +117,7 @@ public static class MediaEndpoints
         }
         catch
         {
-            Console.WriteLine($"⚠️ Wiki images lookup failed for term '{term}'");
+            Log.Information("⚠️ Wiki images lookup failed for term '{term}'");
             return Results.Ok(new WikiImagesResponse(new List<string>()));
         }
     }

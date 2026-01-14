@@ -6,6 +6,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using Serilog;
 
 namespace AnnasArchive.Core.Services;
 
@@ -45,7 +46,7 @@ public class GoogleBooksService : IGoogleBooksService
             var response = await http.GetAsync(url);
             if (!response.IsSuccessStatusCode)
             {
-                Console.WriteLine($"[GoogleBooks] API request failed with status {response.StatusCode}");
+                Log.Warning("[GoogleBooks] API request failed with status {StatusCode}", response.StatusCode);
                 return null;
             }
 
@@ -66,18 +67,18 @@ public class GoogleBooksService : IGoogleBooksService
                     var desc = description.GetString();
                     if (!string.IsNullOrWhiteSpace(desc))
                     {
-                        Console.WriteLine($"[GoogleBooks] ✓ Found description for '{title}' by {author}");
+                        Log.Information("[GoogleBooks] Found description for {Title} by {Author}", title, author);
                         return desc;
                     }
                 }
             }
 
-            Console.WriteLine($"[GoogleBooks] No description found for '{title}' by {author}");
+            Log.Information("[GoogleBooks] No description found for {Title} by {Author}", title, author);
             return null;
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[GoogleBooks] Error: {ex.Message}");
+            Log.Warning("[GoogleBooks] Error: {ErrorMessage}", ex.Message);
             return null;
         }
     }

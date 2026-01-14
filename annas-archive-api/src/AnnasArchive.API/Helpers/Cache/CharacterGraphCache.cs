@@ -1,5 +1,6 @@
 using System.Text.Json;
 using AnnasArchive.API.Models;
+using Serilog;
 
 namespace AnnasArchive.API.Helpers.Cache;
 
@@ -24,7 +25,7 @@ public static class CharacterGraphCache
         var path = GetCharacterGraphCachePath(dropboxPath);
         var json = JsonSerializer.Serialize(graph, JsonOptions);
         File.WriteAllText(path, json);
-        Console.WriteLine($"Saved character graph to: {path}");
+        Log.Information("Saved character graph to: {Path}", path);
     }
 
     public static CharacterGraphResponse? LoadCharacterGraph(string dropboxPath)
@@ -39,7 +40,7 @@ public static class CharacterGraphCache
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Failed to load character graph from {path}: {ex.Message}");
+            Log.Warning("Failed to load character graph from {Path}: {ErrorMessage}", path, ex.Message);
             return null;
         }
     }

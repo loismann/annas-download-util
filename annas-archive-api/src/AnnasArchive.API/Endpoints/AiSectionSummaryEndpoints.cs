@@ -5,6 +5,7 @@ using AnnasArchive.API.Models;
 using AnnasArchive.Core.Services;
 using Dropbox.Api;
 using Microsoft.AspNetCore.Mvc;
+using Serilog;
 
 namespace AnnasArchive.API.Endpoints;
 
@@ -59,7 +60,7 @@ public static class AiSectionSummaryEndpoints
         var cached = AiContentCache.LoadChunkBoundaries(dropboxPath, chapterId);
         if (cached != null)
         {
-            Console.WriteLine($"✅ Returning cached chunk boundaries for chapter {chapterId}");
+            Log.Information("✅ Returning cached chunk boundaries for chapter {chapterId}");
             context.Response.ContentType = "application/json";
             await context.Response.WriteAsJsonAsync(cached);
             return;
@@ -76,7 +77,7 @@ public static class AiSectionSummaryEndpoints
         try
         {
             // Not cached - detect boundaries with SSE progress
-            Console.WriteLine($"🔍 Detecting chunk boundaries for chapter {chapterId}...");
+            Log.Information("🔍 Detecting chunk boundaries for chapter {chapterId}...");
 
             // Set up SSE
             context.Response.Headers["Content-Type"] = "text/event-stream";
@@ -115,7 +116,7 @@ public static class AiSectionSummaryEndpoints
                     totalSteps = 1,
                     message = "Indexing book (first time only)..."
                 });
-                Console.WriteLine($"📑 Chapter {chapterId} not indexed - indexing entire book now...");
+                Log.Information("📑 Chapter {chapterId} not indexed - indexing entire book now...");
 
                 try
                 {
@@ -135,11 +136,11 @@ public static class AiSectionSummaryEndpoints
                         totalSteps = 1,
                         message = "Book indexed successfully"
                     });
-                    Console.WriteLine($"✅ Book indexed successfully");
+                    Log.Information("✅ Book indexed successfully");
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"❌ Failed to index book: {ex.Message}");
+                    Log.Information("❌ Failed to index book: {ex.Message}");
                     await ServerSentEventsHelper.SendEventAsync(context.Response, new
                     {
                         stage = "error",
@@ -168,7 +169,7 @@ public static class AiSectionSummaryEndpoints
             var words = chapterText.Split(new[] { ' ', '\n', '\r', '\t' }, StringSplitOptions.RemoveEmptyEntries);
             var totalWords = words.Length;
 
-            Console.WriteLine($"📖 Chapter has {totalWords} words");
+            Log.Information("📖 Chapter has {totalWords} words");
 
             // Estimate total chunks
             var estimatedChunks = Math.Max(1, (int)Math.Ceiling(totalWords / 500.0));
@@ -202,8 +203,8 @@ public static class AiSectionSummaryEndpoints
             using var http = httpFactory.CreateClient("OpenAI");
             var model = "gpt-4o"; // Use GPT-4o for cost-effective chunking
 
-            Console.WriteLine($"🤖 Using model for chunk detection: {model}");
-            Console.WriteLine($"   Model info: {modelHelper.GetModelDescription(model)}");
+            Log.Information("🤖 Using model for chunk detection: {model}");
+            Log.Information("   Model info: {modelHelper.GetModelDescription(model)}");
 
             while (currentStart < totalWords)
             {
@@ -259,7 +260,7 @@ Return format (JSON only, no explanation):
                 }
                 catch (Exception configEx)
                 {
-                    Console.WriteLine($"⚠️ Config read error (using defaults): {configEx.Message}");
+                    Log.Information("⚠️ Config read error (using defaults): {configEx.Message}");
                 }
 
                 var payload = modelHelper.BuildChatCompletionPayload(
@@ -290,7 +291,7 @@ Return format (JSON only, no explanation):
                     if (response.StatusCode == System.Net.HttpStatusCode.TooManyRequests && retryCount < maxRetries)
                     {
                         var body = await response.Content.ReadAsStringAsync();
-                        Console.WriteLine($"⚠️  Rate limited (attempt {retryCount + 1}/{maxRetries + 1}): {body}");
+                        Log.Information("⚠️  Rate limited (attempt {retryCount + 1}/{maxRetries + 1}): {body}");
 
                         // Extract retry-after time from error message
                         double retryAfterSeconds = baseDelaySeconds * Math.Pow(2, retryCount); // Exponential backoff
@@ -305,7 +306,7 @@ Return format (JSON only, no explanation):
                         }
                         catch { /* Use exponential backoff if parsing fails */ }
 
-                        Console.WriteLine($"⏳ Waiting {retryAfterSeconds:F2}s before retry...");
+                        Log.Information("⏳ Waiting {retryAfterSeconds:F2}s before retry...");
                         await Task.Delay(TimeSpan.FromSeconds(retryAfterSeconds));
                         retryCount++;
                         continue;
@@ -313,7 +314,7 @@ Return format (JSON only, no explanation):
 
                     // Non-retryable error
                     var errorBody = await response.Content.ReadAsStringAsync();
-                    Console.WriteLine($"❌ OpenAI chunk detection failed: {errorBody}");
+                    Log.Information("❌ OpenAI chunk detection failed: {errorBody}");
                     await ServerSentEventsHelper.SendEventAsync(context.Response, new
                     {
                         stage = "error",
@@ -327,7 +328,7 @@ Return format (JSON only, no explanation):
                 if (response == null || !response.IsSuccessStatusCode)
                 {
                     var body = response != null ? await response.Content.ReadAsStringAsync() : "No response";
-                    Console.WriteLine($"❌ OpenAI chunk detection failed after {maxRetries} retries: {body}");
+                    Log.Information("❌ OpenAI chunk detection failed after {maxRetries} retries: {body}");
                     await ServerSentEventsHelper.SendEventAsync(context.Response, new
                     {
                         stage = "error",
@@ -357,7 +358,7 @@ Return format (JSON only, no explanation):
                 int breakPoint = targetChunkSize; // Default fallback
                 if (!string.IsNullOrWhiteSpace(aiText))
                 {
-                    Console.WriteLine($"🤖 AI response: {aiText}");
+                    Log.Information("🤖 AI response: {aiText}");
                     try
                     {
                         // Try to extract JSON from response (handle markdown code blocks)
@@ -391,27 +392,27 @@ Return format (JSON only, no explanation):
                             breakPoint = idx.GetInt32();
                             // Clamp to valid range
                             breakPoint = Math.Max(400, Math.Min(breakPoint, windowWords.Length));
-                            Console.WriteLine($"✂️ AI suggested break at word {breakPoint}");
+                            Log.Information("✂️ AI suggested break at word {breakPoint}");
                         }
                         else
                         {
-                            Console.WriteLine($"⚠️ No breakWordIndex found in response, using default: {breakPoint}");
+                            Log.Information("⚠️ No breakWordIndex found in response, using default: {breakPoint}");
                         }
                     }
                     catch (Exception ex)
                     {
-                        Console.WriteLine($"⚠️ Failed to parse break point: {ex.Message}, using default: {breakPoint}");
+                        Log.Information("⚠️ Failed to parse break point: {ex.Message}, using default: {breakPoint}");
                     }
                 }
                 else
                 {
-                    Console.WriteLine($"⚠️ Empty AI response, using default break point: {breakPoint}");
+                    Log.Information("⚠️ Empty AI response, using default break point: {breakPoint}");
                 }
 
                 // If we're still at default (500), try to find a paragraph boundary as fallback
                 if (breakPoint == targetChunkSize)
                 {
-                    Console.WriteLine($"⚠️ Using fallback: finding nearest paragraph boundary around word {breakPoint}");
+                    Log.Information("⚠️ Using fallback: finding nearest paragraph boundary around word {breakPoint}");
 
                     // Look for paragraph breaks (double newlines) near the target position
                     var searchStart = Math.Max(400, breakPoint - 50);
@@ -444,7 +445,7 @@ Return format (JSON only, no explanation):
                         if (bestBreak >= 400 && bestBreak <= windowWords.Length)
                         {
                             breakPoint = bestBreak;
-                            Console.WriteLine($"✂️ Found paragraph boundary at word {breakPoint} (distance from target: {bestDistance})");
+                            Log.Information("✂️ Found paragraph boundary at word {breakPoint} (distance from target: {bestDistance})");
                         }
                     }
                 }
@@ -453,7 +454,7 @@ Return format (JSON only, no explanation):
                 chunks.Add(new ChunkBoundary(currentStart, chunkEnd, chunkEnd - currentStart));
                 currentStart = chunkEnd;
 
-                Console.WriteLine($"✂️ Chunk detected: words {chunks[^1].Start}-{chunks[^1].End} ({chunks[^1].WordCount} words)");
+                Log.Information("✂️ Chunk detected: words {chunks[^1].Start}-{chunks[^1].End} ({chunks[^1].WordCount} words)");
             }
 
             // Save to cache
@@ -468,11 +469,11 @@ Return format (JSON only, no explanation):
             };
             await ServerSentEventsHelper.SendEventAsync(context.Response, result);
 
-            Console.WriteLine($"✅ Detected {chunks.Count} sections for chapter {chapterId}");
+            Log.Information("✅ Detected {chunks.Count} sections for chapter {chapterId}");
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"❌ Chunk boundary detection failed: {ex.Message}");
+            Log.Information("❌ Chunk boundary detection failed: {ex.Message}");
             await ServerSentEventsHelper.SendEventAsync(context.Response, new
             {
                 stage = "error",
@@ -506,10 +507,10 @@ Return format (JSON only, no explanation):
             // Filter out known AND study words from vocab
             if (vocab != null && vocab.Count > 0)
             {
-                Console.WriteLine($"🔍 [GET /api/ai/section-summary] Loading {vocab.Count} vocab cards from cache");
+                Log.Information("🔍 [GET /api/ai/section-summary] Loading {vocab.Count} vocab cards from cache");
                 var knownWords = AiContentCache.LoadKnownWords();
                 var studyWords = AiContentCache.LoadStudyWordsWithBooks();
-                Console.WriteLine($"📚 [GET /api/ai/section-summary] Loaded {knownWords.Count} known words and {studyWords.Count} study words from server");
+                Log.Information("📚 [GET /api/ai/section-summary] Loaded {knownWords.Count} known words and {studyWords.Count} study words from server");
 
                 var beforeCount = vocab.Count;
                 var filteredVocab = vocab.Where(card =>
@@ -520,29 +521,29 @@ Return format (JSON only, no explanation):
 
                     if (isKnown)
                     {
-                        Console.WriteLine($"  🚫 Filtering out known word: '{card.Term}' (normalized: '{normalized}')");
+                        Log.Information("  🚫 Filtering out known word: '{card.Term}' (normalized: '{normalized}')");
                     }
                     else if (isStudy)
                     {
-                        Console.WriteLine($"  🚫 Filtering out study word: '{card.Term}' (normalized: '{normalized}')");
+                        Log.Information("  🚫 Filtering out study word: '{card.Term}' (normalized: '{normalized}')");
                     }
 
                     return !isKnown && !isStudy;
                 }).ToList();
 
                 var removedCount = beforeCount - filteredVocab.Count;
-                Console.WriteLine($"✅ [GET /api/ai/section-summary] Filtered vocab: {beforeCount} cards → {filteredVocab.Count} cards (removed {removedCount} known/study words)");
+                Log.Information("✅ [GET /api/ai/section-summary] Filtered vocab: {beforeCount} cards → {filteredVocab.Count} cards (removed {removedCount} known/study words)");
                 vocab = filteredVocab;
             }
             else
             {
-                Console.WriteLine($"ℹ️ [GET /api/ai/section-summary] No vocab to filter (vocab={vocab?.Count ?? 0})");
+                Log.Information("ℹ️ [GET /api/ai/section-summary] No vocab to filter (vocab={vocab?.Count ?? 0})");
             }
 
             // Create new response with filtered vocab included
             var response = cached with { Vocab = vocab };
 
-            Console.WriteLine($"✅ Returning cached section summary for chapter {chapterId}, section {sectionIndex} (vocab: {vocab?.Count ?? 0} cards)");
+            Log.Information("✅ Returning cached section summary for chapter {chapterId}, section {sectionIndex} (vocab: {vocab?.Count ?? 0} cards)");
             return Results.Ok(response);
         }
 
@@ -570,7 +571,7 @@ Return format (JSON only, no explanation):
         var cached = AiContentCache.LoadSectionSummary(request.DropboxPath, request.ChapterId, request.SectionIndex);
         if (cached != null)
         {
-            Console.WriteLine($"✅ Returning cached section summary for chapter {request.ChapterId}, section {request.SectionIndex}");
+            Log.Information("✅ Returning cached section summary for chapter {request.ChapterId}, section {request.SectionIndex}");
             return Results.Ok(cached);
         }
 
@@ -622,21 +623,21 @@ Return format (JSON only, no explanation):
             var sectionWords = words.Skip(chunk.Start).Take(chunk.WordCount).ToArray();
             var sectionText = string.Join(" ", sectionWords);
 
-            Console.WriteLine($"📝 Generating summary for chapter {request.ChapterId}, section {request.SectionIndex} ({chunk.WordCount} words)");
+            Log.Information("📝 Generating summary for chapter {request.ChapterId}, section {request.SectionIndex} ({chunk.WordCount} words)");
 
             // Use GPT-5.2 (deep model) for high-quality summaries
             var apiKey = cfg["OpenAI:ApiKey"] ?? Environment.GetEnvironmentVariable("OPENAI_API_KEY");
             if (string.IsNullOrWhiteSpace(apiKey))
             {
-                Console.WriteLine("❌ OpenAI API key not configured");
+                Log.Information("❌ OpenAI API key not configured");
                 return Results.Problem("OpenAI API key not configured.");
             }
 
             using var http = httpFactory.CreateClient("OpenAI");
             var model = modelSelection.GetModelDeep();
 
-            Console.WriteLine($"🤖 Using model: {model}");
-            Console.WriteLine($"   Model info: {modelHelper.GetModelDescription(model)}");
+            Log.Information("🤖 Using model: {model}");
+            Log.Information("   Model info: {modelHelper.GetModelDescription(model)}");
 
             var bookContext = !string.IsNullOrWhiteSpace(request.BookTitle)
                 ? $" from the book \"{request.BookTitle}\""
@@ -679,13 +680,13 @@ Text to summarize:
                 temperature: cfg.GetValue<double>("AI:Temperature:SectionSummary")
             );
 
-            Console.WriteLine($"📤 Sending request to OpenAI Chat Completions API...");
+            Log.Information("📤 Sending request to OpenAI Chat Completions API...");
             var response = await http.PostAsJsonAsync("https://api.openai.com/v1/chat/completions", payload);
             if (!response.IsSuccessStatusCode)
             {
                 var body = await response.Content.ReadAsStringAsync();
-                Console.WriteLine($"❌ OpenAI section summary failed: {response.StatusCode}");
-                Console.WriteLine($"   Response body: {body}");
+                Log.Information("❌ OpenAI section summary failed: {response.StatusCode}");
+                Log.Information("   Response body: {body}");
                 return Results.Problem($"Section summary failed: {(int)response.StatusCode}");
             }
 
@@ -693,7 +694,7 @@ Text to summarize:
             using var doc = await JsonDocument.ParseAsync(stream);
 
             var summary = aiResponseParser.ExtractText(doc.RootElement);
-            Console.WriteLine($"✅ Summary generated: {summary?.Length ?? 0} characters");
+            Log.Information("✅ Summary generated: {summary?.Length ?? 0} characters");
 
             // Track token usage
             int promptTokens = 0, completionTokens = 0;
@@ -704,7 +705,7 @@ Text to summarize:
                 var userId = UserHelpers.GetUserIdFromContext(context);
                 if (userId != null)
                     tokenUsage.AddUsage(userId, promptTokens, completionTokens);
-                Console.WriteLine($"📊 Token usage: {promptTokens} prompt + {completionTokens} completion = {promptTokens + completionTokens} total");
+                Log.Information("📊 Token usage: {promptTokens} prompt + {completionTokens} completion = {promptTokens + completionTokens} total");
             }
 
             // Save to cache
@@ -718,14 +719,14 @@ Text to summarize:
             );
 
             AiContentCache.SaveSectionSummary(request.DropboxPath, request.ChapterId, request.SectionIndex, result);
-            Console.WriteLine($"💾 Section summary cached successfully");
+            Log.Information("💾 Section summary cached successfully");
 
             return Results.Ok(result);
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"❌ Section summary generation failed: {ex.Message}");
-            Console.WriteLine($"   Stack trace: {ex.StackTrace}");
+            Log.Information("❌ Section summary generation failed: {ex.Message}");
+            Log.Information("   Stack trace: {ex.StackTrace}");
             return Results.Problem("Failed to generate section summary.");
         }
         finally

@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using AnnasArchive.API.Models;
 using AnnasArchive.Core.Services;
+using Serilog;
 
 namespace AnnasArchive.API.Helpers;
 
@@ -100,7 +101,7 @@ public static class ChapterLabelingHelper
         var apiKey = cfg["OpenAI:ApiKey"] ?? Environment.GetEnvironmentVariable("OPENAI_API_KEY");
         if (string.IsNullOrWhiteSpace(apiKey))
         {
-            Console.WriteLine("OpenAI API key not configured for chapter labeling.");
+            Log.Information("OpenAI API key not configured for chapter labeling.");
             return null;
         }
 
@@ -151,7 +152,7 @@ Return ONLY this JSON array:
         if (!response.IsSuccessStatusCode)
         {
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
-            Console.WriteLine($"OpenAI chapter-labeling failed status={(int)response.StatusCode} body={body}");
+            Log.Information($"OpenAI chapter-labeling failed status={(int)response.StatusCode} body={body}");
             return null;
         }
 
@@ -179,7 +180,7 @@ Return ONLY this JSON array:
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Failed to parse chapter labels JSON: {ex.Message}");
+            Log.Information($"Failed to parse chapter labels JSON: {ex.Message}");
             return null;
         }
     }

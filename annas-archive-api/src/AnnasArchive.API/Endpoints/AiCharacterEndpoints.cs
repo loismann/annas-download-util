@@ -3,6 +3,7 @@ using AnnasArchive.API.Helpers;
 using AnnasArchive.API.Models;
 using AnnasArchive.Core.Services;
 using Microsoft.AspNetCore.Mvc;
+using Serilog;
 
 namespace AnnasArchive.API.Endpoints;
 
@@ -46,7 +47,7 @@ public static class AiCharacterEndpoints
         if (string.IsNullOrWhiteSpace(request.DropboxPath))
             return Results.BadRequest(new { error = "DropboxPath is required." });
 
-        Console.WriteLine($"📊 Generating character graph for {request.BookTitle ?? request.DropboxPath}...");
+        Log.Information("📊 Generating character graph for {request.BookTitle ?? request.DropboxPath}...");
 
         // Gather all existing summaries (both chapter and section) for this book
         var chapterSummaries = AiContentCache.GetAllChapterSummariesAsStrings(request.DropboxPath);
@@ -54,11 +55,11 @@ public static class AiCharacterEndpoints
 
         if (chapterSummaries.Count == 0 && sectionSummaries.Count == 0)
         {
-            Console.WriteLine("⚠️ No summaries found. Generate some chapter or section summaries first.");
+            Log.Information("⚠️ No summaries found. Generate some chapter or section summaries first.");
             return Results.BadRequest(new { error = "No summaries found. Please generate chapter or section summaries as you read the book first." });
         }
 
-        Console.WriteLine($"📚 Found {chapterSummaries.Count} chapter summaries and {sectionSummaries.Count} section summaries to analyze");
+        Log.Information("📚 Found {chapterSummaries.Count} chapter summaries and {sectionSummaries.Count} section summaries to analyze");
 
         // Combine all summaries
         var allSummaries = new List<string>();
@@ -135,7 +136,7 @@ Story Summaries:
 Create a character relationship network graph based ONLY on information in these summaries.";
 
             var model = "gpt-4o"; // Use GPT-4o for cost-effective character graph generation
-            Console.WriteLine($"🤖 Using model for character graph: {model}");
+            Log.Information("🤖 Using model for character graph: {model}");
 
             var payload = modelHelper.BuildChatCompletionPayload(
                 model,
@@ -152,7 +153,7 @@ Create a character relationship network graph based ONLY on information in these
             if (!response.IsSuccessStatusCode)
             {
                 var body = await response.Content.ReadAsStringAsync();
-                Console.WriteLine($"❌ Character graph failed: {response.StatusCode}");
+                Log.Information("❌ Character graph failed: {response.StatusCode}");
                 return Results.Problem($"Character graph generation failed: {(int)response.StatusCode}");
             }
 
@@ -162,7 +163,7 @@ Create a character relationship network graph based ONLY on information in these
 
             if (string.IsNullOrWhiteSpace(content))
             {
-                Console.WriteLine("❌ No content returned from GPT");
+                Log.Information("❌ No content returned from GPT");
                 return Results.Problem("No character graph data returned.");
             }
 
@@ -200,20 +201,20 @@ Create a character relationship network graph based ONLY on information in these
 
                 // Save to cache
                 AiContentCache.SaveCharacterGraph(request.DropboxPath, graph);
-                Console.WriteLine($"✅ Character graph generated with {graph.Nodes.Count} characters and {graph.Edges.Count} relationships from {totalSummaryCount} summaries ({chapterSummaries.Count} chapter + {sectionSummaries.Count} section)");
+                Log.Information("✅ Character graph generated with {graph.Nodes.Count} characters and {graph.Edges.Count} relationships from {totalSummaryCount} summaries ({chapterSummaries.Count} chapter + {sectionSummaries.Count} section)");
 
                 return Results.Ok(graph);
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"❌ Failed to parse character graph: {ex.Message}");
-                Console.WriteLine($"   Content: {content.Substring(0, Math.Min(200, content.Length))}");
+                Log.Information("❌ Failed to parse character graph: {ex.Message}");
+                Log.Information("   Content: {content.Substring(0, Math.Min(200, content.Length))}");
                 return Results.Problem("Failed to parse character graph data.");
             }
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"❌ Character graph generation failed: {ex.Message}");
+            Log.Information("❌ Character graph generation failed: {ex.Message}");
             return Results.Problem("Failed to generate character graph.");
         }
     }
@@ -260,7 +261,7 @@ Create a character relationship network graph based ONLY on information in these
         if (existingGraph == null)
             return Results.BadRequest(new { error = "No existing character graph. Generate one first." });
 
-        Console.WriteLine($"🔄 Updating character graph with new content...");
+        Log.Information("🔄 Updating character graph with new content...");
 
         var apiKey = cfg["OpenAI:ApiKey"] ?? Environment.GetEnvironmentVariable("OPENAI_API_KEY");
         if (string.IsNullOrWhiteSpace(apiKey))
@@ -292,7 +293,7 @@ New story content:
 Update the character graph with any new information. Return the complete updated graph.";
 
             var model = "gpt-4o"; // Use GPT-4o for cost-effective character graph updates
-            Console.WriteLine($"🤖 Using model for character graph update: {model}");
+            Log.Information("🤖 Using model for character graph update: {model}");
 
             var payload = modelHelper.BuildChatCompletionPayload(
                 model,
@@ -308,7 +309,7 @@ Update the character graph with any new information. Return the complete updated
             var response = await http.PostAsJsonAsync("https://api.openai.com/v1/chat/completions", payload);
             if (!response.IsSuccessStatusCode)
             {
-                Console.WriteLine($"❌ Character graph update failed: {response.StatusCode}");
+                Log.Information("❌ Character graph update failed: {response.StatusCode}");
                 return Results.Problem("Failed to update character graph.");
             }
 
@@ -337,13 +338,13 @@ Update the character graph with any new information. Return the complete updated
 
             // Save to cache
             AiContentCache.SaveCharacterGraph(request.DropboxPath, updatedGraph);
-            Console.WriteLine($"✅ Character graph updated: {updatedGraph.Nodes.Count} characters, {updatedGraph.Edges.Count} relationships");
+            Log.Information("✅ Character graph updated: {updatedGraph.Nodes.Count} characters, {updatedGraph.Edges.Count} relationships");
 
             return Results.Ok(updatedGraph);
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"❌ Character graph update failed: {ex.Message}");
+            Log.Information("❌ Character graph update failed: {ex.Message}");
             return Results.Problem("Failed to update character graph.");
         }
     }

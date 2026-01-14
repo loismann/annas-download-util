@@ -20,6 +20,7 @@ import {
 } from '../services/anna-archive-api.service';
 import { BookDto } from '../models/book-dto.model';
 import { firstValueFrom } from 'rxjs';
+import { LoggerService } from '../services/logger.service';
 
 export interface RelatedBooksModalData {
   bookTitle: string;
@@ -79,7 +80,8 @@ export class RelatedBooksModalComponent {
   constructor(
     public dialogRef: MatDialogRef<RelatedBooksModalComponent>,
     @Inject(MAT_DIALOG_DATA) public data: RelatedBooksModalData,
-    private api: AnnaArchiveApiService
+    private api: AnnaArchiveApiService,
+    private logger: LoggerService
   ) {}
 
   get selectedBooks(): SeriesBook[] {
@@ -193,7 +195,7 @@ export class RelatedBooksModalComponent {
           candidates
         });
       } catch (err) {
-        console.error(`Failed to search for "${book.title}"`, err);
+        this.logger.error(`Failed to search for "${book.title}"`, err);
         booksWithCandidates.push({
           title: book.title,
           order: book.order,
@@ -269,7 +271,7 @@ export class RelatedBooksModalComponent {
         this.matchResults.push(result);
       }
     } catch (err) {
-      console.error('GPT matching failed, falling back to simple matching', err);
+      this.logger.error('GPT matching failed, falling back to simple matching', err);
 
       // Fallback: Use simple client-side matching
       for (const bookData of booksWithCandidates) {

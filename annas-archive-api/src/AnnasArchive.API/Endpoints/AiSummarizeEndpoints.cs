@@ -4,6 +4,7 @@ using AnnasArchive.API.Models;
 using AnnasArchive.Core.Services;
 using Dropbox.Api;
 using Microsoft.AspNetCore.Mvc;
+using Serilog;
 
 namespace AnnasArchive.API.Endpoints;
 
@@ -172,7 +173,7 @@ Then add a 'Definitions:' section. BE EXTREMELY THOROUGH with definitions - incl
             if (!response.IsSuccessStatusCode)
             {
                 var body = await response.Content.ReadAsStringAsync();
-                Console.WriteLine($"❌ OpenAI summarize failed status={(int)response.StatusCode} body={body}");
+                Log.Information("❌ OpenAI summarize failed status={(int)response.StatusCode} body={body}");
                 return Results.Problem($"OpenAI request failed: {(int)response.StatusCode}");
             }
 
@@ -207,7 +208,7 @@ Then add a 'Definitions:' section. BE EXTREMELY THOROUGH with definitions - incl
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"❌ OpenAI summarize failed: {ex.Message}");
+            Log.Information("❌ OpenAI summarize failed: {ex.Message}");
             return ApiResponse.InternalError("Failed to summarize text.");
         }
     }
@@ -247,7 +248,7 @@ Then add a 'Definitions:' section. BE EXTREMELY THOROUGH with definitions - incl
         var cached = AiContentCache.LoadChapterSummary<Dictionary<string, object>>(request.DropboxPath, request.ChapterId);
         if (cached != null)
         {
-            Console.WriteLine($"📦 Returning cached chapter summary for {request.DropboxPath} chapter {request.ChapterId}");
+            Log.Information("📦 Returning cached chapter summary for {request.DropboxPath} chapter {request.ChapterId}");
             context.Response.ContentType = "text/event-stream";
             context.Response.Headers.Append("Cache-Control", "no-cache");
             context.Response.Headers.Append("Connection", "keep-alive");
@@ -399,7 +400,7 @@ Then add a 'Definitions:' section. BE EXTREMELY THOROUGH with definitions - incl
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"❌ Full-chapter summary failed: {ex.Message}");
+            Log.Information("❌ Full-chapter summary failed: {ex.Message}");
             await ServerSentEventsHelper.SendEventAsync(context.Response, new { message = "Failed to summarize chapter.", error = ex.Message }, "error");
         }
         finally
@@ -529,8 +530,8 @@ Chapter summary:
         if (!response.IsSuccessStatusCode)
         {
             var body = await response.Content.ReadAsStringAsync();
-            Console.WriteLine($"❌ OpenAI ultra summary failed: {response.StatusCode}");
-            Console.WriteLine($"   Response body: {body}");
+            Log.Information("❌ OpenAI ultra summary failed: {response.StatusCode}");
+            Log.Information("   Response body: {body}");
             return Results.Problem($"Ultra summary failed: {(int)response.StatusCode}");
         }
 

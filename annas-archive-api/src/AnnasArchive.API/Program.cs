@@ -13,6 +13,9 @@ builder.Configuration
 // ─── Logging ─────────────────────────────────────────────────────────────
 builder.AddSerilogLogging();
 
+// ─── Validate required configuration (fail fast) ─────────────────────────
+builder.ValidateRequiredConfiguration();
+
 // ─── Register all application services ───────────────────────────────────
 builder.Services.AddApplicationServices(builder.Configuration);
 

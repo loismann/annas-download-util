@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using AnnasArchive.API.Configuration;
 using AnnasArchive.API.Helpers;
 using AnnasArchive.API.Models;
 using AnnasArchive.Core.Services;
@@ -438,16 +439,25 @@ Rules:
             }
 
             // ───────── Fetch descriptions (Google Books -> OpenLibrary -> GPT-4) ─────────
-            Log.Information("[Books API] Fetching descriptions for books...");
+            // THROTTLED: Limit to MaxRelatedBookDescriptions to prevent rate limiting
+            var maxDescriptions = AiThrottlingConfiguration.MaxRelatedBookDescriptions;
+            Log.Information("[Books API] Fetching descriptions for up to {Max} books (sameSeries: {Count})...", maxDescriptions, sameSeries.Count);
 
-            // Process sameSeries books
-            for (int i = 0; i < sameSeries.Count; i++)
+            // Process sameSeries books (limited)
+            var sameSeriesProcessed = 0;
+            for (int i = 0; i < sameSeries.Count && sameSeriesProcessed < maxDescriptions; i++)
             {
                 var book = sameSeries[i];
 
                 // Only fetch if description is missing or very short
                 if (string.IsNullOrWhiteSpace(book.Description) || book.Description.Length < 10)
                 {
+                    // Throttle between API calls
+                    if (sameSeriesProcessed > 0)
+                    {
+                        await AiThrottlingConfiguration.ThrottleAsync();
+                    }
+
                     // Try Google Books first
                     var gbDescription = await googleBooks.GetBookDescriptionAsync(book.Title, request.Author);
 
@@ -475,19 +485,43 @@ Rules:
                             Log.Information("[GPT-4] ✓ Generated description for '{book.Title}'");
                         }
                     }
+
+                    sameSeriesProcessed++;
                 }
             }
 
-            // Process otherSeries books
-            for (int i = 0; i < otherSeries.Count; i++)
+            if (sameSeries.Count > maxDescriptions)
+            {
+                Log.Information("[Books API] Skipped {Count} sameSeries books (over limit)", sameSeries.Count - maxDescriptions);
+            }
+
+            // Process otherSeries books (limited - share quota with sameSeries)
+            var remainingQuota = Math.Max(0, maxDescriptions - sameSeriesProcessed);
+            var otherSeriesProcessed = 0;
+            Log.Information("[Books API] Remaining description quota for otherSeries: {Quota}", remainingQuota);
+
+            for (int i = 0; i < otherSeries.Count && otherSeriesProcessed < remainingQuota; i++)
             {
                 var series = otherSeries[i];
                 var updatedBooks = new List<SeriesBook>();
 
                 foreach (var book in series.Books)
                 {
+                    if (otherSeriesProcessed >= remainingQuota)
+                    {
+                        // Over quota - keep original book without fetching description
+                        updatedBooks.Add(book);
+                        continue;
+                    }
+
                     if (string.IsNullOrWhiteSpace(book.Description) || book.Description.Length < 10)
                     {
+                        // Throttle between API calls
+                        if (otherSeriesProcessed > 0 || sameSeriesProcessed > 0)
+                        {
+                            await AiThrottlingConfiguration.ThrottleAsync();
+                        }
+
                         // Try Google Books first
                         var gbDescription = await googleBooks.GetBookDescriptionAsync(book.Title, request.Author);
 
@@ -514,6 +548,8 @@ Rules:
                                 Log.Information("[GPT-4] ✓ Generated description for '{book.Title}'");
                             }
                         }
+
+                        otherSeriesProcessed++;
                     }
                     else
                     {
@@ -529,6 +565,10 @@ Rules:
                     series.Summary
                 );
             }
+
+            var totalDescriptions = sameSeriesProcessed + otherSeriesProcessed;
+            Log.Information("[Books API] Fetched {Total} descriptions (sameSeries: {Same}, otherSeries: {Other})",
+                totalDescriptions, sameSeriesProcessed, otherSeriesProcessed);
 
             Log.Information("✅ Related books for '{request.BookTitle}': {sameSeries.Count} series books, {otherSeries.Count} other series");
 

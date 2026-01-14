@@ -178,10 +178,27 @@
 .reader-controls .page-indicator {
   font-weight: 600;
   color: #0f172a;
+  display: flex;
+  align-items: center;
+  gap: 1.5em;
 }
 
 .reader-controls .page-indicator-muted {
-  color: #9ca3af;
+  color: #64748b;
+}
+
+.reader-controls .chapter-bubble {
+  margin-left: 1em;
+  padding: 4px 12px;
+  background-color: #f1f5f9;
+  color: #475569;
+  border-radius: 16px;
+  font-size: 0.85em;
+  font-weight: 500;
+  white-space: nowrap;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .reader-controls-right {
   display: flex;
@@ -520,9 +537,9 @@
 }
 
 .analysis-body {
-  font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  font-family: inherit;
   line-height: 1.6;
-  font-size: 14px;
+  font-size: inherit;
 }
 
 .analysis-body * {
@@ -1323,6 +1340,81 @@
   margin-top: 8px;
 }
 
+/* Consolidated settings section */
+.settings-section {
+  margin-bottom: 16px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #f8fafc;
+  overflow: hidden;
+}
+
+.settings-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 12px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #475569;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.settings-toggle mat-icon {
+  margin-right: 8px;
+}
+
+.settings-content {
+  padding: 0 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.settings-subsection {
+  padding: 12px;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.settings-subsection-header {
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 4px;
+}
+
+.settings-subsection .control-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.settings-subsection .control-label {
+  min-width: 52px;
+  font-size: 13px;
+  color: #475569;
+}
+
+.settings-danger {
+  background: transparent;
+  border: none;
+  padding: 0;
+}
+
+.settings-danger button {
+  width: 100%;
+}
+
 .pager {
   display: flex;
   align-items: center;
@@ -1427,7 +1519,7 @@
 }
 
 .full-summary-body {
-  font-size: 14px;
+  font-size: inherit;
   line-height: 1.6;
   white-space: pre-wrap;
   user-select: text;
@@ -1544,7 +1636,7 @@
 }
 
 .dummy-summary-body {
-  font-size: 14px;
+  font-size: inherit;
   line-height: 1.7;
   user-select: text;
   -webkit-user-select: text;
@@ -2214,7 +2306,7 @@
 }
 
 .section-summary-body {
-  font-size: 14px;
+  font-size: inherit;
   line-height: 1.8;
   color: #cbd5e1;
   white-space: pre-wrap;

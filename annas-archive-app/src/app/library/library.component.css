@@ -46,6 +46,31 @@
   font-size: 0.85rem;
 }
 
+.reset-view-btn {
+  width: 100%;
+  padding: 14px 20px;
+  font-size: 1.1rem;
+  font-weight: 700;
+  background: linear-gradient(135deg, #ec4899 0%, #db2777 100%);
+  color: #ffffff;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 14px rgba(236, 72, 153, 0.35);
+}
+
+.reset-view-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(236, 72, 153, 0.45);
+  background: linear-gradient(135deg, #f472b6 0%, #ec4899 100%);
+}
+
+.reset-view-btn:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 8px rgba(236, 72, 153, 0.3);
+}
+
 .sidebar-meta {
   margin-top: auto;
   padding-top: 12px;
@@ -334,7 +359,7 @@
   overflow: hidden;
   border-radius: 10px;
   border: 1px solid #e5e7eb;
-  height: fit-content;
+  height: 100%;
   position: relative;
 }
 
@@ -377,6 +402,7 @@
   min-height: 78px;
   display: flex;
   flex-direction: column;
+  flex: 1;
 }
 
 .library-card .title {
@@ -412,7 +438,8 @@
 }
 
 .goodreads {
-  margin-top: 8px;
+  margin-top: auto;
+  padding-top: 8px;
   font-size: 0.78rem;
   color: #475569;
 }
@@ -601,7 +628,7 @@
   min-height: 60px;
 }
 
-.library-card-small .title {
+.library-card.library-card-small .title {
   font-size: 0.8rem;
   -webkit-line-clamp: 2;
   min-height: 2.2em;
@@ -626,6 +653,44 @@
   --star-gap: 2px;
 }
 
+.library-card-small .card-actions {
+  gap: 0.3rem;
+  padding: 0 8px 8px;
+}
+
+.library-card-small .card-actions button {
+  height: 26px;
+  font-size: 10px;
+  padding: 0 4px;
+  min-width: 0;
+}
+
+/* Kindle button text - full text by default */
+.kindle-btn-full {
+  display: inline;
+}
+
+.kindle-btn-compact {
+  display: none;
+}
+
+/* Show compact version on small tiles */
+.library-card-small .kindle-btn-full {
+  display: none;
+}
+
+.library-card-small .kindle-btn-compact {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.library-card-small .kindle-btn-compact mat-icon {
+  font-size: 14px;
+  width: 14px;
+  height: 14px;
+}
+
 /* Medium Tile Size (Default - no special class needed) */
 .library-card-medium {
   /* Uses default library-card styles */
@@ -641,7 +706,7 @@
   min-height: 100px;
 }
 
-.library-card-large .title {
+.library-card.library-card-large .title {
   font-size: 1.05rem;
   -webkit-line-clamp: 3;
   min-height: 3.6em;

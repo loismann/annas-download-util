@@ -6,6 +6,8 @@
         <p>Browse your saved books.</p>
       </div>
 
+      <button type="button" class="reset-view-btn" (click)="resetView()">Reset View!</button>
+
       <mat-form-field appearance="outline" class="w-100">
         <mat-label>Search</mat-label>
         <input matInput [(ngModel)]="searchTerm" placeholder="Title, author, series, tags" />
@@ -278,7 +280,10 @@
                     <span *ngSwitchCase="'sending'">Sending…</span>
                     <span *ngSwitchCase="'success'">✔ Sent</span>
                     <span *ngSwitchCase="'error'">✖ Retry</span>
-                    <span *ngSwitchDefault>Dad's Kindle</span>
+                    <ng-container *ngSwitchDefault>
+                      <span class="kindle-btn-full">Dad's Kindle</span>
+                      <span class="kindle-btn-compact"><mat-icon>send</mat-icon>D</span>
+                    </ng-container>
                   </ng-container>
                 </button>
                   <button
@@ -290,7 +295,10 @@
                     <span *ngSwitchCase="'sending'">Sending…</span>
                     <span *ngSwitchCase="'success'">✔ Sent</span>
                     <span *ngSwitchCase="'error'">✖ Retry</span>
-                    <span *ngSwitchDefault>Mom's Kindle</span>
+                    <ng-container *ngSwitchDefault>
+                      <span class="kindle-btn-full">Mom's Kindle</span>
+                      <span class="kindle-btn-compact"><mat-icon>send</mat-icon>M</span>
+                    </ng-container>
                   </ng-container>
                 </button>
               </div>

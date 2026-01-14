@@ -207,6 +207,22 @@
   min-width: 350px;
 }
 
+// Owner Selection Field - prominent at top
+.owner-field {
+  background: rgba(63, 81, 181, 0.04);
+  border-radius: 8px;
+  padding: 4px 8px 0 8px;
+  margin-bottom: 0.25rem;
+}
+
+// Add Genre Field - styled similarly to owner field
+.add-genre-field {
+  background: rgba(76, 175, 80, 0.04);
+  border-radius: 8px;
+  padding: 4px 8px 0 8px;
+  margin-top: 0.25rem;
+}
+
 .book-header {
   display: flex;
   flex-direction: column;
@@ -229,11 +245,6 @@
 
 .w-100 {
   width: 100%;
-}
-
-.genre-actions {
-  margin-top: -0.75rem;
-  margin-bottom: 0.25rem;
 }
 
 .manual-cover-row {
@@ -301,10 +312,6 @@ mat-dialog-content {
 
   .manual-cover-row {
     grid-template-columns: 1fr;
-  }
-
-  .genre-actions {
-    margin-top: 0;
   }
 
   .summary-section {

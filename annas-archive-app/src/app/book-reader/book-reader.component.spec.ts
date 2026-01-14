@@ -444,3 +444,78 @@ describe('BookReaderComponent - Dynamic Pagination', () => {
     });
   });
 });
+
+/**
+ * Unit tests for chapter label getters used in pagination display
+ */
+describe('BookReaderComponent - Chapter Label Getters', () => {
+  /**
+   * Helper that mimics currentChapterLabel getter logic
+   */
+  function getCurrentChapterLabel(
+    chapters: Array<{ id: number; title: string; displayLabel?: string | null }>,
+    selectedChapterId: number | null
+  ): string | null {
+    if (!selectedChapterId) return null;
+    const chapter = chapters.find(ch => ch.id === selectedChapterId);
+    return chapter?.displayLabel ?? chapter?.title ?? null;
+  }
+
+  /**
+   * Helper that mimics truncatedChapterLabel getter logic
+   */
+  function getTruncatedChapterLabel(label: string | null): string {
+    if (!label) return '';
+    return label.length > 20 ? label.substring(0, 20) + '...' : label;
+  }
+
+  describe('currentChapterLabel', () => {
+    it('should return null when no chapter is selected', () => {
+      const chapters = [{ id: 1, title: 'Chapter 1' }];
+      expect(getCurrentChapterLabel(chapters, null)).toBeNull();
+    });
+
+    it('should return chapter title when displayLabel is not set', () => {
+      const chapters = [{ id: 1, title: 'Chapter 1: The Beginning' }];
+      expect(getCurrentChapterLabel(chapters, 1)).toBe('Chapter 1: The Beginning');
+    });
+
+    it('should prefer displayLabel over title when both exist', () => {
+      const chapters = [{ id: 1, title: 'ch001.xhtml', displayLabel: 'Chapter 1' }];
+      expect(getCurrentChapterLabel(chapters, 1)).toBe('Chapter 1');
+    });
+
+    it('should return null when chapter id not found', () => {
+      const chapters = [{ id: 1, title: 'Chapter 1' }];
+      expect(getCurrentChapterLabel(chapters, 999)).toBeNull();
+    });
+
+    it('should handle null displayLabel by falling back to title', () => {
+      const chapters = [{ id: 1, title: 'Chapter 1', displayLabel: null }];
+      expect(getCurrentChapterLabel(chapters, 1)).toBe('Chapter 1');
+    });
+  });
+
+  describe('truncatedChapterLabel', () => {
+    it('should return empty string for null input', () => {
+      expect(getTruncatedChapterLabel(null)).toBe('');
+    });
+
+    it('should not truncate labels 20 characters or less', () => {
+      expect(getTruncatedChapterLabel('Chapter 1')).toBe('Chapter 1');
+      expect(getTruncatedChapterLabel('12345678901234567890')).toBe('12345678901234567890');
+    });
+
+    it('should truncate labels longer than 20 characters with ellipsis', () => {
+      const longLabel = 'Chapter 1: The Very Long Beginning';
+      expect(getTruncatedChapterLabel(longLabel)).toBe('Chapter 1: The Very ...');
+    });
+
+    it('should truncate at exactly 20 characters plus ellipsis', () => {
+      const label = '123456789012345678901234567890'; // 30 chars
+      const truncated = getTruncatedChapterLabel(label);
+      expect(truncated).toBe('12345678901234567890...');
+      expect(truncated.length).toBe(23); // 20 + 3 for '...'
+    });
+  });
+});

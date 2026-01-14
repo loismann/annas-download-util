@@ -369,6 +369,41 @@ export class LibraryComponent implements OnInit {
     this.tileSize = size;
   }
 
+  resetView(): void {
+    // Reset search and filters
+    this.searchTerm = '';
+    this.selectedGenre = '';
+    this.minPersonalRating = 0;
+    this.minGoodreadsRating = 0;
+    this.selectedOwnerTags.clear();
+
+    // Reset sorting to default
+    this.sortOrder = 'recent';
+    this.sortDirection = 'down';
+
+    // Reset tile size
+    this.tileSize = 'medium';
+
+    // Reset admin filters
+    this.filterMissingAuthor = false;
+    this.filterMissingCover = false;
+    this.filterGenreCountEnabled = false;
+    this.filterGenreCount = 1;
+    this.filterGenreComparison = 'less';
+
+    // Exit bulk edit mode
+    this.bulkEditMode = false;
+    this.selectedBooksForBulk.clear();
+
+    // Scroll grid to top
+    const gridEl = this.libraryGrid?.nativeElement;
+    if (gridEl) {
+      gridEl.scrollTo({ top: 0 });
+    }
+
+    this.activeLetter = '#';
+  }
+
   private getDefaultSortDirection(order: typeof this.sortOrder): 'down' | 'up' {
     return 'down';
   }
@@ -457,24 +492,7 @@ export class LibraryComponent implements OnInit {
 
         if (result.coverUrl) {
           this.logger.log('[library] Updating cover for', book.fileName, 'with URL:', result.coverUrl);
-          this.libraryApi.updateLibraryBookCover(book.fileName, result.coverUrl).subscribe({
-            next: (resp) => {
-              this.logger.log('[library] Cover update response:', resp);
-              if (resp?.coverUrl) {
-                // Add cache-busting timestamp to force browser to reload the image
-                const timestamp = new Date().getTime();
-                const separator = resp.coverUrl.includes('?') ? '&' : '?';
-                book.coverUrl = `${resp.coverUrl}${separator}t=${timestamp}`;
-                this.logger.log('[library] Cover updated successfully to:', book.coverUrl);
-              } else {
-                this.logger.warn('[library] Cover update succeeded but no coverUrl in response');
-              }
-            },
-            error: (err) => {
-              this.logger.error('[library] Failed to update book cover:', err);
-              this.logger.error('[library] Error details:', err.error);
-            }
-          });
+          this.updateBookCover(book, result.coverUrl);
         } else {
           this.logger.log('[library] No coverUrl in result, skipping cover update');
         }
@@ -548,6 +566,107 @@ export class LibraryComponent implements OnInit {
       error: (err) => {
         this.logger.error('[library] Failed to update personal rating:', err);
       }
+    });
+  }
+
+  /**
+   * Update book cover - tries to fetch as blob first (to bypass hotlink protection),
+   * then falls back to URL-based upload if blob fetch fails.
+   */
+  private updateBookCover(book: LibraryBook, coverUrl: string): void {
+    this.logger.log('[library] === COVER UPDATE START ===');
+    this.logger.log('[library] Book:', book.fileName);
+    this.logger.log('[library] Cover URL:', coverUrl);
+
+    // Try to fetch the image as a blob from the browser
+    // Browsers can bypass hotlink protection because they have valid referer headers
+    this.fetchImageAsBase64(coverUrl)
+      .then(({ base64, mimeType }) => {
+        this.logger.log('[library] ✓ Blob fetch SUCCESS');
+        this.logger.log('[library] MimeType:', mimeType);
+        this.logger.log('[library] Base64 length:', base64.length, 'chars');
+        this.logger.log('[library] Uploading bytes to backend...');
+
+        this.libraryApi.uploadLibraryBookCoverBytes(book.fileName, base64, mimeType).subscribe({
+          next: (resp) => {
+            this.logger.log('[library] ✓ Bytes upload SUCCESS');
+            this.handleCoverUpdateResponse(book, resp, coverUrl);
+          },
+          error: (err) => {
+            this.logger.error('[library] ✗ Bytes upload FAILED:', err);
+            this.logger.log('[library] Falling back to URL method...');
+            this.updateBookCoverByUrl(book, coverUrl);
+          }
+        });
+      })
+      .catch((err) => {
+        this.logger.warn('[library] ✗ Blob fetch FAILED (CORS?):', err.message || err);
+        this.logger.log('[library] Falling back to URL method...');
+        this.updateBookCoverByUrl(book, coverUrl);
+      });
+  }
+
+  private updateBookCoverByUrl(book: LibraryBook, coverUrl: string): void {
+    this.logger.log('[library] URL method: Sending URL to backend for server-side download...');
+    this.libraryApi.updateLibraryBookCover(book.fileName, coverUrl).subscribe({
+      next: (resp) => {
+        this.logger.log('[library] ✓ URL upload SUCCESS');
+        this.handleCoverUpdateResponse(book, resp, coverUrl);
+      },
+      error: (err) => {
+        this.logger.error('[library] ✗ URL upload FAILED:', err);
+        this.logger.error('[library] Error details:', err.error);
+        this.logger.log('[library] === COVER UPDATE FAILED ===');
+      }
+    });
+  }
+
+  private handleCoverUpdateResponse(
+    book: LibraryBook,
+    resp: { success?: boolean; coverUrl?: string | null },
+    requestedCoverUrl: string
+  ): void {
+    this.logger.log('[library] Backend response:', JSON.stringify(resp));
+    const timestamp = new Date().getTime();
+    if (resp?.coverUrl) {
+      const separator = resp.coverUrl.includes('?') ? '&' : '?';
+      book.coverUrl = `${resp.coverUrl}${separator}t=${timestamp}`;
+      this.logger.log('[library] ✓ Updated book.coverUrl to:', book.coverUrl);
+      this.logger.log('[library] === COVER UPDATE SUCCESS ===');
+    } else if (resp?.success) {
+      this.logger.warn('[library] Backend returned success=true but no coverUrl');
+      const separator = requestedCoverUrl.includes('?') ? '&' : '?';
+      book.coverUrl = `${requestedCoverUrl}${separator}t=${timestamp}`;
+      this.logger.log('[library] Using requested URL as fallback:', book.coverUrl);
+      this.logger.log('[library] === COVER UPDATE PARTIAL SUCCESS ===');
+    } else {
+      this.logger.error('[library] ✗ Backend response missing both coverUrl and success flag!');
+      this.logger.log('[library] === COVER UPDATE FAILED ===');
+    }
+  }
+
+  private fetchImageAsBase64(url: string): Promise<{ base64: string; mimeType: string }> {
+    return new Promise((resolve, reject) => {
+      fetch(url, { mode: 'cors' })
+        .then(response => {
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+          }
+          const mimeType = response.headers.get('content-type') || 'image/jpeg';
+          return response.blob().then(blob => ({ blob, mimeType }));
+        })
+        .then(({ blob, mimeType }) => {
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            const result = reader.result as string;
+            // Remove data URL prefix to get pure base64
+            const base64 = result.includes(',') ? result.split(',')[1] : result;
+            resolve({ base64, mimeType });
+          };
+          reader.onerror = () => reject(new Error('FileReader error'));
+          reader.readAsDataURL(blob);
+        })
+        .catch(reject);
     });
   }
 

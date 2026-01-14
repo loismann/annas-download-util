@@ -168,9 +168,7 @@ export class BookReaderComponent implements OnInit, OnDestroy {
   leftFlex = '1 1 0';
   rightFlex = '1 1 0';
   showSidebar = true;
-  showCacheSection = false;
-  showAiUsageSection = false;
-  showReaderControlsSection = false;
+  showSettingsSection = false;
   showChapterRegenerateConfirm = false;
   fontFamily: 'serif' | 'sans' | 'mono' = 'serif';
   fontSize: number = 14;
@@ -329,6 +327,18 @@ export class BookReaderComponent implements OnInit, OnDestroy {
     if (!total) return 0;
     const progress = (this.currentBookWordOffset + 1) / total;
     return Math.min(100, Math.max(0, Math.round(progress * 100)));
+  }
+
+  get currentChapterLabel(): string | null {
+    if (!this.selectedChapterId) return null;
+    const chapter = this.chapters.find(ch => ch.id === this.selectedChapterId);
+    return chapter?.displayLabel ?? chapter?.title ?? null;
+  }
+
+  get truncatedChapterLabel(): string {
+    const label = this.currentChapterLabel;
+    if (!label) return '';
+    return label.length > 20 ? label.substring(0, 20) + '...' : label;
   }
 
   // Check if current user is over their AI usage limit

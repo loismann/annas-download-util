@@ -17,7 +17,10 @@ test.describe('Book Search - Advanced Features', () => {
 
   const openAuthorSelect = async (page: any) => {
     const field = page.locator('mat-form-field', { has: page.locator('mat-label', { hasText: 'Author' }) });
-    await field.locator('mat-select').click();
+    const select = field.locator('mat-select');
+    // Wait for the dropdown to be enabled (authors loaded successfully)
+    await expect(select).toBeEnabled({ timeout: 15000 });
+    await select.click();
   };
 
   test.beforeEach(async ({ page }) => {

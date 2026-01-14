@@ -70,6 +70,15 @@ public static class CoverLookupHelpers
         if (urlLower.EndsWith(".gif"))
             return ".gif";
 
+        return DetermineImageExtensionFromBytes(imageData, null);
+    }
+
+    /// <summary>
+    /// Determines the image file extension from byte data and optional MIME type.
+    /// </summary>
+    public static string DetermineImageExtensionFromBytes(byte[] imageData, string? mimeType)
+    {
+        // First check magic bytes (most reliable)
         if (imageData.Length >= 4)
         {
             if (imageData[0] == 0x89 && imageData[1] == 0x50 && imageData[2] == 0x4E && imageData[3] == 0x47)
@@ -78,6 +87,25 @@ public static class CoverLookupHelpers
                 return ".jpg";
             if (imageData[0] == 0x47 && imageData[1] == 0x49 && imageData[2] == 0x46)
                 return ".gif";
+            // WebP: "RIFF" + size + "WEBP"
+            if (imageData.Length >= 12 &&
+                imageData[0] == 0x52 && imageData[1] == 0x49 && imageData[2] == 0x46 && imageData[3] == 0x46 &&
+                imageData[8] == 0x57 && imageData[9] == 0x45 && imageData[10] == 0x42 && imageData[11] == 0x50)
+                return ".webp";
+        }
+
+        // Fall back to MIME type if provided
+        if (!string.IsNullOrWhiteSpace(mimeType))
+        {
+            var mime = mimeType.ToLowerInvariant();
+            if (mime.Contains("png"))
+                return ".png";
+            if (mime.Contains("jpeg") || mime.Contains("jpg"))
+                return ".jpg";
+            if (mime.Contains("gif"))
+                return ".gif";
+            if (mime.Contains("webp"))
+                return ".webp";
         }
 
         return ".jpg";

@@ -13,6 +13,7 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Xml.Linq;
+using AnnasArchive.API.Configuration;
 using Serilog;
 using HtmlAgilityPack;
 using Microsoft.Extensions.Hosting;
@@ -21,8 +22,8 @@ namespace AnnasArchive.API.Services;
 
 public class LibraryWatcherService : BackgroundService
 {
-    private static readonly TimeSpan ScanInterval = TimeSpan.FromHours(1);
-    private static readonly TimeSpan DebounceWindow = TimeSpan.FromSeconds(3);
+    // Throttling configuration is now centralized in AiThrottlingConfiguration
+
     private static readonly HashSet<string> SupportedExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
         ".epub", ".pdf", ".mobi", ".azw3", ".azw", ".kfx", ".pobi", ".fb2", ".txt", ".rtf", ".lit", ".djvu"
@@ -98,14 +99,27 @@ public class LibraryWatcherService : BackgroundService
         while (!token.IsCancellationRequested)
         {
             var now = DateTime.UtcNow;
+            var processed = 0;
+
             foreach (var entry in _pending.ToArray())
             {
-                if (now - entry.Value < DebounceWindow)
+                if (token.IsCancellationRequested)
+                    break;
+
+                if (now - entry.Value < AiThrottlingConfiguration.LibraryDebounceWindow)
                     continue;
 
                 if (_pending.TryRemove(entry.Key, out _))
                 {
                     await ProcessFileAsync(libraryRoot, entry.Key, token);
+                    processed++;
+
+                    // Throttle: delay between books to prevent rate limiting
+                    if (processed > 0)
+                    {
+                        Log.Debug("[LibraryWatcher] Throttling: waiting {Delay}s before next book", AiThrottlingConfiguration.LibraryDelayBetweenBooks.TotalSeconds);
+                        await AiThrottlingConfiguration.ThrottleBetweenBooksAsync(token);
+                    }
                 }
             }
 
@@ -117,7 +131,7 @@ public class LibraryWatcherService : BackgroundService
     {
         await RunFullScanAsync(libraryRoot, token);
 
-        var timer = new PeriodicTimer(ScanInterval);
+        var timer = new PeriodicTimer(AiThrottlingConfiguration.LibraryScanInterval);
         while (await timer.WaitForNextTickAsync(token))
         {
             await RunFullScanAsync(libraryRoot, token);
@@ -136,16 +150,43 @@ public class LibraryWatcherService : BackgroundService
             DeleteLibraryArtifacts(libraryRoot, duplicate);
         }
 
-        foreach (var file in files)
+        // Filter out duplicates and process in batches
+        var filesToProcess = files.Where(f => !duplicates.Contains(f)).ToList();
+        var totalFiles = filesToProcess.Count;
+        var processedCount = 0;
+        var batchNumber = 0;
+
+        Log.Information("[LibraryWatcher] Starting full scan of {Count} files in batches of {BatchSize}", totalFiles, AiThrottlingConfiguration.BatchSize);
+
+        foreach (var batch in filesToProcess.Chunk(AiThrottlingConfiguration.BatchSize))
         {
             if (token.IsCancellationRequested)
                 break;
 
-            if (duplicates.Contains(file))
-                continue;
+            batchNumber++;
+            Log.Information("[LibraryWatcher] Processing batch {Batch} ({Processed}/{Total} files)", batchNumber, processedCount, totalFiles);
 
-            await ProcessFileAsync(libraryRoot, file, token);
+            foreach (var file in batch)
+            {
+                if (token.IsCancellationRequested)
+                    break;
+
+                await ProcessFileAsync(libraryRoot, file, token);
+                processedCount++;
+
+                // Throttle between books within a batch
+                await AiThrottlingConfiguration.ThrottleBetweenBooksAsync(token);
+            }
+
+            // Pause between batches to let rate limits recover
+            if (processedCount < totalFiles && !token.IsCancellationRequested)
+            {
+                Log.Information("[LibraryWatcher] Batch {Batch} complete. Pausing {Delay}s before next batch", batchNumber, AiThrottlingConfiguration.LibraryDelayBetweenBatches.TotalSeconds);
+                await AiThrottlingConfiguration.ThrottleLibraryBatchAsync(token);
+            }
         }
+
+        Log.Information("[LibraryWatcher] Full scan complete. Processed {Count} files", processedCount);
     }
 
     private async Task ProcessFileAsync(string libraryRoot, string filePath, CancellationToken token)
@@ -215,6 +256,11 @@ public class LibraryWatcherService : BackgroundService
 
         Log.Information($"[LibraryWatcher] Processing {Path.GetFileName(filePath)}");
         Log.Information($"[LibraryWatcher]   Existing CoverUrl: {existing?.CoverUrl}");
+        if (!string.IsNullOrWhiteSpace(existing?.CoverUrl))
+        {
+            var coverType = IsLocalCover(existing.CoverUrl) ? "local (_covers/)" : "external";
+            Log.Information($"[LibraryWatcher]   ✓ Existing {coverType} cover detected - will preserve");
+        }
 
         if (ext.Equals(".epub", StringComparison.OrdinalIgnoreCase))
         {
@@ -233,6 +279,7 @@ public class LibraryWatcherService : BackgroundService
         var aiEnrichedAt = TryGetMetaValue(meta, "aiEnrichedAt") as string;
         var goodreadsRating = TryGetMetaValue(meta, "goodreadsRating") as double?;
 
+        // API Call 1: OpenLibrary (free, high rate limit)
         OpenLibraryData? openLibraryData = null;
         if (IsMetadataReliable(title, authors))
         {
@@ -250,61 +297,77 @@ public class LibraryWatcherService : BackgroundService
                         meta["publishedDate"] = openLibraryData.FirstPublishYear.ToString();
                 }
 
-                if (string.IsNullOrWhiteSpace(coverUrl) && !string.IsNullOrWhiteSpace(openLibraryData.CoverUrl))
+                // Only use external cover if no local cover exists
+                if (!IsLocalCover(coverUrl) && string.IsNullOrWhiteSpace(coverUrl) && !string.IsNullOrWhiteSpace(openLibraryData.CoverUrl))
                     meta["coverUrl"] = openLibraryData.CoverUrl;
 
                 if (string.IsNullOrWhiteSpace(series) && !string.IsNullOrWhiteSpace(openLibraryData.Series))
                     meta["series"] = openLibraryData.Series;
             }
+
+            // Throttle between API calls
+            await AiThrottlingConfiguration.ThrottleAsync(token);
         }
 
-        if (openLibraryData != null && openLibraryData.Confidence < 0.75)
+        // API Call 2: Combined AI validation + enrichment (single call instead of two)
+        // Only call if OpenLibrary confidence is low AND no prior AI enrichment
+        if (string.IsNullOrWhiteSpace(aiEnrichedAt) && (openLibraryData?.Confidence ?? 0) < 0.75 && IsMetadataReliable(title, authors))
         {
-            var aiValidation = await ValidateOpenLibraryCandidateAsync(
-                title ?? "",
+            var aiResult = await FetchAiValidationAndEnrichmentAsync(
+                title!,
                 authors,
                 fileInfo.Name,
                 openLibraryData,
                 token);
 
-            if (aiValidation?.IsMatch == true)
+            if (aiResult != null)
             {
-                if (!string.IsNullOrWhiteSpace(openLibraryData.Title))
-                    meta["title"] = openLibraryData.Title;
-                if (openLibraryData.Authors.Length > 0)
-                    meta["authors"] = openLibraryData.Authors;
-                if (string.IsNullOrWhiteSpace(coverUrl) && !string.IsNullOrWhiteSpace(openLibraryData.CoverUrl))
-                    meta["coverUrl"] = openLibraryData.CoverUrl;
-                meta["openLibraryConfidence"] = Math.Max(openLibraryData.Confidence, 0.75);
-            }
-        }
-
-        if (string.IsNullOrWhiteSpace(aiEnrichedAt) && (openLibraryData?.Confidence ?? 0) < 0.75 && IsMetadataReliable(title, authors))
-        {
-            var aiMeta = await FetchAiMetadataAsync(title!, authors, fileInfo.Name, openLibraryData, token);
-            if (aiMeta != null)
-            {
-                meta["title"] = aiMeta.Title;
-                meta["authors"] = aiMeta.Authors;
-                meta["publishedDate"] = aiMeta.PublishedDate;
-                meta["series"] = aiMeta.Series;
-                if (!string.IsNullOrWhiteSpace(aiMeta.CoverUrl))
-                    meta["coverUrl"] = aiMeta.CoverUrl;
+                // Apply AI results
+                if (aiResult.UseOpenLibrary && openLibraryData != null)
+                {
+                    // AI validated OpenLibrary data - use it
+                    if (!string.IsNullOrWhiteSpace(openLibraryData.Title))
+                        meta["title"] = openLibraryData.Title;
+                    if (openLibraryData.Authors.Length > 0)
+                        meta["authors"] = openLibraryData.Authors;
+                    if (!IsLocalCover(coverUrl) && string.IsNullOrWhiteSpace(coverUrl) && !string.IsNullOrWhiteSpace(openLibraryData.CoverUrl))
+                        meta["coverUrl"] = openLibraryData.CoverUrl;
+                    meta["openLibraryConfidence"] = Math.Max(openLibraryData.Confidence, 0.75);
+                }
+                else if (!string.IsNullOrWhiteSpace(aiResult.Title))
+                {
+                    // Use AI-provided metadata
+                    meta["title"] = aiResult.Title;
+                    meta["authors"] = aiResult.Authors;
+                    meta["publishedDate"] = aiResult.PublishedDate;
+                    meta["series"] = aiResult.Series;
+                    var existingCover = TryGetMetaValue(meta, "coverUrl") as string;
+                    if (string.IsNullOrWhiteSpace(existingCover) && !string.IsNullOrWhiteSpace(aiResult.CoverUrl))
+                        meta["coverUrl"] = aiResult.CoverUrl;
+                }
                 meta["aiEnrichedAt"] = DateTime.UtcNow.ToString("o");
             }
+
+            // Throttle between API calls
+            await AiThrottlingConfiguration.ThrottleAsync(token);
         }
 
+        // API Call 3: Google Books (only for cover if still missing)
         coverUrl = TryGetMetaValue(meta, "coverUrl") as string;
-        if (string.IsNullOrWhiteSpace(coverUrl))
+        if (!IsLocalCover(coverUrl) && string.IsNullOrWhiteSpace(coverUrl))
         {
             var externalCover = await FetchGoogleBooksCoverAsync(title ?? "", authors, token);
             if (!string.IsNullOrWhiteSpace(externalCover))
                 meta["coverUrl"] = externalCover;
+
+            // Throttle between API calls
+            await AiThrottlingConfiguration.ThrottleAsync(token);
         }
 
+        // API Call 4: Goodreads (search only - no fallback chain)
         if (!goodreadsRating.HasValue && IsMetadataReliable(title, authors))
         {
-            var fetchedRating = await FetchGoodreadsRatingAsync(title ?? "", authors, openLibraryData, token);
+            var fetchedRating = await FetchGoodreadsRatingSimpleAsync(title ?? "", authors, token);
             if (fetchedRating.HasValue)
                 meta["goodreadsRating"] = fetchedRating.Value;
             else
@@ -433,13 +496,19 @@ public class LibraryWatcherService : BackgroundService
                         ?.Value;
                 }
 
-                if (!string.IsNullOrWhiteSpace(href))
+                // Only extract cover from EPUB if no local cover already exists
+                // This prevents overwriting user-selected covers from the edit dialog
+                var existingCoverUrl = TryGetMetaValue(meta, "coverUrl") as string;
+                if (!IsLocalCover(existingCoverUrl))
                 {
-                    await TryExtractCoverAsync(zip, opfDir, href, filePath, libraryRoot, meta, token);
-                }
-                else
-                {
-                    await TryExtractLargestImageAsync(zip, filePath, libraryRoot, meta, token);
+                    if (!string.IsNullOrWhiteSpace(href))
+                    {
+                        await TryExtractCoverAsync(zip, opfDir, href, filePath, libraryRoot, meta, token);
+                    }
+                    else
+                    {
+                        await TryExtractLargestImageAsync(zip, filePath, libraryRoot, meta, token);
+                    }
                 }
             }
         }
@@ -1532,6 +1601,191 @@ Return JSON:
         return null;
     }
 
+    /// <summary>
+    /// Combined AI validation and enrichment in a single API call.
+    /// Reduces API calls from 2 to 1 for low-confidence OpenLibrary matches.
+    /// </summary>
+    private async Task<AiValidationAndEnrichment?> FetchAiValidationAndEnrichmentAsync(
+        string title,
+        string[] authors,
+        string fileName,
+        OpenLibraryData? openLibrary,
+        CancellationToken token)
+    {
+        try
+        {
+            using var http = _httpFactory.CreateClient("OpenAI");
+            var model = "gpt-4o";
+
+            var systemPrompt = @"You are a book metadata librarian. Given a file name and current metadata, do two things:
+1. If OpenLibrary data is provided, decide if it matches the book
+2. Normalize/clean up the metadata
+
+Return ONLY valid JSON. Do not include markdown or extra text.";
+
+            var openLibraryBlock = openLibrary == null
+                ? "OpenLibrary: none"
+                : $"OpenLibrary: title={openLibrary.Title}, authors={string.Join(", ", openLibrary.Authors)}, year={openLibrary.FirstPublishYear}, coverUrl={openLibrary.CoverUrl}, series={openLibrary.Series}, confidence={openLibrary.Confidence}";
+
+            var userPrompt = $@"File name: {fileName}
+Current title: {title}
+Current authors: {string.Join(", ", authors)}
+{openLibraryBlock}
+
+Return JSON with:
+{{
+  ""useOpenLibrary"": boolean (true if OpenLibrary data matches this book),
+  ""title"": string (cleaned/normalized title if not using OpenLibrary),
+  ""authors"": string[] (cleaned authors if not using OpenLibrary),
+  ""publishedDate"": string|null,
+  ""series"": string|null,
+  ""coverUrl"": string|null (only if you know a valid cover URL)
+}}";
+
+            var payload = new
+            {
+                model,
+                input = new[]
+                {
+                    new { role = "system", content = systemPrompt },
+                    new { role = "user", content = userPrompt }
+                },
+                temperature = 0.2,
+                max_output_tokens = 400
+            };
+
+            Log.Debug("[LibraryWatcher] Calling OpenAI for combined validation+enrichment: {FileName}", fileName);
+            var response = await http.PostAsJsonAsync("https://api.openai.com/v1/responses", payload, token);
+            if (!response.IsSuccessStatusCode)
+            {
+                Log.Warning("[LibraryWatcher] OpenAI API returned {StatusCode} for {FileName}", response.StatusCode, fileName);
+                return null;
+            }
+
+            using var stream = await response.Content.ReadAsStreamAsync(token);
+            using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: token);
+            var text = ExtractResponseText(doc.RootElement);
+            if (string.IsNullOrWhiteSpace(text))
+                return null;
+
+            var cleaned = text.Trim();
+            if (cleaned.StartsWith("```"))
+            {
+                cleaned = cleaned
+                    .Replace("```json", "")
+                    .Replace("```", "")
+                    .Trim();
+            }
+
+            using var resultDoc = JsonDocument.Parse(cleaned);
+            var root = resultDoc.RootElement;
+
+            var useOpenLibrary = root.TryGetProperty("useOpenLibrary", out var useOlProp) &&
+                                 useOlProp.ValueKind == JsonValueKind.True;
+
+            var aiTitle = root.TryGetProperty("title", out var t) ? t.GetString() : null;
+            var aiAuthors = ExtractStringArray(root, "authors");
+
+            return new AiValidationAndEnrichment(
+                useOpenLibrary,
+                aiTitle,
+                aiAuthors.Length > 0 ? aiAuthors : authors,
+                root.TryGetProperty("publishedDate", out var pd) ? pd.GetString() : null,
+                root.TryGetProperty("series", out var s) ? s.GetString() : null,
+                root.TryGetProperty("coverUrl", out var cu) ? cu.GetString() : null
+            );
+        }
+        catch (Exception ex)
+        {
+            Log.Warning("[LibraryWatcher] AI validation+enrichment failed for {FileName}: {Error}", fileName, ex.Message);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Simplified Goodreads rating fetch - search only, no fallback chain.
+    /// Reduces potential 6 HTTP requests to just 1.
+    /// </summary>
+    private async Task<double?> FetchGoodreadsRatingSimpleAsync(
+        string title,
+        string[] authors,
+        CancellationToken token)
+    {
+        if (string.IsNullOrWhiteSpace(title))
+            return null;
+
+        var primaryAuthor = authors.FirstOrDefault(a => !string.IsNullOrWhiteSpace(a));
+        var query = string.IsNullOrWhiteSpace(primaryAuthor) ? title : $"{title} {primaryAuthor}";
+        var url = $"https://www.goodreads.com/search?q={Uri.EscapeDataString(query)}&search_type=books";
+
+        try
+        {
+            using var http = _httpFactory.CreateClient();
+            http.Timeout = TimeSpan.FromSeconds(10);
+            http.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36");
+            http.DefaultRequestHeaders.Accept.ParseAdd("text/html,application/xhtml+xml");
+
+            using var resp = await http.GetAsync(url, token);
+            if (!resp.IsSuccessStatusCode)
+                return null;
+
+            var html = await resp.Content.ReadAsStringAsync(token);
+            if (string.IsNullOrWhiteSpace(html))
+                return null;
+
+            var doc = new HtmlDocument();
+            doc.LoadHtml(html);
+            var rows = doc.DocumentNode.SelectNodes("//table[contains(@class,'tableList')]//tr");
+            if (rows == null || rows.Count == 0)
+                return null;
+
+            // Find best matching result from search
+            double? bestRating = null;
+            double bestScore = 0;
+
+            foreach (var row in rows.Take(5)) // Only check first 5 results
+            {
+                var titleNode = row.SelectSingleNode(".//a[contains(@class,'bookTitle')]");
+                if (titleNode == null)
+                    continue;
+
+                var candidateTitle = WebUtility.HtmlDecode(titleNode.InnerText ?? string.Empty).Trim();
+                if (string.IsNullOrWhiteSpace(candidateTitle))
+                    continue;
+
+                var authorNodes = row.SelectNodes(".//a[contains(@class,'authorName')]");
+                var candidateAuthors = authorNodes == null
+                    ? Array.Empty<string>()
+                    : authorNodes
+                        .Select(n => WebUtility.HtmlDecode(n.InnerText ?? string.Empty).Trim())
+                        .Where(n => !string.IsNullOrWhiteSpace(n))
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .ToArray();
+
+                var ratingNode = row.SelectSingleNode(".//span[contains(@class,'minirating')]");
+                var rating = ratingNode != null ? ParseGoodreadsRating(ratingNode.InnerText) : null;
+
+                var titleScore = TokenSimilarity(title, candidateTitle);
+                var authorScore = CandidateAuthorScore(authors, candidateAuthors);
+                var score = (titleScore * 0.7) + (authorScore * 0.3);
+
+                // Only accept if score is reasonable (> 0.5) and better than previous
+                if (score > 0.5 && score > bestScore && rating.HasValue)
+                {
+                    bestScore = score;
+                    bestRating = rating;
+                }
+            }
+
+            return bestRating;
+        }
+        catch (Exception ex)
+        {
+            Log.Debug("[LibraryWatcher] Goodreads simple search failed: {Error}", ex.Message);
+            return null;
+        }
+    }
+
     private static async Task<ExistingMeta?> LoadExistingMetaAsync(string metaPath, CancellationToken token)
     {
         try
@@ -1597,6 +1851,14 @@ Return JSON:
 
     private sealed record AiValidation(
         bool IsMatch);
+
+    private sealed record AiValidationAndEnrichment(
+        bool UseOpenLibrary,
+        string? Title,
+        string[] Authors,
+        string? PublishedDate,
+        string? Series,
+        string? CoverUrl);
 
     private sealed class ExistingMeta
     {
@@ -1762,5 +2024,15 @@ Return JSON:
         }
 
         return $"{size:0.0}{units[unitIndex]}";
+    }
+
+    /// <summary>
+    /// Returns true if the coverUrl is a local cover stored in _covers/ directory.
+    /// Local covers should never be overwritten by external URLs.
+    /// </summary>
+    private static bool IsLocalCover(string? coverUrl)
+    {
+        return !string.IsNullOrWhiteSpace(coverUrl) &&
+               coverUrl.StartsWith("_covers/", StringComparison.OrdinalIgnoreCase);
     }
 }

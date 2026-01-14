@@ -129,10 +129,25 @@ export class LibraryApiService {
   /**
    * Update book cover from URL.
    */
-  updateLibraryBookCover(fileName: string, coverUrl: string): Observable<{ coverUrl: string | null }> {
-    return this.http.post<{ coverUrl: string | null }>(
+  updateLibraryBookCover(fileName: string, coverUrl: string): Observable<{ success?: boolean; coverUrl?: string | null }> {
+    return this.http.post<{ success?: boolean; coverUrl?: string | null }>(
       `${this.libraryBaseUrl}/book/${encodeURIComponent(fileName)}/cover`,
       { coverUrl }
+    );
+  }
+
+  /**
+   * Upload book cover from image bytes (base64 encoded).
+   * Use this when the image needs to be fetched by the browser to bypass hotlink protection.
+   */
+  uploadLibraryBookCoverBytes(
+    fileName: string,
+    imageBase64: string,
+    mimeType?: string
+  ): Observable<{ success?: boolean; coverUrl?: string | null }> {
+    return this.http.post<{ success?: boolean; coverUrl?: string | null }>(
+      `${this.libraryBaseUrl}/book/${encodeURIComponent(fileName)}/cover-bytes`,
+      { imageBase64, mimeType }
     );
   }
 

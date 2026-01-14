@@ -108,12 +108,25 @@ public static class AuthEndpoints
         var currentUser = context.User?.FindFirst(ClaimTypes.Name)?.Value ?? "";
         var now = DateTime.UtcNow;
 
-        // Define user mappings: user name -> display initial
-        var userInitials = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        // Get access codes from config to find actual user names
+        var codesSection = cfg.GetSection("Auth:AccessCodes");
+        var codes = codesSection.Get<List<AccessCode>>() ?? new List<AccessCode>();
+
+        // Build user mappings dynamically: find users whose names contain "(Mom)" or "(Dad)"
+        // Map: actual full name -> display initial
+        var userInitials = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var code in codes)
         {
-            { "Mom", "M" },
-            { "Dad", "D" }
-        };
+            if (code.Name.Contains("(Mom)", StringComparison.OrdinalIgnoreCase))
+            {
+                userInitials[code.Name] = "M";
+            }
+            else if (code.Name.Contains("(Dad)", StringComparison.OrdinalIgnoreCase))
+            {
+                userInitials[code.Name] = "D";
+            }
+        }
 
         var activityList = new List<object>();
 

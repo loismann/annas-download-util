@@ -1,7 +1,8 @@
 import { Component, HostListener, Inject, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { MatDialogModule, MatDialogRef, MAT_DIALOG_DATA } from '@angular/material/dialog';
+import { MatDialog, MatDialogModule, MatDialogRef, MAT_DIALOG_DATA } from '@angular/material/dialog';
+import { MatDividerModule } from '@angular/material/divider';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatSelectModule } from '@angular/material/select';
 import { MatInputModule } from '@angular/material/input';
@@ -15,6 +16,7 @@ import { Router } from '@angular/router';
 import { GenreMappingService } from '../../services/genre-mapping.service';
 import { LibraryApiService } from '../../services/library-api.service';
 import { LoggerService } from '../../services/logger.service';
+import { CreateGenreDialogComponent } from '../create-genre-dialog/create-genre-dialog.component';
 
 export interface BookEditDialogData {
   title: string;
@@ -39,6 +41,7 @@ export interface BookEditDialogResult {
   authors?: string[];
   coverUrl?: string | null;
   deleted?: boolean;
+  owner?: string | null;
 }
 
 interface CoverCandidate {
@@ -61,20 +64,27 @@ interface CoverCandidate {
     MatChipsModule,
     MatIconModule,
     MatButtonModule,
-    MatProgressSpinnerModule
+    MatProgressSpinnerModule,
+    MatDividerModule
   ],
   templateUrl: './book-edit-dialog.component.html',
   styleUrls: ['./book-edit-dialog.component.scss']
 })
 export class BookEditDialogComponent implements OnInit {
   readonly separatorKeysCodes = [ENTER, COMMA] as const;
+  readonly ownerTags = ["Dad's Books", "Mom's Books", "Paul's Books"];
+  readonly ownerOptions = [
+    { value: "Dad's Books", label: "Dad's" },
+    { value: "Mom's Books", label: "Mom's" },
+    { value: "Paul's Books", label: "Paul's" }
+  ];
 
   genres: string[];
-  selectedGenre: string;
   tags: string[];
   series: string | null;
   title: string;
   authorsInput: string;
+  selectedOwner: string | null = null;
   placeholderUrl = '/assets/placeholder.jpg';
   selectedCoverUrl: string | null = null;
   manualCoverUrl = '';
@@ -99,17 +109,24 @@ export class BookEditDialogComponent implements OnInit {
     private genreMappingService: GenreMappingService,
     private libraryApi: LibraryApiService,
     private router: Router,
-    private logger: LoggerService
+    private logger: LoggerService,
+    private dialog: MatDialog
   ) {
     const fromLibrary = (data.availableGenres ?? []).filter(Boolean);
-    this.genres = fromLibrary.length > 0
+    // Filter out owner tags from genres list
+    this.genres = (fromLibrary.length > 0
       ? [...fromLibrary]
-      : [...genreMappingService.getStandardGenres()];
+      : [...genreMappingService.getStandardGenres()]
+    ).filter(g => !this.ownerTags.includes(g));
     if (!this.genres.includes('Uncategorized')) {
       this.genres.unshift('Uncategorized');
     }
-    this.selectedGenre = data.primaryGenre || 'Uncategorized';
-    this.tags = [...(data.tags || [])];
+
+    // Extract owner from tags and filter owner tags from displayed tags
+    const allTags = [...(data.tags || [])];
+    this.selectedOwner = allTags.find(tag => this.ownerTags.includes(tag)) || null;
+    this.tags = allTags.filter(tag => !this.ownerTags.includes(tag));
+
     this.series = data.series;
     this.title = data.title;
     this.authorsInput = (data.authors ?? []).join(', ');
@@ -177,26 +194,43 @@ export class BookEditDialogComponent implements OnInit {
   }
 
   onSave(): void {
-    const coverUrl = this.selectedCoverUrl && this.selectedCoverUrl !== this.data.coverUrl
-      ? this.selectedCoverUrl
-      : null;
+    // Always send selectedCoverUrl if user selected one - don't skip based on equality
+    // The backend is idempotent and this ensures covers are persisted even if a previous
+    // attempt failed silently
+    const coverUrl = this.selectedCoverUrl || null;
+
+    // Merge owner tag back into tags array
+    const finalTags = [...this.tags];
+    if (this.selectedOwner) {
+      finalTags.push(this.selectedOwner);
+    }
+
+    // Determine primary genre from tags - use first matching genre or "Uncategorized"
+    const genresLower = this.genres.map(g => g.toLowerCase());
+    const primaryGenre = this.tags.find(tag =>
+      genresLower.includes(tag.toLowerCase()) && tag !== 'Uncategorized'
+    ) || 'Uncategorized';
 
     this.logger.log('[BookEditDialog] Saving with:', {
       selectedCoverUrl: this.selectedCoverUrl,
       dataCoverUrl: this.data.coverUrl,
-      willSendCoverUrl: coverUrl
+      willSendCoverUrl: coverUrl,
+      owner: this.selectedOwner,
+      primaryGenre,
+      tags: finalTags
     });
 
     this.dialogRef.close({
-      primaryGenre: this.selectedGenre,
-      tags: this.tags,
+      primaryGenre,
+      tags: finalTags,
       series: this.series,
       title: this.title.trim() || this.data.title,
       authors: this.authorsInput
         .split(',')
         .map(author => author.trim())
         .filter(author => author.length > 0),
-      coverUrl: coverUrl
+      coverUrl: coverUrl,
+      owner: this.selectedOwner
     } as BookEditDialogResult);
   }
 
@@ -214,6 +248,44 @@ export class BookEditDialogComponent implements OnInit {
 
   get displayCoverUrl(): string {
     return this.selectedCoverUrl || this.data.coverUrl || this.placeholderUrl;
+  }
+
+  get availableGenres(): string[] {
+    // Filter out genres that are already in the tags list (case-insensitive)
+    const tagsLower = this.tags.map(t => t.toLowerCase());
+    return this.genres.filter(g =>
+      g !== 'Uncategorized' && !tagsLower.includes(g.toLowerCase())
+    );
+  }
+
+  onGenreSelected(value: string | null): void {
+    if (!value) return;
+
+    if (value === '__create_new__') {
+      this.openCreateGenreDialog();
+      return;
+    }
+
+    // Add the selected genre to tags
+    this.addTagValue(value);
+  }
+
+  private openCreateGenreDialog(): void {
+    const dialogRef = this.dialog.open(CreateGenreDialogComponent, {
+      width: '400px',
+      disableClose: false
+    });
+
+    dialogRef.afterClosed().subscribe((newGenre: string | null) => {
+      if (newGenre) {
+        // Add to genres list if not already present
+        if (!this.genres.some(g => g.toLowerCase() === newGenre.toLowerCase())) {
+          this.genres.push(newGenre);
+        }
+        // Add as a tag
+        this.addTagValue(newGenre);
+      }
+    });
   }
 
   toggleCoverPicker(): void {
@@ -249,13 +321,6 @@ export class BookEditDialogComponent implements OnInit {
     query += ' book cover';
     const searchUrl = `https://www.google.com/search?tbm=isch&q=${encodeURIComponent(query)}`;
     window.open(searchUrl, '_blank');
-  }
-
-  addSelectedGenreAsTag(): void {
-    if (!this.selectedGenre || this.selectedGenre === 'Uncategorized') {
-      return;
-    }
-    this.addTagValue(this.selectedGenre);
   }
 
   confirmDelete(): void {

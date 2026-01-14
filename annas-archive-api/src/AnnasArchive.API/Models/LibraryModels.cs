@@ -51,6 +51,8 @@ public record LibraryBookReaderUpdate(bool? Enabled);
 
 public record LibraryBookCoverUpdate(string CoverUrl);
 
+public record LibraryBookCoverBytesUpdate(string ImageBase64, string? MimeType);
+
 public record ReaderBookDto(
     string FileName,
     string ReaderKey,

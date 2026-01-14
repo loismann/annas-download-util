@@ -1,4 +1,5 @@
 using System.Text.Json;
+using AnnasArchive.API.Configuration;
 using AnnasArchive.API.Models;
 using AnnasArchive.Core.Services;
 using Dropbox.Api;
@@ -155,6 +156,12 @@ Write 300-400 words that assume the reader is intelligent but may lack specializ
                 message = $"Completed chunk {i + 1}/{chunks.Count}",
                 success = true
             }, "progress");
+
+            // Throttle between API calls to prevent rate limiting
+            if (i < chunks.Count - 1)
+            {
+                await AiThrottlingConfiguration.ThrottleBetweenItemsAsync();
+            }
         }
 
         return (chunkSummaries, promptTokensTotal, completionTokensTotal);
@@ -250,6 +257,12 @@ Write 400-500 words. Maintain educational depth while creating a flowing narrati
                 message = $"Completed section {sectionNum}/{totalSections}",
                 success = true
             }, "progress");
+
+            // Throttle between API calls to prevent rate limiting
+            if (sectionNum < totalSections)
+            {
+                await AiThrottlingConfiguration.ThrottleBetweenItemsAsync();
+            }
         }
 
         return (sectionSummaries, promptTokensTotal, completionTokensTotal);

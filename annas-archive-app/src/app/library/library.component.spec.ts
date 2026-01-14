@@ -18,6 +18,7 @@ describe('LibraryComponent', () => {
       'getLibraryBooks',
       'updateLibraryBookMetadata',
       'updateLibraryBookCover',
+      'uploadLibraryBookCoverBytes',
       'updateLibraryBookRatings',
       'deleteLibraryBook',
       'sendLibraryToKindle',
@@ -104,7 +105,7 @@ describe('LibraryComponent', () => {
       // Act
       component.onCoverClick(testBook);
 
-      // Assert - Cover update should be called
+      // Assert - Cover update should be called (after blob fetch fails and falls back to URL method)
       setTimeout(() => {
         expect(mockLibraryApiService.updateLibraryBookCover).toHaveBeenCalledWith(
           'test-book.epub',
@@ -115,7 +116,7 @@ describe('LibraryComponent', () => {
         expect(testBook.coverUrl).toContain(newCoverUrl);
         expect(testBook.coverUrl).toContain('?t=');
         done();
-      }, 50);
+      }, 150);
     });
 
     it('should not call updateLibraryBookCover when dialog returns no coverUrl', (done) => {
@@ -176,7 +177,7 @@ describe('LibraryComponent', () => {
       setTimeout(() => {
         expect(mockLibraryApiService.updateLibraryBookCover).not.toHaveBeenCalled();
         done();
-      }, 50);
+      }, 150);
     });
 
     it('should handle cover update API error gracefully', (done) => {
@@ -244,7 +245,7 @@ describe('LibraryComponent', () => {
         expect(console.error).toHaveBeenCalled();
         expect(testBook.coverUrl).toBe('http://example.com/old-cover.jpg'); // Unchanged
         done();
-      }, 50);
+      }, 150);
     });
 
     it('should add cache-busting timestamp to cover URL with existing query params', (done) => {
@@ -305,13 +306,13 @@ describe('LibraryComponent', () => {
       // Act
       component.onCoverClick(testBook);
 
-      // Assert - Should use & instead of ? for timestamp
+      // Assert - Should use & instead of ? for timestamp (after blob fetch fails and falls back to URL method)
       setTimeout(() => {
         expect(testBook.coverUrl).toContain(newCoverUrl);
         expect(testBook.coverUrl).toContain('&t=');
         expect(testBook.coverUrl).not.toContain('?t=');
         done();
-      }, 50);
+      }, 150);
     });
   });
 

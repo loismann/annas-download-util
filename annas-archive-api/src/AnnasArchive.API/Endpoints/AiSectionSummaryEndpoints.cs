@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using AnnasArchive.API.Configuration;
 using AnnasArchive.API.Helpers;
 using AnnasArchive.API.Models;
 using AnnasArchive.Core.Services;
@@ -455,6 +456,12 @@ Return format (JSON only, no explanation):
                 currentStart = chunkEnd;
 
                 Log.Information("✂️ Chunk detected: words {chunks[^1].Start}-{chunks[^1].End} ({chunks[^1].WordCount} words)");
+
+                // Proactive throttling between chunks to prevent rate limiting
+                if (currentStart < totalWords)
+                {
+                    await AiThrottlingConfiguration.ThrottleBetweenItemsAsync();
+                }
             }
 
             // Save to cache

@@ -470,12 +470,16 @@ test.describe('Library - Book Management', () => {
     await expect(page.locator('mat-dialog-container')).toBeVisible({ timeout: 10000 });
     await page.waitForTimeout(500); // Wait for dialog to fully render
 
-    // Verify the dialog contains the book data using better selectors
-    const titleInput = page.locator('mat-dialog-container input[placeholder*="Book title"]');
+    // Verify the dialog contains the book data using mat-label selectors
+    const titleInput = page.locator('mat-dialog-container mat-form-field').filter({
+      has: page.locator('mat-label', { hasText: /^Title$/ })
+    }).locator('input');
     await expect(titleInput).toBeVisible();
     await expect(titleInput).toHaveValue('Test Book');
 
-    const authorsInput = page.locator('mat-dialog-container input[placeholder*="Comma-separated"]');
+    const authorsInput = page.locator('mat-dialog-container mat-form-field').filter({
+      has: page.locator('mat-label', { hasText: 'Author(s)' })
+    }).locator('input');
     await expect(authorsInput).toBeVisible();
     await expect(authorsInput).toHaveValue('Test Author');
   });
@@ -505,7 +509,9 @@ test.describe('Library - Book Management', () => {
     await page.waitForTimeout(500);
 
     // Change title
-    const titleInput = page.locator('mat-dialog-container input[placeholder*="Book title"]');
+    const titleInput = page.locator('mat-dialog-container mat-form-field').filter({
+      has: page.locator('mat-label', { hasText: /^Title$/ })
+    }).locator('input');
     await titleInput.fill('Updated Test Book');
 
     // Save
@@ -542,7 +548,9 @@ test.describe('Library - Book Management', () => {
     await expect(page.locator('mat-dialog-container')).toBeVisible({ timeout: 10000 });
     await page.waitForTimeout(500);
 
-    const authorsInput = page.locator('mat-dialog-container input[placeholder*="Comma-separated"]');
+    const authorsInput = page.locator('mat-dialog-container mat-form-field').filter({
+      has: page.locator('mat-label', { hasText: 'Author(s)' })
+    }).locator('input');
     await authorsInput.fill('New Author, Another Author');
 
     await page.locator('mat-dialog-container button').filter({ hasText: /save/i }).click();
@@ -575,8 +583,11 @@ test.describe('Library - Book Management', () => {
     await expect(page.locator('mat-dialog-container')).toBeVisible({ timeout: 10000 });
     await page.waitForTimeout(500);
 
-    // Add a new tag
-    const tagInput = page.locator('mat-dialog-container input[placeholder*="Add tag"]');
+    // Add a new tag (Genres field has a chip input)
+    const genresField = page.locator('mat-dialog-container mat-form-field').filter({
+      has: page.locator('mat-label', { hasText: /^Genres$/ })
+    });
+    const tagInput = genresField.locator('input');
     await tagInput.fill('New Tag');
     await page.keyboard.press('Enter');
 
@@ -651,22 +662,30 @@ test.describe('Library - Book Management', () => {
     await expect(page.locator('mat-dialog-container')).toBeVisible({ timeout: 10000 });
     await page.waitForTimeout(500);
 
-    // Change primary genre - wait for select to be ready
-    const genreSelect = page.locator('mat-dialog-container mat-select');
-    await genreSelect.click();
-    await page.waitForTimeout(300);
+    // Use "Add a Genre" dropdown to add a genre (which becomes the primary genre)
+    const addGenreSelect = page.locator('mat-dialog-container mat-form-field').filter({
+      has: page.locator('mat-label', { hasText: 'Add a Genre' })
+    }).locator('mat-select');
+    await addGenreSelect.click();
+    await page.waitForTimeout(500);
 
-    // Click on any genre option that's not the current one
-    const options = page.locator('.cdk-overlay-container mat-option');
-    await expect(options.first()).toBeVisible();
+    // Wait for dropdown panel to be visible
+    const dropdownPanel = page.locator('.cdk-overlay-container mat-option');
+    await expect(dropdownPanel.first()).toBeVisible({ timeout: 5000 });
 
-    // Try to find Fantasy, or just pick the second option
-    const fantasyOption = options.filter({ hasText: 'Fantasy' });
+    // Find a genre option (not the "create new" option which contains "Would you like")
+    const genreOptions = page.locator('.cdk-overlay-container mat-option').filter({
+      hasNotText: 'Would you like'
+    });
+
+    // Click on Fantasy if available, otherwise pick any available genre
+    const fantasyOption = genreOptions.filter({ hasText: 'Fantasy' });
     if (await fantasyOption.count() > 0) {
       await fantasyOption.first().click();
+    } else if (await genreOptions.count() > 0) {
+      await genreOptions.first().click();
     } else {
-      // Just pick any different genre (second option)
-      await options.nth(1).click();
+      throw new Error('No genre options available in dropdown');
     }
 
     await page.locator('mat-dialog-container button').filter({ hasText: /save/i }).click();
@@ -700,7 +719,9 @@ test.describe('Library - Book Management', () => {
     await expect(page.locator('mat-dialog-container')).toBeVisible({ timeout: 10000 });
     await page.waitForTimeout(500);
 
-    const seriesInput = page.locator('mat-dialog-container input[placeholder*="Foundation"]');
+    const seriesInput = page.locator('mat-dialog-container mat-form-field').filter({
+      has: page.locator('mat-label', { hasText: 'Series' })
+    }).locator('input');
     await seriesInput.fill('New Series Name');
 
     await page.locator('mat-dialog-container button').filter({ hasText: /save/i }).click();
@@ -733,7 +754,9 @@ test.describe('Library - Book Management', () => {
     await expect(page.locator('mat-dialog-container')).toBeVisible({ timeout: 10000 });
     await page.waitForTimeout(500);
 
-    const seriesInput = page.locator('mat-dialog-container input[placeholder*="Foundation"]');
+    const seriesInput = page.locator('mat-dialog-container mat-form-field').filter({
+      has: page.locator('mat-label', { hasText: 'Series' })
+    }).locator('input');
     await seriesInput.fill('');
 
     await page.locator('mat-dialog-container button').filter({ hasText: /save/i }).click();
@@ -766,9 +789,9 @@ test.describe('Library - Book Management', () => {
     await expect(page.locator('mat-dialog-container')).toBeVisible({ timeout: 10000 });
     await page.waitForTimeout(500);
 
-    // Find the "Cover image URL" field (it's in the main form, not cover-picker)
+    // Find the cover URL field by its label
     const coverUrlField = page.locator('mat-dialog-container mat-form-field').filter({
-      has: page.locator('mat-label', { hasText: 'Cover image URL' })
+      has: page.locator('mat-label', { hasText: 'Set your own Cover image via URL' })
     });
     const manualUrlInput = coverUrlField.locator('input');
     await expect(manualUrlInput).toBeVisible();

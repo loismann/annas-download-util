@@ -1,6 +1,6 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { BookEditDialogComponent, BookEditDialogData } from './book-edit-dialog.component';
-import { MAT_DIALOG_DATA, MatDialogRef } from '@angular/material/dialog';
+import { MAT_DIALOG_DATA, MatDialog, MatDialogRef } from '@angular/material/dialog';
 import { GenreMappingService } from '../../services/genre-mapping.service';
 import { LibraryApiService } from '../../services/library-api.service';
 import { Router } from '@angular/router';
@@ -91,16 +91,17 @@ describe('BookEditDialogComponent', () => {
       expect(callArgs.coverUrl).toBeNull();
     });
 
-    it('should not return coverUrl when selected cover is same as original', () => {
-      // Arrange
-      component.selectedCoverUrl = testDialogData.coverUrl || null; // Same as original
+    it('should return coverUrl even when selected cover is same as original (for persistence)', () => {
+      // Arrange - set selectedCoverUrl to same as original
+      // This ensures covers are always persisted even if a previous save failed
+      component.selectedCoverUrl = testDialogData.coverUrl || null;
 
       // Act
       component.onSave();
 
-      // Assert
+      // Assert - coverUrl should be returned even if same as original
       const callArgs = mockDialogRef.close.calls.mostRecent().args[0];
-      expect(callArgs.coverUrl).toBeNull();
+      expect(callArgs.coverUrl).toBe(testDialogData.coverUrl);
     });
 
     it('should update selectedCoverUrl when applyManualCoverUrl is called', () => {
@@ -161,23 +162,159 @@ describe('BookEditDialogComponent', () => {
       // Arrange
       component.title = 'Updated Title';
       component.authorsInput = 'Updated Author';
-      component.selectedGenre = 'Science Fiction';
-      component.tags = ['updated-tag'];
+      component.tags = ['Science Fiction', 'updated-tag']; // Genre is now a tag
       component.series = 'Updated Series';
       component.selectedCoverUrl = 'http://example.com/new-cover.jpg';
+      component.selectedOwner = null;
 
       // Act
       component.onSave();
 
       // Assert
       expect(mockDialogRef.close).toHaveBeenCalledWith({
-        primaryGenre: 'Science Fiction',
-        tags: ['updated-tag'],
+        primaryGenre: 'Science Fiction', // First genre tag becomes primary
+        tags: ['Science Fiction', 'updated-tag'],
         series: 'Updated Series',
         title: 'Updated Title',
         authors: ['Updated Author'],
-        coverUrl: 'http://example.com/new-cover.jpg'
+        coverUrl: 'http://example.com/new-cover.jpg',
+        owner: null
       });
+    });
+
+    it('should set primaryGenre to Uncategorized when no genre tags', () => {
+      // Arrange
+      component.title = 'Test Book';
+      component.authorsInput = 'Test Author';
+      component.tags = ['non-genre-tag'];
+      component.series = null;
+      component.selectedCoverUrl = null;
+      component.selectedOwner = null;
+
+      // Act
+      component.onSave();
+
+      // Assert
+      const callArgs = mockDialogRef.close.calls.mostRecent().args[0];
+      expect(callArgs.primaryGenre).toBe('Uncategorized');
+    });
+  });
+
+  describe('Owner Selection', () => {
+    it('should extract owner from initial tags', () => {
+      // The test data doesn't include an owner tag, so selectedOwner should be null
+      expect(component.selectedOwner).toBeNull();
+    });
+
+    it('should filter owner tag from displayed tags and set selectedOwner when present in data', () => {
+      // Create a new component with owner tag in the data
+      const dataWithOwner: BookEditDialogData = {
+        ...testDialogData,
+        tags: ['test', "Dad's Books", 'another-tag']
+      };
+
+      // We need to create a new component instance with this data
+      const mockDialog = jasmine.createSpyObj('MatDialog', ['open']);
+      const testComponent = new BookEditDialogComponent(
+        mockDialogRef,
+        dataWithOwner,
+        mockGenreMappingService,
+        mockLibraryApiService,
+        mockRouter,
+        { log: () => {}, error: () => {}, warn: () => {} } as any, // mock logger
+        mockDialog
+      );
+
+      expect(testComponent.selectedOwner).toBe("Dad's Books");
+      expect(testComponent.tags).toEqual(['test', 'another-tag']);
+      expect(testComponent.tags).not.toContain("Dad's Books");
+    });
+
+    it('should include owner tag in saved tags when owner is selected', () => {
+      // Arrange
+      component.selectedOwner = "Dad's Books";
+      component.tags = ['test-tag'];
+
+      // Act
+      component.onSave();
+
+      // Assert
+      const callArgs = mockDialogRef.close.calls.mostRecent().args[0];
+      expect(callArgs.tags).toContain("Dad's Books");
+      expect(callArgs.tags).toContain('test-tag');
+      expect(callArgs.owner).toBe("Dad's Books");
+    });
+
+    it('should not include owner tag in saved tags when owner is null', () => {
+      // Arrange
+      component.selectedOwner = null;
+      component.tags = ['test-tag'];
+
+      // Act
+      component.onSave();
+
+      // Assert
+      const callArgs = mockDialogRef.close.calls.mostRecent().args[0];
+      expect(callArgs.tags).toEqual(['test-tag']);
+      expect(callArgs.owner).toBeNull();
+    });
+
+    it('should filter owner tags from genres list', () => {
+      // Owner tags should not appear in the genres dropdown
+      expect(component.genres).not.toContain("Dad's Books");
+      expect(component.genres).not.toContain("Mom's Books");
+      expect(component.genres).not.toContain("Paul's Books");
+    });
+  });
+
+  describe('Genre Selection', () => {
+    it('should return available genres excluding those already in tags', () => {
+      // Arrange
+      component.tags = ['Science Fiction'];
+
+      // Act
+      const available = component.availableGenres;
+
+      // Assert
+      expect(available).not.toContain('Science Fiction');
+      expect(available).toContain('Fantasy');
+      expect(available).toContain('Mystery & Detective');
+      expect(available).not.toContain('Uncategorized'); // Uncategorized should be excluded
+    });
+
+    it('should add genre to tags when onGenreSelected is called', () => {
+      // Arrange
+      component.tags = ['existing-tag'];
+
+      // Act
+      component.onGenreSelected('Fantasy');
+
+      // Assert
+      expect(component.tags).toContain('Fantasy');
+      expect(component.tags).toContain('existing-tag');
+    });
+
+    it('should not add duplicate genres to tags (case-insensitive)', () => {
+      // Arrange
+      component.tags = ['Fantasy'];
+
+      // Act
+      component.onGenreSelected('fantasy'); // lowercase
+
+      // Assert - should still only have one Fantasy tag
+      const fantasyCount = component.tags.filter(t => t.toLowerCase() === 'fantasy').length;
+      expect(fantasyCount).toBe(1);
+    });
+
+    it('should handle null genre selection', () => {
+      // Arrange
+      const initialTags = [...component.tags];
+
+      // Act
+      component.onGenreSelected(null);
+
+      // Assert
+      expect(component.tags).toEqual(initialTags);
     });
   });
 });

@@ -138,152 +138,147 @@
       </button>
     </div>
 
-    <div class="reader-controls-section" [class.dropdown-disabled]="!chapterContent">
-      <button mat-button class="cache-toggle" (click)="showReaderControlsSection = !showReaderControlsSection">
-        <mat-icon>{{ showReaderControlsSection ? 'expand_less' : 'expand_more' }}</mat-icon>
-        Display Settings
+    <div class="settings-section">
+      <button mat-button class="cache-toggle settings-toggle" (click)="showSettingsSection = !showSettingsSection">
+        <mat-icon>{{ showSettingsSection ? 'expand_less' : 'expand_more' }}</mat-icon>
+        Settings
       </button>
-      <div class="reader-controls-content" *ngIf="showReaderControlsSection">
-        <div class="control-row font-row">
-          <span class="control-label">Font</span>
-          <div class="segmented-control" role="radiogroup" aria-label="Font family">
-            <button
-              type="button"
-              class="segmented-button"
-              [class.active]="fontFamily === 'serif'"
-              [disabled]="!chapterContent"
-              (click)="fontFamily = 'serif'">
-              Serif
-            </button>
-            <button
-              type="button"
-              class="segmented-button"
-              [class.active]="fontFamily === 'sans'"
-              [disabled]="!chapterContent"
-              (click)="fontFamily = 'sans'">
-              Sans
-            </button>
-            <button
-              type="button"
-              class="segmented-button"
-              [class.active]="fontFamily === 'mono'"
-              [disabled]="!chapterContent"
-              (click)="fontFamily = 'mono'">
-              Mono
-            </button>
+      <div class="settings-content" *ngIf="showSettingsSection">
+        <div class="settings-subsection" [class.dropdown-disabled]="!chapterContent">
+          <div class="settings-subsection-header">Display</div>
+          <div class="control-row font-row">
+            <span class="control-label">Font</span>
+            <div class="segmented-control" role="radiogroup" aria-label="Font family">
+              <button
+                type="button"
+                class="segmented-button"
+                [class.active]="fontFamily === 'serif'"
+                [disabled]="!chapterContent"
+                (click)="fontFamily = 'serif'">
+                Serif
+              </button>
+              <button
+                type="button"
+                class="segmented-button"
+                [class.active]="fontFamily === 'sans'"
+                [disabled]="!chapterContent"
+                (click)="fontFamily = 'sans'">
+                Sans
+              </button>
+              <button
+                type="button"
+                class="segmented-button"
+                [class.active]="fontFamily === 'mono'"
+                [disabled]="!chapterContent"
+                (click)="fontFamily = 'mono'">
+                Mono
+              </button>
+            </div>
+          </div>
+          <div class="control-row">
+            <span class="control-label">Size</span>
+            <div class="size-stepper">
+              <button mat-icon-button aria-label="Decrease font" (click)="changeFontSize(-1)" [disabled]="!chapterContent || fontSize <= 12">
+                <mat-icon>remove</mat-icon>
+              </button>
+              <span class="size-value">{{ fontSize }}</span>
+              <button mat-icon-button aria-label="Increase font" (click)="changeFontSize(1)" [disabled]="!chapterContent || fontSize >= 28">
+                <mat-icon>add</mat-icon>
+              </button>
+            </div>
+          </div>
+          <div class="control-row">
+            <span class="control-label">Theme</span>
+            <div class="segmented-control" role="radiogroup" aria-label="Reader theme">
+              <button
+                type="button"
+                class="segmented-button"
+                [class.active]="theme === 'light'"
+                [disabled]="!chapterContent"
+                (click)="theme = 'light'">
+                Light
+              </button>
+              <button
+                type="button"
+                class="segmented-button"
+                [class.active]="theme === 'sepia'"
+                [disabled]="!chapterContent"
+                (click)="theme = 'sepia'">
+                Sepia
+              </button>
+              <button
+                type="button"
+                class="segmented-button"
+                [class.active]="theme === 'dark'"
+                [disabled]="!chapterContent"
+                (click)="theme = 'dark'">
+                Dark
+              </button>
+            </div>
           </div>
         </div>
-        <div class="control-row">
-          <span class="control-label">Size</span>
-          <div class="size-stepper">
-            <button mat-icon-button aria-label="Decrease font" (click)="changeFontSize(-1)" [disabled]="!chapterContent || fontSize <= 12">
-              <mat-icon>remove</mat-icon>
-            </button>
-            <span class="size-value">{{ fontSize }}</span>
-            <button mat-icon-button aria-label="Increase font" (click)="changeFontSize(1)" [disabled]="!chapterContent || fontSize >= 28">
-              <mat-icon>add</mat-icon>
-            </button>
-          </div>
-        </div>
-        <div class="control-row">
-          <span class="control-label">Theme</span>
-          <div class="segmented-control" role="radiogroup" aria-label="Reader theme">
-            <button
-              type="button"
-              class="segmented-button"
-              [class.active]="theme === 'light'"
-              [disabled]="!chapterContent"
-              (click)="theme = 'light'">
-              Light
-            </button>
-            <button
-              type="button"
-              class="segmented-button"
-              [class.active]="theme === 'sepia'"
-              [disabled]="!chapterContent"
-              (click)="theme = 'sepia'">
-              Sepia
-            </button>
-            <button
-              type="button"
-              class="segmented-button"
-              [class.active]="theme === 'dark'"
-              [disabled]="!chapterContent"
-              (click)="theme = 'dark'">
-              Dark
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
 
-    <button mat-stroked-button color="warn" class="w-100 reader-remove-button"
-      (click)="removeFromReader()" [disabled]="!selectedBook">
-      <mat-icon>remove_circle</mat-icon>
-      Remove book from reader
-    </button>
+        <div class="settings-subsection" *ngIf="allUsersUsage.length > 0">
+          <div class="settings-subsection-header">AI Usage</div>
+          <div *ngFor="let user of allUsersUsage" class="user-usage-block"
+               [class.warning]="user.allowanceUsedPercent >= 70 && user.allowanceUsedPercent < 90"
+               [class.danger]="user.allowanceUsedPercent >= 90">
+            <div class="user-usage-header">
+              <span class="user-name">{{ user.displayName }}</span>
+              <span class="user-cost">${{ user.totalCostUsd | number:'1.2-2' }}</span>
+            </div>
+            <mat-progress-bar
+              mode="determinate"
+              [value]="user.allowanceUsedPercent"
+              [color]="user.isOverLimit ? 'warn' : user.allowanceUsedPercent >= 70 ? 'accent' : 'primary'">
+            </mat-progress-bar>
+            <div class="user-limit-info" *ngIf="user.isOverLimit">
+              <mat-icon class="limit-icon">block</mat-icon>
+              <span>Limit reached - Resets {{ user.resetsAtUtc | date:'MMM d' }}</span>
+            </div>
+          </div>
+        </div>
 
-    <div class="ai-usage-section" *ngIf="allUsersUsage.length > 0">
-      <button mat-button class="cache-toggle" (click)="showAiUsageSection = !showAiUsageSection">
-        <mat-icon>{{ showAiUsageSection ? 'expand_less' : 'expand_more' }}</mat-icon>
-        AI Usage
-      </button>
-      <div class="ai-usage-content" *ngIf="showAiUsageSection">
-        <div *ngFor="let user of allUsersUsage" class="user-usage-block"
-             [class.warning]="user.allowanceUsedPercent >= 70 && user.allowanceUsedPercent < 90"
-             [class.danger]="user.allowanceUsedPercent >= 90">
-          <div class="user-usage-header">
-            <span class="user-name">{{ user.displayName }}</span>
-            <span class="user-cost">${{ user.totalCostUsd | number:'1.2-2' }}</span>
+        <div class="settings-subsection" *ngIf="status">
+          <div class="settings-subsection-header">Cache</div>
+          <div class="status-row">
+            <span>Indexing: {{ status.percent }}%</span>
+            <span *ngIf="status.cachedAt">Cached: {{ status.cachedAt | date:'short' }}</span>
           </div>
           <mat-progress-bar
             mode="determinate"
-            [value]="user.allowanceUsedPercent"
-            [color]="user.isOverLimit ? 'warn' : user.allowanceUsedPercent >= 70 ? 'accent' : 'primary'">
+            [value]="status.percent">
           </mat-progress-bar>
-          <div class="user-limit-info" *ngIf="user.isOverLimit">
-            <mat-icon class="limit-icon">block</mat-icon>
-            <span>Limit reached - Resets {{ user.resetsAtUtc | date:'MMM d' }}</span>
+          <div class="status-row small">
+            <span>{{ status.chaptersCached }}/{{ status.chaptersTotal }} chapters cached</span>
+            <span *ngIf="status.inProgress">Building…</span>
+          </div>
+          <div class="status-row small error" *ngIf="status.error">
+            <span>Cache error</span>
+            <span>{{ status.error }}</span>
+          </div>
+          <div class="status-actions">
+            <button mat-flat-button color="primary" class="status-btn status-btn-primary"
+              (click)="startIndexing()" [disabled]="!selectedBookPath || (status && status.inProgress)">
+              Cache
+            </button>
+            <button mat-stroked-button color="primary" class="status-btn status-btn-export"
+              (click)="exportSummaries()" [disabled]="!selectedBookPath || !status?.chaptersCached">
+              <mat-icon>download</mat-icon>
+              Export
+            </button>
+            <button mat-flat-button color="warn" class="status-btn status-btn-warn"
+              (click)="deleteIndex()" [disabled]="!selectedBookPath">
+              Delete
+            </button>
           </div>
         </div>
-      </div>
-    </div>
 
-    <div class="cache-section" *ngIf="status">
-      <button mat-button class="cache-toggle" (click)="showCacheSection = !showCacheSection">
-        <mat-icon>{{ showCacheSection ? 'expand_less' : 'expand_more' }}</mat-icon>
-        Cache Management
-      </button>
-      <div class="cache-content" *ngIf="showCacheSection">
-        <div class="status-row">
-          <span>Indexing: {{ status.percent }}%</span>
-          <span *ngIf="status.cachedAt">Cached: {{ status.cachedAt | date:'short' }}</span>
-        </div>
-        <mat-progress-bar
-          mode="determinate"
-          [value]="status.percent">
-        </mat-progress-bar>
-        <div class="status-row small">
-          <span>{{ status.chaptersCached }}/{{ status.chaptersTotal }} chapters cached</span>
-          <span *ngIf="status.inProgress">Building…</span>
-        </div>
-        <div class="status-row small error" *ngIf="status.error">
-          <span>Cache error</span>
-          <span>{{ status.error }}</span>
-        </div>
-        <div class="status-actions">
-          <button mat-flat-button color="primary" class="status-btn status-btn-primary"
-            (click)="startIndexing()" [disabled]="!selectedBookPath || (status && status.inProgress)">
-            Cache
-          </button>
-          <button mat-stroked-button color="primary" class="status-btn status-btn-export"
-            (click)="exportSummaries()" [disabled]="!selectedBookPath || !status?.chaptersCached">
-            <mat-icon>download</mat-icon>
-            Export
-          </button>
-          <button mat-flat-button color="warn" class="status-btn status-btn-warn"
-            (click)="deleteIndex()" [disabled]="!selectedBookPath">
-            Delete
+        <div class="settings-subsection settings-danger">
+          <button mat-stroked-button color="warn" class="w-100"
+            (click)="removeFromReader()" [disabled]="!selectedBook">
+            <mat-icon>remove_circle</mat-icon>
+            Remove book from reader
           </button>
         </div>
       </div>
@@ -540,18 +535,21 @@
     </div>
 
     <div class="reader-controls" *ngIf="chapterContent">
-      <div class="reader-controls-left">
+      <div class="reader-controls-left" *ngIf="!showSidebar">
         <button mat-icon-button aria-label="Previous page" (click)="pageBack()" [disabled]="!canPageBack()">
           <mat-icon>chevron_left</mat-icon>
         </button>
         <div class="page-indicator">
-          Page {{ currentPage }} / {{ totalPages }}
-          • <span class="page-indicator-muted">Book: {{ currentBookPage }} / {{ totalBookPages }}</span>
-          • <span class="page-indicator-muted">{{ bookProgressPercent }}%</span>
+          <span>{{ currentPage }} / {{ totalPages }}</span>
+          <span class="page-indicator-muted">{{ currentBookPage }} / {{ totalBookPages }}</span>
+          <span class="page-indicator-muted">{{ bookProgressPercent }}%</span>
         </div>
         <button mat-icon-button aria-label="Next page" (click)="pageForward()" [disabled]="!canPageForward()">
           <mat-icon>chevron_right</mat-icon>
         </button>
+        <span class="chapter-bubble" *ngIf="currentChapterLabel" [title]="currentChapterLabel">
+          {{ truncatedChapterLabel }}
+        </span>
       </div>
       <div class="reader-controls-right">
         <div class="control-group bookmark-group">

@@ -104,50 +104,48 @@
 
     <!-- Right Column: Edit Form -->
     <div class="form-section">
-      <div class="book-header">
-        <mat-form-field appearance="outline" class="w-100">
-          <mat-label>Title</mat-label>
-          <input matInput [(ngModel)]="title" placeholder="Book title" />
-        </mat-form-field>
-        <mat-form-field appearance="outline" class="w-100">
-          <mat-label>Authors</mat-label>
-          <input matInput [(ngModel)]="authorsInput" placeholder="Comma-separated authors" />
-        </mat-form-field>
-      </div>
+      <!-- Owner Selection -->
+      <mat-form-field appearance="outline" class="w-100 owner-field">
+        <mat-label>Who's book is this?</mat-label>
+        <mat-select [(ngModel)]="selectedOwner" name="owner">
+          <mat-option [value]="null">-- Not assigned --</mat-option>
+          <mat-option *ngFor="let opt of ownerOptions" [value]="opt.value">
+            {{ opt.label }}
+          </mat-option>
+        </mat-select>
+      </mat-form-field>
 
-      <!-- Genre Selection -->
+      <!-- Title -->
       <mat-form-field appearance="outline" class="w-100">
-        <mat-label>Genre</mat-label>
-        <mat-select [(ngModel)]="selectedGenre" name="genre">
-          <mat-option *ngFor="let genre of genres" [value]="genre">
+        <mat-label>Title</mat-label>
+        <input matInput [(ngModel)]="title" />
+      </mat-form-field>
+
+      <!-- Authors -->
+      <mat-form-field appearance="outline" class="w-100">
+        <mat-label>Author(s)</mat-label>
+        <input matInput [(ngModel)]="authorsInput" />
+      </mat-form-field>
+
+      <!-- Add a Genre -->
+      <mat-form-field appearance="outline" class="w-100 add-genre-field">
+        <mat-label>Add a Genre</mat-label>
+        <mat-select (selectionChange)="onGenreSelected($event.value)" [value]="null">
+          <mat-option value="__create_new__" class="create-genre-option">
+            <mat-icon>add_circle_outline</mat-icon>
+            Would you like to create a new genre?
+          </mat-option>
+          <mat-divider></mat-divider>
+          <mat-option *ngFor="let genre of availableGenres" [value]="genre">
             {{ genre }}
           </mat-option>
         </mat-select>
-        <mat-hint>Select the main genre that best describes this book</mat-hint>
-      </mat-form-field>
-      <div class="genre-actions">
-        <button mat-stroked-button type="button" (click)="addSelectedGenreAsTag()">+ Add as tag</button>
-      </div>
-
-      <div class="manual-cover-row">
-        <mat-form-field appearance="outline" class="w-100">
-          <mat-label>Cover image URL</mat-label>
-          <input matInput [(ngModel)]="manualCoverUrl" placeholder="https://example.com/cover.jpg" />
-        </mat-form-field>
-        <button mat-stroked-button type="button" (click)="applyManualCoverUrl()">Use URL</button>
-      </div>
-
-      <!-- Series Input -->
-      <mat-form-field appearance="outline" class="w-100">
-        <mat-label>Series (optional)</mat-label>
-        <input matInput [(ngModel)]="series" placeholder="e.g., Foundation #1" />
-        <mat-hint>Include series name and number if applicable</mat-hint>
       </mat-form-field>
 
-      <!-- Tags Input -->
+      <!-- Genres (was Tags) -->
       <mat-form-field appearance="outline" class="w-100">
-        <mat-label>Tags</mat-label>
-        <mat-chip-grid #chipGrid aria-label="Book tags">
+        <mat-label>Genres</mat-label>
+        <mat-chip-grid #chipGrid aria-label="Book genres">
           <mat-chip-row
             *ngFor="let tag of tags"
             (removed)="removeTag(tag)"
@@ -160,12 +158,25 @@
           </mat-chip-row>
         </mat-chip-grid>
         <input
-          placeholder="Add tag..."
           [matChipInputFor]="chipGrid"
           [matChipInputSeparatorKeyCodes]="separatorKeysCodes"
           (matChipInputTokenEnd)="addTag($event)"
         />
-        <mat-hint>Press Enter or comma to add tags (e.g., Space Opera, Classic)</mat-hint>
+      </mat-form-field>
+
+      <!-- Cover URL -->
+      <div class="manual-cover-row">
+        <mat-form-field appearance="outline" class="w-100">
+          <mat-label>Set your own Cover image via URL</mat-label>
+          <input matInput [(ngModel)]="manualCoverUrl" />
+        </mat-form-field>
+        <button mat-stroked-button type="button" (click)="applyManualCoverUrl()">Use URL</button>
+      </div>
+
+      <!-- Series Input -->
+      <mat-form-field appearance="outline" class="w-100">
+        <mat-label>Series (optional)</mat-label>
+        <input matInput [(ngModel)]="series" />
       </mat-form-field>
     </div>
   </div>

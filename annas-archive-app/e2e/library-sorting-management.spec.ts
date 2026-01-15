@@ -589,12 +589,17 @@ test.describe('Library - Book Management', () => {
     });
     const tagInput = genresField.locator('input');
     await tagInput.fill('New Tag');
-    await page.keyboard.press('Enter');
+    // Use comma instead of Enter - Enter can propagate to dialog and trigger default button
+    await tagInput.press(',');
 
     // Verify tag appears
     await expect(page.locator('mat-chip-row').filter({ hasText: 'New Tag' })).toBeVisible();
 
-    await page.locator('mat-dialog-container button').filter({ hasText: /save/i }).click();
+    // Wait for DOM to settle after chip is added
+    await page.waitForTimeout(300);
+
+    // Use more specific selector for save button
+    await page.locator('mat-dialog-actions button').filter({ hasText: /save/i }).click();
     await expect(page.locator('mat-dialog-container')).not.toBeVisible({ timeout: 10000 });
     await page.waitForTimeout(300);
 

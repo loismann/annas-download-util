@@ -415,4 +415,297 @@ describe('AnnaArchiveApiService', () => {
     expect(req.request.method).toBe('GET');
     req.flush(mockResponse);
   });
+
+  // ─── Error Scenario Tests ────────────────────────────────────────
+
+  describe('Error Scenarios', () => {
+    it('should handle 404 error on searchBooks', () => {
+      let errorResponse: any;
+
+      service.searchBooks('nonexistent', false).subscribe({
+        next: () => fail('Expected an error'),
+        error: (error) => { errorResponse = error; }
+      });
+
+      const req = httpMock.expectOne(req => req.url.includes('/api/anna/book'));
+      req.flush({ message: 'No books found' }, { status: 404, statusText: 'Not Found' });
+
+      expect(errorResponse.status).toBe(404);
+    });
+
+    it('should handle 500 error on searchBooks', () => {
+      let errorResponse: any;
+
+      service.searchBooks('test', false).subscribe({
+        next: () => fail('Expected an error'),
+        error: (error) => { errorResponse = error; }
+      });
+
+      const req = httpMock.expectOne(req => req.url.includes('/api/anna/book'));
+      req.flush({ message: 'Internal server error' }, { status: 500, statusText: 'Internal Server Error' });
+
+      expect(errorResponse.status).toBe(500);
+    });
+
+    it('should handle 503 service unavailable on searchBooks', () => {
+      let errorResponse: any;
+
+      service.searchBooks('test', false).subscribe({
+        next: () => fail('Expected an error'),
+        error: (error) => { errorResponse = error; }
+      });
+
+      const req = httpMock.expectOne(req => req.url.includes('/api/anna/book'));
+      req.flush({ message: 'Service unavailable' }, { status: 503, statusText: 'Service Unavailable' });
+
+      expect(errorResponse.status).toBe(503);
+    });
+
+    it('should handle network error on searchBooks', () => {
+      let errorResponse: any;
+
+      service.searchBooks('test', false).subscribe({
+        next: () => fail('Expected an error'),
+        error: (error) => { errorResponse = error; }
+      });
+
+      const req = httpMock.expectOne(req => req.url.includes('/api/anna/book'));
+      req.error(new ProgressEvent('error'), { status: 0, statusText: 'Unknown Error' });
+
+      expect(errorResponse.status).toBe(0);
+    });
+
+    it('should handle 404 error on sendToBoox', () => {
+      let errorResponse: any;
+
+      service.sendToBoox('invalid123', 'Test Book').subscribe({
+        next: () => fail('Expected an error'),
+        error: (error) => { errorResponse = error; }
+      });
+
+      const req = httpMock.expectOne(req => req.url.includes('/send-to-boox'));
+      req.flush({ message: 'Book not found' }, { status: 404, statusText: 'Not Found' });
+
+      expect(errorResponse.status).toBe(404);
+    });
+
+    it('should handle 500 error on sendToBoox', () => {
+      let errorResponse: any;
+
+      service.sendToBoox('abc123', 'Test Book').subscribe({
+        next: () => fail('Expected an error'),
+        error: (error) => { errorResponse = error; }
+      });
+
+      const req = httpMock.expectOne(req => req.url.includes('/send-to-boox'));
+      req.flush({ message: 'Dropbox upload failed' }, { status: 500, statusText: 'Internal Server Error' });
+
+      expect(errorResponse.status).toBe(500);
+    });
+
+    it('should handle 401 unauthorized on sendToKindle', () => {
+      let errorResponse: any;
+
+      service.sendToKindle('abc123', 'Test Book', 'dad').subscribe({
+        next: () => fail('Expected an error'),
+        error: (error) => { errorResponse = error; }
+      });
+
+      const req = httpMock.expectOne(req => req.url.includes('/send-to-kindle'));
+      req.flush({ message: 'Unauthorized' }, { status: 401, statusText: 'Unauthorized' });
+
+      expect(errorResponse.status).toBe(401);
+    });
+
+    it('should handle 500 error on sendToLibrary', () => {
+      let errorResponse: any;
+
+      service.sendToLibrary('abc123', 'Test Book').subscribe({
+        next: () => fail('Expected an error'),
+        error: (error) => { errorResponse = error; }
+      });
+
+      const req = httpMock.expectOne(req => req.url.includes('/send-to-library'));
+      req.flush({ message: 'Failed to save' }, { status: 500, statusText: 'Internal Server Error' });
+
+      expect(errorResponse.status).toBe(500);
+    });
+
+    it('should handle 500 error on downloadMember', () => {
+      let errorResponse: any;
+
+      service.downloadMember('abc123', 'Test Book').subscribe({
+        next: () => fail('Expected an error'),
+        error: (error) => { errorResponse = error; }
+      });
+
+      const req = httpMock.expectOne(req => req.url.includes('/download/member'));
+      // For blob response types, use error() instead of flush()
+      req.error(new ProgressEvent('error'), { status: 500, statusText: 'Internal Server Error' });
+
+      expect(errorResponse.status).toBe(500);
+    });
+
+    it('should handle 429 rate limit on downloadMember', () => {
+      let errorResponse: any;
+
+      service.downloadMember('abc123', 'Test Book').subscribe({
+        next: () => fail('Expected an error'),
+        error: (error) => { errorResponse = error; }
+      });
+
+      const req = httpMock.expectOne(req => req.url.includes('/download/member'));
+      // For blob response types, use error() instead of flush()
+      req.error(new ProgressEvent('error'), { status: 429, statusText: 'Too Many Requests' });
+
+      expect(errorResponse.status).toBe(429);
+    });
+
+    it('should handle 500 error on fetchDescriptionFromGPT4', () => {
+      let errorResponse: any;
+
+      service.fetchDescriptionFromGPT4('Test Book').subscribe({
+        next: () => fail('Expected an error'),
+        error: (error) => { errorResponse = error; }
+      });
+
+      const req = httpMock.expectOne(req => req.url.includes('/description/gpt'));
+      req.flush({ message: 'OpenAI API error' }, { status: 500, statusText: 'Internal Server Error' });
+
+      expect(errorResponse.status).toBe(500);
+    });
+
+    it('should handle 503 error on getSlumHealth', () => {
+      let errorResponse: any;
+
+      service.getSlumHealth().subscribe({
+        next: () => fail('Expected an error'),
+        error: (error) => { errorResponse = error; }
+      });
+
+      const req = httpMock.expectOne(req => req.url.includes('/api/anna/slum-health'));
+      req.flush({ message: 'Health check service unavailable' }, { status: 503, statusText: 'Service Unavailable' });
+
+      expect(errorResponse.status).toBe(503);
+    });
+
+    it('should handle 500 error on fetchCover', () => {
+      let errorResponse: any;
+
+      service.fetchCover('Test Book').subscribe({
+        next: () => fail('Expected an error'),
+        error: (error) => { errorResponse = error; }
+      });
+
+      const req = httpMock.expectOne(req => req.url.includes('/api/anna/book/cover'));
+      req.flush({ message: 'Cover lookup failed' }, { status: 500, statusText: 'Internal Server Error' });
+
+      expect(errorResponse.status).toBe(500);
+    });
+
+    it('should handle 500 error on LibGen searchBooksLibGen', () => {
+      let errorResponse: any;
+
+      service.searchBooksLibGen('test', false).subscribe({
+        next: () => fail('Expected an error'),
+        error: (error) => { errorResponse = error; }
+      });
+
+      const req = httpMock.expectOne(req => req.url.includes('/api/libgen/book'));
+      req.flush({ message: 'LibGen unavailable' }, { status: 500, statusText: 'Internal Server Error' });
+
+      expect(errorResponse.status).toBe(500);
+    });
+
+    it('should handle timeout error simulation', () => {
+      let errorResponse: any;
+
+      service.searchBooks('test', false).subscribe({
+        next: () => fail('Expected an error'),
+        error: (error) => { errorResponse = error; }
+      });
+
+      const req = httpMock.expectOne(req => req.url.includes('/api/anna/book'));
+      req.flush({ message: 'Request timeout' }, { status: 504, statusText: 'Gateway Timeout' });
+
+      expect(errorResponse.status).toBe(504);
+    });
+  });
+
+  // ─── Empty/Null Response Tests ────────────────────────────────────────
+
+  describe('Empty and Null Responses', () => {
+    it('should handle empty array from searchBooks', () => {
+      service.searchBooks('no-results', false).subscribe(books => {
+        expect(books).toEqual([]);
+        expect(books.length).toBe(0);
+      });
+
+      const req = httpMock.expectOne(req => req.url.includes('/api/anna/book'));
+      req.flush([]);
+    });
+
+    it('should handle null description from fetchDescriptionFromGPT4', () => {
+      service.fetchDescriptionFromGPT4('Unknown Book').subscribe(response => {
+        expect(response.description).toBeNull();
+      });
+
+      const req = httpMock.expectOne(req => req.url.includes('/description/gpt'));
+      req.flush({ description: null });
+    });
+
+    it('should handle null coverUrl from fetchCover', () => {
+      service.fetchCover('Unknown Book').subscribe(response => {
+        expect(response.coverUrl).toBeNull();
+      });
+
+      const req = httpMock.expectOne(req => req.url.includes('/api/anna/book/cover'));
+      req.flush({ coverUrl: null });
+    });
+
+    it('should handle empty array from getSlumHealth', () => {
+      service.getSlumHealth().subscribe(response => {
+        expect(response).toEqual([]);
+      });
+
+      const req = httpMock.expectOne(req => req.url.includes('/api/anna/slum-health'));
+      req.flush([]);
+    });
+
+    it('should handle empty array from getMirrorHealth', () => {
+      service.getMirrorHealth().subscribe(response => {
+        expect(response).toEqual([]);
+      });
+
+      const req = httpMock.expectOne(req => req.url.includes('/api/anna/mirror-health'));
+      req.flush([]);
+    });
+
+    it('should handle response with missing accountFastInfo from getDownloadStatus', () => {
+      service.getDownloadStatus().subscribe(response => {
+        expect(response.accountFastInfo).toBeUndefined();
+      });
+
+      const req = httpMock.expectOne(req => req.url.includes('/download-status'));
+      req.flush({});
+    });
+
+    it('should handle empty description from fetchDescriptionFromGoogleBooks', () => {
+      service.fetchDescriptionFromGoogleBooks('Unknown Book').subscribe(response => {
+        expect(response.description).toBe('');
+      });
+
+      const req = httpMock.expectOne(req => req.url.includes('/description/google-books'));
+      req.flush({ description: '' });
+    });
+
+    it('should handle empty description from fetchDescriptionFromOpenLibrary', () => {
+      service.fetchDescriptionFromOpenLibrary('Unknown Book').subscribe(response => {
+        expect(response.description).toBe('');
+      });
+
+      const req = httpMock.expectOne(req => req.url.includes('/description/openlibrary'));
+      req.flush({ description: '' });
+    });
+  });
 });

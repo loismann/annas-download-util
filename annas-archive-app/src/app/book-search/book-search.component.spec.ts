@@ -609,6 +609,259 @@ describe('BookSearchComponent', () => {
     });
   });
 
+  describe('Boundary tests - Download counter exact thresholds', () => {
+    it('should return red at exactly 10 downloads left', () => {
+      component.downloadsLeft = 10;
+      expect(component.downloadWarningLevel).toBe('red');
+    });
+
+    it('should return orange at exactly 11 downloads left (just above red)', () => {
+      component.downloadsLeft = 11;
+      expect(component.downloadWarningLevel).toBe('orange');
+    });
+
+    it('should return orange at exactly 20 downloads left', () => {
+      component.downloadsLeft = 20;
+      expect(component.downloadWarningLevel).toBe('orange');
+    });
+
+    it('should return yellow at exactly 21 downloads left (just above orange)', () => {
+      component.downloadsLeft = 21;
+      expect(component.downloadWarningLevel).toBe('yellow');
+    });
+
+    it('should return yellow at exactly 30 downloads left', () => {
+      component.downloadsLeft = 30;
+      expect(component.downloadWarningLevel).toBe('yellow');
+    });
+
+    it('should return none at exactly 31 downloads left (just above yellow)', () => {
+      component.downloadsLeft = 31;
+      expect(component.downloadWarningLevel).toBe('none');
+    });
+
+    it('should return red at 0 downloads left', () => {
+      component.downloadsLeft = 0;
+      expect(component.downloadWarningLevel).toBe('red');
+    });
+
+    it('should return red at negative downloads (edge case)', () => {
+      component.downloadsLeft = -5;
+      expect(component.downloadWarningLevel).toBe('red');
+    });
+  });
+
+  describe('Boundary tests - Search term edge cases', () => {
+    it('should set error when search term is empty string', () => {
+      component.searchTerm = '';
+      component.aiSearchExpanded = false;
+
+      component.onSearch();
+
+      expect(component.error).toBe('Please enter a search term.');
+      expect(mockBookSearchApiService.searchBooks).not.toHaveBeenCalled();
+    });
+
+    it('should set error when search term is only whitespace', () => {
+      component.searchTerm = '   ';
+      component.aiSearchExpanded = false;
+
+      component.onSearch();
+
+      expect(component.error).toBe('Please enter a search term.');
+      expect(mockBookSearchApiService.searchBooks).not.toHaveBeenCalled();
+    });
+
+    it('should set error when search term is tabs and spaces', () => {
+      component.searchTerm = '\t  \t  ';
+      component.aiSearchExpanded = false;
+
+      component.onSearch();
+
+      expect(component.error).toBe('Please enter a search term.');
+      expect(mockBookSearchApiService.searchBooks).not.toHaveBeenCalled();
+    });
+
+    it('should trim whitespace from search term before searching', () => {
+      component.searchTerm = '  Test Book  ';
+      component.aiSearchExpanded = false;
+      mockBookSearchApiService.searchBooks.and.returnValue(of([]));
+
+      component.onSearch();
+
+      expect(mockBookSearchApiService.searchBooks).toHaveBeenCalledWith('Test Book', false);
+    });
+
+    it('should handle search term with special characters', () => {
+      component.searchTerm = "Harry Potter & the Philosopher's Stone";
+      component.aiSearchExpanded = false;
+      mockBookSearchApiService.searchBooks.and.returnValue(of([]));
+
+      component.onSearch();
+
+      expect(mockBookSearchApiService.searchBooks).toHaveBeenCalledWith("Harry Potter & the Philosopher's Stone", false);
+    });
+
+    it('should handle search term with unicode characters', () => {
+      component.searchTerm = '日本語の本 — Émile Zola';
+      component.aiSearchExpanded = false;
+      mockBookSearchApiService.searchBooks.and.returnValue(of([]));
+
+      component.onSearch();
+
+      expect(mockBookSearchApiService.searchBooks).toHaveBeenCalledWith('日本語の本 — Émile Zola', false);
+    });
+
+    it('should handle very long search term', () => {
+      component.searchTerm = 'A'.repeat(500);
+      component.aiSearchExpanded = false;
+      mockBookSearchApiService.searchBooks.and.returnValue(of([]));
+
+      component.onSearch();
+
+      expect(mockBookSearchApiService.searchBooks).toHaveBeenCalledWith('A'.repeat(500), false);
+    });
+  });
+
+  describe('Boundary tests - Author matching edge cases', () => {
+    it('should match author with case-insensitive comparison', () => {
+      const book = createMockBook({ authors: ['STEPHEN KING'] });
+      component.books = [book];
+      component.selectedAuthor = 'stephen king';
+
+      const filtered = component.filteredBooks;
+
+      expect(filtered.length).toBe(1);
+    });
+
+    it('should match author when name has extra punctuation', () => {
+      // Punctuation is stripped: "J.K. Rowling" -> "j k rowling"
+      // "J K Rowling" -> "j k rowling" (matching tokens)
+      const book = createMockBook({ authors: ['J.K. Rowling'] });
+      component.books = [book];
+      component.selectedAuthor = 'J K Rowling';
+
+      const filtered = component.filteredBooks;
+
+      expect(filtered.length).toBe(1);
+    });
+
+    it('should match author with name tokens in different order', () => {
+      const book = createMockBook({ authors: ['Rowling J.K.'] });
+      component.books = [book];
+      component.selectedAuthor = 'J K Rowling';
+
+      const filtered = component.filteredBooks;
+
+      expect(filtered.length).toBe(1);
+    });
+
+    it('should not match when author has empty string', () => {
+      const book = createMockBook({ authors: [''] });
+      component.books = [book];
+      component.selectedAuthor = 'Stephen King';
+
+      const filtered = component.filteredBooks;
+
+      expect(filtered.length).toBe(0);
+    });
+
+    it('should handle book with empty authors array', () => {
+      const book = createMockBook({ authors: [] });
+      component.books = [book];
+      component.selectedAuthor = 'Any Author';
+
+      const filtered = component.filteredBooks;
+
+      expect(filtered.length).toBe(0);
+    });
+
+    it('should return all books when selectedAuthor is empty string', () => {
+      const book1 = createMockBook({ authors: ['Author A'] });
+      const book2 = createMockBook({ authors: ['Author B'] });
+      component.books = [book1, book2];
+      component.selectedAuthor = '';
+
+      const filtered = component.filteredBooks;
+
+      expect(filtered.length).toBe(2);
+    });
+  });
+
+  describe('Boundary tests - Large result sets', () => {
+    it('should handle 100 books in results', () => {
+      const books: BookDto[] = [];
+      for (let i = 0; i < 100; i++) {
+        books.push(createMockBook({ title: `Book ${i}`, md5: `md5-${i}` }));
+      }
+      component.books = books;
+
+      expect(component.filteredBooks.length).toBe(100);
+    });
+
+    it('should correctly filter from 100 books to subset by format', () => {
+      const books: BookDto[] = [];
+      for (let i = 0; i < 50; i++) {
+        books.push(createMockBook({ title: `EPUB Book ${i}`, md5: `epub-${i}`, format: 'EPUB' }));
+      }
+      for (let i = 0; i < 50; i++) {
+        books.push(createMockBook({ title: `PDF Book ${i}`, md5: `pdf-${i}`, format: 'PDF' }));
+      }
+      component.books = books;
+      component.selectedFormat = 'PDF';
+
+      const filtered = component.filteredBooks;
+
+      expect(filtered.length).toBe(50);
+      expect(filtered.every(b => b.format === 'PDF')).toBe(true);
+    });
+
+    it('should handle removing multiple books from large result set', () => {
+      const books: BookDto[] = [];
+      for (let i = 0; i < 50; i++) {
+        books.push(createMockBook({ title: `Book ${i}`, md5: `md5-${i}` }));
+      }
+      component.books = books;
+
+      // Remove first 10 books
+      for (let i = 0; i < 10; i++) {
+        component.removeBook(component.books[0]);
+      }
+
+      expect(component.books.length).toBe(40);
+    });
+  });
+
+  describe('Boundary tests - Health status exact thresholds', () => {
+    it('should return green at exactly 90%', () => {
+      expect(component.getHealthColorClass(90)).toBe('health-green');
+    });
+
+    it('should return yellow at exactly 89% (just below green)', () => {
+      expect(component.getHealthColorClass(89)).toBe('health-yellow');
+    });
+
+    it('should return yellow at exactly 70%', () => {
+      expect(component.getHealthColorClass(70)).toBe('health-yellow');
+    });
+
+    it('should return orange at exactly 69% (just below yellow)', () => {
+      expect(component.getHealthColorClass(69)).toBe('health-orange');
+    });
+
+    it('should return orange at exactly 50%', () => {
+      expect(component.getHealthColorClass(50)).toBe('health-orange');
+    });
+
+    it('should return red at exactly 49% (just below orange)', () => {
+      expect(component.getHealthColorClass(49)).toBe('health-red');
+    });
+
+    it('should return green at exactly 100%', () => {
+      expect(component.getHealthColorClass(100)).toBe('health-green');
+    });
+  });
+
   describe('AI Book Search - Description Source Mapping', () => {
     beforeEach(() => {
       mockAiApiService.aiBookSearch = jasmine.createSpy('aiBookSearch');

@@ -1,10 +1,11 @@
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing';
 import { LibraryComponent } from './library.component';
-import { LibraryApiService } from '../services/library-api.service';
+import { LibraryApiService, LibraryBook as ServiceLibraryBook } from '../services/library-api.service';
 import { MatDialog } from '@angular/material/dialog';
 import { AuthService } from '../services/auth.service';
-import { of, throwError } from 'rxjs';
+import { of, throwError, Subject, delay } from 'rxjs';
 import { BookEditDialogResult } from '../components/book-edit-dialog/book-edit-dialog.component';
+import { LibraryBook } from '../components/book-card/book-card.component';
 
 describe('LibraryComponent', () => {
   let component: LibraryComponent;
@@ -62,7 +63,6 @@ describe('LibraryComponent', () => {
         source: null,
         md5: null,
         savedAt: null,
-        genres: ['Fiction'],
         publishedDate: null,
         pages: null,
         goodreadsRating: null,
@@ -137,7 +137,6 @@ describe('LibraryComponent', () => {
         source: null,
         md5: null,
         savedAt: null,
-        genres: ['Fiction'],
         publishedDate: null,
         pages: null,
         goodreadsRating: null,
@@ -198,7 +197,6 @@ describe('LibraryComponent', () => {
         source: null,
         md5: null,
         savedAt: null,
-        genres: ['Fiction'],
         publishedDate: null,
         pages: null,
         goodreadsRating: null,
@@ -268,7 +266,6 @@ describe('LibraryComponent', () => {
         source: null,
         md5: null,
         savedAt: null,
-        genres: ['Fiction'],
         publishedDate: null,
         pages: null,
         goodreadsRating: null,
@@ -341,7 +338,6 @@ describe('LibraryComponent', () => {
           source: null,
           md5: null,
           savedAt: null,
-          genres: [],
           publishedDate: null,
           pages: null,
           goodreadsRating: null,
@@ -363,7 +359,6 @@ describe('LibraryComponent', () => {
           source: null,
           md5: null,
           savedAt: null,
-          genres: [],
           publishedDate: null,
           pages: null,
           goodreadsRating: null,
@@ -414,7 +409,6 @@ describe('LibraryComponent', () => {
           source: null,
           md5: null,
           savedAt: null,
-          genres: [],
           publishedDate: null,
           pages: null,
           goodreadsRating: null,
@@ -689,6 +683,376 @@ describe('LibraryComponent', () => {
         component.onSortChange();
 
         expect(component.activeLetter).toBe('#');
+      });
+    });
+  });
+
+  describe('Concurrency Tests', () => {
+    const createTestBook = (overrides: Partial<LibraryBook> = {}): LibraryBook => ({
+      title: 'Test Book',
+      authors: ['Test Author'],
+      format: 'EPUB',
+      fileSize: '1.2 MB',
+      fileName: 'test-book.epub',
+      coverUrl: null,
+      primaryGenre: 'Fiction',
+      tags: [],
+      series: null,
+      source: null,
+      md5: null,
+      savedAt: null,
+      publishedDate: null,
+      pages: null,
+      goodreadsRating: null,
+      personalRating: null,
+      dadsKindleState: 'idle',
+      momsKindleState: 'idle',
+      readerEnabled: false,
+      ...overrides
+    });
+
+    describe('Double-click protection for sendToKindle', () => {
+      it('should prevent duplicate sends when dadsKindleState is sending', () => {
+        const book = createTestBook({ dadsKindleState: 'sending' });
+        component.books = [book];
+
+        component.sendToKindle(book, 'dad');
+
+        expect(mockLibraryApiService.sendLibraryToKindle).not.toHaveBeenCalled();
+      });
+
+      it('should prevent duplicate sends when momsKindleState is sending', () => {
+        const book = createTestBook({ momsKindleState: 'sending' });
+        component.books = [book];
+
+        component.sendToKindle(book, 'mom');
+
+        expect(mockLibraryApiService.sendLibraryToKindle).not.toHaveBeenCalled();
+      });
+
+      it('should allow send to dad when only mom is sending', () => {
+        const book = createTestBook({ momsKindleState: 'sending', dadsKindleState: 'idle' });
+        component.books = [book];
+        mockLibraryApiService.sendLibraryToKindle.and.returnValue(of({ success: true }));
+
+        component.sendToKindle(book, 'dad');
+
+        expect(mockLibraryApiService.sendLibraryToKindle).toHaveBeenCalled();
+      });
+
+      it('should allow send to mom when only dad is sending', () => {
+        const book = createTestBook({ dadsKindleState: 'sending', momsKindleState: 'idle' });
+        component.books = [book];
+        mockLibraryApiService.sendLibraryToKindle.and.returnValue(of({ success: true }));
+
+        component.sendToKindle(book, 'mom');
+
+        expect(mockLibraryApiService.sendLibraryToKindle).toHaveBeenCalled();
+      });
+    });
+
+    describe('Concurrent sends to different books', () => {
+      it('should allow concurrent sends to different books', () => {
+        const book1 = createTestBook({ fileName: 'book1.epub', dadsKindleState: 'idle' });
+        const book2 = createTestBook({ fileName: 'book2.epub', dadsKindleState: 'idle' });
+        component.books = [book1, book2];
+
+        // Create subjects to control response timing
+        const response1$ = new Subject<{ success: boolean }>();
+        const response2$ = new Subject<{ success: boolean }>();
+
+        mockLibraryApiService.sendLibraryToKindle.and.callFake((fileName: string) => {
+          return fileName === 'book1.epub' ? response1$.asObservable() : response2$.asObservable();
+        });
+
+        // Start both sends
+        component.sendToKindle(book1, 'dad');
+        component.sendToKindle(book2, 'dad');
+
+        // Both books should be in sending state
+        expect(book1.dadsKindleState).toBe('sending');
+        expect(book2.dadsKindleState).toBe('sending');
+
+        // Complete book2 first
+        response2$.next({ success: true });
+        response2$.complete();
+        expect(book2.dadsKindleState).toBe('success');
+        expect(book1.dadsKindleState).toBe('sending'); // book1 still sending
+
+        // Then complete book1
+        response1$.next({ success: true });
+        response1$.complete();
+        expect(book1.dadsKindleState).toBe('success');
+      });
+    });
+
+    describe('Concurrent sends to same book different targets', () => {
+      it('should allow concurrent sends to dad and mom for same book', () => {
+        const book = createTestBook({ dadsKindleState: 'idle', momsKindleState: 'idle' });
+        component.books = [book];
+
+        const dadResponse$ = new Subject<{ success: boolean }>();
+        const momResponse$ = new Subject<{ success: boolean }>();
+
+        mockLibraryApiService.sendLibraryToKindle.and.callFake(
+          (fileName: string, title: string, target: string) => {
+            return target === 'dad' ? dadResponse$.asObservable() : momResponse$.asObservable();
+          }
+        );
+
+        // Start both sends
+        component.sendToKindle(book, 'dad');
+        component.sendToKindle(book, 'mom');
+
+        // Both targets should be in sending state
+        expect(book.dadsKindleState).toBe('sending');
+        expect(book.momsKindleState).toBe('sending');
+
+        // Complete mom first
+        momResponse$.next({ success: true });
+        momResponse$.complete();
+        expect(book.momsKindleState).toBe('success');
+        expect(book.dadsKindleState).toBe('sending');
+
+        // Then dad
+        dadResponse$.next({ success: true });
+        dadResponse$.complete();
+        expect(book.dadsKindleState).toBe('success');
+      });
+    });
+
+    describe('Concurrent rating updates', () => {
+      it('should handle rapid rating changes', () => {
+        const book = createTestBook({ personalRating: 0 });
+        component.books = [book];
+        mockLibraryApiService.updateLibraryBookRatings.and.returnValue(of(book as unknown as ServiceLibraryBook));
+
+        // Rapidly change ratings
+        component.setPersonalRating(book, 3);
+        expect(book.personalRating).toBe(3);
+
+        component.setPersonalRating(book, 5);
+        expect(book.personalRating).toBe(5);
+
+        component.setPersonalRating(book, 1);
+        expect(book.personalRating).toBe(1);
+
+        // All three calls should have been made
+        expect(mockLibraryApiService.updateLibraryBookRatings).toHaveBeenCalledTimes(3);
+      });
+
+      it('should skip update when rating is same as current', () => {
+        const book = createTestBook({ personalRating: 3 });
+        component.books = [book];
+        mockLibraryApiService.updateLibraryBookRatings.and.returnValue(of(book as unknown as ServiceLibraryBook));
+
+        component.setPersonalRating(book, 3);
+
+        expect(mockLibraryApiService.updateLibraryBookRatings).not.toHaveBeenCalled();
+      });
+
+      it('should toggle rating off when clicking 1-star on 1-star book', () => {
+        const book = createTestBook({ personalRating: 1 });
+        component.books = [book];
+        mockLibraryApiService.updateLibraryBookRatings.and.returnValue(of(book as unknown as ServiceLibraryBook));
+
+        component.setPersonalRating(book, 1);
+
+        expect(book.personalRating).toBe(0);
+        expect(mockLibraryApiService.updateLibraryBookRatings).toHaveBeenCalledWith(
+          'test-book.epub',
+          { personalRating: 0 }
+        );
+      });
+    });
+
+    describe('Concurrent bulk operations', () => {
+      it('should process bulk sends sequentially with delay', fakeAsync(() => {
+        const book1 = createTestBook({ fileName: 'book1.epub' });
+        const book2 = createTestBook({ fileName: 'book2.epub' });
+        const book3 = createTestBook({ fileName: 'book3.epub' });
+        component.books = [book1, book2, book3];
+        component.bulkEditMode = true;
+        component.selectedBooksForBulk.add('book1.epub');
+        component.selectedBooksForBulk.add('book2.epub');
+        component.selectedBooksForBulk.add('book3.epub');
+
+        mockLibraryApiService.sendLibraryToKindle.and.returnValue(of({ success: true }));
+
+        component.bulkSend('kindle-dad');
+
+        // First book should be processed immediately
+        expect(book1.dadsKindleState).toBe('success');
+
+        // Wait for delay between first and second book (2000ms)
+        tick(2000);
+        expect(book2.dadsKindleState).toBe('success');
+
+        // Wait for delay between second and third book
+        tick(2000);
+        expect(book3.dadsKindleState).toBe('success');
+
+        // Bulk edit mode should be exited
+        expect(component.bulkEditMode).toBe(false);
+        expect(component.selectedBooksForBulk.size).toBe(0);
+      }));
+
+      it('should not start bulk send when no books selected', fakeAsync(() => {
+        component.selectedBooksForBulk.clear();
+        mockLibraryApiService.sendLibraryToKindle.and.returnValue(of({ success: true }));
+
+        component.bulkSend('kindle-dad');
+        tick(100);
+
+        expect(mockLibraryApiService.sendLibraryToKindle).not.toHaveBeenCalled();
+      }));
+    });
+
+    describe('Error handling during concurrent operations', () => {
+      it('should handle errors independently for concurrent sends', () => {
+        const book1 = createTestBook({ fileName: 'book1.epub' });
+        const book2 = createTestBook({ fileName: 'book2.epub' });
+        component.books = [book1, book2];
+
+        const response1$ = new Subject<{ success: boolean }>();
+        const response2$ = new Subject<{ success: boolean }>();
+
+        mockLibraryApiService.sendLibraryToKindle.and.callFake((fileName: string) => {
+          return fileName === 'book1.epub' ? response1$.asObservable() : response2$.asObservable();
+        });
+
+        // Start both sends
+        component.sendToKindle(book1, 'dad');
+        component.sendToKindle(book2, 'dad');
+
+        // book1 fails
+        response1$.error(new Error('Network error'));
+        expect(book1.dadsKindleState).toBe('error');
+
+        // book2 succeeds
+        response2$.next({ success: true });
+        response2$.complete();
+        expect(book2.dadsKindleState).toBe('success');
+      });
+
+      it('should handle API returning success=false', () => {
+        const book = createTestBook();
+        component.books = [book];
+        mockLibraryApiService.sendLibraryToKindle.and.returnValue(of({ success: false }));
+
+        component.sendToKindle(book, 'dad');
+
+        expect(book.dadsKindleState).toBe('error');
+      });
+    });
+
+    describe('Race condition: book removal during operation', () => {
+      it('should handle book list changes during send operations', () => {
+        const book1 = createTestBook({ fileName: 'book1.epub' });
+        const book2 = createTestBook({ fileName: 'book2.epub' });
+        component.books = [book1, book2];
+
+        const response$ = new Subject<{ success: boolean }>();
+        mockLibraryApiService.sendLibraryToKindle.and.returnValue(response$.asObservable());
+
+        // Start send for book1
+        component.sendToKindle(book1, 'dad');
+        expect(book1.dadsKindleState).toBe('sending');
+
+        // Simulate book1 being removed from list (e.g., deleted via dialog)
+        component.books = [book2];
+
+        // Complete the send - should not throw
+        response$.next({ success: true });
+        response$.complete();
+
+        // book1 reference should still be updated even if removed from list
+        expect(book1.dadsKindleState).toBe('success');
+      });
+    });
+
+    describe('Concurrent filter changes', () => {
+      const createTestBooks = (count: number) => {
+        // Create books where higher-numbered books are newer
+        // Title sort: Book 0, 1, 2... (alphabetical)
+        // Recent sort: Book 9, 8, 7... (newest first)
+        return Array.from({ length: count }, (_, i) => createTestBook({
+          fileName: `book-${i}.epub`,
+          title: `Book ${i}`,
+          primaryGenre: i % 2 === 0 ? 'Fiction' : 'Non-Fiction',
+          personalRating: i % 5,
+          // Book 0 is oldest (Jan 1), Book 9 is newest (Jan 10)
+          savedAt: new Date(2024, 0, i + 1).toISOString()
+        }));
+      };
+
+      it('should handle rapid filter changes', () => {
+        component.books = createTestBooks(20);
+
+        // Rapidly change filters
+        component.selectedGenre = 'Fiction';
+        const filtered1 = component.filteredBooks;
+
+        component.selectedGenre = 'Non-Fiction';
+        const filtered2 = component.filteredBooks;
+
+        component.selectedGenre = '';
+        const filtered3 = component.filteredBooks;
+
+        // Each call should return consistent filtered results
+        expect(filtered1.every(b => b.primaryGenre === 'Fiction')).toBe(true);
+        expect(filtered2.every(b => b.primaryGenre === 'Non-Fiction')).toBe(true);
+        expect(filtered3.length).toBe(20);
+      });
+
+      it('should handle rapid sort changes', () => {
+        component.books = createTestBooks(10);
+
+        component.sortOrder = 'title';
+        const sorted1 = component.filteredBooks;
+
+        component.sortOrder = 'recent';
+        const sorted2 = component.filteredBooks;
+
+        component.sortOrder = 'stars';
+        const sorted3 = component.filteredBooks;
+
+        // Title sort and recent sort should produce different orders
+        // (Book 0 is oldest, Book 9 is newest, so recent should be reversed)
+        expect(sorted1).not.toEqual(sorted2);
+      });
+    });
+
+    describe('State consistency after concurrent operations', () => {
+      it('should maintain consistent state after multiple operations complete', () => {
+        const book = createTestBook();
+        component.books = [book];
+
+        // Setup staggered responses
+        const kindleResponse$ = new Subject<{ success: boolean }>();
+        const ratingResponse$ = new Subject<ServiceLibraryBook>();
+
+        mockLibraryApiService.sendLibraryToKindle.and.returnValue(kindleResponse$.asObservable());
+        mockLibraryApiService.updateLibraryBookRatings.and.returnValue(ratingResponse$.asObservable());
+
+        // Start multiple operations
+        component.sendToKindle(book, 'dad');
+        component.setPersonalRating(book, 4);
+
+        expect(book.dadsKindleState).toBe('sending');
+        expect(book.personalRating).toBe(4); // Optimistically updated
+
+        // Complete rating first
+        ratingResponse$.next(book as unknown as ServiceLibraryBook);
+        ratingResponse$.complete();
+
+        // Complete kindle send
+        kindleResponse$.next({ success: true });
+        kindleResponse$.complete();
+
+        // Both should reflect final state
+        expect(book.dadsKindleState).toBe('success');
+        expect(book.personalRating).toBe(4);
       });
     });
   });

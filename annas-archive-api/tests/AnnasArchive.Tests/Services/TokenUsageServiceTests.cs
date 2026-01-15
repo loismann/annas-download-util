@@ -377,4 +377,226 @@ public class TokenUsageServiceTests : IDisposable
         Assert.True(lastResetDate <= DateTime.UtcNow);
         Assert.True(lastResetDate > DateTime.UtcNow.AddHours(-1)); // Should be very recent
     }
+
+    #region Month Boundary Tests
+
+    [Fact]
+    public void MonthBoundary_WhenUsageFromPreviousMonth_ShouldAutoReset()
+    {
+        // Arrange - Create a file with last month's date
+        const string userId = "month-boundary-user";
+        var lastMonth = DateTime.UtcNow.AddMonths(-1);
+        var oldUsageJson = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            PromptTokens = 50000L,
+            CompletionTokens = 25000L,
+            LastResetDate = lastMonth
+        });
+
+        var filePath = Path.Combine(_testDirectory, $"{userId}.json");
+        File.WriteAllText(filePath, oldUsageJson);
+
+        // Act - GetTotals should trigger auto-reset
+        var totals = _service.GetTotals(userId);
+
+        // Assert - Should be reset to zero
+        Assert.Equal(0, totals.PromptTokens);
+        Assert.Equal(0, totals.CompletionTokens);
+        Assert.Equal(0, totals.TotalTokens);
+    }
+
+    [Fact]
+    public void MonthBoundary_WhenUsageFromCurrentMonth_ShouldNotReset()
+    {
+        // Arrange - Create a file with current month's date
+        const string userId = "current-month-user";
+        var currentMonth = DateTime.UtcNow;
+        var usageJson = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            PromptTokens = 50000L,
+            CompletionTokens = 25000L,
+            LastResetDate = currentMonth
+        });
+
+        var filePath = Path.Combine(_testDirectory, $"{userId}.json");
+        File.WriteAllText(filePath, usageJson);
+
+        // Act
+        var totals = _service.GetTotals(userId);
+
+        // Assert - Should preserve values
+        Assert.Equal(50000, totals.PromptTokens);
+        Assert.Equal(25000, totals.CompletionTokens);
+        Assert.Equal(75000, totals.TotalTokens);
+    }
+
+    [Fact]
+    public void MonthBoundary_YearRollover_ShouldAutoReset()
+    {
+        // Arrange - Create a file with last year's date (December)
+        const string userId = "year-rollover-user";
+        var lastYear = new DateTime(DateTime.UtcNow.Year - 1, 12, 15, 0, 0, 0, DateTimeKind.Utc);
+        var oldUsageJson = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            PromptTokens = 100000L,
+            CompletionTokens = 50000L,
+            LastResetDate = lastYear
+        });
+
+        var filePath = Path.Combine(_testDirectory, $"{userId}.json");
+        File.WriteAllText(filePath, oldUsageJson);
+
+        // Act - GetTotals should trigger auto-reset
+        var totals = _service.GetTotals(userId);
+
+        // Assert - Should be reset to zero (different year)
+        Assert.Equal(0, totals.PromptTokens);
+        Assert.Equal(0, totals.CompletionTokens);
+        Assert.Equal(0, totals.TotalTokens);
+    }
+
+    [Fact]
+    public void MonthBoundary_SameYearDifferentMonth_ShouldAutoReset()
+    {
+        // Arrange - Create a file from 2 months ago but same year
+        const string userId = "same-year-diff-month-user";
+        var twoMonthsAgo = DateTime.UtcNow.AddMonths(-2);
+        var oldUsageJson = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            PromptTokens = 75000L,
+            CompletionTokens = 35000L,
+            LastResetDate = twoMonthsAgo
+        });
+
+        var filePath = Path.Combine(_testDirectory, $"{userId}.json");
+        File.WriteAllText(filePath, oldUsageJson);
+
+        // Act
+        var totals = _service.GetTotals(userId);
+
+        // Assert - Should be reset
+        Assert.Equal(0, totals.PromptTokens);
+        Assert.Equal(0, totals.CompletionTokens);
+    }
+
+    [Fact]
+    public void MonthBoundary_IsOverLimit_ShouldCheckAfterAutoReset()
+    {
+        // Arrange - Create a file with high usage from last month
+        const string userId = "over-limit-user";
+        var lastMonth = DateTime.UtcNow.AddMonths(-1);
+        var oldUsageJson = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            PromptTokens = 500000L,
+            CompletionTokens = 250000L,
+            LastResetDate = lastMonth
+        });
+
+        var filePath = Path.Combine(_testDirectory, $"{userId}.json");
+        File.WriteAllText(filePath, oldUsageJson);
+
+        // Act - Check if over limit (should auto-reset first)
+        var isOver = _service.IsOverLimit(userId, 100000);
+
+        // Assert - Should NOT be over limit because usage was reset
+        Assert.False(isOver);
+    }
+
+    [Fact]
+    public void MonthBoundary_GetAllUsersUsage_ShouldAutoResetAllStaleUsers()
+    {
+        // Arrange - Create files with various dates
+        var lastMonth = DateTime.UtcNow.AddMonths(-1);
+        var currentMonth = DateTime.UtcNow;
+
+        // Old user from last month
+        var oldUserJson = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            PromptTokens = 50000L,
+            CompletionTokens = 25000L,
+            LastResetDate = lastMonth
+        });
+        File.WriteAllText(Path.Combine(_testDirectory, "old-user.json"), oldUserJson);
+
+        // Current user from this month
+        var currentUserJson = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            PromptTokens = 30000L,
+            CompletionTokens = 15000L,
+            LastResetDate = currentMonth
+        });
+        File.WriteAllText(Path.Combine(_testDirectory, "current-user.json"), currentUserJson);
+
+        // Act
+        var allUsage = _service.GetAllUsersUsage();
+
+        // Assert
+        Assert.Equal(2, allUsage.Count);
+
+        // Old user should be reset to zero
+        Assert.Equal(0, allUsage["old-user"].PromptTokens);
+        Assert.Equal(0, allUsage["old-user"].CompletionTokens);
+
+        // Current user should retain values
+        Assert.Equal(30000, allUsage["current-user"].PromptTokens);
+        Assert.Equal(15000, allUsage["current-user"].CompletionTokens);
+    }
+
+    [Fact]
+    public void MonthBoundary_AddUsage_ShouldWorkAfterAutoReset()
+    {
+        // Arrange - Create a file with last month's usage
+        const string userId = "add-after-reset-user";
+        var lastMonth = DateTime.UtcNow.AddMonths(-1);
+        var oldUsageJson = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            PromptTokens = 100000L,
+            CompletionTokens = 50000L,
+            LastResetDate = lastMonth
+        });
+
+        var filePath = Path.Combine(_testDirectory, $"{userId}.json");
+        File.WriteAllText(filePath, oldUsageJson);
+
+        // First call triggers auto-reset
+        var initialTotals = _service.GetTotals(userId);
+        Assert.Equal(0, initialTotals.TotalTokens);
+
+        // Act - Add new usage after reset
+        _service.AddUsage(userId, 1000, 500);
+        var newTotals = _service.GetTotals(userId);
+
+        // Assert - Should only have new usage
+        Assert.Equal(1000, newTotals.PromptTokens);
+        Assert.Equal(500, newTotals.CompletionTokens);
+        Assert.Equal(1500, newTotals.TotalTokens);
+    }
+
+    [Fact]
+    public void MonthBoundary_ResetDate_ShouldUpdateAfterAutoReset()
+    {
+        // Arrange - Create a file with old date
+        const string userId = "reset-date-user";
+        var lastMonth = DateTime.UtcNow.AddMonths(-1);
+        var oldUsageJson = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            PromptTokens = 50000L,
+            CompletionTokens = 25000L,
+            LastResetDate = lastMonth
+        });
+
+        var filePath = Path.Combine(_testDirectory, $"{userId}.json");
+        File.WriteAllText(filePath, oldUsageJson);
+
+        // Act - Trigger auto-reset
+        _service.GetTotals(userId);
+        var allUsage = _service.GetAllUsersUsage();
+
+        // Assert - LastResetDate should be updated to current month
+        var (_, _, _, lastResetDate) = allUsage[userId];
+        Assert.Equal(DateTime.UtcNow.Year, lastResetDate.Year);
+        Assert.Equal(DateTime.UtcNow.Month, lastResetDate.Month);
+    }
+
+    #endregion
 }

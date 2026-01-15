@@ -108,18 +108,22 @@ public class LruCache<TKey, TValue> where TKey : notnull
     /// <returns>True if the key was found, false otherwise</returns>
     public bool TryGetValue(TKey key, out TValue? value)
     {
-        if (_cache.TryGetValue(key, out var node))
+        lock (_lock)
         {
-            lock (_lock)
+            if (_cache.TryGetValue(key, out var node))
             {
                 // Move to front (most recently used)
-                node.Value.LastAccessedAt = DateTime.UtcNow;
-                _lruList.Remove(node);
-                _lruList.AddFirst(node);
+                // Verify node is still in the list (could have been removed by another thread before lock)
+                if (node.List == _lruList)
+                {
+                    node.Value.LastAccessedAt = DateTime.UtcNow;
+                    _lruList.Remove(node);
+                    _lruList.AddFirst(node);
+                }
+                Interlocked.Increment(ref _hits);
+                value = node.Value.Value;
+                return true;
             }
-            Interlocked.Increment(ref _hits);
-            value = node.Value.Value;
-            return true;
         }
 
         Interlocked.Increment(ref _misses);

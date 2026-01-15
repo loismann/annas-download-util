@@ -57,3 +57,15 @@ export const ANIMATION_DELAY_MS = 100;
 
 /** Delay after API response before updating UI (500ms) */
 export const POST_API_DELAY_MS = 500;
+
+/** Render delay for DOM updates to settle (100ms) */
+export const RENDER_DELAY_MS = 100;
+
+/** Delay between batch operations to avoid overwhelming the server (2 seconds) */
+export const BATCH_DELAY_MS = 2000;
+
+/** Modal transition animation duration (300ms) */
+export const MODAL_TRANSITION_MS = 300;
+
+/** General debounce delay for input fields (300ms) */
+export const DEBOUNCE_MS = 300;

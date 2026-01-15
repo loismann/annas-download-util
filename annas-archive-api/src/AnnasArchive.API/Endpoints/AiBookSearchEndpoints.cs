@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using AnnasArchive.API.Configuration;
+using AnnasArchive.API.Constants;
 using AnnasArchive.API.Helpers;
 using AnnasArchive.API.Models;
 using AnnasArchive.API.Services;
@@ -16,7 +17,6 @@ namespace AnnasArchive.API.Endpoints;
 public static class AiBookSearchEndpoints
 {
     // OpenLibrary author cache for suggest-authors endpoint
-    private static readonly TimeSpan OpenLibraryAuthorCacheTtl = TimeSpan.FromHours(6);
     private static readonly Dictionary<string, (DateTime fetchedAt, List<AuthorSuggestion> authors)> OpenLibraryAuthorCache = new();
     private static readonly object OpenLibraryAuthorCacheLock = new();
 
@@ -1080,7 +1080,7 @@ Rules:
         {
             if (OpenLibraryAuthorCache.TryGetValue(key, out var entry))
             {
-                if (DateTime.UtcNow - entry.fetchedAt <= OpenLibraryAuthorCacheTtl)
+                if (DateTime.UtcNow - entry.fetchedAt <= HttpTimeouts.AuthorCacheTtl)
                 {
                     authors = entry.authors;
                     return true;
@@ -1112,7 +1112,7 @@ Rules:
         try
         {
             using var http = httpFactory.CreateClient();
-            http.Timeout = TimeSpan.FromSeconds(3);
+            http.Timeout = HttpTimeouts.OpenLibraryCacheLookup;
 
             var query = Uri.EscapeDataString(title.Trim());
             var url = $"https://openlibrary.org/search.json?title={query}&limit=10";

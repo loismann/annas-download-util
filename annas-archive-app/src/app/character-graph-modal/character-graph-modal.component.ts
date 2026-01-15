@@ -7,6 +7,7 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { AiApiService } from '../services/ai-api.service';
 import { CharacterGraphResponse } from '../models/dropbox-epub.model';
 import { LoggerService } from '../services/logger.service';
+import { RENDER_DELAY_MS } from '../constants/timeouts';
 
 declare var anychart: any;
 
@@ -67,7 +68,7 @@ export class CharacterGraphModalComponent implements OnInit, AfterViewInit, OnDe
           this.logger.log(`✅ Using cached graph (${response.summaryCount} summaries)`);
           this.graphData = response;
           this.loading = false;
-          setTimeout(() => this.renderGraph(), 100);
+          setTimeout(() => this.renderGraph(), RENDER_DELAY_MS);
         }
       },
       error: () => {
@@ -91,7 +92,7 @@ export class CharacterGraphModalComponent implements OnInit, AfterViewInit, OnDe
       next: graph => {
         this.graphData = graph;
         this.loading = false;
-        setTimeout(() => this.renderGraph(), 100);
+        setTimeout(() => this.renderGraph(), RENDER_DELAY_MS);
         this.logger.log('✅ Character graph generated:', graph);
       },
       error: err => {

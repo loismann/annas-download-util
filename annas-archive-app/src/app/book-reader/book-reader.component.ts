@@ -37,7 +37,10 @@ import {
   ChunkBoundariesResponse,
   SectionSummaryResponse,
   LibraryReaderBook,
-  UserTokenUsage
+  UserTokenUsage,
+  SummarySSEEvent,
+  ChunkBoundarySSEEvent,
+  LearnMoreRequestPayload
 } from '../models/dropbox-epub.model';
 import { AiApiService } from '../services/ai-api.service';
 import { LibraryApiService } from '../services/library-api.service';
@@ -47,6 +50,7 @@ import { LoggerService } from '../services/logger.service';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { marked } from 'marked';
 import { Subject } from 'rxjs';
+import { PROGRESS_MESSAGE_DURATION_MS, SUCCESS_MESSAGE_DURATION_MS } from '../constants/timeouts';
 import { takeUntil } from 'rxjs/operators';
 
 interface ViewedBook {
@@ -112,10 +116,10 @@ export class BookReaderComponent implements OnInit, OnDestroy {
 
   previouslyViewed: ViewedBook[] = [];
   status: DropboxEpubStatus | null = null;
-  private statusPoll: any;
+  private statusPoll: ReturnType<typeof setInterval> | null = null;
   private statusPollAttempts = 0;
   private lastStatusPercent: number | null = null;
-  private timeoutIds: any[] = [];
+  private timeoutIds: ReturnType<typeof setTimeout>[] = [];
   private pendingRestorePosition: { readerKey: string; chapterId: number; wordOffset: number } | null = null;
   private measurementEl: HTMLElement | null = null;
   private resizeObserver: ResizeObserver | null = null;
@@ -209,7 +213,7 @@ export class BookReaderComponent implements OnInit, OnDestroy {
   private autoSelectFirstChapter = false;
   private autoSelectChapterId: number | null = null;
 
-  get readerTextStyles(): any {
+  get readerTextStyles(): { 'font-family': string; 'font-size.px': number } {
     return {
       'font-family': this.fontFamily === 'serif'
         ? '"Georgia", "Times New Roman", serif'
@@ -1301,7 +1305,7 @@ export class BookReaderComponent implements OnInit, OnDestroy {
     });
   }
 
-  private handleSSEEvent(event: any): void {
+  private handleSSEEvent(event: SummarySSEEvent): void {
     this.logger.log('Handling SSE event:', event);
 
     // Run inside Angular zone to trigger change detection
@@ -1310,10 +1314,10 @@ export class BookReaderComponent implements OnInit, OnDestroy {
         // Progress event
         this.logger.log(`Progress: ${event.stage} ${event.stepNumber}/${event.totalSteps}`);
         this.chapterSummaryProgress = {
-          stage: event.stage as any,
+          stage: event.stage,
           currentStep: event.stepNumber,
-          totalSteps: event.totalSteps,
-          message: event.message,
+          totalSteps: event.totalSteps ?? 1,
+          message: event.message ?? '',
           error: event.error
         };
       } else if (event.summary) {
@@ -1321,9 +1325,9 @@ export class BookReaderComponent implements OnInit, OnDestroy {
         this.logger.log('Summary complete! Length:', event.summary.length);
         this.fullChapterSummary = event.summary;
         this.fullSummaryTokens = {
-          total: event.totalTokens,
-          prompt: event.promptTokens,
-          completion: event.completionTokens,
+          total: event.totalTokens ?? 0,
+          prompt: event.promptTokens ?? 0,
+          completion: event.completionTokens ?? 0,
           allowancePercent: event.allowanceUsedPercent ?? undefined,
           remaining: event.tokensRemaining ?? undefined
         };
@@ -1338,27 +1342,27 @@ export class BookReaderComponent implements OnInit, OnDestroy {
 
         this.loadingFullChapterSummary = false;
 
-        const resp = {
+        const resp: FullChapterSummaryResponse = {
           summary: event.summary,
-          promptTokens: event.promptTokens,
-          completionTokens: event.completionTokens,
-          totalTokens: event.totalTokens,
+          promptTokens: event.promptTokens ?? 0,
+          completionTokens: event.completionTokens ?? 0,
+          totalTokens: event.totalTokens ?? 0,
           allowanceUsedPercent: event.allowanceUsedPercent,
           tokensRemaining: event.tokensRemaining,
-          cachedAt: event.cachedAt,
+          cachedAt: event.cachedAt ?? new Date().toISOString(),
           steps: []
         };
         this.fullChapterSummaryCache.set(this.selectedChapterId!, resp);
         this.refreshTokenUsage();
 
-        this.timeoutIds.push(setTimeout(() => this.chapterSummaryProgress = null, 5000));
+        this.timeoutIds.push(setTimeout(() => this.chapterSummaryProgress = null, PROGRESS_MESSAGE_DURATION_MS));
       } else if (event.message && event.error) {
         // Error event
         this.logger.error('Error event:', event);
         this.chapterSummaryProgress = {
           stage: 'error',
-          currentStep: event.stepNumber || 0,
-          totalSteps: event.totalSteps || 1,
+          currentStep: event.stepNumber ?? 0,
+          totalSteps: event.totalSteps ?? 1,
           message: event.message,
           error: event.error
         };
@@ -1648,23 +1652,27 @@ export class BookReaderComponent implements OnInit, OnDestroy {
     try {
       const raw = localStorage.getItem('epub_recent');
       if (!raw) return;
-      const parsed = JSON.parse(raw) as any[];
+      const parsed: unknown = JSON.parse(raw);
       if (!Array.isArray(parsed)) {
         this.previouslyViewed = [];
         return;
       }
 
-      this.previouslyViewed = parsed.map(item => {
-        if ('fileName' in item && 'readerKey' in item) {
-          return item as ViewedBook;
+      this.previouslyViewed = parsed.map((item: unknown) => {
+        if (typeof item === 'object' && item !== null) {
+          const obj = item as Record<string, unknown>;
+          if ('fileName' in obj && 'readerKey' in obj) {
+            return obj as unknown as ViewedBook;
+          }
+          return {
+            fileName: (obj['path'] as string) ?? '',
+            readerKey: (obj['path'] as string) ?? '',
+            title: (obj['name'] as string) ?? (obj['path'] as string) ?? 'Unknown',
+            updatedAt: (obj['serverModified'] as string) ?? undefined
+          } as ViewedBook;
         }
-        return {
-          fileName: item.path ?? '',
-          readerKey: item.path ?? '',
-          title: item.name ?? item.path ?? 'Unknown',
-          updatedAt: item.serverModified ?? undefined
-        } as ViewedBook;
-      }).filter(entry => entry.fileName && entry.readerKey);
+        return null;
+      }).filter((entry): entry is ViewedBook => entry !== null && !!entry.fileName && !!entry.readerKey);
       this.reconcilePreviouslyViewed();
     } catch {
       this.previouslyViewed = [];
@@ -2015,7 +2023,7 @@ export class BookReaderComponent implements OnInit, OnDestroy {
     this.refreshVocabLists();
   }
 
-  private fetchLearnMoreAndImages(payload: any, cacheResult: boolean): void {
+  private fetchLearnMoreAndImages(payload: LearnMoreRequestPayload, cacheResult: boolean): void {
     this.loadingLearnMore = true;
     this.logger.log(`Fetching learn more for "${payload.term}"`);
 
@@ -2197,7 +2205,7 @@ export class BookReaderComponent implements OnInit, OnDestroy {
       .pipe(takeUntil(this.destroy$))
       .subscribe({
       next: cards => {
-        const normalized = Array.isArray(cards) ? cards : [cards as any];
+        const normalized: FlashcardItem[] = Array.isArray(cards) ? cards : [cards];
         const updated = [...this.flashcards];
         normalized.forEach(card => {
           const idx = updated.findIndex(fc => fc.term.toLowerCase() === card.term.toLowerCase());
@@ -2837,7 +2845,7 @@ DO NOT include common words. Only create flashcards for terms that significantly
   private setupResizeObserver(): void {
     if (this.resizeObserver || !this.textWindowRef) return;
 
-    let resizeTimeout: any;
+    let resizeTimeout: ReturnType<typeof setTimeout>;
     this.resizeObserver = new ResizeObserver(() => {
       // Debounce resize events
       clearTimeout(resizeTimeout);
@@ -2965,16 +2973,16 @@ DO NOT include common words. Only create flashcards for terms that significantly
     });
   }
 
-  private handleChunkBoundarySSEEvent(event: any): void {
+  private handleChunkBoundarySSEEvent(event: ChunkBoundarySSEEvent): void {
     this.ngZone.run(() => {
       if (event.stage && event.stepNumber !== undefined) {
         // Progress event
         this.logger.log(`Boundary detection: ${event.stage} ${event.stepNumber}/${event.totalSteps}`);
         this.chunkBoundariesProgress = {
-          stage: event.stage as any,
+          stage: event.stage,
           currentStep: event.stepNumber,
-          totalSteps: event.totalSteps,
-          message: event.message,
+          totalSteps: event.totalSteps ?? 1,
+          message: event.message ?? '',
           error: event.error
         };
       } else if (event.chapterId !== undefined && event.chunks) {
@@ -2996,15 +3004,15 @@ DO NOT include common words. Only create flashcards for terms that significantly
           this.loadCachedSectionSummary(this.currentSectionIndex);
         }
 
-        this.timeoutIds.push(setTimeout(() => this.chunkBoundariesProgress = null, 3000));
+        this.timeoutIds.push(setTimeout(() => this.chunkBoundariesProgress = null, SUCCESS_MESSAGE_DURATION_MS));
       } else if (event.error) {
         // Error event
         this.logger.error('Boundary detection error:', event);
         this.chunkBoundariesProgress = {
           stage: 'error',
-          currentStep: event.stepNumber || 0,
-          totalSteps: event.totalSteps || 1,
-          message: event.message || 'Detection failed',
+          currentStep: event.stepNumber ?? 0,
+          totalSteps: event.totalSteps ?? 1,
+          message: event.message ?? 'Detection failed',
           error: event.error
         };
         this.loadingChunkBoundaries = false;

@@ -58,4 +58,24 @@ public static class HttpTimeouts
     /// Cache TTL for detail fetches like ISBN lookups (12 hours).
     /// </summary>
     public static readonly TimeSpan DetailCacheTtl = TimeSpan.FromHours(12);
+
+    /// <summary>
+    /// Timeout for OpenLibrary cache lookups (3 seconds).
+    /// </summary>
+    public static readonly TimeSpan OpenLibraryCacheLookup = TimeSpan.FromSeconds(3);
+
+    /// <summary>
+    /// Short timeout for scraper operations with fallback (4 seconds).
+    /// </summary>
+    public static readonly TimeSpan ShortScraperTimeout = TimeSpan.FromSeconds(4);
+
+    /// <summary>
+    /// Timeout for library HTTP operations like file downloads (6 seconds).
+    /// </summary>
+    public static readonly TimeSpan LibraryHttpOperation = TimeSpan.FromSeconds(6);
+
+    /// <summary>
+    /// Cache TTL for author data (6 hours).
+    /// </summary>
+    public static readonly TimeSpan AuthorCacheTtl = TimeSpan.FromHours(6);
 }

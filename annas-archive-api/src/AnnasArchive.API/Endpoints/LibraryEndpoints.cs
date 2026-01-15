@@ -1,4 +1,5 @@
 using System.Text.Json;
+using AnnasArchive.API.Constants;
 using AnnasArchive.API.Helpers;
 using AnnasArchive.API.Models;
 using AnnasArchive.API.Services;
@@ -597,7 +598,7 @@ public static class LibraryEndpoints
         try
         {
             using var http = httpFactory.CreateClient();
-            http.Timeout = TimeSpan.FromSeconds(6);
+            http.Timeout = HttpTimeouts.LibraryHttpOperation;
             using var request = new HttpRequestMessage(HttpMethod.Get, coverUri);
             request.Headers.UserAgent.ParseAdd("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36");
             request.Headers.Accept.ParseAdd("image/avif,image/webp,image/apng,image/*,*/*;q=0.8");

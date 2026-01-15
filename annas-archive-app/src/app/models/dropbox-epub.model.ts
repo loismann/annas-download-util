@@ -248,3 +248,41 @@ export interface CharacterGraphUpdateRequest {
   dropboxPath: string;
   newContent: string;
 }
+
+/**
+ * SSE event for summary generation.
+ * Can be a progress event, complete event, or error event.
+ */
+export interface SummarySSEEvent {
+  // Progress event fields
+  stage?: 'chunks' | 'sections' | 'final' | 'complete' | 'error';
+  stepNumber?: number;
+  totalSteps?: number;
+  message?: string;
+  error?: string;
+  // Complete event fields
+  summary?: string;
+  totalTokens?: number;
+  promptTokens?: number;
+  completionTokens?: number;
+  allowanceUsedPercent?: number | null;
+  tokensRemaining?: number | null;
+  cachedAt?: string;
+}
+
+/**
+ * SSE event for chunk boundary detection.
+ * Can be a progress event or complete event.
+ */
+export interface ChunkBoundarySSEEvent {
+  // Progress event fields
+  stage?: 'detecting' | 'complete' | 'error';
+  stepNumber?: number;
+  totalSteps?: number;
+  message?: string;
+  error?: string;
+  // Complete event fields (same as ChunkBoundariesResponse)
+  chapterId?: number;
+  chunks?: ChunkBoundary[];
+  cachedAt?: string;
+}

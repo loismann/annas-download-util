@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Net.Http;
 using System.Text.Json;
+using AnnasArchive.API.Constants;
 using AnnasArchive.API.Helpers;
 using AnnasArchive.API.Services;
 using AnnasArchive.Core.Models;
@@ -263,7 +264,7 @@ public static class BookSearchEndpoints
     private static async Task<IResult> HandleMirrorHealth(IHttpClientFactory httpFactory)
     {
         var client = httpFactory.CreateClient();
-        client.Timeout = TimeSpan.FromSeconds(4);
+        client.Timeout = HttpTimeouts.ShortScraperTimeout;
 
         var mirrors = new[]
         {

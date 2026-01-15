@@ -24,6 +24,7 @@ import { AnnaArchiveApiService } from '../services/anna-archive-api.service';
 import { BookDto } from '../models/book-dto.model';
 import { firstValueFrom } from 'rxjs';
 import { LoggerService } from '../services/logger.service';
+import { RELATED_BOOKS_STAGGER_MS } from '../constants/timeouts';
 
 export interface RelatedBooksModalData {
   bookTitle: string;
@@ -147,7 +148,7 @@ export class RelatedBooksModalComponent implements OnDestroy {
       const key = this.bookKey(book);
       if (this.coverLookupsInFlight.has(key)) return;
       this.coverLookupsInFlight.add(key);
-      window.setTimeout(() => this.lookupCoverForBook(book), index * 120);
+      window.setTimeout(() => this.lookupCoverForBook(book), index * RELATED_BOOKS_STAGGER_MS);
     });
   }
 
@@ -520,7 +521,7 @@ export class RelatedBooksModalComponent implements OnDestroy {
       const key = this.otherSeriesBookKey(seriesName, book);
       if (this.coverLookupsInFlight.has(key)) return;
       this.coverLookupsInFlight.add(key);
-      window.setTimeout(() => this.lookupCoverForOtherSeriesBook(series, book), index * 120);
+      window.setTimeout(() => this.lookupCoverForOtherSeriesBook(series, book), index * RELATED_BOOKS_STAGGER_MS);
     });
   }
 

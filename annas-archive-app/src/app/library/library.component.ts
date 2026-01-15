@@ -20,6 +20,7 @@ import { BookCardComponent, LibraryBook } from '../components/book-card/book-car
 import { LibrarySidebarComponent } from '../components/library-sidebar/library-sidebar.component';
 import { AuthService } from '../services/auth.service';
 import { LoggerService } from '../services/logger.service';
+import { BATCH_DELAY_MS } from '../constants/timeouts';
 
 @Component({
   selector: 'app-library',
@@ -875,9 +876,9 @@ export class LibraryComponent implements OnInit, OnDestroy {
         this.sendToKindle(book, 'mom');
       }
 
-      // Wait 2 seconds between sends (except after last book)
+      // Wait between sends (except after last book)
       if (i < selectedBooks.length - 1) {
-        await this.delay(2000);
+        await this.delay(BATCH_DELAY_MS);
       }
     }
 

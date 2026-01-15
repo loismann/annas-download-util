@@ -8,260 +8,30 @@
   </button>
 
   <!-- LEFT column: form + counter -->
-  <div class="search-form" [class.collapsed]="searchPanelCollapsed">
-    <!-- Anna's Archive Domain Health Status -->
-    <div class="health-status-row">
-      <div class="health-item"
-           *ngFor="let domain of annaDomains; let i = index"
-           [ngClass]="getHealthColorClass(domain.health)">
-        <div class="health-domain">.{{ domain.extension }}</div>
-        <div class="health-percent">{{ domain.health !== null ? (domain.health + '%') : '...' }}</div>
-      </div>
-    </div>
-
-    <form (ngSubmit)="onSearch()">
-      <!-- Book name -->
-      <mat-form-field
-        appearance="outline"
-        class="w-100 ai-search-field"
-        [floatLabel]="aiSearchExpanded ? 'always' : 'auto'"
-      >
-        <mat-label>Book name</mat-label>
-        <ng-container *ngIf="!aiSearchExpanded; else aiSearchInput">
-          <input
-            matInput
-            [(ngModel)]="searchTerm"
-            (ngModelChange)="onSearchTermChange($event)"
-            name="searchTerm"
-            required
-          />
-        </ng-container>
-        <ng-template #aiSearchInput>
-          <textarea
-            matInput
-            [(ngModel)]="aiSearchQuery"
-            name="aiSearchQuery"
-            rows="4"
-            placeholder="Ask for books, e.g., top-rated Hugo winners from the 1980s"
-          ></textarea>
-        </ng-template>
-        <button
-          mat-icon-button
-          matSuffix
-          type="button"
-          class="ai-toggle"
-          (click)="toggleAiSearch()"
-          [attr.aria-label]="aiSearchExpanded ? 'Close AI search' : 'Open AI search'"
-        >
-          <mat-icon>{{ aiSearchExpanded ? 'close' : 'smart_toy' }}</mat-icon>
-        </button>
-      </mat-form-field>
-
-      <!-- Author suggestions -->
-      <mat-form-field appearance="outline" class="w-100 author-dropdown">
-        <mat-label>Author</mat-label>
-        <mat-select
-          [(ngModel)]="selectedAuthor"
-          name="selectedAuthor"
-          [disabled]="aiSearchExpanded || loadingAuthors || authorSuggestions.length === 0"
-          panelClass="author-select-panel"
-        >
-          <mat-option value="">All Authors</mat-option>
-          <mat-option *ngFor="let suggestion of authorSuggestions" [value]="suggestion.author">
-            {{ suggestion.author }} ({{ suggestion.confidence }})
-          </mat-option>
-        </mat-select>
-        <mat-spinner
-          *ngIf="loadingAuthors"
-          matSuffix
-          diameter="20"
-          style="margin-right: 8px;"
-        ></mat-spinner>
-      </mat-form-field>
-
-      <!-- Filters row -->
-      <app-search-filters
-        [selectedFormat]="selectedFormat"
-        [availableFormats]="availableFormats"
-        [downloadsLeft]="downloadsLeft"
-        [downloadsPerDay]="downloadsPerDay"
-        [disabled]="relatedBooksModalOpen"
-        (formatChange)="onFormatChange($event)"
-      ></app-search-filters>
-
-      <!-- Search button -->
-      <button
-        mat-raised-button
-        color="primary"
-        type="submit"
-        [disabled]="loading"
-      >
-        {{ aiSearchExpanded ? 'Ask AI' : 'Search' }}
-      </button>
-
-      <!-- Find Related Books button -->
-      <button
-        mat-raised-button
-        color="accent"
-        type="button"
-        (click)="openRelatedBooksModal()"
-        [disabled]="!selectedAuthor"
-        [class.halftone]="!selectedAuthor"
-      >
-        Find Related Books
-      </button>
-
-      <!-- Source toggle -->
-      <div class="source-toggle-row">
-        <mat-slide-toggle
-          [(ngModel)]="useLibGen"
-          name="useLibGen"
-          color="primary">
-          {{ useLibGen ? 'Using LibGen' : 'Using Anna\'s Archive' }}
-        </mat-slide-toggle>
-      </div>
-
-      <!-- Feedback -->
-      <div *ngIf="error" class="error">{{ error }}</div>
-      <div *ngIf="loading" class="loading">Loading…</div>
-    </form>
-  </div>
+  <app-search-form
+    [loading]="loading"
+    [error]="error"
+    [annaDomains]="annaDomains"
+    [downloadsLeft]="downloadsLeft"
+    [downloadsPerDay]="downloadsPerDay"
+    [relatedBooksModalOpen]="relatedBooksModalOpen"
+    [collapsed]="searchPanelCollapsed"
+    (search)="onSearchFormSubmit($event)"
+    (openRelatedBooks)="onOpenRelatedBooks($event)"
+    (toggleCollapsed)="toggleSearchPanel()"
+    (formatChange)="onFormatChange($event)"
+  ></app-search-form>
 
   <!-- RIGHT column: results -->
-  <div class="search-results">
-    <div class="results-inner">
-      <ng-container *ngIf="filteredBooks.length; else maybeNoResults">
-        <mat-card *ngFor="let book of filteredBooks; let i = index"
-                  class="book-card"
-                  [class.expanded]="isCardExpanded(book.md5)">
-          <img
-            class="cover"
-            [src]="book.coverCandidates.length ? book.coverCandidates[0] : placeholderUrl"
-            (error)="onCoverError(book, $event)"
-            [alt]="book.title + ' cover'"
-          />
-
-          <div class="info">
-            <mat-card-header>
-              <mat-card-title>{{ book.title }}</mat-card-title>
-              <mat-card-subtitle>{{ book.authors.join(', ') }}</mat-card-subtitle>
-            </mat-card-header>
-
-            <mat-card-content>
-              Format: {{ book.format }} &nbsp;|&nbsp; Size: {{ book.fileSize }}
-
-              <!-- Book Description -->
-              <div class="book-description" *ngIf="book.description">
-                <button
-                  mat-icon-button
-                  class="expand-toggle"
-                  (click)="toggleCardExpansion(book.md5)"
-                  [disabled]="!needsExpansion(book.description)"
-                  [attr.aria-label]="isCardExpanded(book.md5) ? 'Collapse' : 'Expand'">
-                  <mat-icon>{{ isCardExpanded(book.md5) ? 'keyboard_arrow_up' : 'keyboard_arrow_down' }}</mat-icon>
-                </button>
-                <p class="description-text" [class.expanded]="isCardExpanded(book.md5)">
-                  {{ book.description }}
-                  <mat-icon
-                    *ngIf="book.descriptionSource === 'gpt'"
-                    class="description-source-icon robot-icon"
-                    aria-label="AI-generated description"
-                    matTooltip="AI-generated description">
-                    smart_toy
-                  </mat-icon>
-                  <mat-icon
-                    *ngIf="book.descriptionSource === 'googlebooks'"
-                    class="description-source-icon book-icon"
-                    aria-label="Google Books description"
-                    matTooltip="From Google Books">
-                    menu_book
-                  </mat-icon>
-                  <mat-icon
-                    *ngIf="book.descriptionSource === 'openlibrary'"
-                    class="description-source-icon leaf-icon"
-                    aria-label="OpenLibrary description"
-                    matTooltip="From OpenLibrary">
-                    eco
-                  </mat-icon>
-                </p>
-              </div>
-
-              <!-- Retrieve Summary Button (for books 11+) -->
-              <div class="book-description retrieve-summary-container" *ngIf="!book.description && i >= 10">
-                <button
-                  mat-raised-button
-                  color="accent"
-                  class="retrieve-summary-btn"
-                  (click)="fetchDescriptionOnDemand(book)">
-                  Retrieve Summary
-                </button>
-              </div>
-            </mat-card-content>
-
-            <!-- ACTION BUTTONS -->
-            <mat-card-actions class="action-buttons">
-              <!-- library -->
-              <button mat-raised-button color="primary" (click)="sendToLibrary(book)">
-                <ng-container [ngSwitch]="book.libraryState">
-                  <span *ngSwitchCase="'sending'">Saving…</span>
-                  <span *ngSwitchCase="'success'">✓ Saved</span>
-                  <span *ngSwitchCase="'error'">✖ Retry</span>
-                  <span *ngSwitchDefault class="button-label-with-icon">
-                    <mat-icon class="inline-icon">menu_book</mat-icon>
-                    Library
-                  </span>
-                </ng-container>
-              </button>
-
-              <button
-                mat-raised-button
-                color="accent"
-                (click)="sendToBoox(book)"
-                [disabled]="book.sendState === 'sending'"
-              >
-                <ng-container [ngSwitch]="book.sendState">
-                  <span *ngSwitchCase="'sending'">Uploading…</span>
-                  <span *ngSwitchCase="'success'">✓ Uploaded!</span>
-                  <span *ngSwitchCase="'error'">✖ Retry</span>
-                  <span *ngSwitchDefault>📤 Dropbox</span>
-                </ng-container>
-              </button>
-
-              <button
-                mat-raised-button
-                color="primary"
-                (click)="sendToDadsKindle(book)"
-                [disabled]="book.dadsKindleState === 'sending' || book.format !== 'EPUB'"
-              >
-                <ng-container [ngSwitch]="book.dadsKindleState">
-                  <span *ngSwitchCase="'sending'">Sending…</span>
-                  <span *ngSwitchCase="'success'">✔ Sent!</span>
-                  <span *ngSwitchCase="'error'">✖ Retry</span>
-                  <span *ngSwitchDefault>Dad's Kindle</span>
-                </ng-container>
-              </button>
-
-              <button
-                mat-raised-button
-                color="primary"
-                (click)="sendToMomsKindle(book)"
-                [disabled]="book.momsKindleState === 'sending' || book.format !== 'EPUB'"
-              >
-                <ng-container [ngSwitch]="book.momsKindleState">
-                  <span *ngSwitchCase="'sending'">Sending…</span>
-                  <span *ngSwitchCase="'success'">✔ Sent!</span>
-                  <span *ngSwitchCase="'error'">✖ Retry</span>
-                  <span *ngSwitchDefault>Mom's Kindle</span>
-                </ng-container>
-              </button>
-            </mat-card-actions>
-          </div>
-        </mat-card>
-      </ng-container>
-
-      <ng-template #maybeNoResults>
-        <p *ngIf="searchPerformed && !loading">No results</p>
-      </ng-template>
-    </div>
-  </div>
+  <app-search-results
+    [books]="filteredBooks"
+    [loading]="loading"
+    [searchPerformed]="searchPerformed"
+    [placeholderUrl]="placeholderUrl"
+    (sendToLibrary)="onResultSendToLibrary($event)"
+    (sendToDropbox)="onResultSendToDropbox($event)"
+    (sendToKindle)="onResultSendToKindle($event)"
+    (fetchDescription)="onResultFetchDescription($event)"
+    (coverError)="onResultCoverError($event)"
+  ></app-search-results>
 </div>

@@ -37,14 +37,15 @@ import {
 import { Subject } from 'rxjs';
 import { debounceTime, distinctUntilChanged, takeUntil, tap } from 'rxjs/operators';
 import { RelatedBooksModalComponent } from '../related-books-modal/related-books-modal.component';
-import { SearchFiltersComponent } from '../components/search-filters/search-filters.component';
-
-interface DomainHealth {
-  name: string;
-  extension: string;
-  health: number | null;
-  certExpDays: number | null;
-}
+import { SearchFormComponent, DomainHealth, SearchFormSubmitEvent } from '../components/search-form/search-form.component';
+import {
+  SearchResultsComponent,
+  SendToLibraryEvent,
+  SendToDropboxEvent,
+  SendToKindleEvent,
+  FetchDescriptionEvent,
+  CoverErrorEvent
+} from '../components/search-results/search-results.component';
 
 @Component({
   selector: 'app-book-search',
@@ -63,7 +64,8 @@ interface DomainHealth {
     MatIconModule,
     MatSlideToggleModule,
     MatTooltipModule,
-    SearchFiltersComponent,
+    SearchFormComponent,
+    SearchResultsComponent,
   ],
   templateUrl: './book-search.component.html',
   styleUrls: ['./book-search.component.css'],
@@ -301,6 +303,54 @@ export class BookSearchComponent implements OnInit, OnDestroy {
     }
 
     return filtered;
+  }
+
+  /* ───────── search form handler ───────── */
+  onSearchFormSubmit(event: SearchFormSubmitEvent): void {
+    this.searchTerm = event.searchTerm;
+    this.selectedAuthor = event.selectedAuthor;
+    this.selectedFormat = event.selectedFormat;
+    this.useLibGen = event.useLibGen;
+
+    if (event.isAiSearch && event.aiSearchQuery) {
+      this.aiSearchQuery = event.aiSearchQuery;
+      this.aiSearchExpanded = true;
+      this.runAiSearch();
+    } else {
+      this.aiSearchExpanded = false;
+      this.onSearch();
+    }
+  }
+
+  onOpenRelatedBooks(event: { searchTerm: string; author: string }): void {
+    this.searchTerm = event.searchTerm;
+    this.selectedAuthor = event.author;
+    this.openRelatedBooksModal();
+  }
+
+  /* ───────── search results handlers ───────── */
+  onResultSendToLibrary(event: SendToLibraryEvent): void {
+    this.sendToLibrary(event.book);
+  }
+
+  onResultSendToDropbox(event: SendToDropboxEvent): void {
+    this.sendToBoox(event.book);
+  }
+
+  onResultSendToKindle(event: SendToKindleEvent): void {
+    if (event.target === 'dad') {
+      this.sendToDadsKindle(event.book);
+    } else {
+      this.sendToMomsKindle(event.book);
+    }
+  }
+
+  onResultFetchDescription(event: FetchDescriptionEvent): void {
+    this.fetchDescriptionOnDemand(event.book);
+  }
+
+  onResultCoverError(event: CoverErrorEvent): void {
+    this.onCoverError(event.book, event.event);
   }
 
   /* ───────── search submit ───────── */

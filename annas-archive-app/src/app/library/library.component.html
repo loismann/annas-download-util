@@ -1,144 +1,37 @@
 <div class="library-wrapper">
   <div class="library-layout">
-    <aside class="library-sidebar">
-      <div class="sidebar-header">
-        <h2>Ebook Library</h2>
-        <p>Browse your saved books.</p>
-      </div>
-
-      <button type="button" class="reset-view-btn" (click)="resetView()">Reset View!</button>
-
-      <mat-form-field appearance="outline" class="w-100">
-        <mat-label>Search</mat-label>
-        <input matInput [(ngModel)]="searchTerm" placeholder="Title, author, series, tags" />
-      </mat-form-field>
-
-      <mat-form-field appearance="outline" class="w-100">
-        <mat-label>Genre</mat-label>
-        <mat-select [(ngModel)]="selectedGenre">
-          <mat-option value="">All Genres</mat-option>
-          <mat-option *ngFor="let genre of genres" [value]="genre">{{ genre }}</mat-option>
-        </mat-select>
-      </mat-form-field>
-
-      <div class="rating-filter">
-        <div class="rating-label">Minimum Star Rating:</div>
-        <div class="rating-control">
-          <input
-            type="range"
-            min="0"
-            max="5"
-            step="1"
-            [(ngModel)]="minPersonalRating"
-          />
-          <span class="rating-value">{{ minPersonalRating }}</span>
-        </div>
-      </div>
-
-      <div class="rating-filter">
-        <div class="rating-label">Minimum Goodreads Rating:</div>
-        <div class="rating-control">
-          <input
-            type="range"
-            min="0"
-            max="5"
-            step="0.1"
-            [(ngModel)]="minGoodreadsRating"
-          />
-          <span class="rating-value">{{ minGoodreadsRating | number:'1.1-1' }}</span>
-        </div>
-      </div>
-
-      <div class="sidebar-meta">
-        <div class="meta-label">Total books</div>
-        <div class="meta-value">{{ filteredBooks.length }}</div>
-      </div>
-
-      <!-- Bulk Edit Section -->
-      <div class="bulk-edit-section">
-        <button
-          mat-raised-button
-          color="accent"
-          (click)="toggleBulkEditMode()"
-          class="bulk-edit-toggle"
-        >
-          {{ bulkEditMode ? 'Exit Bulk Edit' : 'Bulk Edit' }}
-        </button>
-
-        <div *ngIf="bulkEditMode && selectedBooksForBulk.size > 0" class="bulk-edit-controls">
-          <div class="selection-counter">
-            {{ selectedBooksForBulk.size }} book{{ selectedBooksForBulk.size === 1 ? '' : 's' }} selected for bulk edit
-          </div>
-
-          <button
-            mat-raised-button
-            color="primary"
-            (click)="openBulkEditDialog()"
-            [disabled]="selectedBooksForBulk.size === 0"
-          >
-            Edit Selected
-          </button>
-
-          <div class="bulk-send-actions">
-            <button
-              mat-button
-              (click)="bulkSend('dropbox')"
-              [disabled]="selectedBooksForBulk.size === 0"
-            >
-              Send to Dropbox
-            </button>
-            <button
-              mat-button
-              (click)="bulkSend('kindle-dad')"
-              [disabled]="selectedBooksForBulk.size === 0"
-            >
-              Send to Dad's Kindle
-            </button>
-            <button
-              mat-button
-              (click)="bulkSend('kindle-mom')"
-              [disabled]="selectedBooksForBulk.size === 0"
-            >
-              Send to Mom's Kindle
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <div class="admin-section" *ngIf="authService.isAdmin()">
-        <button type="button" class="admin-toggle" (click)="toggleAdmin()">
-          <span>Admin</span>
-          <span class="admin-caret">{{ adminOpen ? '▾' : '▸' }}</span>
-        </button>
-
-        <div class="admin-panel" *ngIf="adminOpen">
-          <label class="admin-row">
-            <input type="checkbox" [(ngModel)]="filterMissingAuthor" [ngModelOptions]="{ standalone: true }" />
-            <span>Book has no author</span>
-          </label>
-
-          <label class="admin-row">
-            <input type="checkbox" [(ngModel)]="filterMissingCover" [ngModelOptions]="{ standalone: true }" />
-            <span>Book cover image is missing</span>
-          </label>
-
-          <label class="admin-row">
-            <input type="checkbox" [(ngModel)]="filterGenreCountEnabled" [ngModelOptions]="{ standalone: true }" />
-            <span class="admin-label">Book has</span>
-            <select [(ngModel)]="filterGenreComparison" [ngModelOptions]="{ standalone: true }">
-              <option value="less">less than</option>
-              <option value="more">more than</option>
-            </select>
-            <input type="number" min="0" [(ngModel)]="filterGenreCount" [ngModelOptions]="{ standalone: true }" />
-            <span>genres</span>
-          </label>
-
-          <button type="button" class="admin-danger" (click)="wipeAllGenres()">
-            Wipe all genres
-          </button>
-        </div>
-      </div>
-    </aside>
+    <app-library-sidebar
+      [genres]="genres"
+      [searchTerm]="searchTerm"
+      [selectedGenre]="selectedGenre"
+      [minPersonalRating]="minPersonalRating"
+      [minGoodreadsRating]="minGoodreadsRating"
+      [totalBooks]="filteredBooks.length"
+      [bulkEditMode]="bulkEditMode"
+      [selectedBooksCount]="selectedBooksForBulk.size"
+      [isAdmin]="authService.isAdmin()"
+      [adminOpen]="adminOpen"
+      [filterMissingAuthor]="filterMissingAuthor"
+      [filterMissingCover]="filterMissingCover"
+      [filterGenreCountEnabled]="filterGenreCountEnabled"
+      [filterGenreCount]="filterGenreCount"
+      [filterGenreComparison]="filterGenreComparison"
+      (resetView)="resetView()"
+      (searchTermChange)="searchTerm = $event"
+      (selectedGenreChange)="selectedGenre = $event"
+      (minPersonalRatingChange)="minPersonalRating = $event"
+      (minGoodreadsRatingChange)="minGoodreadsRating = $event"
+      (bulkEditToggle)="toggleBulkEditMode()"
+      (openBulkEdit)="openBulkEditDialog()"
+      (bulkSend)="bulkSend($event)"
+      (adminToggle)="toggleAdmin()"
+      (filterMissingAuthorChange)="filterMissingAuthor = $event"
+      (filterMissingCoverChange)="filterMissingCover = $event"
+      (filterGenreCountEnabledChange)="filterGenreCountEnabled = $event"
+      (filterGenreCountChange)="filterGenreCount = $event"
+      (filterGenreComparisonChange)="filterGenreComparison = $event"
+      (wipeGenres)="wipeAllGenres()"
+    ></app-library-sidebar>
 
     <section class="library-panel">
       <div class="library-controls">

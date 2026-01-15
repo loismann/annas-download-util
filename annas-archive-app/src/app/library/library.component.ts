@@ -15,6 +15,7 @@ import { LibraryApiService } from '../services/library-api.service';
 import { BookEditDialogComponent, BookEditDialogData, BookEditDialogResult } from '../components/book-edit-dialog/book-edit-dialog.component';
 import { BulkEditDialogComponent, BookBulkEditDialogData, BookBulkEditDialogResult } from '../components/bulk-edit-dialog/bulk-edit-dialog.component';
 import { BookCardComponent, LibraryBook } from '../components/book-card/book-card.component';
+import { LibrarySidebarComponent } from '../components/library-sidebar/library-sidebar.component';
 import { AuthService } from '../services/auth.service';
 import { LoggerService } from '../services/logger.service';
 
@@ -33,7 +34,8 @@ import { LoggerService } from '../services/logger.service';
     MatButtonModule,
     MatIconModule,
     MatCheckboxModule,
-    BookCardComponent
+    BookCardComponent,
+    LibrarySidebarComponent
   ],
   templateUrl: './library.component.html',
   styleUrls: ['./library.component.css']

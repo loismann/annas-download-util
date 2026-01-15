@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Threading.RateLimiting;
 using AnnasArchive.API.Constants;
 using AnnasArchive.API.Helpers;
+using AnnasArchive.API.Infrastructure;
 using AnnasArchive.API.Services;
 using AnnasArchive.Core.Services;
 using Dropbox.Api;
@@ -34,6 +35,24 @@ public static class ServiceConfiguration
         services.AddCoreServices(configuration);
         services.AddDropboxClient(configuration);
         services.AddMiscServices();
+        services.ConfigureCaches(configuration);
+
+        return services;
+    }
+
+    /// <summary>
+    /// Configures application caches with sizes from configuration.
+    /// </summary>
+    public static IServiceCollection ConfigureCaches(this IServiceCollection services, IConfiguration configuration)
+    {
+        var cacheConfig = configuration.GetSection(CacheConfiguration.SectionName).Get<CacheConfiguration>()
+            ?? new CacheConfiguration();
+
+        // Configure LibraryEpubCache chapter content cache
+        LibraryEpubCache.ConfigureCache(cacheConfig.ChapterContentCacheSize);
+
+        Log.Information("[Caching] Caches configured - ChapterContent: {ChapterSize} items",
+            cacheConfig.ChapterContentCacheSize);
 
         return services;
     }

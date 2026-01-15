@@ -45,6 +45,22 @@ public class EndpointIntegrationTests : IClassFixture<WebApplicationFactory<Prog
             // Set environment explicitly
             builder.UseEnvironment("Test");
 
+            // Disable file watching to prevent stack overflow on macOS (FSEventStream issue)
+            // This must be set at builder level, not in configuration
+            builder.UseSetting(WebHostDefaults.SuppressStatusMessagesKey, "true");
+
+            builder.ConfigureAppConfiguration((context, config) =>
+            {
+                // Clear all file-based config sources to prevent file watchers
+                var sourcesToRemove = config.Sources
+                    .Where(s => s.GetType().Name.Contains("Json") || s.GetType().Name.Contains("File"))
+                    .ToList();
+                foreach (var source in sourcesToRemove)
+                {
+                    config.Sources.Remove(source);
+                }
+            });
+
             builder.ConfigureAppConfiguration((context, config) =>
             {
                 // Override configuration for testing
@@ -74,6 +90,13 @@ public class EndpointIntegrationTests : IClassFixture<WebApplicationFactory<Prog
             // Override JWT Bearer options and services for testing
             builder.ConfigureTestServices(services =>
             {
+                // Remove all background hosted services to prevent file watching during tests
+                var hostedServiceDescriptors = services
+                    .Where(d => d.ServiceType == typeof(Microsoft.Extensions.Hosting.IHostedService))
+                    .ToList();
+                foreach (var descriptor in hostedServiceDescriptors)
+                    services.Remove(descriptor);
+
                 // Replace DropboxClient with null to avoid HTTP calls
                 // Remove existing registration and add null singleton
                 var dropboxDescriptor = services.FirstOrDefault(d => d.ServiceType == typeof(Dropbox.Api.DropboxClient));
@@ -1528,6 +1551,130 @@ public class EndpointIntegrationTests : IClassFixture<WebApplicationFactory<Prog
     [InlineData("/api/ai/flashcards?path=/test.epub")]
     [InlineData("/api/ai/section-summary?dropboxPath=/test.epub&chapterId=1&sectionIndex=0")]
     public async Task AiGetEndpoints_WithoutAuth_ShouldReturnUnauthorized(string endpoint)
+    {
+        // Act - No auth token
+        var response = await _client.GetAsync(endpoint);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    // ─── Cache Admin Endpoint Tests ───────────────────────────────────────────
+
+    [Fact]
+    public async Task CacheStats_WithoutAuth_ShouldReturnUnauthorized()
+    {
+        // Act - No auth token set
+        var response = await _client.GetAsync("/api/dev/cache/stats");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task CacheStats_WithNonAdminAuth_ShouldReturnForbidden()
+    {
+        // Arrange - Fresh client with regular user auth
+        using var client = CreateAuthenticatedClient(isAdmin: false);
+
+        // Act
+        var response = await client.GetAsync("/api/dev/cache/stats");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task CacheStats_WithAdminAuth_ShouldReturnOk()
+    {
+        // Arrange - Fresh client with admin auth
+        using var client = CreateAuthenticatedClient(isAdmin: true);
+
+        // Act
+        var response = await client.GetAsync("/api/dev/cache/stats");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        // Should return cache statistics with libraryChapterContent
+        content.Should().Contain("libraryChapterContent");
+    }
+
+    [Fact]
+    public async Task CacheClear_WithoutAuth_ShouldReturnUnauthorized()
+    {
+        // Act - No auth token set
+        var response = await _client.DeleteAsync("/api/dev/cache");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task CacheClear_WithNonAdminAuth_ShouldReturnForbidden()
+    {
+        // Arrange - Fresh client with regular user auth
+        using var client = CreateAuthenticatedClient(isAdmin: false);
+
+        // Act
+        var response = await client.DeleteAsync("/api/dev/cache");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task CacheClear_WithAdminAuth_ShouldReturnOk()
+    {
+        // Arrange - Fresh client with admin auth
+        using var client = CreateAuthenticatedClient(isAdmin: true);
+
+        // Act - Clear all caches
+        var response = await client.DeleteAsync("/api/dev/cache");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("cleared");
+    }
+
+    [Fact]
+    public async Task CacheClearSpecific_WithAdminAuth_ShouldReturnOk()
+    {
+        // Arrange - Fresh client with admin auth
+        using var client = CreateAuthenticatedClient(isAdmin: true);
+
+        // Act - Clear specific cache
+        var response = await client.DeleteAsync("/api/dev/cache?name=library");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("cleared");
+    }
+
+    [Fact]
+    public async Task CacheClearUnknown_WithAdminAuth_ShouldReturnNotFound()
+    {
+        // Arrange - Fresh client with admin auth
+        using var client = CreateAuthenticatedClient(isAdmin: true);
+
+        // Act - Try to clear unknown cache
+        var response = await client.DeleteAsync("/api/dev/cache?name=unknowncache");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("Unknown cache");
+    }
+
+    [Theory]
+    [InlineData("/api/dev/cache/stats")]
+    public async Task CacheEndpoints_WithoutAuth_ShouldReturnUnauthorized(string endpoint)
     {
         // Act - No auth token
         var response = await _client.GetAsync(endpoint);

@@ -6,9 +6,9 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
+using AnnasArchive.API.Infrastructure;
 using AnnasArchive.API.Models;
 using ICSharpCode.SharpZipLib.Zip;
-using Microsoft.Extensions.Caching.Memory;
 using Serilog;
 using VersOne.Epub;
 using VersOne.Epub.Schema;
@@ -23,7 +23,10 @@ static class LibraryEpubCache
 {
     private static readonly string EpubCacheRoot = ResolveCacheRoot();
     private static readonly ConcurrentDictionary<string, Task> CacheBuildTasks = new();
-    private static readonly MemoryCache ChapterContentCache = new(new MemoryCacheOptions());
+
+    // LRU cache for chapter content with configurable capacity
+    private static LruCache<string, string> _chapterContentCache = new(100);
+
     private static readonly JsonSerializerOptions CacheJsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -891,17 +894,44 @@ static class LibraryEpubCache
     public static async Task<string?> ReadChapterContentCachedAsync(string filePath, int chapterId)
     {
         var cacheKey = $"{filePath}::{chapterId}";
-        if (ChapterContentCache.TryGetValue(cacheKey, out string? cached) && cached != null)
+        if (_chapterContentCache.TryGetValue(cacheKey, out var cached) && cached != null)
             return cached;
 
         var content = await ReadChapterContentAsync(filePath, chapterId);
         if (content != null)
         {
-            ChapterContentCache.Set(cacheKey, content, new MemoryCacheEntryOptions
-            {
-                SlidingExpiration = TimeSpan.FromMinutes(30)
-            });
+            _chapterContentCache.Set(cacheKey, content);
         }
         return content;
     }
+
+    /// <summary>
+    /// Configures the chapter content cache with a new capacity.
+    /// Called during application startup.
+    /// </summary>
+    /// <param name="capacity">Maximum number of chapters to cache</param>
+    public static void ConfigureCache(int capacity)
+    {
+        if (capacity > 0)
+        {
+            _chapterContentCache = new LruCache<string, string>(capacity);
+            Log.Information("[LibraryEpubCache] Chapter content cache configured with capacity {Capacity}", capacity);
+        }
+    }
+
+    /// <summary>
+    /// Gets the LRU cache for chapter content.
+    /// Used for cache registry integration.
+    /// </summary>
+    public static LruCache<string, string> ChapterContentCache => _chapterContentCache;
+
+    /// <summary>
+    /// Gets statistics about the chapter content cache.
+    /// </summary>
+    public static CacheStatistics GetCacheStatistics() => _chapterContentCache.GetStatistics();
+
+    /// <summary>
+    /// Clears the chapter content cache.
+    /// </summary>
+    public static void ClearCache() => _chapterContentCache.Clear();
 }

@@ -97,25 +97,19 @@ describe('BookSearchComponent', () => {
       accountFastInfo: { downloadsLeft: 50, downloadsPerDay: 100 }
     }));
 
-    mockBookSearchApiService.getMirrorHealth.and.returnValue(of({
-      mirrors: {
-        org: { health: '95%', cert_exp: '90 days' },
-        se: { health: '92%', cert_exp: '85 days' },
-        li: { health: '88%', cert_exp: '80 days' },
-        pm: { health: '90%', cert_exp: '75 days' },
-        in: { health: '87%', cert_exp: '70 days' }
-      }
-    }));
+    mockBookSearchApiService.getMirrorHealth.and.returnValue(of([
+      { extension: 'org', health: 95 },
+      { extension: 'se', health: 92 },
+      { extension: 'li', health: 88 },
+      { extension: 'pm', health: 90 },
+      { extension: 'in', health: 87 }
+    ]));
 
-    mockBookSearchApiService.getSlumHealth.and.returnValue(of({
-      mirrors: {
-        org: { health: '95%', cert_exp: '90 days' },
-        se: { health: '92%', cert_exp: '85 days' },
-        li: { health: '88%', cert_exp: '80 days' },
-        pm: { health: '90%', cert_exp: '75 days' },
-        in: { health: '87%', cert_exp: '70 days' }
-      }
-    }));
+    mockBookSearchApiService.getSlumHealth.and.returnValue(of([
+      { name: "Anna's Archive ORG", health: '95%', cert_exp: '90 days' },
+      { name: "Anna's Archive SE", health: '92%', cert_exp: '85 days' },
+      { name: "Anna's Archive LI", health: '88%', cert_exp: '80 days' }
+    ]));
 
     await TestBed.configureTestingModule({
       imports: [

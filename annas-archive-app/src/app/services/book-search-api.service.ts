@@ -4,6 +4,7 @@ import { Observable } from 'rxjs';
 import { finalize, map, tap, timeout, catchError } from 'rxjs/operators';
 import { LoggerService } from './logger.service';
 import { BookDto } from '../models/book-dto.model';
+import { SlumHealthResponse, MirrorHealthResponse } from '../models/health-check.model';
 import { SEARCH_TIMEOUT_MS, LOG_SAMPLE_SIZE } from '../constants';
 
 /* ─────────────── Download response shapes ──────────────── */
@@ -278,15 +279,15 @@ export class BookSearchApiService {
   /**
    * Check SLUM service health (proxied through backend to avoid CORS).
    */
-  getSlumHealth(): Observable<unknown> {
-    return this.http.get<unknown>(`${this.baseUrl}/slum-health`);
+  getSlumHealth(): Observable<SlumHealthResponse> {
+    return this.http.get<SlumHealthResponse>(`${this.baseUrl}/slum-health`);
   }
 
   /**
    * Check mirror service health.
    */
-  getMirrorHealth(): Observable<unknown> {
-    return this.http.get<unknown>(`${this.baseUrl}/mirror-health`);
+  getMirrorHealth(): Observable<MirrorHealthResponse> {
+    return this.http.get<MirrorHealthResponse>(`${this.baseUrl}/mirror-health`);
   }
 
   /* ══════════════════════════════════════════════════════════════

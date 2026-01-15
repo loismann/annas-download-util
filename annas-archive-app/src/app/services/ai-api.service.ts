@@ -3,6 +3,7 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
 import { LoggerService } from './logger.service';
+import { CachedSummariesMap } from '../models/cached-summary.model';
 import {
   SummarizeResponse,
   SummarizeRequestPayload,
@@ -195,9 +196,9 @@ export class AiApiService {
   /**
    * Get all cached summaries for a book.
    */
-  getAllCachedSummaries(dropboxPath: string): Observable<{ [chapterId: number]: any }> {
+  getAllCachedSummaries(dropboxPath: string): Observable<CachedSummariesMap> {
     const params = new HttpParams().set('dropboxPath', dropboxPath);
-    return this.http.get<{ [chapterId: number]: any }>(
+    return this.http.get<CachedSummariesMap>(
       `${this.aiBaseUrl}/summarize/book`,
       { params }
     );

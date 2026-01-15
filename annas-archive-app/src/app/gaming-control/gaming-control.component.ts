@@ -1,6 +1,8 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MatButtonModule } from '@angular/material/button';
+import { Subject } from 'rxjs';
+import { takeUntil } from 'rxjs/operators';
 import { GamingApiService } from '../services/gaming-api.service';
 
 interface TerminalLine {
@@ -212,7 +214,9 @@ interface TerminalLine {
     </div>
   `
 })
-export class GamingControlComponent implements OnInit {
+export class GamingControlComponent implements OnInit, OnDestroy {
+  private destroy$ = new Subject<void>();
+
   loading = false;
   action: 'wake' | 'sleep' | null = null;
   terminalLines: TerminalLine[] = [];
@@ -222,6 +226,11 @@ export class GamingControlComponent implements OnInit {
     private gamingApi: GamingApiService
   ) {}
 
+  ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
+  }
+
   ngOnInit(): void {
     this.addLine('System initialized', 'success');
     this.addLine('Synology NAS: 192.168.0.81 (online)', 'success');
@@ -230,7 +239,7 @@ export class GamingControlComponent implements OnInit {
   }
 
   checkPCStatus(): void {
-    this.gamingApi.getGamingPCStatus().subscribe({
+    this.gamingApi.getGamingPCStatus().pipe(takeUntil(this.destroy$)).subscribe({
       next: (response) => {
         this.pcOnline = response.isOnline;
         const status = response.isOnline ? 'ONLINE' : 'OFFLINE';
@@ -283,7 +292,7 @@ export class GamingControlComponent implements OnInit {
     this.addLine('  Target MAC: 04:7C:16:EA:C7:58', 'info', 800);
     this.addLine('  Target IP: 192.168.0.80', 'info', 1000);
 
-    this.gamingApi.toggleGamingPC(1).subscribe({
+    this.gamingApi.toggleGamingPC(1).pipe(takeUntil(this.destroy$)).subscribe({
       next: (response) => {
         this.loading = false;
         this.action = null;
@@ -343,7 +352,7 @@ export class GamingControlComponent implements OnInit {
     this.addLine('→ Sending sleep command to gaming PC...', 'info', 600);
     this.addLine('  Target IP: 192.168.0.80', 'info', 800);
 
-    this.gamingApi.toggleGamingPC(2).subscribe({
+    this.gamingApi.toggleGamingPC(2).pipe(takeUntil(this.destroy$)).subscribe({
       next: (response) => {
         this.loading = false;
         this.action = null;

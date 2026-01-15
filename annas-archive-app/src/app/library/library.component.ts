@@ -1,6 +1,8 @@
-import { ChangeDetectorRef, Component, ElementRef, HostListener, NgZone, OnInit, ViewChild } from '@angular/core';
+import { ChangeDetectorRef, Component, ElementRef, HostListener, NgZone, OnInit, OnDestroy, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { Subject } from 'rxjs';
+import { takeUntil } from 'rxjs/operators';
 import { ScrollingModule, CdkVirtualScrollViewport } from '@angular/cdk/scrolling';
 import { MatCardModule } from '@angular/material/card';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
@@ -40,7 +42,9 @@ import { LoggerService } from '../services/logger.service';
   templateUrl: './library.component.html',
   styleUrls: ['./library.component.css']
 })
-export class LibraryComponent implements OnInit {
+export class LibraryComponent implements OnInit, OnDestroy {
+  private destroy$ = new Subject<void>();
+
   placeholderUrl = '/assets/placeholder.jpg';
   loading = true;
   error: string | null = null;
@@ -81,6 +85,11 @@ export class LibraryComponent implements OnInit {
     private cdr: ChangeDetectorRef,
     private logger: LoggerService
   ) {}
+
+  ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
+  }
 
   /** Row height for virtual scrolling - varies by tile size */
   get rowHeight(): number {
@@ -135,7 +144,7 @@ export class LibraryComponent implements OnInit {
   }
 
   ngOnInit(): void {
-    this.libraryApi.getLibraryBooks().subscribe({
+    this.libraryApi.getLibraryBooks().pipe(takeUntil(this.destroy$)).subscribe({
       next: (books) => {
         this.books = (books ?? []).map(book => ({
           ...book,
@@ -476,7 +485,7 @@ export class LibraryComponent implements OnInit {
       backdropClass: 'book-edit-dialog-backdrop'
     });
 
-    dialogRef.afterClosed().subscribe((result: BookEditDialogResult | undefined) => {
+    dialogRef.afterClosed().pipe(takeUntil(this.destroy$)).subscribe((result: BookEditDialogResult | undefined) => {
       if (result?.deleted) {
         this.books = this.books.filter(b => b !== book);
         this.genres = this.buildGenreList(this.books);
@@ -505,7 +514,7 @@ export class LibraryComponent implements OnInit {
           series: result.series ?? book.series ?? null,
           title: result.title,
           authors: result.authors
-        }).subscribe({
+        }).pipe(takeUntil(this.destroy$)).subscribe({
           next: () => {
             this.logger.log('[library] Updated book metadata:', book.fileName);
           },
@@ -536,7 +545,7 @@ export class LibraryComponent implements OnInit {
       book.momsKindleState = 'sending';
     }
 
-    this.libraryApi.sendLibraryToKindle(book.fileName, book.title, target).subscribe({
+    this.libraryApi.sendLibraryToKindle(book.fileName, book.title, target).pipe(takeUntil(this.destroy$)).subscribe({
       next: (resp) => {
         const success = resp?.success ?? true;
         if (target === 'dad') {
@@ -562,7 +571,7 @@ export class LibraryComponent implements OnInit {
     if (book.dadsKindleState === 'sending') return;
 
     book.dadsKindleState = 'sending';
-    this.libraryApi.sendLibraryToKindle(book.fileName, book.title, 'dad', true).subscribe({
+    this.libraryApi.sendLibraryToKindle(book.fileName, book.title, 'dad', true).pipe(takeUntil(this.destroy$)).subscribe({
       next: (resp) => {
         const success = resp?.success ?? true;
         book.dadsKindleState = success ? 'success' : 'error';
@@ -583,7 +592,7 @@ export class LibraryComponent implements OnInit {
     book.personalRating = nextRating;
     this.libraryApi.updateLibraryBookRatings(book.fileName, {
       personalRating: nextRating
-    }).subscribe({
+    }).pipe(takeUntil(this.destroy$)).subscribe({
       next: () => {
         this.logger.log('[library] Updated personal rating:', book.fileName, nextRating);
       },
@@ -619,7 +628,7 @@ export class LibraryComponent implements OnInit {
         this.logger.log('[library] Base64 length:', base64.length, 'chars');
         this.logger.log('[library] Uploading bytes to backend...');
 
-        this.libraryApi.uploadLibraryBookCoverBytes(book.fileName, base64, mimeType).subscribe({
+        this.libraryApi.uploadLibraryBookCoverBytes(book.fileName, base64, mimeType).pipe(takeUntil(this.destroy$)).subscribe({
           next: (resp) => {
             this.logger.log('[library] ✓ Bytes upload SUCCESS');
             this.handleCoverUpdateResponse(book, resp, coverUrl);
@@ -640,7 +649,7 @@ export class LibraryComponent implements OnInit {
 
   private updateBookCoverByUrl(book: LibraryBook, coverUrl: string): void {
     this.logger.log('[library] URL method: Sending URL to backend for server-side download...');
-    this.libraryApi.updateLibraryBookCover(book.fileName, coverUrl).subscribe({
+    this.libraryApi.updateLibraryBookCover(book.fileName, coverUrl).pipe(takeUntil(this.destroy$)).subscribe({
       next: (resp) => {
         this.logger.log('[library] ✓ URL upload SUCCESS');
         this.handleCoverUpdateResponse(book, resp, coverUrl);
@@ -756,7 +765,7 @@ export class LibraryComponent implements OnInit {
     const second = window.confirm('Are you really sure? This will remove all genres and tags.');
     if (!second) return;
 
-    this.libraryApi.wipeLibraryGenres().subscribe({
+    this.libraryApi.wipeLibraryGenres().pipe(takeUntil(this.destroy$)).subscribe({
       next: () => {
         this.books = this.books.map(book => ({
           ...book,
@@ -806,7 +815,7 @@ export class LibraryComponent implements OnInit {
       data: dialogData
     });
 
-    dialogRef.afterClosed().subscribe((result: BookBulkEditDialogResult | undefined) => {
+    dialogRef.afterClosed().pipe(takeUntil(this.destroy$)).subscribe((result: BookBulkEditDialogResult | undefined) => {
       if (!result) return;
 
       // Update all selected books with the new metadata
@@ -831,7 +840,7 @@ export class LibraryComponent implements OnInit {
           series: result.series ?? book.series ?? null,
           title: book.title,
           authors: result.authors ?? book.authors
-        }).subscribe({
+        }).pipe(takeUntil(this.destroy$)).subscribe({
           next: () => {
             this.logger.log('[library] Updated book metadata:', book.fileName);
           },

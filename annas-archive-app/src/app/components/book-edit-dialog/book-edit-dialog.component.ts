@@ -1,6 +1,8 @@
-import { Component, HostListener, Inject, OnInit } from '@angular/core';
+import { Component, HostListener, Inject, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { Subject } from 'rxjs';
+import { takeUntil } from 'rxjs/operators';
 import { MatDialog, MatDialogModule, MatDialogRef, MAT_DIALOG_DATA } from '@angular/material/dialog';
 import { MatDividerModule } from '@angular/material/divider';
 import { MatFormFieldModule } from '@angular/material/form-field';
@@ -70,7 +72,9 @@ interface CoverCandidate {
   templateUrl: './book-edit-dialog.component.html',
   styleUrls: ['./book-edit-dialog.component.scss']
 })
-export class BookEditDialogComponent implements OnInit {
+export class BookEditDialogComponent implements OnInit, OnDestroy {
+  private destroy$ = new Subject<void>();
+
   readonly separatorKeysCodes = [ENTER, COMMA] as const;
   readonly ownerTags = ["Dad's Books", "Mom's Books", "Paul's Books"];
   readonly ownerOptions = [
@@ -135,6 +139,11 @@ export class BookEditDialogComponent implements OnInit {
     this.summary = data.summary || null;
   }
 
+  ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
+  }
+
   ngOnInit(): void {
     this.loadSummary();
   }
@@ -150,7 +159,7 @@ export class BookEditDialogComponent implements OnInit {
     }
 
     this.summaryLoading = true;
-    this.libraryApi.getLibraryBookSummary(this.data.fileName).subscribe({
+    this.libraryApi.getLibraryBookSummary(this.data.fileName).pipe(takeUntil(this.destroy$)).subscribe({
       next: (resp) => {
         this.summary = resp.summary;
         this.summarySource = resp.source;
@@ -276,7 +285,7 @@ export class BookEditDialogComponent implements OnInit {
       disableClose: false
     });
 
-    dialogRef.afterClosed().subscribe((newGenre: string | null) => {
+    dialogRef.afterClosed().pipe(takeUntil(this.destroy$)).subscribe((newGenre: string | null) => {
       if (newGenre) {
         // Add to genres list if not already present
         if (!this.genres.some(g => g.toLowerCase() === newGenre.toLowerCase())) {
@@ -332,7 +341,7 @@ export class BookEditDialogComponent implements OnInit {
     if (!ok) return;
 
     this.isDeleting = true;
-    this.libraryApi.deleteLibraryBook(this.data.fileName).subscribe({
+    this.libraryApi.deleteLibraryBook(this.data.fileName).pipe(takeUntil(this.destroy$)).subscribe({
       next: () => {
         this.dialogRef.close({ deleted: true } as BookEditDialogResult);
       },
@@ -349,7 +358,7 @@ export class BookEditDialogComponent implements OnInit {
     }
 
     this.readerState = 'sending';
-    this.libraryApi.updateLibraryBookReaderEnabled(this.data.fileName, true).subscribe({
+    this.libraryApi.updateLibraryBookReaderEnabled(this.data.fileName, true).pipe(takeUntil(this.destroy$)).subscribe({
       next: (resp) => {
         this.data.readerEnabled = resp?.enabled ?? true;
         this.readerState = this.data.readerEnabled ? 'success' : 'error';
@@ -387,7 +396,7 @@ export class BookEditDialogComponent implements OnInit {
       this.momsKindleState = 'sending';
     }
 
-    this.libraryApi.sendLibraryToKindle(this.data.fileName, this.title, target).subscribe({
+    this.libraryApi.sendLibraryToKindle(this.data.fileName, this.title, target).pipe(takeUntil(this.destroy$)).subscribe({
       next: (resp) => {
         const success = resp?.success ?? true;
         if (target === 'dad') {
@@ -411,7 +420,7 @@ export class BookEditDialogComponent implements OnInit {
     if (!this.data.canSendToKindle) return;
 
     this.dropboxState = 'sending';
-    this.libraryApi.sendLibraryToKindle(this.data.fileName, this.title, 'dad', true).subscribe({
+    this.libraryApi.sendLibraryToKindle(this.data.fileName, this.title, 'dad', true).pipe(takeUntil(this.destroy$)).subscribe({
       next: (resp) => {
         const success = resp?.success ?? true;
         this.dropboxState = success ? 'success' : 'error';
@@ -433,7 +442,7 @@ export class BookEditDialogComponent implements OnInit {
     this.coverCandidatesLoading = true;
     this.coverCandidatesError = null;
 
-    this.libraryApi.fetchLibraryCoverCandidates(title, author).subscribe({
+    this.libraryApi.fetchLibraryCoverCandidates(title, author).pipe(takeUntil(this.destroy$)).subscribe({
       next: (resp) => {
         const urls = Array.from(new Set(resp.covers || []));
         this.applyCoverCandidates(urls)

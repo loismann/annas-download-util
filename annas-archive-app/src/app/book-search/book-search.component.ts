@@ -28,6 +28,7 @@ import {
 import { AuthService } from '../services/auth.service';
 import { LoggerService } from '../services/logger.service';
 import { BookDto } from '../models/book-dto.model';
+import { SlumHealthEntry, MirrorHealthEntry, SlumHealthResponse, MirrorHealthResponse } from '../models/health-check.model';
 import {
   AUTO_COVER_FETCH_LIMIT,
   AUTO_DESCRIPTION_FETCH_LIMIT,
@@ -168,7 +169,7 @@ export class BookSearchComponent implements OnInit, OnDestroy {
 
   private fetchDomainHealthObservable() {
     return this.bookSearchApi.getSlumHealth().pipe(
-      tap((data: any) => this.parseDomainHealth(data))
+      tap((data: SlumHealthResponse) => this.parseDomainHealth(data))
     );
   }
 
@@ -183,10 +184,10 @@ export class BookSearchComponent implements OnInit, OnDestroy {
     });
   }
 
-  private parseMirrorHealth(data: any): void {
+  private parseMirrorHealth(data: MirrorHealthResponse): void {
     if (!data || !Array.isArray(data)) return;
 
-    data.forEach((entry: any) => {
+    data.forEach((entry: MirrorHealthEntry) => {
       if (!entry?.extension) return;
       const domain = this.annaDomains.find(d => d.extension === entry.extension);
       if (!domain) return;
@@ -197,13 +198,13 @@ export class BookSearchComponent implements OnInit, OnDestroy {
     });
   }
 
-  private parseDomainHealth(data: any): void {
+  private parseDomainHealth(data: SlumHealthResponse): void {
     if (!data || !Array.isArray(data)) return;
 
     // Find the entries for Anna's Archive domains
-    const orgEntry = data.find((entry: any) => entry.name === "Anna's Archive ORG");
-    const seEntry = data.find((entry: any) => entry.name === "Anna's Archive SE");
-    const liEntry = data.find((entry: any) => entry.name === "Anna's Archive LI");
+    const orgEntry = data.find((entry: SlumHealthEntry) => entry.name === "Anna's Archive ORG");
+    const seEntry = data.find((entry: SlumHealthEntry) => entry.name === "Anna's Archive SE");
+    const liEntry = data.find((entry: SlumHealthEntry) => entry.name === "Anna's Archive LI");
 
     if (orgEntry) {
       this.updateDomainHealth('org', orgEntry);
@@ -230,7 +231,7 @@ export class BookSearchComponent implements OnInit, OnDestroy {
     return match ? parseInt(match[1], 10) : null;
   }
 
-  private updateDomainHealth(extension: string, entry: any): void {
+  private updateDomainHealth(extension: string, entry: SlumHealthEntry): void {
     const domain = this.annaDomains.find(d => d.extension === extension);
     if (!domain) return;
 

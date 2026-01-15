@@ -4,6 +4,7 @@ import { Observable } from 'rxjs';
 import { finalize, map, tap, timeout, catchError } from 'rxjs/operators';
 import { LoggerService } from './logger.service';
 import { BookDto } from '../models/book-dto.model';
+import { SlumHealthResponse, MirrorHealthResponse } from '../models/health-check.model';
 import { SEARCH_TIMEOUT_MS, LOG_SAMPLE_SIZE } from '../constants';
 
 /* ─────────────── existing member-download shape ──────────────── */
@@ -245,12 +246,12 @@ export class AnnaArchiveApiService {
   /* ══════════════════════════════════════════════════════════════
      SLUM Health Status – proxied through backend to avoid CORS
      ══════════════════════════════════════════════════════════════ */
-  getSlumHealth(): Observable<any> {
-    return this.http.get<any>(`${this.baseUrl}/slum-health`);
+  getSlumHealth(): Observable<SlumHealthResponse> {
+    return this.http.get<SlumHealthResponse>(`${this.baseUrl}/slum-health`);
   }
 
-  getMirrorHealth(): Observable<any> {
-    return this.http.get<any>(`${this.baseUrl}/mirror-health`);
+  getMirrorHealth(): Observable<MirrorHealthResponse> {
+    return this.http.get<MirrorHealthResponse>(`${this.baseUrl}/mirror-health`);
   }
 
   fetchCover(title: string, author?: string): Observable<CoverLookupResponse> {

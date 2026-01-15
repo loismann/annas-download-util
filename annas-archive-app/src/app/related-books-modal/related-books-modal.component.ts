@@ -1,6 +1,8 @@
-import { Component, Inject } from '@angular/core';
+import { Component, Inject, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { Subject } from 'rxjs';
+import { takeUntil } from 'rxjs/operators';
 import { MAT_DIALOG_DATA, MatDialogModule, MatDialogRef } from '@angular/material/dialog';
 import { MatButtonModule } from '@angular/material/button';
 import { MatListModule } from '@angular/material/list';
@@ -66,7 +68,9 @@ interface MatchResult {
   templateUrl: './related-books-modal.component.html',
   styleUrl: './related-books-modal.component.scss'
 })
-export class RelatedBooksModalComponent {
+export class RelatedBooksModalComponent implements OnDestroy {
+  private destroy$ = new Subject<void>();
+
   selectedKeys = new Set<string>();
   selectedOtherSeriesKeys = new Set<string>();  // For tracking selections in other series
   expandedSeries = new Set<string>();  // Track which series are expanded
@@ -85,6 +89,11 @@ export class RelatedBooksModalComponent {
     private annaApi: AnnaArchiveApiService,
     private logger: LoggerService
   ) {}
+
+  ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
+  }
 
   get selectedBooks(): SeriesBook[] {
     const sameSeriesBooks = this.data.sameSeries.filter(book => this.selectedKeys.has(this.bookKey(book)));
@@ -524,7 +533,7 @@ export class RelatedBooksModalComponent {
       return;
     }
 
-    this.annaApi.fetchCover(title, this.data.author).subscribe({
+    this.annaApi.fetchCover(title, this.data.author).pipe(takeUntil(this.destroy$)).subscribe({
       next: (resp) => {
         if (resp?.coverUrl) {
           book.coverUrl = resp.coverUrl;
@@ -545,7 +554,7 @@ export class RelatedBooksModalComponent {
       return;
     }
 
-    this.annaApi.fetchCover(title, this.data.author).subscribe({
+    this.annaApi.fetchCover(title, this.data.author).pipe(takeUntil(this.destroy$)).subscribe({
       next: (resp) => {
         if (resp?.coverUrl) {
           book.coverUrl = resp.coverUrl;

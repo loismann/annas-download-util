@@ -28,6 +28,12 @@ import {
 import { AuthService } from '../services/auth.service';
 import { LoggerService } from '../services/logger.service';
 import { BookDto } from '../models/book-dto.model';
+import {
+  AUTO_COVER_FETCH_LIMIT,
+  AUTO_DESCRIPTION_FETCH_LIMIT,
+  COVER_LOOKUP_STAGGER_MS,
+  DESCRIPTION_FETCH_STAGGER_MS
+} from '../constants';
 import { Subject } from 'rxjs';
 import { debounceTime, distinctUntilChanged, takeUntil, tap } from 'rxjs/operators';
 import { RelatedBooksModalComponent } from '../related-books-modal/related-books-modal.component';
@@ -543,8 +549,8 @@ export class BookSearchComponent implements OnInit, OnDestroy {
 
   private queueCoverLookups(): void {
     const missing = this.books.filter(b => this.needsExternalCoverLookup(b));
-    missing.slice(0, 50).forEach((book, index) => {
-      setTimeout(() => this.lookupCoverForBook(book), index * 200);
+    missing.slice(0, AUTO_COVER_FETCH_LIMIT).forEach((book, index) => {
+      setTimeout(() => this.lookupCoverForBook(book), index * COVER_LOOKUP_STAGGER_MS);
     });
   }
 
@@ -596,12 +602,12 @@ export class BookSearchComponent implements OnInit, OnDestroy {
 
   /* ───────── book description fetching ───────── */
   private fetchBookDescriptions(): void {
-    // Fetch descriptions for first 10 books automatically
-    const booksToFetch = this.books.slice(0, 10);
+    // Fetch descriptions for first N books automatically
+    const booksToFetch = this.books.slice(0, AUTO_DESCRIPTION_FETCH_LIMIT);
 
     booksToFetch.forEach((book, index) => {
       // Stagger requests slightly to avoid overwhelming the APIs
-      setTimeout(() => this.fetchDescriptionForBook(book), index * 100);
+      setTimeout(() => this.fetchDescriptionForBook(book), index * DESCRIPTION_FETCH_STAGGER_MS);
     });
   }
 

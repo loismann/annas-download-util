@@ -1,4 +1,5 @@
 using System.Net;
+using AnnasArchive.API.Constants;
 using Microsoft.Extensions.Http.Resilience;
 using Polly;
 using Serilog;
@@ -64,7 +65,7 @@ public static class ResilienceConfiguration
             });
 
             // Request timeout (per-request, not total)
-            resilienceBuilder.AddTimeout(TimeSpan.FromSeconds(30));
+            resilienceBuilder.AddTimeout(HttpTimeouts.StandardApiTimeout);
         });
 
         return builder;
@@ -117,8 +118,8 @@ public static class ResilienceConfiguration
                 }
             });
 
-            // Longer timeout for AI operations (5 minutes)
-            resilienceBuilder.AddTimeout(TimeSpan.FromMinutes(5));
+            // Longer timeout for AI operations
+            resilienceBuilder.AddTimeout(HttpTimeouts.AiOperationTimeout);
         });
 
         return builder;
@@ -126,40 +127,18 @@ public static class ResilienceConfiguration
 
     /// <summary>
     /// Adds resilience handler for scraping services with domain fallback support.
-    /// Lower retry count since these services have their own fallback mechanism.
+    /// NO CIRCUIT BREAKER - scraping services have their own multi-domain fallback mechanism.
+    /// A circuit breaker would block ALL domains when one fails, defeating the fallback logic.
     /// </summary>
     public static IHttpClientBuilder AddScrapingResilience(this IHttpClientBuilder builder, string serviceName)
     {
         builder.AddResilienceHandler($"{serviceName}-resilience", (resilienceBuilder) =>
         {
-            // Single retry since scraping services have domain fallback
-            resilienceBuilder.AddRetry(new HttpRetryStrategyOptions
-            {
-                MaxRetryAttempts = 1,
-                BackoffType = DelayBackoffType.Constant,
-                Delay = TimeSpan.FromSeconds(1),
-                ShouldHandle = args => ValueTask.FromResult(ShouldRetry(args.Outcome)),
-                OnRetry = args =>
-                {
-                    Log.Warning("[{ServiceName}] Retry after failure: {Reason}",
-                        serviceName,
-                        args.Outcome.Exception?.Message ?? args.Outcome.Result?.StatusCode.ToString() ?? "Unknown");
-                    return ValueTask.CompletedTask;
-                }
-            });
+            // No retry at Polly level - the service's domain fallback handles retries
+            // Adding retries here would just retry the same failing domain before fallback kicks in
 
-            // Circuit breaker
-            resilienceBuilder.AddCircuitBreaker(new HttpCircuitBreakerStrategyOptions
-            {
-                FailureRatio = 0.5,
-                SamplingDuration = TimeSpan.FromSeconds(30),
-                MinimumThroughput = 5,
-                BreakDuration = TimeSpan.FromSeconds(30),
-                ShouldHandle = args => ValueTask.FromResult(ShouldRetry(args.Outcome))
-            });
-
-            // Request timeout
-            resilienceBuilder.AddTimeout(TimeSpan.FromSeconds(15));
+            // Request timeout only - let the domain fallback logic handle failures
+            resilienceBuilder.AddTimeout(HttpTimeouts.ScrapingTimeout);
         });
 
         return builder;

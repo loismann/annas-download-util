@@ -3,8 +3,8 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { finalize, map, tap, timeout, catchError } from 'rxjs/operators';
 import { LoggerService } from './logger.service';
-
 import { BookDto } from '../models/book-dto.model';
+import { SEARCH_TIMEOUT_MS, LOG_SAMPLE_SIZE } from '../constants';
 
 /* ─────────────── existing member-download shape ──────────────── */
 export interface DownloadMemberResponse {
@@ -74,7 +74,7 @@ export class AnnaArchiveApiService {
       .pipe(
         map(res => (Array.isArray(res) ? res : [res])),
         tap(list => {
-          const sample = list.slice(0, 3).map(b => ({
+          const sample = list.slice(0, LOG_SAMPLE_SIZE).map(b => ({
             title: b.title,
             md5: b.md5,
             format: b.format,
@@ -167,10 +167,10 @@ export class AnnaArchiveApiService {
     return this.http
       .get<BookDto | BookDto[]>(`${this.libgenBaseUrl}/book`, { params })
       .pipe(
-        timeout(60000), // 60 second timeout for the entire request
+        timeout(SEARCH_TIMEOUT_MS),
         map(res => (Array.isArray(res) ? res : [res])),
         tap(list => {
-          const sample = list.slice(0, 3).map(b => ({
+          const sample = list.slice(0, LOG_SAMPLE_SIZE).map(b => ({
             title: b.title,
             md5: b.md5,
             format: b.format,
@@ -180,7 +180,7 @@ export class AnnaArchiveApiService {
         catchError(error => {
           this.logger.error('[searchBooksLibGen] ERROR:', error);
           if (error.name === 'TimeoutError') {
-            this.logger.error('[searchBooksLibGen] Request timed out after 60 seconds');
+            this.logger.error(`[searchBooksLibGen] Request timed out after ${SEARCH_TIMEOUT_MS / 1000} seconds`);
           }
           throw error;
         }),

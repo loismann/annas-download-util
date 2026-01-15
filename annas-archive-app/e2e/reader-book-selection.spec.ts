@@ -329,6 +329,11 @@ test.describe('Reader - Book Selection', () => {
     await chaptersResponsePromise;
     await page.waitForTimeout(500);
 
+    // Expand settings section first (button is inside collapsed settings)
+    const settingsToggle = page.locator('button.settings-toggle');
+    await settingsToggle.click();
+    await page.waitForTimeout(300);
+
     // Click remove button in sidebar
     const removeButton = page.locator('button.reader-remove-button');
     await expect(removeButton).toBeEnabled();

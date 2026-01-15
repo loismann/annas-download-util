@@ -128,11 +128,10 @@ public static class AnnaDownloadEndpoints
         IConfiguration cfg,
         HttpContext context)
     {
-        if (!validation.IsValidMd5(md5))
-            return Results.BadRequest(new { error = "Invalid MD5 format. Must be 32 hexadecimal characters." });
-
-        if (!validation.IsValidTitle(title))
-            return Results.BadRequest(new { error = "Title too long. Maximum 500 characters." });
+        // Use shared validation helper
+        var validationError = SendToTargetHelpers.ValidateSendParameters(md5, title, validation);
+        if (validationError != null)
+            return Results.BadRequest(new { error = validationError });
 
         var memberKey = cfg["Anna:MemberKey"]
             ?? throw new InvalidOperationException("Missing Anna:MemberKey.");
@@ -171,33 +170,12 @@ public static class AnnaDownloadEndpoints
         {
             Stream ebookStream = await resp.Content.ReadAsStreamAsync();
 
-            // Attempt cover replacement if coverUrl is provided and format is supported
-            if (!string.IsNullOrWhiteSpace(coverUrl))
-            {
-                var ext = Path.GetExtension(fileName).TrimStart('.');
-                if (coverService.IsFormatSupported(ext))
-                {
-                    Log.Information("[download-member] Attempting cover replacement for {fileName}");
-                    ebookStream = await coverService.ReplaceCoverAsync(ebookStream, coverUrl, ext);
-                }
-                else
-                {
-                    Log.Information("[download-member] Format {ext} not supported for cover replacement, skipping");
-                }
-            }
-
-            // Set content type based on file extension
-            var contentType = Path.GetExtension(fileName).ToLowerInvariant() switch
-            {
-                ".epub" => "application/epub+zip",
-                ".pdf" => "application/pdf",
-                ".mobi" => "application/x-mobipocket-ebook",
-                ".azw3" => "application/vnd.amazon.ebook",
-                ".fb2" => "text/xml",
-                _ => "application/octet-stream"
-            };
+            // Attempt cover replacement using shared helper
+            ebookStream = await SendToTargetHelpers.TryReplaceCoverAsync(
+                ebookStream, coverUrl, fileName, coverService, "download-member");
 
             // Stream the file back to the client
+            var contentType = SendToTargetHelpers.GetEbookContentType(fileName);
             return Results.Stream(ebookStream, contentType, fileName);
         }
     }
@@ -220,11 +198,10 @@ public static class AnnaDownloadEndpoints
         IConfiguration cfg,
         HttpContext context)
     {
-        if (!validation.IsValidMd5(md5))
-            return Results.BadRequest(new { error = "Invalid MD5 format. Must be 32 hexadecimal characters." });
-
-        if (!validation.IsValidTitle(title))
-            return Results.BadRequest(new { error = "Title too long. Maximum 500 characters." });
+        // Use shared validation helper
+        var validationError = SendToTargetHelpers.ValidateSendParameters(md5, title, validation);
+        if (validationError != null)
+            return Results.BadRequest(new { error = validationError });
 
         var memberKey = cfg["Anna:MemberKey"]
             ?? throw new InvalidOperationException("Missing Anna:MemberKey.");
@@ -267,20 +244,9 @@ public static class AnnaDownloadEndpoints
         {
             Stream ebookStream = await resp.Content.ReadAsStreamAsync();
 
-            // Attempt cover replacement if coverUrl is provided and format is supported
-            if (!string.IsNullOrWhiteSpace(coverUrl))
-            {
-                var ext = Path.GetExtension(fileName).TrimStart('.');
-                if (coverService.IsFormatSupported(ext))
-                {
-                    Log.Information("[library-anna] Attempting cover replacement for {fileName}");
-                    ebookStream = await coverService.ReplaceCoverAsync(ebookStream, coverUrl, ext);
-                }
-                else
-                {
-                    Log.Information("[library-anna] Format {ext} not supported for cover replacement, skipping");
-                }
-            }
+            // Attempt cover replacement using shared helper
+            ebookStream = await SendToTargetHelpers.TryReplaceCoverAsync(
+                ebookStream, coverUrl, fileName, coverService, "library-anna");
 
             var destinationPath = Path.Combine(libraryRoot, fileName);
             if (File.Exists(destinationPath))
@@ -325,11 +291,10 @@ public static class AnnaDownloadEndpoints
         IConfiguration cfg,
         IDownloadTrackingService downloadTracking)
     {
-        if (!validation.IsValidMd5(md5))
-            return Results.BadRequest(new { error = "Invalid MD5 format. Must be 32 hexadecimal characters." });
-
-        if (!validation.IsValidTitle(title))
-            return Results.BadRequest(new { error = "Title too long. Maximum 500 characters." });
+        // Use shared validation helper
+        var validationError = SendToTargetHelpers.ValidateSendParameters(md5, title, validation);
+        if (validationError != null)
+            return Results.BadRequest(new { error = validationError });
 
         var memberKey = cfg["Anna:MemberKey"]
             ?? throw new InvalidOperationException("Missing Anna:MemberKey.");
@@ -357,20 +322,9 @@ public static class AnnaDownloadEndpoints
             var uploadPath = $"{cfg["Dropbox:UploadFolderPath"]}/{fileName}";
             Stream ebookStream = await resp.Content.ReadAsStreamAsync();
 
-            // Attempt cover replacement if coverUrl is provided and format is supported
-            if (!string.IsNullOrWhiteSpace(coverUrl))
-            {
-                var ext = Path.GetExtension(fileName).TrimStart('.');
-                if (coverService.IsFormatSupported(ext))
-                {
-                    Log.Information("[send-to-boox] Attempting cover replacement for {fileName}");
-                    ebookStream = await coverService.ReplaceCoverAsync(ebookStream, coverUrl, ext);
-                }
-                else
-                {
-                    Log.Information("[send-to-boox] Format {ext} not supported for cover replacement, skipping");
-                }
-            }
+            // Attempt cover replacement using shared helper
+            ebookStream = await SendToTargetHelpers.TryReplaceCoverAsync(
+                ebookStream, coverUrl, fileName, coverService, "send-to-boox");
 
             using var stream = ebookStream;
 
@@ -485,14 +439,14 @@ public static class AnnaDownloadEndpoints
         IValidationService validation,
         IDownloadTrackingService downloadTracking)
     {
-        if (!validation.IsValidMd5(md5))
-            return Results.BadRequest(new { error = "Invalid MD5 format. Must be 32 hexadecimal characters." });
+        // Use shared validation helpers
+        var validationError = SendToTargetHelpers.ValidateSendParameters(md5, title, validation);
+        if (validationError != null)
+            return Results.BadRequest(new { error = validationError });
 
-        if (!validation.IsValidTitle(title))
-            return Results.BadRequest(new { error = "Title too long. Maximum 500 characters." });
-
-        if (string.IsNullOrWhiteSpace(target) || (target != "dad" && target != "mom"))
-            return Results.BadRequest(new { error = "Invalid target. Must be 'dad' or 'mom'." });
+        var kindleTargetError = SendToTargetHelpers.ValidateKindleTarget(target);
+        if (kindleTargetError != null)
+            return Results.BadRequest(new { error = kindleTargetError });
 
         var memberKey = cfg["Anna:MemberKey"]
             ?? throw new InvalidOperationException("Missing Anna:MemberKey.");
@@ -523,20 +477,9 @@ public static class AnnaDownloadEndpoints
                 // Get the ebook stream
                 Stream ebookStream = await resp.Content.ReadAsStreamAsync();
 
-                // Attempt cover replacement if coverUrl is provided and format is supported
-                if (!string.IsNullOrWhiteSpace(coverUrl))
-                {
-                    var ext = Path.GetExtension(fileName).TrimStart('.');
-                    if (coverService.IsFormatSupported(ext))
-                    {
-                        Log.Information("[send-to-kindle] Attempting cover replacement for {fileName}");
-                        ebookStream = await coverService.ReplaceCoverAsync(ebookStream, coverUrl, ext);
-                    }
-                    else
-                    {
-                        Log.Information("[send-to-kindle] Format {ext} not supported for cover replacement, skipping");
-                    }
-                }
+                // Attempt cover replacement using shared helper
+                ebookStream = await SendToTargetHelpers.TryReplaceCoverAsync(
+                    ebookStream, coverUrl, fileName, coverService, "send-to-kindle");
 
                 // Write to temp file
                 using (var fileStream = new FileStream(tempFilePath, FileMode.Create, FileAccess.Write, FileShare.None))
@@ -544,10 +487,8 @@ public static class AnnaDownloadEndpoints
                     await ebookStream.CopyToAsync(fileStream);
                 }
 
-                // Send email to the appropriate Kindle
-                var kindleEmail = target.ToLower() == "dad"
-                    ? cfg["Email:DadsKindleEmail"] ?? throw new InvalidOperationException("Email:DadsKindleEmail not configured")
-                    : cfg["Email:MomsKindleEmail"] ?? throw new InvalidOperationException("Email:MomsKindleEmail not configured");
+                // Send email to the appropriate Kindle using shared helper
+                var kindleEmail = SendToTargetHelpers.GetKindleEmailForTarget(target!, cfg);
 
                 await emailService.SendEmailWithAttachmentAsync(
                     kindleEmail,
@@ -562,7 +503,7 @@ public static class AnnaDownloadEndpoints
 
                 try
                 {
-                    var dropboxFolder = target.ToLower() == "dad" ? "/dad_downloads" : "/mom_downloads";
+                    var dropboxFolder = SendToTargetHelpers.GetDropboxFolderForKindleTarget(target!);
                     var dropboxPath = $"{dropboxFolder}/{fileName}";
 
                     using (var fileStream = new FileStream(tempFilePath, FileMode.Open, FileAccess.Read, FileShare.Read))

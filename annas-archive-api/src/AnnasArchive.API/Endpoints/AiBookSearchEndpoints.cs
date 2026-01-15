@@ -3,6 +3,7 @@ using System.Text.RegularExpressions;
 using AnnasArchive.API.Configuration;
 using AnnasArchive.API.Helpers;
 using AnnasArchive.API.Models;
+using AnnasArchive.API.Services;
 using AnnasArchive.Core.Services;
 using Microsoft.AspNetCore.Mvc;
 using Serilog;
@@ -597,6 +598,7 @@ Rules:
         IModelSelectionService modelSelection,
         IGoogleBooksService googleBooks,
         IOpenLibraryService openLibrary,
+        ICoverLookupService coverLookupService,
         CancellationToken cancellationToken)
     {
         if (request is null || string.IsNullOrWhiteSpace(request.Query))
@@ -776,10 +778,9 @@ Rules:
                         }
                     }
 
-                    var coverUrl = await openLibrary.GetCoverUrlAsync(title, author)
-                                   ?? await googleBooks.GetCoverUrlAsync(title, author);
+                    var coverResult = await coverLookupService.GetCoverAsync(title, author);
 
-                    books.Add(new AiBookSearchItem(title, author, bookSummary, importance, coverUrl, descriptionSource));
+                    books.Add(new AiBookSearchItem(title, author, bookSummary, importance, coverResult.CoverUrl, descriptionSource));
                 }
             }
 
@@ -890,10 +891,9 @@ Rules:
                                     }
                                 }
 
-                                var coverUrl = await openLibrary.GetCoverUrlAsync(title, author)
-                                               ?? await googleBooks.GetCoverUrlAsync(title, author);
+                                var coverResult = await coverLookupService.GetCoverAsync(title, author);
 
-                                books.Add(new AiBookSearchItem(title, author, bookSummary, importance, coverUrl, descriptionSource));
+                                books.Add(new AiBookSearchItem(title, author, bookSummary, importance, coverResult.CoverUrl, descriptionSource));
                             }
                         }
                     }

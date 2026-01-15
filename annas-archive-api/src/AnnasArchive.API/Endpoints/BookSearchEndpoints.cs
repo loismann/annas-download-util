@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Net.Http;
 using System.Text.Json;
 using AnnasArchive.API.Helpers;
+using AnnasArchive.API.Services;
 using AnnasArchive.Core.Models;
 using AnnasArchive.Core.Services;
 using Microsoft.AspNetCore.Http;
@@ -132,21 +133,19 @@ public static class BookSearchEndpoints
     private static async Task<IResult> HandleCoverLookup(
         [FromQuery] string? title,
         [FromQuery] string? author,
-        IOpenLibraryService openLibrary,
-        IGoogleBooksService googleBooks)
+        ICoverLookupService coverLookupService)
     {
         if (string.IsNullOrWhiteSpace(title))
             return Results.BadRequest(new { error = "title is required." });
 
         Log.Information("Cover lookup: title='{title}', author='{author}'");
-        var cover = await openLibrary.GetCoverUrlAsync(title, author)
-                    ?? await googleBooks.GetCoverUrlAsync(title, author);
+        var result = await coverLookupService.GetCoverAsync(title, author);
 
-        Log.Information(cover is null
+        Log.Information(result.CoverUrl is null
             ? $"Cover lookup failed for '{title}'"
-            : $"Cover lookup found for '{title}': {cover}");
+            : $"Cover lookup found for '{title}' from {result.Source}: {result.CoverUrl}");
 
-        return Results.Ok(new { coverUrl = cover });
+        return Results.Ok(new { coverUrl = result.CoverUrl });
     }
 
     private static IResult HandleGetDownloadStatus(IDownloadTrackingService downloadTracking)

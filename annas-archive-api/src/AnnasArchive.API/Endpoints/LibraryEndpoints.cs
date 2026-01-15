@@ -1,6 +1,7 @@
 using System.Text.Json;
 using AnnasArchive.API.Helpers;
 using AnnasArchive.API.Models;
+using AnnasArchive.API.Services;
 using AnnasArchive.Core.Services;
 using Dropbox.Api;
 using Dropbox.Api.Files;
@@ -260,17 +261,12 @@ public static class LibraryEndpoints
     private static async Task<IResult> HandleGetCoverCandidates(
         [FromQuery] string? title,
         [FromQuery] string? author,
-        IOpenLibraryService openLibrarySvc,
-        IGoogleBooksService googleBooksSvc)
+        ICoverLookupService coverLookupService)
     {
         if (string.IsNullOrWhiteSpace(title))
             return Results.BadRequest(new { error = "title is required." });
 
-        var openLibrary = await openLibrarySvc.GetCoverCandidatesAsync(title, author);
-        var google = await googleBooksSvc.GetCoverCandidatesAsync(title, author);
-        var covers = openLibrary.Concat(google)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
+        var covers = await coverLookupService.GetCoverCandidatesAsync(title, author);
         return Results.Ok(new { covers });
     }
 
@@ -807,10 +803,7 @@ public static class LibraryEndpoints
 
     private static async Task<IResult> HandleGetSummary(
         [FromRoute] string fileName,
-        IHttpClientFactory httpFactory,
-        IModelSelectionService modelSelection,
-        IOpenAiModelHelper modelHelper,
-        IAiResponseParser aiResponseParser)
+        IDescriptionFetcherService descriptionFetcher)
     {
         var safeFileName = Path.GetFileName(fileName);
         if (!string.Equals(fileName, safeFileName, StringComparison.Ordinal))
@@ -837,109 +830,13 @@ public static class LibraryEndpoints
                 return Results.Ok(new { summary = meta.Description, source = "cached" });
             }
 
-            // Try to fetch from external sources
+            // Try to fetch from external sources using the centralized service
             var title = meta.Title ?? Path.GetFileNameWithoutExtension(meta.FileName);
             var author = meta.Authors?.FirstOrDefault();
-            string? summary = null;
-            string? source = null;
 
-            // 1. Try Google Books API
-            try
-            {
-                using var http = httpFactory.CreateClient();
-                http.Timeout = TimeSpan.FromSeconds(5);
-                var query = Uri.EscapeDataString($"{title} {author ?? ""}".Trim());
-                var googleUrl = $"https://www.googleapis.com/books/v1/volumes?q={query}&maxResults=1";
-                var googleResp = await http.GetStringAsync(googleUrl);
-                var googleJson = JsonDocument.Parse(googleResp);
-
-                if (googleJson.RootElement.TryGetProperty("items", out var items) && items.GetArrayLength() > 0)
-                {
-                    var volumeInfo = items[0].GetProperty("volumeInfo");
-                    if (volumeInfo.TryGetProperty("description", out var desc))
-                    {
-                        summary = desc.GetString();
-                        source = "Google Books";
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Log.Information("[library-summary] Google Books lookup failed: {ex.Message}");
-            }
-
-            // 2. Try Open Library if Google failed
-            if (string.IsNullOrWhiteSpace(summary))
-            {
-                try
-                {
-                    using var http = httpFactory.CreateClient();
-                    http.Timeout = TimeSpan.FromSeconds(5);
-                    var query = Uri.EscapeDataString($"{title} {author ?? ""}".Trim());
-                    var olSearchUrl = $"https://openlibrary.org/search.json?q={query}&limit=1";
-                    var olSearchResp = await http.GetStringAsync(olSearchUrl);
-                    var olSearchJson = JsonDocument.Parse(olSearchResp);
-
-                    if (olSearchJson.RootElement.TryGetProperty("docs", out var docs) && docs.GetArrayLength() > 0)
-                    {
-                        var firstDoc = docs[0];
-
-                        // Try first_sentence
-                        if (firstDoc.TryGetProperty("first_sentence", out var firstSentence) && firstSentence.GetArrayLength() > 0)
-                        {
-                            summary = firstSentence[0].GetString();
-                            source = "Open Library";
-                        }
-
-                        // Try to get work details for description
-                        if (string.IsNullOrWhiteSpace(summary) && firstDoc.TryGetProperty("key", out var workKey))
-                        {
-                            var workUrl = $"https://openlibrary.org{workKey.GetString()}.json";
-                            var workResp = await http.GetStringAsync(workUrl);
-                            var workJson = JsonDocument.Parse(workResp);
-
-                            if (workJson.RootElement.TryGetProperty("description", out var workDesc))
-                            {
-                                if (workDesc.ValueKind == JsonValueKind.String)
-                                {
-                                    summary = workDesc.GetString();
-                                }
-                                else if (workDesc.ValueKind == JsonValueKind.Object && workDesc.TryGetProperty("value", out var descValue))
-                                {
-                                    summary = descValue.GetString();
-                                }
-                                source = "Open Library";
-                            }
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Log.Information("[library-summary] Open Library lookup failed: {ex.Message}");
-                }
-            }
-
-            // 3. Fall back to GPT-4 if external sources failed
-            if (string.IsNullOrWhiteSpace(summary))
-            {
-                try
-                {
-                    using var openAiHttp = httpFactory.CreateClient("OpenAI");
-                    var model = modelSelection.GetModelFast();
-                    summary = await AiDescriptionHelpers.GenerateNoSpoilerDescriptionAsync(
-                        title,
-                        author ?? "Unknown",
-                        openAiHttp,
-                        model,
-                        modelHelper,
-                        aiResponseParser);
-                    source = "GPT-4";
-                }
-                catch (Exception ex)
-                {
-                    Log.Information("[library-summary] GPT-4 generation failed: {ex.Message}");
-                }
-            }
+            var result = await descriptionFetcher.FetchDescriptionAsync(title, author);
+            var summary = result.Description;
+            var source = result.Source;
 
             // Save to metadata if we got a summary
             if (!string.IsNullOrWhiteSpace(summary))

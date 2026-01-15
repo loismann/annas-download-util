@@ -558,21 +558,34 @@ public class AnnaArchiveService
     private async Task<HttpResponseMessage> GetWithFallbackAsync(string pathAndQuery)
     {
         HttpResponseMessage? lastResponse = null;
-        foreach (var domain in BaseDomains)
+        Exception? lastException = null;
+
+        for (var i = 0; i < BaseDomains.Length; i++)
         {
+            var domain = BaseDomains[i];
             var uri = new Uri($"{domain}{pathAndQuery}");
             try
             {
                 var resp = await _http.GetAsync(uri);
                 if (resp.IsSuccessStatusCode)
+                {
+                    if (i > 0)
+                    {
+                        // Log successful fallback
+                        Console.WriteLine($"[AnnasArchive] Successfully connected via fallback domain: {domain}");
+                    }
                     return resp;
+                }
 
                 lastResponse?.Dispose();
                 lastResponse = resp;
+                Console.WriteLine($"[AnnasArchive] Domain {domain} returned {(int)resp.StatusCode}, trying next...");
             }
-            catch
+            catch (Exception ex)
             {
-                // ignore and try next domain
+                lastException = ex;
+                Console.WriteLine($"[AnnasArchive] Domain {domain} failed: {ex.Message}, trying next...");
+                // continue to next domain
             }
         }
 
@@ -583,7 +596,8 @@ public class AnnaArchiveService
             throw new HttpRequestException($"Request failed with status {status}");
         }
 
-        throw new HttpRequestException("Request failed for all Anna's Archive domains.");
+        throw new HttpRequestException(
+            $"Request failed for all Anna's Archive domains. Last error: {lastException?.Message ?? "Unknown"}");
     }
 }
 #nullable restore

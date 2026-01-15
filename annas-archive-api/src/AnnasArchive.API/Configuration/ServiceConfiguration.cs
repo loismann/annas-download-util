@@ -2,6 +2,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Threading.RateLimiting;
+using AnnasArchive.API.Constants;
 using AnnasArchive.API.Helpers;
 using AnnasArchive.API.Services;
 using AnnasArchive.Core.Services;
@@ -153,7 +154,7 @@ public static class ServiceConfiguration
         services.AddHttpClient<LibGenService>(c =>
         {
             c.BaseAddress = new Uri("https://libgen.rs");
-            c.Timeout = TimeSpan.FromSeconds(15);
+            c.Timeout = HttpTimeouts.ScrapingTimeout;
             c.DefaultRequestHeaders.UserAgent.ParseAdd(
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
                 "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36");
@@ -171,7 +172,7 @@ public static class ServiceConfiguration
 
             client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
             client.DefaultRequestHeaders.Add("OpenAI-Beta", "responses=v1");
-            client.Timeout = TimeSpan.FromMinutes(5);
+            client.Timeout = HttpTimeouts.AiOperationTimeout;
         })
         .AddAiResilience("OpenAI");
 
@@ -179,7 +180,7 @@ public static class ServiceConfiguration
         services.AddHttpClient("OpenLibrary", client =>
         {
             client.BaseAddress = new Uri("https://openlibrary.org/");
-            client.Timeout = TimeSpan.FromSeconds(30);
+            client.Timeout = HttpTimeouts.StandardApiTimeout;
             client.DefaultRequestHeaders.Add("User-Agent", "AnnaArchive/1.0");
         })
         .AddStandardResilience("OpenLibrary");
@@ -188,7 +189,7 @@ public static class ServiceConfiguration
         services.AddHttpClient("GoogleBooks", client =>
         {
             client.BaseAddress = new Uri("https://www.googleapis.com/");
-            client.Timeout = TimeSpan.FromSeconds(30);
+            client.Timeout = HttpTimeouts.StandardApiTimeout;
             client.DefaultRequestHeaders.Add("User-Agent", "AnnaArchive/1.0");
         })
         .AddStandardResilience("GoogleBooks");
@@ -214,6 +215,8 @@ public static class ServiceConfiguration
         // External API services
         services.AddSingleton<IOpenLibraryService, OpenLibraryService>();
         services.AddSingleton<IGoogleBooksService, GoogleBooksService>();
+        services.AddSingleton<Services.IDescriptionFetcherService, Services.DescriptionFetcherService>();
+        services.AddSingleton<Services.ICoverLookupService, Services.CoverLookupService>();
 
         // Email service
         services.AddSingleton<IEmailService, EmailService>();

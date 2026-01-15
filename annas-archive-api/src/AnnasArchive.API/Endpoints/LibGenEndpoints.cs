@@ -59,27 +59,6 @@ public static class LibGenEndpoints
             _ => "application/octet-stream"
         };
 
-    private static async Task<Stream> ProcessCoverAsync(
-        Stream ebookStream,
-        string? coverUrl,
-        string ext,
-        IEbookCoverService coverService,
-        string logPrefix)
-    {
-        if (string.IsNullOrWhiteSpace(coverUrl))
-            return ebookStream;
-
-        var extNoDot = ext.TrimStart('.');
-        if (coverService.IsFormatSupported(extNoDot))
-        {
-            Log.Information("[{logPrefix}] Attempting cover replacement");
-            return await coverService.ReplaceCoverAsync(ebookStream, coverUrl, extNoDot);
-        }
-
-        Log.Information("[{logPrefix}] Format {extNoDot} not supported for cover replacement, skipping");
-        return ebookStream;
-    }
-
     private static (string safeTitle, string ext, string fileName) BuildFileInfo(
         string? title,
         string md5,
@@ -184,7 +163,8 @@ public static class LibGenEndpoints
         using (resp)
         {
             var ebookStream = await resp.Content.ReadAsStreamAsync();
-            ebookStream = await ProcessCoverAsync(ebookStream, coverUrl, ext, coverService, "download-libgen");
+            ebookStream = await SendToTargetHelpers.TryReplaceCoverAsync(
+                ebookStream, coverUrl, fileName, coverService, "download-libgen");
             return Results.Stream(ebookStream, GetContentType(ext), fileName);
         }
     }
@@ -237,7 +217,8 @@ public static class LibGenEndpoints
         using (resp)
         {
             var ebookStream = await resp.Content.ReadAsStreamAsync();
-            ebookStream = await ProcessCoverAsync(ebookStream, coverUrl, ext, coverService, "library-libgen");
+            ebookStream = await SendToTargetHelpers.TryReplaceCoverAsync(
+                ebookStream, coverUrl, fileName, coverService, "library-libgen");
 
             var destinationPath = Path.Combine(libraryRoot, fileName);
             if (File.Exists(destinationPath))

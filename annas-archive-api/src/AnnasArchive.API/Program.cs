@@ -18,6 +18,7 @@ builder.ValidateRequiredConfiguration();
 
 // ─── Register all application services ───────────────────────────────────
 builder.Services.AddApplicationServices(builder.Configuration);
+builder.Services.AddHealthCheckServices();
 
 var app = builder.Build();
 
@@ -61,6 +62,7 @@ app.MapAiCharacterEndpoints();
 app.MapAiSummarizeEndpoints();
 app.MapAiSectionSummaryEndpoints();
 app.MapDevEndpoints();
+app.MapHealthCheckEndpoints();
 
 app.Run();
 

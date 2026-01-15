@@ -95,6 +95,53 @@ public static class SendToTargetHelpers
     }
 
     /// <summary>
+    /// Validates extended send operation parameters including metadata fields.
+    /// </summary>
+    /// <param name="md5">The MD5 hash to validate</param>
+    /// <param name="title">The title to validate (optional)</param>
+    /// <param name="coverUrl">The cover URL to validate (optional)</param>
+    /// <param name="authors">The authors string to validate (optional)</param>
+    /// <param name="fileSize">The file size string to validate (optional)</param>
+    /// <param name="description">The description string to validate (optional)</param>
+    /// <param name="validation">The validation service</param>
+    /// <returns>An error message if validation fails, null if valid</returns>
+    public static string? ValidateSendParametersExtended(
+        string md5,
+        string? title,
+        string? coverUrl,
+        string? authors,
+        string? fileSize,
+        string? description,
+        IValidationService validation)
+    {
+        // Run base validation first
+        var baseError = ValidateSendParameters(md5, title, validation);
+        if (baseError != null)
+            return baseError;
+
+        // Validate coverUrl format
+        if (!string.IsNullOrEmpty(coverUrl) && !Uri.TryCreate(coverUrl, UriKind.Absolute, out _))
+            return "coverUrl is not a valid URL.";
+
+        // Validate authors length
+        if (!string.IsNullOrEmpty(authors) && authors.Length > 1000)
+            return "authors exceeds maximum length of 1000 characters.";
+
+        // Validate fileSize is a valid numeric string
+        if (!string.IsNullOrEmpty(fileSize) && !long.TryParse(fileSize, out var fileSizeValue))
+            return "fileSize must be a valid numeric value.";
+
+        if (!string.IsNullOrEmpty(fileSize) && long.TryParse(fileSize, out var parsedSize) && parsedSize < 0)
+            return "fileSize must be a non-negative value.";
+
+        // Validate description length
+        if (!string.IsNullOrEmpty(description) && description.Length > 5000)
+            return "description exceeds maximum length of 5000 characters.";
+
+        return null;
+    }
+
+    /// <summary>
     /// Validates Kindle target parameter.
     /// </summary>
     /// <param name="target">The target to validate ("dad" or "mom")</param>

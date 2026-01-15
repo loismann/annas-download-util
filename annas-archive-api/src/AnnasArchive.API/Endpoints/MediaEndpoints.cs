@@ -1,4 +1,5 @@
 using System.Text.Json;
+using AnnasArchive.API.Helpers;
 using Microsoft.AspNetCore.Mvc;
 using Serilog;
 
@@ -25,6 +26,11 @@ public static class MediaEndpoints
     {
         if (string.IsNullOrWhiteSpace(term))
             return Results.BadRequest(new { error = "Query parameter 'term' is required." });
+
+        // Validate term length
+        var termValidation = ValidationHelpers.ValidateStringLength(term, "term", 200);
+        if (termValidation != null)
+            return termValidation;
 
         try
         {

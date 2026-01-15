@@ -266,6 +266,11 @@ public static class LibraryEndpoints
         if (string.IsNullOrWhiteSpace(title))
             return Results.BadRequest(new { error = "title is required." });
 
+        // Validate title length
+        var titleValidation = ValidationHelpers.ValidateStringLength(title, "title", 500);
+        if (titleValidation != null)
+            return titleValidation;
+
         var covers = await coverLookupService.GetCoverCandidatesAsync(title, author);
         return Results.Ok(new { covers });
     }
@@ -282,6 +287,15 @@ public static class LibraryEndpoints
     {
         if (string.IsNullOrWhiteSpace(fileName))
             return Results.BadRequest(new { error = "fileName is required." });
+
+        // Validate fileName length and title length
+        var fileNameValidation = ValidationHelpers.ValidateStringLength(fileName, "fileName", 500);
+        if (fileNameValidation != null)
+            return fileNameValidation;
+
+        var titleValidation = ValidationHelpers.ValidateStringLength(title, "title", 500);
+        if (titleValidation != null)
+            return titleValidation;
 
         if (string.IsNullOrWhiteSpace(target) || (target != "dad" && target != "mom"))
             return Results.BadRequest(new { error = "Invalid target. Must be 'dad' or 'mom'." });
@@ -1096,6 +1110,11 @@ public static class LibraryEndpoints
         var normalizedQuery = (query ?? q)?.Trim();
         if (string.IsNullOrWhiteSpace(normalizedQuery) || normalizedQuery.Length < 10)
             return Results.BadRequest(new { error = "Search query must be at least 10 characters." });
+
+        // Validate query max length
+        var queryValidation = ValidationHelpers.ValidateStringLength(normalizedQuery, "query", 500);
+        if (queryValidation != null)
+            return queryValidation;
 
         var readerKey = ResolveReaderKey(safeFileName, AiContentCache.GetExistingSummaryKeys());
         var results = await LibraryEpubCache.SearchAsync(fullPath, readerKey, normalizedQuery);

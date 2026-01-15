@@ -128,8 +128,9 @@ public static class AnnaDownloadEndpoints
         IConfiguration cfg,
         HttpContext context)
     {
-        // Use shared validation helper
-        var validationError = SendToTargetHelpers.ValidateSendParameters(md5, title, validation);
+        // Use shared extended validation helper for all parameters
+        var validationError = SendToTargetHelpers.ValidateSendParametersExtended(
+            md5, title, coverUrl, authors, fileSize, description: null, validation);
         if (validationError != null)
             return Results.BadRequest(new { error = validationError });
 
@@ -198,8 +199,9 @@ public static class AnnaDownloadEndpoints
         IConfiguration cfg,
         HttpContext context)
     {
-        // Use shared validation helper
-        var validationError = SendToTargetHelpers.ValidateSendParameters(md5, title, validation);
+        // Use shared extended validation helper for all parameters
+        var validationError = SendToTargetHelpers.ValidateSendParametersExtended(
+            md5, title, coverUrl, authors, fileSize, description, validation);
         if (validationError != null)
             return Results.BadRequest(new { error = validationError });
 
@@ -291,8 +293,9 @@ public static class AnnaDownloadEndpoints
         IConfiguration cfg,
         IDownloadTrackingService downloadTracking)
     {
-        // Use shared validation helper
-        var validationError = SendToTargetHelpers.ValidateSendParameters(md5, title, validation);
+        // Use shared validation helper with coverUrl validation
+        var validationError = SendToTargetHelpers.ValidateSendParametersExtended(
+            md5, title, coverUrl, authors: null, fileSize: null, description: null, validation);
         if (validationError != null)
             return Results.BadRequest(new { error = validationError });
 
@@ -439,8 +442,9 @@ public static class AnnaDownloadEndpoints
         IValidationService validation,
         IDownloadTrackingService downloadTracking)
     {
-        // Use shared validation helpers
-        var validationError = SendToTargetHelpers.ValidateSendParameters(md5, title, validation);
+        // Use shared validation helpers with coverUrl validation
+        var validationError = SendToTargetHelpers.ValidateSendParametersExtended(
+            md5, title, coverUrl, authors: null, fileSize: null, description: null, validation);
         if (validationError != null)
             return Results.BadRequest(new { error = validationError });
 

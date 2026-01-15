@@ -136,11 +136,11 @@ public static class LibGenEndpoints
         IDownloadTrackingService downloadTracking,
         HttpContext context)
     {
-        if (!validation.IsValidMd5(md5))
-            return Results.BadRequest(new { error = "Invalid MD5 format. Must be 32 hexadecimal characters." });
-
-        if (!validation.IsValidTitle(title))
-            return Results.BadRequest(new { error = "Title too long. Maximum 500 characters." });
+        // Use shared extended validation helper for all parameters
+        var validationError = SendToTargetHelpers.ValidateSendParametersExtended(
+            md5, title, coverUrl, authors, fileSize, description: null, validation);
+        if (validationError != null)
+            return Results.BadRequest(new { error = validationError });
 
         var userName = GetUserName(context);
         Log.Information(" [LibGen] Downloading book {md5} for user {userName}...");
@@ -184,11 +184,11 @@ public static class LibGenEndpoints
         IDownloadTrackingService downloadTracking,
         HttpContext context)
     {
-        if (!validation.IsValidMd5(md5))
-            return Results.BadRequest(new { error = "Invalid MD5 format. Must be 32 hexadecimal characters." });
-
-        if (!validation.IsValidTitle(title))
-            return Results.BadRequest(new { error = "Title too long. Maximum 500 characters." });
+        // Use shared extended validation helper for all parameters
+        var validationError = SendToTargetHelpers.ValidateSendParametersExtended(
+            md5, title, coverUrl, authors, fileSize, description, validation);
+        if (validationError != null)
+            return Results.BadRequest(new { error = validationError });
 
         var userName = GetUserName(context);
         var userTag = LibraryHelpers.ResolveUserLibraryTag(context);

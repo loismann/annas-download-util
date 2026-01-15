@@ -313,6 +313,11 @@ public static class DropboxReaderEndpoints
         if (string.IsNullOrWhiteSpace(query) || query.Length < 10)
             return Results.BadRequest(new { error = "Search query must be at least 10 characters." });
 
+        // Validate query max length
+        var queryValidation = ValidationHelpers.ValidateStringLength(query, "query", 500);
+        if (queryValidation != null)
+            return queryValidation;
+
         try
         {
             var matches = await DropboxEpubCache.SearchAsync(dropbox, path, query);

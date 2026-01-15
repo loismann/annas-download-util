@@ -21,6 +21,7 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatDialog } from '@angular/material/dialog';
 import { ActivatedRoute, Router } from '@angular/router';
 import { CharacterGraphModalComponent } from '../character-graph-modal/character-graph-modal.component';
+import { ChapterListComponent } from '../components/chapter-list/chapter-list.component';
 import { ConfirmDialogComponent } from '../components/confirm-dialog/confirm-dialog.component';
 import { DeleteCacheDialogComponent, DeleteCacheDialogResult } from '../components/delete-cache-dialog/delete-cache-dialog.component';
 import { RemoveFromReaderDialogComponent, RemoveFromReaderDialogResult } from '../components/remove-from-reader-dialog/remove-from-reader-dialog.component';
@@ -83,7 +84,8 @@ interface ReadingPosition {
     MatIconModule,
     MatProgressBarModule,
     MatSliderModule,
-    MatTooltipModule
+    MatTooltipModule,
+    ChapterListComponent
   ],
   templateUrl: './book-reader.component.html',
   styleUrls: ['./book-reader.component.css']
@@ -178,6 +180,11 @@ export class BookReaderComponent implements OnInit, OnDestroy {
   tokenUsage: { promptTokens: number; completionTokens: number; totalTokens: number; allowance?: number | null; allowanceUsedPercent?: number | null; tokensRemaining?: number | null; resetsAtUtc?: string | null; totalCostUsd?: number | null } | null = null;
   allUsersUsage: UserTokenUsage[] = [];
   fullChapterSummaryCache = new Map<number, FullChapterSummaryResponse>();
+
+  get cachedChapterIds(): Set<number> {
+    return new Set(this.fullChapterSummaryCache.keys());
+  }
+
   bookmarks: BookmarkEntry[] = [];
   bookmarkSelectValue: string | null = null;
   showBookmarksDropdown = false;

@@ -1,0 +1,27 @@
+<div class="filter-row split-row">
+  <!-- Format selector -->
+  <mat-form-field appearance="outline" class="format-filter">
+    <mat-label>Format</mat-label>
+    <mat-select
+      [ngModel]="selectedFormat"
+      (ngModelChange)="onFormatChange($event)"
+      name="format"
+      [disabled]="disabled">
+      <mat-option value="">All</mat-option>
+      <mat-option *ngFor="let fmt of availableFormats" [value]="fmt">
+        {{ fmt }}
+      </mat-option>
+    </mat-select>
+  </mat-form-field>
+
+  <!-- Download counter -->
+  <div *ngIf="downloadsLeft !== null"
+       class="download-counter inline"
+       [class.warning-yellow]="downloadWarningLevel === 'yellow'"
+       [class.warning-orange]="downloadWarningLevel === 'orange'"
+       [class.warning-red]="downloadWarningLevel === 'red'">
+    <div class="counter-main">
+      <strong>Downloads:</strong> {{ downloadsLeft }} / {{ downloadsPerDay }}
+    </div>
+  </div>
+</div>

@@ -9,10 +9,9 @@
     "watch": "ng build --watch --configuration development",
     "test": "ng test",
     "serve:ssr:annas-archive-app": "node dist/annas-archive-app/server/server.mjs",
-    "test:e2e:series": "/Users/paulferrer/Documents/personal_dev/annas-download-util/test-e2e-series.sh",
-    "test:e2e:parallel": "/Users/paulferrer/Documents/personal_dev/annas-download-util/test-e2e-parallel.sh",
-    "deploy:full": "/Users/paulferrer/Documents/personal_dev/annas-download-util/deploy-full.sh",
-    "deploy:skip-tests": "/Users/paulferrer/Documents/personal_dev/annas-download-util/deploy-skip-tests.sh"
+    "test:e2e": "../scripts/test-e2e.sh",
+    "deploy:full": "../scripts/deploy-full.sh",
+    "deploy:unit-only": "../scripts/deploy-unit-only.sh"
   },
   "private": true,
   "dependencies": {

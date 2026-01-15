@@ -1,0 +1,261 @@
+.library-card {
+  display: flex;
+  flex-direction: column;
+  padding: 0 !important;
+  overflow: hidden;
+  border-radius: 10px;
+  border: 1px solid #e5e7eb;
+  height: 100%;
+  position: relative;
+}
+
+/* Book card in bulk edit mode */
+.bulk-edit-checkbox-wrapper {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 10;
+  background: white;
+  border-radius: 4px;
+  padding: 4px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.library-card.bulk-edit-selected {
+  border: 3px solid #3f51b5;
+  box-shadow: 0 4px 12px rgba(63, 81, 181, 0.3);
+}
+
+.cover-frame {
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  background: #f8fafc;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.library-card .cover {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.library-card .info {
+  padding: 10px 12px 6px;
+  min-height: 78px;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+.library-card .title {
+  font-weight: 700;
+  font-size: 0.9rem;
+  margin-bottom: 0.3rem;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  min-height: 2.4em;
+}
+
+.library-card .author {
+  color: #666;
+  font-size: 0.8rem;
+  margin-bottom: 0.3rem;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+  overflow: hidden;
+  min-height: 1.2em;
+  visibility: visible;
+}
+
+.library-card .author.author-missing {
+  visibility: hidden;
+}
+
+.library-card .meta {
+  font-size: 0.75rem;
+  color: #444;
+}
+
+.goodreads {
+  margin-top: auto;
+  padding-top: 8px;
+  font-size: 0.78rem;
+  color: #475569;
+}
+
+.goodreads-value {
+  margin-left: 6px;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.personal-stars {
+  --star-gap: 3px;
+  margin-top: 6px;
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  gap: var(--star-gap);
+  padding-inline: var(--star-gap);
+}
+
+.star-button {
+  width: auto;
+  border: none;
+  background: transparent;
+  color: #cbd5f5;
+  font-size: clamp(1.1rem, 1.2vw + 0.7rem, 1.35rem);
+  padding: 0;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.star-button.filled {
+  color: #d97706;
+}
+
+.star-button:hover {
+  color: #ea580c;
+}
+
+.card-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.4rem;
+  padding: 0 12px 12px;
+}
+
+.card-actions button {
+  height: 30px;
+  font-size: 11px;
+  padding: 0 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  line-height: 1.1;
+}
+
+.card-actions button span {
+  line-height: 1.1;
+}
+
+/* Small Tile Size */
+.library-card-small {
+  font-size: 0.85em;
+}
+
+.library-card-small .info {
+  padding: 8px 10px 5px;
+  min-height: 60px;
+}
+
+.library-card.library-card-small .title {
+  font-size: 0.8rem;
+  -webkit-line-clamp: 2;
+  min-height: 2.2em;
+}
+
+.library-card-small .author {
+  font-size: 0.7rem;
+  min-height: 1.1em;
+}
+
+.library-card-small .meta {
+  font-size: 0.7rem;
+}
+
+.library-card-small .goodreads {
+  font-size: 0.7rem;
+  margin-top: 6px;
+}
+
+.library-card-small .personal-stars {
+  --star-size: 14px;
+  --star-gap: 2px;
+}
+
+.library-card-small .card-actions {
+  gap: 0.3rem;
+  padding: 0 8px 8px;
+}
+
+.library-card-small .card-actions button {
+  height: 26px;
+  font-size: 10px;
+  padding: 0 4px;
+  min-width: 0;
+}
+
+/* Kindle button text - full text by default */
+.kindle-btn-full {
+  display: inline;
+}
+
+.kindle-btn-compact {
+  display: none;
+}
+
+/* Show compact version on small tiles */
+.library-card-small .kindle-btn-full {
+  display: none;
+}
+
+.library-card-small .kindle-btn-compact {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.library-card-small .kindle-btn-compact mat-icon {
+  font-size: 14px;
+  width: 14px;
+  height: 14px;
+}
+
+/* Medium Tile Size (Default - no special class needed) */
+.library-card-medium {
+  /* Uses default library-card styles */
+}
+
+/* Large Tile Size */
+.library-card-large {
+  font-size: 1.1em;
+}
+
+.library-card-large .info {
+  padding: 14px 16px 8px;
+  min-height: 100px;
+}
+
+.library-card.library-card-large .title {
+  font-size: 1.05rem;
+  -webkit-line-clamp: 3;
+  min-height: 3.6em;
+}
+
+.library-card-large .author {
+  font-size: 0.95rem;
+  min-height: 1.4em;
+}
+
+.library-card-large .meta {
+  font-size: 0.85rem;
+}
+
+.library-card-large .goodreads {
+  font-size: 0.88rem;
+  margin-top: 10px;
+}
+
+.library-card-large .personal-stars {
+  --star-size: 20px;
+  --star-gap: 4px;
+}

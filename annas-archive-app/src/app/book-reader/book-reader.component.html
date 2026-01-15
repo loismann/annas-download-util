@@ -69,23 +69,14 @@
       <div *ngIf="selectedBook.authors?.length">Author: {{ selectedBook.authors.join(', ') }}</div>
     </div>
 
-    <mat-form-field appearance="outline" class="w-100" [class.dropdown-disabled]="!chapters.length">
-      <mat-label>Chapter</mat-label>
-      <mat-select
-        [disabled]="!chapters.length || loadingChapters || loadingContent"
-        [value]="selectedChapterId"
-        (selectionChange)="onChapterSelected($event.value)"
-        panelClass="reader-select-panel"
-        [panelWidth]="'fit-content'">
-        <mat-option *ngFor="let chapter of chapters" [value]="chapter.id">
-          <div class="chapter-line" [style.paddingLeft.px]="chapter.level * 12">
-            <span class="chapter-title">{{ chapter.displayLabel || chapter.title }}</span>
-            <span class="chapter-meta">({{ chapter.wordCount | number }} words)</span>
-            <mat-icon *ngIf="fullChapterSummaryCache.has(chapter.id)" class="cached-indicator" [matTooltip]="'Summary cached for offline access'">cloud_done</mat-icon>
-          </div>
-        </mat-option>
-      </mat-select>
-    </mat-form-field>
+    <app-chapter-list
+      [chapters]="chapters"
+      [selectedChapterId]="selectedChapterId"
+      [loadingChapters]="loadingChapters"
+      [loadingContent]="loadingContent"
+      [cachedChapterIds]="cachedChapterIds"
+      (chapterSelected)="onChapterSelected($event)"
+    ></app-chapter-list>
 
     <div class="book-search" *ngIf="selectedBookPath">
       <h3>Search entire book</h3>

@@ -14,31 +14,9 @@ import { MatDialog } from '@angular/material/dialog';
 import { LibraryApiService } from '../services/library-api.service';
 import { BookEditDialogComponent, BookEditDialogData, BookEditDialogResult } from '../components/book-edit-dialog/book-edit-dialog.component';
 import { BulkEditDialogComponent, BookBulkEditDialogData, BookBulkEditDialogResult } from '../components/bulk-edit-dialog/bulk-edit-dialog.component';
+import { BookCardComponent, LibraryBook } from '../components/book-card/book-card.component';
 import { AuthService } from '../services/auth.service';
 import { LoggerService } from '../services/logger.service';
-
-interface LibraryBook {
-  title: string;
-  authors: string[];
-  format: string;
-  fileSize: string;
-  fileName: string;
-  coverUrl?: string | null;
-  source?: string | null;
-  savedAt?: string | null;
-  primaryGenre?: string | null;
-  tags?: string[];
-  series?: string | null;
-  publishedDate?: string | null;
-  pages?: string | null;
-  md5?: string | null;
-  goodreadsRating?: number | null;
-  personalRating?: number | null;
-  readerEnabled?: boolean | null;
-  description?: string | null;
-  dadsKindleState?: 'idle' | 'sending' | 'success' | 'error';
-  momsKindleState?: 'idle' | 'sending' | 'success' | 'error';
-}
 
 @Component({
   selector: 'app-library',
@@ -54,7 +32,8 @@ interface LibraryBook {
     MatSelectModule,
     MatButtonModule,
     MatIconModule,
-    MatCheckboxModule
+    MatCheckboxModule,
+    BookCardComponent
   ],
   templateUrl: './library.component.html',
   styleUrls: ['./library.component.css']
@@ -80,7 +59,6 @@ export class LibraryComponent implements OnInit {
   sortDirection: 'down' | 'up' = 'down';
   activeLetter = '#';
   private scrollFrameRequested = false;
-  readonly starRange = [1, 2, 3, 4, 5];
   selectedOwnerTags = new Set<string>();
   readonly ownerTags = ["Dad's Books", "Mom's Books", "Paul's Books"];
   bulkEditMode = false;
@@ -611,6 +589,14 @@ export class LibraryComponent implements OnInit {
         this.logger.error('[library] Failed to update personal rating:', err);
       }
     });
+  }
+
+  onRatingChange(event: { book: LibraryBook; rating: number }): void {
+    this.setPersonalRating(event.book, event.rating);
+  }
+
+  onSendToKindle(event: { book: LibraryBook; target: 'dad' | 'mom' }): void {
+    this.sendToKindle(event.book, event.target);
   }
 
   /**

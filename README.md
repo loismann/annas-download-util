@@ -23,16 +23,16 @@ Run from **any directory**:
 
 ```bash
 # Run E2E tests (headless, with file selection)
-/Users/paulferrer/Documents/personal_dev/annas-download-util/test-e2e.sh
+./scripts/test-e2e.sh
 
 # Run unit tests only (backend + frontend)
-/Users/paulferrer/Documents/personal_dev/annas-download-util/test-unit.sh
+./scripts/test-unit.sh
 
 # Deploy with unit tests only (faster)
-/Users/paulferrer/Documents/personal_dev/annas-download-util/deploy-unit-only.sh
+./scripts/deploy-unit-only.sh
 
 # Deploy with all tests (unit + E2E)
-/Users/paulferrer/Documents/personal_dev/annas-download-util/deploy-full.sh
+./scripts/deploy-full.sh
 ```
 
 ## What These Commands Do

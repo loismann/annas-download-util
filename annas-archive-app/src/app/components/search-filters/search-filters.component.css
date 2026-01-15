@@ -1,0 +1,94 @@
+.filter-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.filter-row.split-row {
+  align-items: stretch;
+}
+
+.filter-row.split-row > * {
+  flex: 1 1 50%;
+}
+
+.format-filter {
+  flex: 1;
+  min-width: 140px;
+}
+
+.download-counter {
+  margin: 0 auto;
+  padding: 0.75rem 1rem;
+  border-radius: 4px;
+  background: #e3f2fd;
+  border-left: 4px solid #2196f3;
+  text-align: center;
+  width: 100%;
+  transition: all 0.3s ease;
+}
+
+.download-counter.inline {
+  margin: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 56px;
+  height: 56px;
+  padding: 0 1rem;
+}
+
+.download-counter .counter-main {
+  font-size: 1rem;
+  color: #1976d2;
+}
+
+.download-counter.warning-yellow {
+  background: #fffde7;
+  border-left-color: #fbc02d;
+}
+
+.download-counter.warning-yellow .counter-main {
+  color: #f9a825;
+}
+
+.download-counter.warning-orange {
+  background: #fff3e0;
+  border-left-color: #ff9800;
+}
+
+.download-counter.warning-orange .counter-main {
+  color: #f57c00;
+}
+
+.download-counter.warning-red {
+  background: #ffebee;
+  border-left-color: #f44336;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+.download-counter.warning-red .counter-main {
+  color: #c62828;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+@media (max-width: 744px) {
+  .filter-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
+  }
+
+  .format-filter {
+    min-width: unset;
+  }
+}

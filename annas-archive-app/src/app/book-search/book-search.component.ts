@@ -37,6 +37,7 @@ import {
 import { Subject } from 'rxjs';
 import { debounceTime, distinctUntilChanged, takeUntil, tap } from 'rxjs/operators';
 import { RelatedBooksModalComponent } from '../related-books-modal/related-books-modal.component';
+import { SearchFiltersComponent } from '../components/search-filters/search-filters.component';
 
 interface DomainHealth {
   name: string;
@@ -62,6 +63,7 @@ interface DomainHealth {
     MatIconModule,
     MatSlideToggleModule,
     MatTooltipModule,
+    SearchFiltersComponent,
   ],
   templateUrl: './book-search.component.html',
   styleUrls: ['./book-search.component.css'],
@@ -277,6 +279,10 @@ export class BookSearchComponent implements OnInit, OnDestroy {
   get availableFormats(): string[] {
     // Return static list of common formats so users can filter before searching
     return ['EPUB', 'MOBI', 'PDF', 'AZW3', 'FB2', 'TXT'];
+  }
+
+  onFormatChange(format: string): void {
+    this.selectedFormat = format;
   }
 
   get filteredBooks(): BookDto[] {

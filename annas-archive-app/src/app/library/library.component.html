@@ -229,91 +229,19 @@
           [class.library-row-medium]="tileSize === 'medium'"
           [class.library-row-large]="tileSize === 'large'"
         >
-          <mat-card
+          <app-book-card
             *ngFor="let book of row; trackBy: trackByFileName"
-            class="library-card"
-            [class.library-card-small]="tileSize === 'small'"
-            [class.library-card-medium]="tileSize === 'medium'"
-            [class.library-card-large]="tileSize === 'large'"
-            [class.bulk-edit-selected]="bulkEditMode && selectedBooksForBulk.has(book.fileName)"
-          >
-            <!-- Checkbox overlay in upper-right corner -->
-            <div *ngIf="bulkEditMode" class="bulk-edit-checkbox-wrapper">
-              <mat-checkbox
-                [checked]="selectedBooksForBulk.has(book.fileName)"
-                (change)="toggleBookSelection(book)"
-                (click)="$event.stopPropagation()"
-              >
-              </mat-checkbox>
-            </div>
-
-            <div class="cover-frame" (click)="onCoverClick(book)" style="cursor: pointer;">
-              <img
-                class="cover"
-                [src]="book.coverUrl || placeholderUrl"
-                (error)="onCoverError($event)"
-                [alt]="book.title + ' cover'"
-              />
-            </div>
-            <div class="info">
-              <div class="title">{{ book.title }}</div>
-              <div class="personal-stars" aria-label="Personal rating">
-                <button
-                  *ngFor="let star of starRange"
-                  type="button"
-                  class="star-button"
-                  [class.filled]="(book.personalRating ?? 0) >= star"
-                  (click)="setPersonalRating(book, star)"
-                >
-                  ★
-                </button>
-              </div>
-              <div class="author" [class.author-missing]="book.authors.length === 0">
-                {{ book.authors.length ? book.authors.join(', ') : '' }}
-              </div>
-              <div class="meta">{{ book.format }} &nbsp;|&nbsp; {{ book.fileSize }}</div>
-              <div class="goodreads">
-                Goodreads
-                <span class="goodreads-value">
-                  {{ book.goodreadsRating !== null && book.goodreadsRating !== undefined
-                    ? (book.goodreadsRating | number:'1.1-1')
-                    : 'NA' }}
-                </span>
-              </div>
-            </div>
-            <div class="card-actions">
-              <button
-                mat-raised-button
-                color="primary"
-                (click)="sendToKindle(book, 'dad')"
-                [disabled]="!book.fileName || !canSendToKindle(book) || book.dadsKindleState === 'sending'">
-                <ng-container [ngSwitch]="book.dadsKindleState">
-                  <span *ngSwitchCase="'sending'">Sending…</span>
-                  <span *ngSwitchCase="'success'">✔ Sent</span>
-                  <span *ngSwitchCase="'error'">✖ Retry</span>
-                  <ng-container *ngSwitchDefault>
-                    <span class="kindle-btn-full">Dad's Kindle</span>
-                    <span class="kindle-btn-compact"><mat-icon>send</mat-icon>D</span>
-                  </ng-container>
-                </ng-container>
-              </button>
-              <button
-                mat-raised-button
-                color="primary"
-                (click)="sendToKindle(book, 'mom')"
-                [disabled]="!book.fileName || !canSendToKindle(book) || book.momsKindleState === 'sending'">
-                <ng-container [ngSwitch]="book.momsKindleState">
-                  <span *ngSwitchCase="'sending'">Sending…</span>
-                  <span *ngSwitchCase="'success'">✔ Sent</span>
-                  <span *ngSwitchCase="'error'">✖ Retry</span>
-                  <ng-container *ngSwitchDefault>
-                    <span class="kindle-btn-full">Mom's Kindle</span>
-                    <span class="kindle-btn-compact"><mat-icon>send</mat-icon>M</span>
-                  </ng-container>
-                </ng-container>
-              </button>
-            </div>
-          </mat-card>
+            [book]="book"
+            [tileSize]="tileSize"
+            [bulkEditMode]="bulkEditMode"
+            [isSelected]="selectedBooksForBulk.has(book.fileName)"
+            [canSendToKindle]="canSendToKindle(book)"
+            [placeholderUrl]="placeholderUrl"
+            (coverClick)="onCoverClick($event)"
+            (ratingChange)="onRatingChange($event)"
+            (sendToKindle)="onSendToKindle($event)"
+            (selectionToggle)="toggleBookSelection($event)"
+          ></app-book-card>
         </div>
       </cdk-virtual-scroll-viewport>
 

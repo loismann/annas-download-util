@@ -220,13 +220,44 @@
   min-height: 0;
 }
 
+/* Virtual scroll viewport - replaces .library-grid-scroll div */
 .library-grid-scroll {
   flex: 1 1 auto;
-  overflow-y: auto;
   padding-right: 64px;
-  scrollbar-gutter: stable both-edges;
   min-height: 0;
   margin-right: 10px;
+}
+
+/* Row container for virtual scrolling */
+.library-row {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 0.9rem;
+  padding-bottom: 0.9rem;
+}
+
+.library-row-small {
+  gap: 0.7rem;
+  padding-bottom: 0.7rem;
+}
+
+.library-row-large {
+  gap: 1.1rem;
+  padding-bottom: 1.1rem;
+}
+
+/* Cards in rows need fixed widths */
+.library-row .library-card {
+  flex: 0 0 auto;
+  width: 170px;
+}
+
+.library-row .library-card-small {
+  width: 140px;
+}
+
+.library-row .library-card-large {
+  width: 220px;
 }
 
 .library-controls {
@@ -344,12 +375,10 @@
   color: #666;
 }
 
+/* Legacy grid styles - kept for fallback but overridden by row styles */
 .library-grid {
-  display: grid;
-  grid-template-columns: repeat(6, minmax(150px, 1fr));
-  grid-auto-rows: min-content;
-  gap: 0.9rem;
-  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .library-card {
@@ -731,18 +760,4 @@
   --star-gap: 4px;
 }
 
-/* Grid adjustments for different tile sizes */
-.library-grid:has(.library-card-small) {
-  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-  gap: 0.7rem;
-}
-
-.library-grid:has(.library-card-medium) {
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  gap: 0.9rem;
-}
-
-.library-grid:has(.library-card-large) {
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 1.1rem;
-}
+/* Grid adjustments removed - now handled by row-based virtual scrolling */

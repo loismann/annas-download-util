@@ -102,6 +102,9 @@ describe('LibraryComponent', () => {
         of({ coverUrl: newCoverUrl })
       );
 
+      // Mock fetch to fail immediately, triggering fallback to URL method
+      spyOn(window, 'fetch').and.returnValue(Promise.reject(new Error('CORS error')));
+
       // Act
       component.onCoverClick(testBook);
 
@@ -235,6 +238,8 @@ describe('LibraryComponent', () => {
         throwError(() => new Error('API Error'))
       );
 
+      // Mock fetch to fail immediately, triggering fallback to URL method
+      spyOn(window, 'fetch').and.returnValue(Promise.reject(new Error('CORS error')));
       spyOn(console, 'error');
 
       // Act
@@ -302,6 +307,9 @@ describe('LibraryComponent', () => {
       mockLibraryApiService.updateLibraryBookCover.and.returnValue(
         of({ coverUrl: newCoverUrl })
       );
+
+      // Mock fetch to fail immediately, triggering fallback to URL method
+      spyOn(window, 'fetch').and.returnValue(Promise.reject(new Error('CORS error')));
 
       // Act
       component.onCoverClick(testBook);
@@ -451,6 +459,237 @@ describe('LibraryComponent', () => {
 
       component.setTileSize('medium');
       expect(component.tileSize).toBe('medium');
+    });
+  });
+
+  describe('Virtual Scrolling', () => {
+    const createTestBooks = (count: number) => {
+      return Array.from({ length: count }, (_, i) => ({
+        title: `Book ${i + 1}`,
+        authors: [`Author ${i + 1}`],
+        format: 'EPUB',
+        fileSize: '1.2 MB',
+        fileName: `book-${i + 1}.epub`,
+        coverUrl: null,
+        primaryGenre: 'Fiction',
+        tags: [],
+        series: null,
+        source: null,
+        md5: null,
+        savedAt: new Date(2024, 0, i + 1).toISOString(),
+        publishedDate: null,
+        pages: null,
+        goodreadsRating: null,
+        personalRating: null,
+        dadsKindleState: 'idle' as const,
+        momsKindleState: 'idle' as const,
+        readerEnabled: false
+      }));
+    };
+
+    describe('rowHeight getter', () => {
+      it('should return 400 for medium tile size', () => {
+        component.tileSize = 'medium';
+        expect(component.rowHeight).toBe(400);
+      });
+
+      it('should return 320 for small tile size', () => {
+        component.tileSize = 'small';
+        expect(component.rowHeight).toBe(320);
+      });
+
+      it('should return 480 for large tile size', () => {
+        component.tileSize = 'large';
+        expect(component.rowHeight).toBe(480);
+      });
+    });
+
+    describe('bookRows getter', () => {
+      it('should group books into rows based on cachedItemsPerRow', () => {
+        component.books = createTestBooks(15);
+        // Access private property for testing
+        (component as any).cachedItemsPerRow = 5;
+
+        const rows = component.bookRows;
+
+        expect(rows.length).toBe(3);
+        expect(rows[0].length).toBe(5);
+        expect(rows[1].length).toBe(5);
+        expect(rows[2].length).toBe(5);
+      });
+
+      it('should handle partial last row correctly', () => {
+        component.books = createTestBooks(13);
+        (component as any).cachedItemsPerRow = 5;
+
+        const rows = component.bookRows;
+
+        expect(rows.length).toBe(3);
+        expect(rows[0].length).toBe(5);
+        expect(rows[1].length).toBe(5);
+        expect(rows[2].length).toBe(3); // Partial row
+      });
+
+      it('should return empty array for empty books', () => {
+        component.books = [];
+        (component as any).cachedItemsPerRow = 5;
+
+        const rows = component.bookRows;
+
+        expect(rows.length).toBe(0);
+      });
+
+      it('should handle single book', () => {
+        component.books = createTestBooks(1);
+        (component as any).cachedItemsPerRow = 5;
+
+        const rows = component.bookRows;
+
+        expect(rows.length).toBe(1);
+        expect(rows[0].length).toBe(1);
+      });
+    });
+
+    describe('trackByRow', () => {
+      it('should return first book filename as tracking key', () => {
+        const row = createTestBooks(3);
+        const key = component.trackByRow(0, row);
+        expect(key).toBe('book-1.epub');
+      });
+
+      it('should return fallback key for empty row', () => {
+        const key = component.trackByRow(5, []);
+        expect(key).toBe('row-5');
+      });
+
+      it('should handle row with undefined filename', () => {
+        const row = [{ ...createTestBooks(1)[0], fileName: '' }];
+        const key = component.trackByRow(3, row);
+        expect(key).toBe('row-3');
+      });
+    });
+
+    describe('setTileSize with recalculateLayout', () => {
+      it('should trigger recalculateLayout after tile size change', (done) => {
+        spyOn(component, 'recalculateLayout');
+
+        component.setTileSize('small');
+
+        setTimeout(() => {
+          expect(component.recalculateLayout).toHaveBeenCalled();
+          done();
+        }, 10);
+      });
+    });
+
+    describe('resetView with virtual scroll', () => {
+      it('should reset tile size to medium and trigger recalculateLayout', (done) => {
+        component.tileSize = 'large';
+        spyOn(component, 'recalculateLayout');
+
+        component.resetView();
+
+        expect(component.tileSize).toBe('medium');
+        setTimeout(() => {
+          expect(component.recalculateLayout).toHaveBeenCalled();
+          done();
+        }, 10);
+      });
+
+      it('should reset activeLetter to #', () => {
+        component.activeLetter = 'M';
+
+        component.resetView();
+
+        expect(component.activeLetter).toBe('#');
+      });
+    });
+
+    describe('scrollToLetter', () => {
+      beforeEach(() => {
+        // Create books with different starting letters
+        const books = [
+          { ...createTestBooks(1)[0], title: 'Alpha Book', fileName: 'alpha.epub' },
+          { ...createTestBooks(1)[0], title: 'Beta Book', fileName: 'beta.epub' },
+          { ...createTestBooks(1)[0], title: 'Charlie Book', fileName: 'charlie.epub' },
+          { ...createTestBooks(1)[0], title: 'Delta Book', fileName: 'delta.epub' },
+          { ...createTestBooks(1)[0], title: 'Echo Book', fileName: 'echo.epub' },
+          { ...createTestBooks(1)[0], title: 'Foxtrot Book', fileName: 'foxtrot.epub' }
+        ];
+        component.books = books;
+        component.sortOrder = 'title';
+        (component as any).cachedItemsPerRow = 2;
+      });
+
+      it('should not scroll to unavailable letter', () => {
+        // Z is not available since no books start with Z
+        component.scrollToLetter('Z');
+        // activeLetter should remain unchanged
+        expect(component.activeLetter).toBe('#');
+      });
+
+      it('should update activeLetter when scrolling to valid letter', () => {
+        // Mock the virtualScroll
+        (component as any).virtualScroll = {
+          scrollToIndex: jasmine.createSpy('scrollToIndex')
+        };
+
+        component.scrollToLetter('C');
+
+        expect(component.activeLetter).toBe('C');
+      });
+
+      it('should calculate correct row index for letter', () => {
+        const mockScrollToIndex = jasmine.createSpy('scrollToIndex');
+        (component as any).virtualScroll = {
+          scrollToIndex: mockScrollToIndex
+        };
+        (component as any).cachedItemsPerRow = 2;
+
+        // C is the 3rd book (index 2), with 2 items per row, that's row 1
+        component.scrollToLetter('C');
+
+        expect(mockScrollToIndex).toHaveBeenCalledWith(1, 'smooth');
+      });
+    });
+
+    describe('onSortChange with virtual scroll', () => {
+      it('should scroll to top when sort changes', () => {
+        const mockScrollToIndex = jasmine.createSpy('scrollToIndex');
+        (component as any).virtualScroll = {
+          scrollToIndex: mockScrollToIndex
+        };
+
+        component.onSortChange();
+
+        expect(mockScrollToIndex).toHaveBeenCalledWith(0);
+      });
+
+      it('should update activeLetter based on first book after sort', () => {
+        component.books = [
+          { ...createTestBooks(1)[0], title: 'Zebra Book' }
+        ];
+        component.sortOrder = 'title';
+        (component as any).virtualScroll = {
+          scrollToIndex: jasmine.createSpy('scrollToIndex')
+        };
+
+        component.onSortChange();
+
+        expect(component.activeLetter).toBe('Z');
+      });
+
+      it('should set activeLetter to # for non-alpha sorts', () => {
+        component.books = createTestBooks(5);
+        component.sortOrder = 'recent';
+        (component as any).virtualScroll = {
+          scrollToIndex: jasmine.createSpy('scrollToIndex')
+        };
+
+        component.onSortChange();
+
+        expect(component.activeLetter).toBe('#');
+      });
     });
   });
 });

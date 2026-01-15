@@ -268,9 +268,18 @@ public static class ServiceConfiguration
 
     /// <summary>
     /// Configures the Dropbox client with refresh token authentication.
+    /// Skips creation in test environment to avoid HTTP calls.
     /// </summary>
     public static IServiceCollection AddDropboxClient(this IServiceCollection services, IConfiguration configuration)
     {
+        // Skip Dropbox client in test environment to avoid HTTP calls
+        if (IsTestEnvironment(configuration))
+        {
+            // Register a null factory - services using DropboxClient should be mocked in tests
+            services.AddSingleton<DropboxClient>(provider => null!);
+            return services;
+        }
+
         services.AddSingleton<DropboxClient>(provider =>
         {
             var cfg = provider.GetRequiredService<IConfiguration>();
@@ -288,6 +297,25 @@ public static class ServiceConfiguration
         });
 
         return services;
+    }
+
+    /// <summary>
+    /// Checks if we're running in a test environment.
+    /// </summary>
+    private static bool IsTestEnvironment(IConfiguration? configuration)
+    {
+        // Check configuration flag
+        var isTestConfig = configuration?.GetValue<bool>("Testing:DisableHealthChecks") ?? false;
+
+        // Check environment variable
+        var isTestEnv = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Test";
+
+        // Check if running under test host
+        var isTestHost = AppDomain.CurrentDomain.GetAssemblies()
+            .Any(a => a.FullName?.Contains("testhost") == true ||
+                      a.FullName?.Contains("xunit") == true);
+
+        return isTestConfig || isTestEnv || isTestHost;
     }
 
     /// <summary>

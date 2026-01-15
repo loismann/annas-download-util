@@ -18,7 +18,7 @@ builder.ValidateRequiredConfiguration();
 
 // ─── Register all application services ───────────────────────────────────
 builder.Services.AddApplicationServices(builder.Configuration);
-builder.Services.AddHealthCheckServices();
+builder.Services.AddHealthCheckServices(builder.Configuration);
 
 var app = builder.Build();
 

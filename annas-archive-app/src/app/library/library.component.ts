@@ -1,6 +1,7 @@
-import { ChangeDetectorRef, Component, ElementRef, NgZone, OnInit, ViewChild } from '@angular/core';
+import { ChangeDetectorRef, Component, ElementRef, HostListener, NgZone, OnInit, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { ScrollingModule, CdkVirtualScrollViewport } from '@angular/cdk/scrolling';
 import { MatCardModule } from '@angular/material/card';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatFormFieldModule } from '@angular/material/form-field';
@@ -45,6 +46,7 @@ interface LibraryBook {
   imports: [
     CommonModule,
     FormsModule,
+    ScrollingModule,
     MatCardModule,
     MatProgressSpinnerModule,
     MatFormFieldModule,
@@ -86,6 +88,10 @@ export class LibraryComponent implements OnInit {
   tileSize: 'small' | 'medium' | 'large' = 'medium';
 
   @ViewChild('libraryGrid') libraryGrid?: ElementRef<HTMLDivElement>;
+  @ViewChild(CdkVirtualScrollViewport) virtualScroll?: CdkVirtualScrollViewport;
+
+  /** Cached items per row - recalculated on resize */
+  private cachedItemsPerRow = 6;
 
   constructor(
     private libraryApi: LibraryApiService,
@@ -95,6 +101,58 @@ export class LibraryComponent implements OnInit {
     private cdr: ChangeDetectorRef,
     private logger: LoggerService
   ) {}
+
+  /** Row height for virtual scrolling - varies by tile size */
+  get rowHeight(): number {
+    switch (this.tileSize) {
+      case 'small': return 320;
+      case 'large': return 480;
+      default: return 400;
+    }
+  }
+
+  /** Calculate items per row based on container width and tile size */
+  private calculateItemsPerRow(): number {
+    const container = this.libraryGrid?.nativeElement;
+    if (!container) return 6;
+
+    const containerWidth = container.offsetWidth - 64; // Account for alphabet index padding
+    let itemWidth: number;
+    switch (this.tileSize) {
+      case 'small': itemWidth = 140; break;
+      case 'large': itemWidth = 220; break;
+      default: itemWidth = 170;
+    }
+    const gap = this.tileSize === 'small' ? 11 : this.tileSize === 'large' ? 18 : 14;
+    return Math.max(1, Math.floor((containerWidth + gap) / (itemWidth + gap)));
+  }
+
+  /** Recalculate items per row (called on resize and tile size change) */
+  recalculateLayout(): void {
+    this.cachedItemsPerRow = this.calculateItemsPerRow();
+    this.virtualScroll?.checkViewportSize();
+  }
+
+  @HostListener('window:resize')
+  onWindowResize(): void {
+    this.recalculateLayout();
+  }
+
+  /** Group filtered books into rows for virtual scrolling */
+  get bookRows(): LibraryBook[][] {
+    const books = this.filteredBooks;
+    const perRow = this.cachedItemsPerRow;
+    const rows: LibraryBook[][] = [];
+    for (let i = 0; i < books.length; i += perRow) {
+      rows.push(books.slice(i, i + perRow));
+    }
+    return rows;
+  }
+
+  /** Track rows by first book's filename for efficient rendering */
+  trackByRow(index: number, row: LibraryBook[]): string {
+    return row[0]?.fileName || `row-${index}`;
+  }
 
   ngOnInit(): void {
     this.libraryApi.getLibraryBooks().subscribe({
@@ -106,7 +164,10 @@ export class LibraryComponent implements OnInit {
         }));
         this.genres = this.buildGenreList(this.books);
         this.loading = false;
-        setTimeout(() => this.onGridScroll(), 0);
+        setTimeout(() => {
+          this.recalculateLayout();
+          this.onGridScroll();
+        }, 0);
       },
       error: (err) => {
         this.logger.error('[library] failed to load books', err);
@@ -277,43 +338,27 @@ export class LibraryComponent implements OnInit {
   }
 
   onGridScroll(): void {
-    const gridEl = this.libraryGrid?.nativeElement;
-    if (!gridEl) return;
+    if (!this.virtualScroll) return;
     if (!this.showAlphabetIndex) return;
     if (this.scrollFrameRequested) return;
     this.scrollFrameRequested = true;
     requestAnimationFrame(() => {
       this.scrollFrameRequested = false;
-      const scrollTop = gridEl.scrollTop + 12;
-      const cards = Array.from(gridEl.querySelectorAll<HTMLElement>('.library-card'));
-      if (cards.length === 0) return;
-      let current = cards[0];
-      for (const card of cards) {
-        if (card.offsetTop <= scrollTop) {
-          current = card;
-        } else {
-          break;
-        }
-      }
-      const indexAttr = current.dataset['index'];
-      const idx = indexAttr ? Number.parseInt(indexAttr, 10) : 0;
-      const book = this.filteredBooks[idx];
+      // Get the current row index from virtual scroll (check method exists for tests)
+      if (!this.virtualScroll || typeof this.virtualScroll.getRenderedRange !== 'function') return;
+      const rowIndex = this.virtualScroll.getRenderedRange().start ?? 0;
+      // Calculate book index from row index
+      const bookIndex = rowIndex * this.cachedItemsPerRow;
+      const book = this.filteredBooks[bookIndex];
       if (!book) return;
       const nextLetter = this.getBookLetter(book);
-      if (!this.availableLetters.includes(nextLetter)) {
-        this.logger.debug('[library-alpha] letter not in available set', {
-          nextLetter,
-          idx,
-          title: book.title
-        });
-      }
       if (nextLetter !== this.activeLetter) {
         this.zone.run(() => {
           this.logger.debug('[library-alpha] active letter changed', {
             from: this.activeLetter,
             to: nextLetter,
-            scrollTop,
-            idx,
+            rowIndex,
+            bookIndex,
             title: book.title
           });
           this.activeLetter = nextLetter;
@@ -325,14 +370,13 @@ export class LibraryComponent implements OnInit {
 
   scrollToLetter(letter: string): void {
     if (this.availableLetters.indexOf(letter) === -1) return;
-    const gridEl = this.libraryGrid?.nativeElement;
-    if (!gridEl) return;
+    if (!this.virtualScroll) return;
     const books = this.filteredBooks;
-    const index = books.findIndex(book => this.getBookLetter(book) === letter);
-    if (index === -1) return;
-    const target = gridEl.querySelector<HTMLElement>(`.library-card[data-index="${index}"]`);
-    if (!target) return;
-    gridEl.scrollTo({ top: target.offsetTop - 8, behavior: 'smooth' });
+    const bookIndex = books.findIndex(book => this.getBookLetter(book) === letter);
+    if (bookIndex === -1) return;
+    // Calculate row index from book index
+    const rowIndex = Math.floor(bookIndex / this.cachedItemsPerRow);
+    this.virtualScroll.scrollToIndex(rowIndex, 'smooth');
     this.zone.run(() => {
       this.activeLetter = letter;
       this.cdr.markForCheck();
@@ -343,10 +387,8 @@ export class LibraryComponent implements OnInit {
     if (!preserveDirection) {
       this.sortDirection = this.getDefaultSortDirection(this.sortOrder);
     }
-    const gridEl = this.libraryGrid?.nativeElement;
-    if (gridEl) {
-      gridEl.scrollTo({ top: 0 });
-    }
+    // Scroll to top using virtual scroll
+    this.virtualScroll?.scrollToIndex(0);
     if (!this.showAlphabetIndex) {
       this.activeLetter = '#';
       return;
@@ -367,6 +409,8 @@ export class LibraryComponent implements OnInit {
 
   setTileSize(size: 'small' | 'medium' | 'large'): void {
     this.tileSize = size;
+    // Recalculate layout after tile size change
+    setTimeout(() => this.recalculateLayout(), 0);
   }
 
   resetView(): void {
@@ -395,11 +439,11 @@ export class LibraryComponent implements OnInit {
     this.bulkEditMode = false;
     this.selectedBooksForBulk.clear();
 
-    // Scroll grid to top
-    const gridEl = this.libraryGrid?.nativeElement;
-    if (gridEl) {
-      gridEl.scrollTo({ top: 0 });
-    }
+    // Scroll grid to top using virtual scroll
+    this.virtualScroll?.scrollToIndex(0);
+
+    // Recalculate layout for medium tile size
+    setTimeout(() => this.recalculateLayout(), 0);
 
     this.activeLetter = '#';
   }

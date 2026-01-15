@@ -145,7 +145,8 @@ test.describe('Library - Basic Navigation', () => {
     await openLibraryPage(page);
 
     await expect(page.locator('.library-card')).toHaveCount(0);
-    await expect(page.locator('.library-grid')).toHaveCount(1);
+    // Virtual scroll viewport should still be present even with empty library
+    await expect(page.locator('.library-grid-scroll')).toHaveCount(1);
   });
 
   test('Loading state should show spinner', async ({ page }) => {

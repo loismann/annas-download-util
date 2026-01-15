@@ -60,6 +60,9 @@ public static class DropboxReaderEndpoints
         DropboxClient dropbox,
         IConfiguration cfg)
     {
+        if (dropbox == null)
+            return Results.StatusCode(503); // Service unavailable - Dropbox not configured
+
         try
         {
             var folderPath = cfg["Dropbox:UploadFolderPath"] ?? string.Empty;
@@ -88,6 +91,9 @@ public static class DropboxReaderEndpoints
         IAiResponseParser aiResponseParser,
         CancellationToken cancellationToken)
     {
+        if (dropbox == null)
+            return Results.StatusCode(503); // Service unavailable - Dropbox not configured
+
         if (!validation.IsValidDropboxPath(path))
             return Results.BadRequest(new {
                 error = "Invalid Dropbox path. Must start with '/', end with '.epub', and be less than 500 characters."
@@ -144,6 +150,9 @@ public static class DropboxReaderEndpoints
         IValidationService validation,
         DropboxClient dropbox)
     {
+        if (dropbox == null)
+            return Results.StatusCode(503); // Service unavailable - Dropbox not configured
+
         if (!validation.IsValidDropboxPath(path))
             return Results.BadRequest(new {
                 error = "Invalid Dropbox path. Must start with '/', end with '.epub', and be less than 500 characters."
@@ -198,6 +207,9 @@ public static class DropboxReaderEndpoints
         [FromQuery] string? path,
         DropboxClient dropbox)
     {
+        if (dropbox == null)
+            return Results.StatusCode(503); // Service unavailable - Dropbox not configured
+
         if (string.IsNullOrWhiteSpace(path))
             return Results.BadRequest(new { error = "Query parameter 'path' is required." });
 
@@ -225,6 +237,9 @@ public static class DropboxReaderEndpoints
         [FromQuery] string? path,
         DropboxClient dropbox)
     {
+        if (dropbox == null)
+            return Results.StatusCode(503); // Service unavailable - Dropbox not configured
+
         if (string.IsNullOrWhiteSpace(path))
             return Results.BadRequest(new { error = "Query parameter 'path' is required." });
 
@@ -286,6 +301,9 @@ public static class DropboxReaderEndpoints
         [FromQuery] string? query,
         DropboxClient dropbox)
     {
+        if (dropbox == null)
+            return Results.StatusCode(503); // Service unavailable - Dropbox not configured
+
         if (string.IsNullOrWhiteSpace(path))
             return Results.BadRequest(new { error = "Query parameter 'path' is required." });
 

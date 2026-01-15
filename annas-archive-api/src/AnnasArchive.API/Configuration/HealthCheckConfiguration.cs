@@ -13,8 +13,17 @@ public static class HealthCheckConfiguration
     /// <summary>
     /// Registers all health checks with the DI container.
     /// </summary>
-    public static IServiceCollection AddHealthCheckServices(this IServiceCollection services)
+    /// <param name="services">The service collection</param>
+    /// <param name="configuration">Optional configuration to check for test mode</param>
+    public static IServiceCollection AddHealthCheckServices(this IServiceCollection services, IConfiguration? configuration = null)
     {
+        // Skip health checks in test environment to avoid hanging on external HTTP calls
+        if (IsTestEnvironment(configuration))
+        {
+            services.AddHealthChecks(); // Add empty health checks
+            return services;
+        }
+
         services.AddHealthChecks()
             // Critical checks - required for app to function
             .AddCheck<FileSystemHealthCheck>(
@@ -114,5 +123,24 @@ public static class HealthCheckConfiguration
         };
 
         await context.Response.WriteAsync(JsonSerializer.Serialize(response, options));
+    }
+
+    /// <summary>
+    /// Checks if we're running in a test environment.
+    /// </summary>
+    private static bool IsTestEnvironment(IConfiguration? configuration)
+    {
+        // Check configuration flag
+        var isTestConfig = configuration?.GetValue<bool>("Testing:DisableHealthChecks") ?? false;
+
+        // Check environment variable
+        var isTestEnv = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Test";
+
+        // Check if running under test host
+        var isTestHost = AppDomain.CurrentDomain.GetAssemblies()
+            .Any(a => a.FullName?.Contains("testhost") == true ||
+                      a.FullName?.Contains("xunit") == true);
+
+        return isTestConfig || isTestEnv || isTestHost;
     }
 }

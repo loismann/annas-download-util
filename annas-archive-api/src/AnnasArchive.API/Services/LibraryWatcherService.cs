@@ -14,6 +14,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Xml.Linq;
 using AnnasArchive.API.Configuration;
+using AnnasArchive.API.Services.Library;
 using Serilog;
 using HtmlAgilityPack;
 using Microsoft.Extensions.Hosting;
@@ -31,11 +32,21 @@ public class LibraryWatcherService : BackgroundService
 
     private readonly ConcurrentDictionary<string, DateTime> _pending = new();
     private readonly IHttpClientFactory _httpFactory;
+    private readonly IGenreClassificationService _genreClassification;
+    private readonly IDuplicateDetectionService _duplicateDetection;
+    private readonly IMetadataExtractionService _metadataExtraction;
     private FileSystemWatcher? _watcher;
 
-    public LibraryWatcherService(IHttpClientFactory httpFactory)
+    public LibraryWatcherService(
+        IHttpClientFactory httpFactory,
+        IGenreClassificationService genreClassification,
+        IDuplicateDetectionService duplicateDetection,
+        IMetadataExtractionService metadataExtraction)
     {
         _httpFactory = httpFactory;
+        _genreClassification = genreClassification;
+        _duplicateDetection = duplicateDetection;
+        _metadataExtraction = metadataExtraction;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -144,10 +155,10 @@ public class LibraryWatcherService : BackgroundService
             .Where(file => SupportedExtensions.Contains(Path.GetExtension(file)))
             .ToList();
 
-        var duplicates = FindDuplicateFiles(libraryRoot, files);
+        var duplicates = _duplicateDetection.FindDuplicates(libraryRoot, files);
         foreach (var duplicate in duplicates)
         {
-            DeleteLibraryArtifacts(libraryRoot, duplicate);
+            _duplicateDetection.DeleteLibraryArtifacts(libraryRoot, duplicate);
         }
 
         // Filter out duplicates and process in batches
@@ -221,7 +232,7 @@ public class LibraryWatcherService : BackgroundService
 
         var ext = Path.GetExtension(filePath);
         var format = ext.TrimStart('.').ToUpperInvariant();
-        var parsed = ParseTitleAuthorFromFileName(filePath);
+        var parsed = _metadataExtraction.ParseTitleAuthorFromFileName(filePath);
         var rawBaseName = Path.GetFileNameWithoutExtension(filePath);
         var resolvedTitle = ShouldUseParsedTitle(existing?.Title, parsed.Title, rawBaseName)
             ? parsed.Title
@@ -264,12 +275,24 @@ public class LibraryWatcherService : BackgroundService
 
         if (ext.Equals(".epub", StringComparison.OrdinalIgnoreCase))
         {
-            await PopulateEpubMetadataAsync(filePath, meta, libraryRoot, token);
+            var skipCover = IsLocalCover(TryGetMetaValue(meta, "coverUrl") as string);
+            var epubMeta = await _metadataExtraction.ExtractEpubMetadataAsync(filePath, libraryRoot, skipCover, token);
+            if (epubMeta != null)
+            {
+                SetIfMissing(meta, "title", epubMeta.Title);
+                SetIfMissing(meta, "authors", epubMeta.Authors);
+                SetIfMissing(meta, "publishedDate", epubMeta.PublishedDate);
+                SetIfMissing(meta, "pages", epubMeta.Pages);
+                if (!string.IsNullOrWhiteSpace(epubMeta.CoverUrl))
+                    meta["coverUrl"] = epubMeta.CoverUrl;
+            }
         }
 
         if (string.IsNullOrWhiteSpace(TryGetMetaValue(meta, "coverUrl") as string))
         {
-            await TryExtractSdrCoverAsync(filePath, libraryRoot, meta, token);
+            var sdrCover = await _metadataExtraction.ExtractSdrCoverAsync(filePath, libraryRoot, token);
+            if (!string.IsNullOrWhiteSpace(sdrCover))
+                meta["coverUrl"] = sdrCover;
         }
 
         var coverUrl = TryGetMetaValue(meta, "coverUrl") as string;
@@ -408,436 +431,6 @@ public class LibraryWatcherService : BackgroundService
         return true;
     }
 
-    private async Task PopulateEpubMetadataAsync(
-        string filePath,
-        Dictionary<string, object?> meta,
-        string libraryRoot,
-        CancellationToken token)
-    {
-        try
-        {
-            using var zip = ZipFile.OpenRead(filePath);
-            var containerEntry = zip.GetEntry("META-INF/container.xml");
-            if (containerEntry == null)
-                return;
-
-            using var containerStream = containerEntry.Open();
-            var containerDoc = await XDocument.LoadAsync(containerStream, LoadOptions.None, token);
-            var rootfile = containerDoc
-                .Descendants()
-                .FirstOrDefault(x => x.Name.LocalName == "rootfile")
-                ?.Attribute("full-path")
-                ?.Value;
-
-            if (string.IsNullOrWhiteSpace(rootfile))
-                return;
-
-            var opfEntry = zip.GetEntry(rootfile);
-            if (opfEntry == null)
-                return;
-
-            using var opfStream = opfEntry.Open();
-            var opfDoc = await XDocument.LoadAsync(opfStream, LoadOptions.None, token);
-
-            var metadata = opfDoc.Descendants().FirstOrDefault(x => x.Name.LocalName == "metadata");
-            if (metadata != null)
-            {
-                var title = metadata.Descendants().FirstOrDefault(x => x.Name.LocalName == "title")?.Value;
-                if (!string.IsNullOrWhiteSpace(title))
-                    SetIfMissing(meta, "title", title.Trim());
-
-                var creators = metadata.Descendants()
-                    .Where(x => x.Name.LocalName == "creator")
-                    .Select(x => x.Value.Trim())
-                    .Where(x => x.Length > 0)
-                    .Distinct()
-                    .ToArray();
-                if (creators.Length > 0)
-                    SetIfMissing(meta, "authors", creators);
-
-                var date = metadata.Descendants().FirstOrDefault(x => x.Name.LocalName == "date")?.Value;
-                if (!string.IsNullOrWhiteSpace(date))
-                    SetIfMissing(meta, "publishedDate", date.Trim());
-
-                var pageCount = metadata.Descendants()
-                    .Where(x => x.Name.LocalName == "meta")
-                    .FirstOrDefault(x => string.Equals(x.Attribute("name")?.Value, "calibre:page_count", StringComparison.OrdinalIgnoreCase))
-                    ?.Attribute("content")
-                    ?.Value;
-                if (!string.IsNullOrWhiteSpace(pageCount))
-                    SetIfMissing(meta, "pages", pageCount);
-
-                var coverId = metadata.Descendants()
-                    .Where(x => x.Name.LocalName == "meta")
-                    .FirstOrDefault(x => string.Equals(x.Attribute("name")?.Value, "cover", StringComparison.OrdinalIgnoreCase))
-                    ?.Attribute("content")
-                    ?.Value;
-
-                var manifest = opfDoc.Descendants().FirstOrDefault(x => x.Name.LocalName == "manifest");
-                var opfDir = Path.GetDirectoryName(rootfile)?.Replace('\\', '/') ?? "";
-
-                string? href = null;
-                if (!string.IsNullOrWhiteSpace(coverId))
-                {
-                    href = manifest?
-                        .Descendants()
-                        .FirstOrDefault(x => x.Name.LocalName == "item" && string.Equals(x.Attribute("id")?.Value, coverId, StringComparison.OrdinalIgnoreCase))
-                        ?.Attribute("href")
-                        ?.Value;
-                }
-
-                if (string.IsNullOrWhiteSpace(href))
-                {
-                    href = manifest?
-                        .Descendants()
-                        .FirstOrDefault(x => x.Name.LocalName == "item" &&
-                                             (x.Attribute("properties")?.Value?.Contains("cover-image", StringComparison.OrdinalIgnoreCase) ?? false))
-                        ?.Attribute("href")
-                        ?.Value;
-                }
-
-                // Only extract cover from EPUB if no local cover already exists
-                // This prevents overwriting user-selected covers from the edit dialog
-                var existingCoverUrl = TryGetMetaValue(meta, "coverUrl") as string;
-                if (!IsLocalCover(existingCoverUrl))
-                {
-                    if (!string.IsNullOrWhiteSpace(href))
-                    {
-                        await TryExtractCoverAsync(zip, opfDir, href, filePath, libraryRoot, meta, token);
-                    }
-                    else
-                    {
-                        await TryExtractLargestImageAsync(zip, filePath, libraryRoot, meta, token);
-                    }
-                }
-            }
-        }
-        catch
-        {
-            // ignore metadata parse errors
-        }
-    }
-
-    private async Task TryExtractCoverAsync(
-        ZipArchive zip,
-        string opfDir,
-        string href,
-        string filePath,
-        string libraryRoot,
-        Dictionary<string, object?> meta,
-        CancellationToken token)
-    {
-        var coverPath = string.IsNullOrEmpty(opfDir) ? href : $"{opfDir}/{href}";
-        var coverEntry = zip.GetEntry(coverPath);
-        if (coverEntry == null)
-            return;
-
-        var coverExt = Path.GetExtension(href);
-        if (string.IsNullOrWhiteSpace(coverExt))
-            coverExt = ".jpg";
-
-        var coverFileName = $"{Path.GetFileName(filePath)}.cover{coverExt}";
-        var coverDiskPath = Path.Combine(libraryRoot, "_covers", coverFileName);
-
-        Directory.CreateDirectory(Path.GetDirectoryName(coverDiskPath)!);
-        await using var coverStream = coverEntry.Open();
-        await using var outStream = File.Create(coverDiskPath);
-        await coverStream.CopyToAsync(outStream, token);
-
-        meta["coverUrl"] = $"_covers/{coverFileName}";
-    }
-
-    private async Task TryExtractLargestImageAsync(
-        ZipArchive zip,
-        string filePath,
-        string libraryRoot,
-        Dictionary<string, object?> meta,
-        CancellationToken token)
-    {
-        var imageEntries = zip.Entries
-            .Where(e =>
-                e.FullName.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase) ||
-                e.FullName.EndsWith(".jpeg", StringComparison.OrdinalIgnoreCase) ||
-                e.FullName.EndsWith(".png", StringComparison.OrdinalIgnoreCase))
-            .OrderByDescending(e => e.Length)
-            .ToList();
-
-        var largest = imageEntries.FirstOrDefault();
-        if (largest == null)
-            return;
-
-        var coverExt = Path.GetExtension(largest.FullName);
-        if (string.IsNullOrWhiteSpace(coverExt))
-            coverExt = ".jpg";
-
-        var coverFileName = $"{Path.GetFileName(filePath)}.cover{coverExt}";
-        var coverDiskPath = Path.Combine(libraryRoot, "_covers", coverFileName);
-
-        Directory.CreateDirectory(Path.GetDirectoryName(coverDiskPath)!);
-        await using var coverStream = largest.Open();
-        await using var outStream = File.Create(coverDiskPath);
-        await coverStream.CopyToAsync(outStream, token);
-
-        meta["coverUrl"] = $"_covers/{coverFileName}";
-    }
-
-    private async Task TryExtractSdrCoverAsync(
-        string filePath,
-        string libraryRoot,
-        Dictionary<string, object?> meta,
-        CancellationToken token)
-    {
-        try
-        {
-            var dir = Path.GetDirectoryName(filePath) ?? "";
-            var sdrPath = Path.Combine(dir, Path.GetFileNameWithoutExtension(filePath) + ".sdr");
-            if (!Directory.Exists(sdrPath))
-                return;
-
-            var candidates = Directory.GetFiles(sdrPath, "*.*", SearchOption.AllDirectories)
-                .Where(path =>
-                {
-                    var ext = Path.GetExtension(path);
-                    return ext.Equals(".jpg", StringComparison.OrdinalIgnoreCase)
-                        || ext.Equals(".jpeg", StringComparison.OrdinalIgnoreCase)
-                        || ext.Equals(".png", StringComparison.OrdinalIgnoreCase);
-                })
-                .ToList();
-
-            if (candidates.Count == 0)
-                return;
-
-            string PickBest(IEnumerable<string> files)
-            {
-                var coverMatch = files.FirstOrDefault(path =>
-                    Path.GetFileName(path).Contains("cover", StringComparison.OrdinalIgnoreCase));
-                if (!string.IsNullOrWhiteSpace(coverMatch))
-                    return coverMatch;
-
-                return files
-                    .OrderByDescending(path => new FileInfo(path).Length)
-                    .First();
-            }
-
-            var best = PickBest(candidates);
-            var coverExt = Path.GetExtension(best);
-            if (string.IsNullOrWhiteSpace(coverExt))
-                coverExt = ".jpg";
-
-            var coverFileName = $"{Path.GetFileName(filePath)}.cover{coverExt}";
-            var coverDiskPath = Path.Combine(libraryRoot, "_covers", coverFileName);
-            Directory.CreateDirectory(Path.GetDirectoryName(coverDiskPath)!);
-
-            await using var source = File.OpenRead(best);
-            await using var dest = File.Create(coverDiskPath);
-            await source.CopyToAsync(dest, token);
-
-            meta["coverUrl"] = $"_covers/{coverFileName}";
-        }
-        catch
-        {
-            // ignore sdr cover extraction errors
-        }
-    }
-
-    private static HashSet<string> FindDuplicateFiles(string libraryRoot, List<string> files)
-    {
-        var duplicates = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var byTitle = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
-
-        foreach (var file in files)
-        {
-            var title = GetTitleForDedup(file);
-            var normalized = NormalizeTitleForDedup(title);
-            if (string.IsNullOrWhiteSpace(normalized))
-                continue;
-
-            if (!byTitle.TryGetValue(normalized, out var list))
-            {
-                list = new List<string>();
-                byTitle[normalized] = list;
-            }
-            list.Add(file);
-        }
-
-        // Pass 1: same-format duplicates by title (safe cleanup).
-        foreach (var group in byTitle.Values.Where(list => list.Count > 1))
-        {
-            var byExt = group
-                .GroupBy(path => Path.GetExtension(path).ToLowerInvariant());
-
-            foreach (var extGroup in byExt)
-            {
-                var ordered = extGroup
-                    .OrderByDescending(path => new FileInfo(path).LastWriteTimeUtc)
-                    .ThenBy(path => Path.GetFileName(path), StringComparer.OrdinalIgnoreCase)
-                    .ToList();
-
-                var keep = ordered.First();
-                foreach (var path in ordered.Skip(1))
-                    duplicates.Add(path);
-            }
-        }
-
-        // Pass 2: cross-format duplicates only when title + author match.
-        var byTitleAuthor = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
-        foreach (var file in files)
-        {
-            if (duplicates.Contains(file))
-                continue;
-
-            var title = NormalizeTitleForDedup(GetTitleForDedup(file));
-            var authorKey = NormalizeAuthorForDedup(GetAuthorsForDedup(file));
-            if (string.IsNullOrWhiteSpace(title) || string.IsNullOrWhiteSpace(authorKey))
-                continue;
-
-            var key = $"{title}||{authorKey}";
-            if (!byTitleAuthor.TryGetValue(key, out var list))
-            {
-                list = new List<string>();
-                byTitleAuthor[key] = list;
-            }
-            list.Add(file);
-        }
-
-        foreach (var group in byTitleAuthor.Values.Where(list => list.Count > 1))
-        {
-            var ordered = group
-                .OrderBy(path => FormatRank(Path.GetExtension(path)))
-                .ThenByDescending(path => new FileInfo(path).LastWriteTimeUtc)
-                .ThenBy(path => Path.GetFileName(path), StringComparer.OrdinalIgnoreCase)
-                .ToList();
-
-            var keep = ordered.First();
-            foreach (var path in ordered.Skip(1))
-                duplicates.Add(path);
-        }
-
-        return duplicates;
-    }
-
-    private static string GetTitleForDedup(string filePath)
-    {
-        var metaPath = $"{filePath}.meta.json";
-        if (File.Exists(metaPath))
-        {
-            try
-            {
-                var json = File.ReadAllText(metaPath);
-                using var doc = JsonDocument.Parse(json);
-                if (doc.RootElement.TryGetProperty("title", out var titleProp))
-                    return titleProp.GetString() ?? "";
-            }
-            catch
-            {
-                // ignore
-            }
-        }
-
-        var parsed = ParseTitleAuthorFromFileName(filePath);
-        return parsed.Title ?? Path.GetFileNameWithoutExtension(filePath);
-    }
-
-    private static string[] GetAuthorsForDedup(string filePath)
-    {
-        var metaPath = $"{filePath}.meta.json";
-        if (File.Exists(metaPath))
-        {
-            try
-            {
-                var json = File.ReadAllText(metaPath);
-                using var doc = JsonDocument.Parse(json);
-                if (doc.RootElement.TryGetProperty("authors", out var authorsProp) &&
-                    authorsProp.ValueKind == JsonValueKind.Array)
-                {
-                    var authors = authorsProp.EnumerateArray()
-                        .Select(v => v.GetString())
-                        .Where(v => !string.IsNullOrWhiteSpace(v))
-                        .Select(v => v!.Trim())
-                        .ToArray();
-                    if (authors.Length > 0)
-                        return authors;
-                }
-            }
-            catch
-            {
-                // ignore
-            }
-        }
-
-        var parsed = ParseTitleAuthorFromFileName(filePath);
-        return parsed.Authors ?? Array.Empty<string>();
-    }
-
-    private static string NormalizeTitleForDedup(string? title)
-    {
-        if (string.IsNullOrWhiteSpace(title))
-            return "";
-
-        var normalized = title.ToLowerInvariant();
-        normalized = Regex.Replace(normalized, @"\[[^\]]*\]", "");
-        normalized = Regex.Replace(normalized, @"\([^)]+\)", "");
-        normalized = Regex.Replace(normalized, @"\bbook\s+\d+\b", "");
-        normalized = Regex.Replace(normalized, @"[^a-z0-9\s]", "");
-        normalized = Regex.Replace(normalized, @"\s{2,}", " ").Trim();
-        return normalized;
-    }
-
-    private static string NormalizeAuthorForDedup(string[]? authors)
-    {
-        if (authors == null || authors.Length == 0)
-            return "";
-
-        var normalized = string.Join(";", authors)
-            .ToLowerInvariant();
-        normalized = Regex.Replace(normalized, @"[^a-z0-9\s,;]", "");
-        normalized = Regex.Replace(normalized, @"\s{2,}", " ").Trim();
-        return normalized;
-    }
-
-    private static int FormatRank(string ext)
-    {
-        return ext.ToLowerInvariant() switch
-        {
-            ".epub" => 0,
-            ".azw3" => 1,
-            ".azw" => 2,
-            ".kfx" => 3,
-            ".pobi" => 4,
-            ".mobi" => 5,
-            ".pdf" => 6,
-            ".fb2" => 7,
-            _ => 8
-        };
-    }
-
-    private static void DeleteLibraryArtifacts(string libraryRoot, string filePath)
-    {
-        try
-        {
-            if (File.Exists(filePath))
-                File.Delete(filePath);
-
-            var metaPath = $"{filePath}.meta.json";
-            if (File.Exists(metaPath))
-                File.Delete(metaPath);
-
-            var coverDir = Path.Combine(libraryRoot, "_covers");
-            if (Directory.Exists(coverDir))
-            {
-                var safeName = Path.GetFileName(filePath);
-                foreach (var cover in Directory.GetFiles(coverDir, $"{safeName}.cover.*"))
-                {
-                    try { File.Delete(cover); } catch { }
-                }
-            }
-        }
-        catch
-        {
-            // ignore delete failures
-        }
-    }
-
     private static bool IsMetadataReliable(string? title, string[]? authors)
     {
         if (string.IsNullOrWhiteSpace(title) || title.Trim().Length < 3)
@@ -847,39 +440,6 @@ public class LibraryWatcherService : BackgroundService
             return true;
 
         return authors.Any(a => !string.IsNullOrWhiteSpace(a) && a.Trim().Length >= 3);
-    }
-
-    private static (string? Title, string[]? Authors) ParseTitleAuthorFromFileName(string filePath)
-    {
-        var raw = Path.GetFileNameWithoutExtension(filePath);
-        if (string.IsNullOrWhiteSpace(raw))
-            return (null, null);
-
-        var cleaned = Regex.Replace(raw, @"_(?:sample|preview)$", "", RegexOptions.IgnoreCase).Trim();
-        cleaned = Regex.Replace(cleaned, @"\.(tmp|tmp\d+)_\w+$", "", RegexOptions.IgnoreCase).Trim();
-        cleaned = Regex.Replace(cleaned, @"_[A-Z0-9]{8,}$", "", RegexOptions.IgnoreCase).Trim();
-        cleaned = Regex.Replace(cleaned, @"\bB0[A-Z0-9]{8,}\b$", "", RegexOptions.IgnoreCase).Trim();
-        cleaned = cleaned.Replace('_', ' ').Trim();
-        cleaned = Regex.Replace(cleaned, @"\s{2,}", " ");
-
-        var separators = new[] { " - ", " – ", " — " };
-        foreach (var sep in separators)
-        {
-            var idx = cleaned.IndexOf(sep, StringComparison.Ordinal);
-            if (idx <= 0 || idx >= cleaned.Length - sep.Length)
-                continue;
-
-            var left = cleaned[..idx].Trim();
-            var right = cleaned[(idx + sep.Length)..].Trim();
-            if (left.Length < 3 || right.Length < 3)
-                continue;
-
-            var looksLikeAuthor = left.Contains(',') || left.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length >= 2;
-            if (looksLikeAuthor)
-                return (right, new[] { left });
-        }
-
-        return (cleaned, null);
     }
 
     private static bool ShouldUseParsedTitle(string? existingTitle, string? parsedTitle, string rawBaseName)
@@ -949,10 +509,10 @@ public class LibraryWatcherService : BackgroundService
                     var rawTags = subjectFacets.Length > 0 ? subjectFacets : subjects;
 
                     // Map Open Library subjects to standard genre
-                    var primaryGenre = MapToStandardGenre(rawTags);
+                    var primaryGenre = _genreClassification.ClassifyGenre(rawTags);
 
                     // Extract useful tags (filter out generic terms and the primary genre)
-                    var tags = ExtractTags(rawTags, primaryGenre, limit: 5);
+                    var tags = _genreClassification.ExtractTags(rawTags, primaryGenre, limit: 5);
                     var series = ExtractStringArray(item, "series").FirstOrDefault();
                     int? publishYear = null;
                     if (item.TryGetProperty("first_publish_year", out var yearProp) && yearProp.ValueKind == JsonValueKind.Number)
@@ -1346,12 +906,6 @@ Return JSON:
         return null;
     }
 
-    private static bool IsGenericTag(string tag)
-    {
-        var normalized = tag.Trim().ToLowerInvariant();
-        return normalized is "fiction" or "novel" or "books" or "literature" or "general";
-    }
-
     private static object? TryGetMetaValue(Dictionary<string, object?> meta, string key)
     {
         return meta.TryGetValue(key, out var value) ? value : null;
@@ -1416,170 +970,6 @@ Return JSON:
             .Split(' ', StringSplitOptions.RemoveEmptyEntries)
             .Distinct()
             .ToList();
-    }
-
-    private async Task<AiMetadata?> FetchAiMetadataAsync(
-        string title,
-        string[] authors,
-        string fileName,
-        OpenLibraryData? openLibrary,
-        CancellationToken token)
-    {
-        try
-        {
-            using var http = _httpFactory.CreateClient("OpenAI");
-            var model = "gpt-4o";
-
-            var systemPrompt = @"You are a book metadata librarian. Normalize messy metadata into clean fields.
-Return ONLY valid JSON. Do not include markdown or extra text.";
-
-            var openLibraryBlock = openLibrary == null
-                ? "OpenLibrary: none"
-                : $"OpenLibrary: title={openLibrary.Title}, authors={string.Join(", ", openLibrary.Authors)}, year={openLibrary.FirstPublishYear}, coverUrl={openLibrary.CoverUrl}, tags={string.Join(", ", openLibrary.Tags)}, series={openLibrary.Series}, confidence={openLibrary.Confidence}";
-
-            var userPrompt = $@"File name: {fileName}
-Current title: {title}
-Current authors: {string.Join(", ", authors)}
-{openLibraryBlock}
-
-Return JSON with:
-{{
-  ""title"": string,
-  ""authors"": string[],
-  ""publishedDate"": string|null,
-  ""primaryGenre"": string|null,
-  ""tags"": string[],
-  ""series"": string|null,
-  ""coverUrl"": string|null
-}}";
-
-            var payload = new
-            {
-                model,
-                input = new[]
-                {
-                    new { role = "system", content = systemPrompt },
-                    new { role = "user", content = userPrompt }
-                },
-                temperature = 0.2,
-                max_output_tokens = 400
-            };
-
-            var response = await http.PostAsJsonAsync("https://api.openai.com/v1/responses", payload, token);
-            if (!response.IsSuccessStatusCode)
-                return null;
-
-            using var stream = await response.Content.ReadAsStreamAsync(token);
-            using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: token);
-            var text = ExtractResponseText(doc.RootElement);
-            if (string.IsNullOrWhiteSpace(text))
-                return null;
-
-            var cleaned = text.Trim();
-            if (cleaned.StartsWith("```"))
-            {
-                cleaned = cleaned
-                    .Replace("```json", "")
-                    .Replace("```", "")
-                    .Trim();
-            }
-
-            using var resultDoc = JsonDocument.Parse(cleaned);
-            var root = resultDoc.RootElement;
-
-            var aiTitle = root.TryGetProperty("title", out var t) ? t.GetString() : title;
-            var aiAuthors = ExtractStringArray(root, "authors");
-            if (aiAuthors.Length == 0)
-                aiAuthors = authors;
-
-            var aiTags = ExtractStringArray(root, "tags");
-            return new AiMetadata(
-                aiTitle ?? title,
-                aiAuthors,
-                root.TryGetProperty("publishedDate", out var pd) ? pd.GetString() : null,
-                root.TryGetProperty("primaryGenre", out var pg) ? pg.GetString() : null,
-                aiTags,
-                root.TryGetProperty("series", out var s) ? s.GetString() : null,
-                root.TryGetProperty("coverUrl", out var cu) ? cu.GetString() : null
-            );
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-    private async Task<AiValidation?> ValidateOpenLibraryCandidateAsync(
-        string title,
-        string[] authors,
-        string fileName,
-        OpenLibraryData openLibrary,
-        CancellationToken token)
-    {
-        try
-        {
-            using var http = _httpFactory.CreateClient("OpenAI");
-            var model = "gpt-4o";
-
-            var systemPrompt = @"You are a book metadata verifier. Decide if the OpenLibrary candidate matches the book.
-Return ONLY valid JSON. Do not include markdown or extra text.";
-
-            var userPrompt = $@"File name: {fileName}
-Current title: {title}
-Current authors: {string.Join(", ", authors)}
-OpenLibrary title: {openLibrary.Title}
-OpenLibrary authors: {string.Join(", ", openLibrary.Authors)}
-OpenLibrary coverUrl: {openLibrary.CoverUrl}
-OpenLibrary confidence: {openLibrary.Confidence}
-
-Return JSON:
-{{
-  ""isMatch"": boolean
-}}";
-
-            var payload = new
-            {
-                model,
-                input = new[]
-                {
-                    new { role = "system", content = systemPrompt },
-                    new { role = "user", content = userPrompt }
-                },
-                temperature = 0.1,
-                max_output_tokens = 120
-            };
-
-            var response = await http.PostAsJsonAsync("https://api.openai.com/v1/responses", payload, token);
-            if (!response.IsSuccessStatusCode)
-                return null;
-
-            using var stream = await response.Content.ReadAsStreamAsync(token);
-            using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: token);
-            var text = ExtractResponseText(doc.RootElement);
-            if (string.IsNullOrWhiteSpace(text))
-                return null;
-
-            var cleaned = text.Trim();
-            if (cleaned.StartsWith("```"))
-            {
-                cleaned = cleaned
-                    .Replace("```json", "")
-                    .Replace("```", "")
-                    .Trim();
-            }
-
-            using var resultDoc = JsonDocument.Parse(cleaned);
-            var root = resultDoc.RootElement;
-
-            var isMatch = root.TryGetProperty("isMatch", out var matchProp) &&
-                          matchProp.ValueKind == JsonValueKind.True;
-
-            return new AiValidation(isMatch);
-        }
-        catch
-        {
-            return null;
-        }
     }
 
     private static string? ExtractResponseText(JsonElement root)
@@ -1840,18 +1230,6 @@ Return JSON with:
         double Confidence,
         string[] Isbns);
 
-    private sealed record AiMetadata(
-        string Title,
-        string[] Authors,
-        string? PublishedDate,
-        string? PrimaryGenre,
-        string[] Tags,
-        string? Series,
-        string? CoverUrl);
-
-    private sealed record AiValidation(
-        bool IsMatch);
-
     private sealed record AiValidationAndEnrichment(
         bool UseOpenLibrary,
         string? Title,
@@ -1884,116 +1262,6 @@ Return JSON with:
             !string.IsNullOrWhiteSpace(Title) &&
             Authors != null &&
             Authors.Length > 0;
-    }
-
-    private static readonly string[] StandardGenres =
-    {
-        "Science Fiction", "Fantasy", "Mystery & Detective", "Thriller", "Romance",
-        "Historical Fiction", "Literary Fiction", "Horror", "Adventure", "Young Adult",
-        "Children's", "Graphic Novel", "Short Stories", "Classics", "Biography & Memoir",
-        "History", "Science & Technology", "Philosophy", "Self-Help", "Business & Economics",
-        "Travel", "True Crime", "Essays", "Politics & Current Events", "Religion & Spirituality",
-        "Art & Photography", "Cooking & Food", "Health & Fitness", "Poetry", "Drama",
-        "Reference", "Uncategorized"
-    };
-
-    private static readonly Dictionary<string, string[]> GenreKeywordMap = new()
-    {
-        ["Science Fiction"] = new[] { "science fiction", "sci-fi", "scifi", "space opera", "cyberpunk", "dystopia", "dystopian", "time travel", "space", "aliens", "future", "robots", "artificial intelligence" },
-        ["Fantasy"] = new[] { "fantasy", "magic", "wizards", "dragons", "sword and sorcery", "epic fantasy", "urban fantasy", "paranormal", "mythical", "fairy tale", "elves", "supernatural" },
-        ["Mystery & Detective"] = new[] { "mystery", "detective", "crime", "murder", "investigation", "whodunit", "noir", "police procedural", "sleuth", "clues" },
-        ["Thriller"] = new[] { "thriller", "suspense", "action", "espionage", "spy", "psychological thriller", "conspiracy", "terrorism" },
-        ["Romance"] = new[] { "romance", "love story", "romantic", "love", "relationships", "contemporary romance", "historical romance", "romantic comedy" },
-        ["Historical Fiction"] = new[] { "historical fiction", "historical", "period", "world war", "civil war", "victorian", "medieval", "ancient" },
-        ["Literary Fiction"] = new[] { "literary fiction", "literary", "contemporary fiction", "modern fiction", "satire", "allegory" },
-        ["Horror"] = new[] { "horror", "terror", "scary", "ghost", "vampire", "zombie", "monsters", "haunted", "dark", "gothic" },
-        ["Adventure"] = new[] { "adventure", "quest", "journey", "exploration", "expedition", "survival", "treasure", "pirates" },
-        ["Young Adult"] = new[] { "young adult", "ya", "teen", "teenage", "coming of age", "high school", "adolescent" },
-        ["Children's"] = new[] { "children", "kids", "juvenile", "picture book", "early reader", "middle grade", "bedtime story" },
-        ["Graphic Novel"] = new[] { "graphic novel", "comic", "manga", "illustrated", "sequential art" },
-        ["Short Stories"] = new[] { "short stories", "anthology", "collection", "novellas", "short fiction" },
-        ["Classics"] = new[] { "classic", "classical", "nineteenth century", "19th century", "eighteenth century", "18th century", "masterpiece" },
-        ["Biography & Memoir"] = new[] { "biography", "memoir", "autobiography", "life story", "diaries", "letters", "personal narrative", "biographical" },
-        ["History"] = new[] { "history", "historical", "civilization", "archaeology", "ancient history", "military history", "social history" },
-        ["Science & Technology"] = new[] { "science", "technology", "physics", "biology", "chemistry", "mathematics", "astronomy", "engineering", "computers", "nature" },
-        ["Philosophy"] = new[] { "philosophy", "philosophical", "ethics", "logic", "metaphysics", "epistemology", "existentialism", "phenomenology" },
-        ["Self-Help"] = new[] { "self-help", "self improvement", "personal development", "motivation", "success", "happiness", "productivity" },
-        ["Business & Economics"] = new[] { "business", "economics", "finance", "management", "entrepreneurship", "marketing", "investing", "money", "capitalism" },
-        ["Travel"] = new[] { "travel", "tourism", "guidebook", "travelogue", "adventure travel", "cultural exploration", "geography" },
-        ["True Crime"] = new[] { "true crime", "criminal", "murder case", "serial killer", "investigation", "forensic", "crime story" },
-        ["Essays"] = new[] { "essays", "essay", "nonfiction", "criticism", "commentary", "reflections", "observations" },
-        ["Politics & Current Events"] = new[] { "politics", "political", "government", "democracy", "current events", "international relations", "diplomacy", "elections" },
-        ["Religion & Spirituality"] = new[] { "religion", "religious", "spirituality", "faith", "theology", "christianity", "buddhism", "islam", "meditation", "prayer" },
-        ["Art & Photography"] = new[] { "art", "photography", "painting", "sculpture", "artists", "visual arts", "design", "architecture" },
-        ["Cooking & Food"] = new[] { "cooking", "food", "recipes", "cookbook", "culinary", "cuisine", "baking", "gastronomy" },
-        ["Health & Fitness"] = new[] { "health", "fitness", "exercise", "nutrition", "diet", "wellness", "medicine", "medical", "yoga" },
-        ["Poetry"] = new[] { "poetry", "poems", "verse", "sonnets", "haiku" },
-        ["Drama"] = new[] { "drama", "plays", "theater", "theatre", "screenplay", "script" },
-        ["Reference"] = new[] { "reference", "encyclopedia", "dictionary", "handbook", "manual", "guide", "textbook", "directory" }
-    };
-
-    private static string MapToStandardGenre(string[] openLibrarySubjects)
-    {
-        if (openLibrarySubjects == null || openLibrarySubjects.Length == 0)
-            return "Uncategorized";
-
-        var scores = new Dictionary<string, int>();
-
-        foreach (var subject in openLibrarySubjects)
-        {
-            var normalized = subject.ToLowerInvariant().Trim();
-            foreach (var (genre, keywords) in GenreKeywordMap)
-            {
-                var score = 0;
-                foreach (var keyword in keywords)
-                {
-                    if (normalized == keyword)
-                        score += 10; // Exact match
-                    else if (normalized.Contains(keyword))
-                        score += 5; // Contains keyword
-                    else if (keyword.Contains(normalized) && normalized.Length > 3)
-                        score += 2; // Keyword contains subject
-                }
-
-                if (score > 0)
-                {
-                    if (!scores.ContainsKey(genre))
-                        scores[genre] = 0;
-                    scores[genre] += score;
-                }
-            }
-        }
-
-        if (scores.Count == 0)
-            return "Uncategorized";
-
-        return scores.OrderByDescending(kv => kv.Value).First().Key;
-    }
-
-    private static string[] ExtractTags(string[] openLibrarySubjects, string primaryGenre, int limit)
-    {
-        if (openLibrarySubjects == null || openLibrarySubjects.Length == 0)
-            return Array.Empty<string>();
-
-        var stopWords = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        {
-            "fiction", "non-fiction", "nonfiction", "general", "book", "books",
-            "literature", "accessible book", "protected daisy", "in library",
-            "open library staff picks", "american", "english", "british"
-        };
-
-        return openLibrarySubjects
-            .Where(s =>
-            {
-                var lower = s.ToLowerInvariant();
-                return !stopWords.Contains(lower) &&
-                       !string.Equals(s, primaryGenre, StringComparison.OrdinalIgnoreCase) &&
-                       !lower.Contains("fictitious character") &&
-                       s.Length > 1 &&
-                       !int.TryParse(s, out _);
-            })
-            .Take(limit)
-            .ToArray();
     }
 
     private static string ResolveLibraryRoot()

@@ -6,6 +6,7 @@ using AnnasArchive.API.Constants;
 using AnnasArchive.API.Helpers;
 using AnnasArchive.API.Infrastructure;
 using AnnasArchive.API.Services;
+using AnnasArchive.API.Services.Library;
 using AnnasArchive.Core.Services;
 using Dropbox.Api;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -230,6 +231,11 @@ public static class ServiceConfiguration
 
         // Background services
         services.AddHostedService<LibraryWatcherService>();
+
+        // Library services
+        services.AddSingleton<IGenreClassificationService, GenreClassificationService>();
+        services.AddSingleton<IDuplicateDetectionService, DuplicateDetectionService>();
+        services.AddSingleton<IMetadataExtractionService, MetadataExtractionService>();
 
         // External API services
         services.AddSingleton<IOpenLibraryService, OpenLibraryService>();

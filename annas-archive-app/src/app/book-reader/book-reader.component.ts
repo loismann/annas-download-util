@@ -52,27 +52,14 @@ import { marked } from 'marked';
 import { Subject } from 'rxjs';
 import { PROGRESS_MESSAGE_DURATION_MS, SUCCESS_MESSAGE_DURATION_MS } from '../constants/timeouts';
 import { takeUntil } from 'rxjs/operators';
-
-interface ViewedBook {
-  fileName: string;
-  readerKey: string;
-  title: string;
-  updatedAt?: string;
-}
-
-interface BookmarkEntry {
-  id: string;
-  readerKey: string;
-  chapterId: number;
-  wordOffset: number;
-  createdAt: string;
-}
-
-interface ReadingPosition {
-  chapterId: number;
-  wordOffset: number;
-  updatedAt?: string;
-}
+import {
+  ReaderStateService,
+  ReaderTextUtilsService,
+  ReaderPaginationService,
+  ViewedBook,
+  BookmarkEntry,
+  ReadingPosition
+} from './services';
 
 @Component({
   selector: 'app-book-reader',
@@ -192,7 +179,6 @@ export class BookReaderComponent implements OnInit, OnDestroy {
   bookmarks: BookmarkEntry[] = [];
   bookmarkSelectValue: string | null = null;
   showBookmarksDropdown = false;
-  lastPositions = new Map<string, ReadingPosition>();
 
   // Section/chunk boundary state
   chunkBoundaries: ChunkBoundariesResponse | null = null;
@@ -246,13 +232,16 @@ export class BookReaderComponent implements OnInit, OnDestroy {
     private dialog: MatDialog,
     private router: Router,
     private route: ActivatedRoute,
-    private logger: LoggerService
+    private logger: LoggerService,
+    private readerState: ReaderStateService,
+    private textUtils: ReaderTextUtilsService,
+    private paginationService: ReaderPaginationService
   ) {}
 
   ngOnInit(): void {
-    this.loadPreviouslyViewed();
-    this.loadLastPositions();
-    this.loadBookmarks();
+    // State is loaded by ReaderStateService on construction
+    this.previouslyViewed = this.readerState.getPreviouslyViewed();
+    this.bookmarks = this.readerState.getBookmarks();
     this.subscribeToReaderParams();
     this.loadBooks();
     this.vocabFilters = this.vocabularyService.getBookFilters();
@@ -386,7 +375,7 @@ export class BookReaderComponent implements OnInit, OnDestroy {
 
   get visibleText(): string {
     if (!this.chapterContent) return '';
-    return this.sliceByWords(
+    return this.textUtils.sliceByWords(
       this.chapterContent.content,
       this.wordOffset,
       this.pageSizeWords
@@ -397,7 +386,7 @@ export class BookReaderComponent implements OnInit, OnDestroy {
     const text = this.visibleText;
     if (!text) return '';
 
-    let processedText = this.escapeHtml(text);
+    let processedText = this.textUtils.escapeHtml(text);
 
     if (this.chunkBoundaries) {
       processedText = this.applySectionAnnotations(processedText);
@@ -405,7 +394,7 @@ export class BookReaderComponent implements OnInit, OnDestroy {
 
     // Apply search highlighting
     if (this.searchTerm.trim()) {
-      const safeTerm = this.escapeRegExp(this.searchTerm.trim());
+      const safeTerm = this.textUtils.escapeRegExp(this.searchTerm.trim());
       processedText = processedText.replace(new RegExp(`(${safeTerm})`, 'gi'), '<mark>$1</mark>');
     }
 
@@ -641,7 +630,7 @@ export class BookReaderComponent implements OnInit, OnDestroy {
           parts.push('<ul>');
           inList = true;
         }
-        const item = this.escapeHtml(line.substring(2))
+        const item = this.textUtils.escapeHtml(line.substring(2))
           .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
           .replace(/\*(.+?)\*/g, '<em>$1</em>');
         parts.push(`<li>${item}</li>`);
@@ -650,7 +639,7 @@ export class BookReaderComponent implements OnInit, OnDestroy {
           parts.push('</ul>');
           inList = false;
         }
-        const paragraph = this.escapeHtml(line)
+        const paragraph = this.textUtils.escapeHtml(line)
           .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
           .replace(/\*(.+?)\*/g, '<em>$1</em>');
         parts.push(`<p>${paragraph}</p>`);
@@ -663,7 +652,7 @@ export class BookReaderComponent implements OnInit, OnDestroy {
 
   get searchMatchCount(): number {
     if (!this.chapterContent || !this.searchTerm.trim()) return 0;
-    const safeTerm = this.escapeRegExp(this.searchTerm.trim());
+    const safeTerm = this.textUtils.escapeRegExp(this.searchTerm.trim());
     const matches = this.chapterContent.content.match(new RegExp(safeTerm, 'gi'));
     return matches ? matches.length : 0;
   }
@@ -1018,27 +1007,8 @@ export class BookReaderComponent implements OnInit, OnDestroy {
 
   toggleBookmark(): void {
     if (!this.selectedBookPath || this.selectedChapterId === null || !this.chapterContent) return;
-    const page = Math.floor(this.wordOffset / Math.max(1, this.pageSizeWords));
-    const existingIndex = this.bookmarks.findIndex(b =>
-      b.readerKey === this.selectedBookPath &&
-      b.chapterId === this.selectedChapterId &&
-      Math.floor(b.wordOffset / Math.max(1, this.pageSizeWords)) === page
-    );
-
-    if (existingIndex >= 0) {
-      this.bookmarks.splice(existingIndex, 1);
-    } else {
-      const entry: BookmarkEntry = {
-        id: `${this.selectedBookPath}|${this.selectedChapterId}|${this.wordOffset}`,
-        readerKey: this.selectedBookPath,
-        chapterId: this.selectedChapterId,
-        wordOffset: this.wordOffset,
-        createdAt: new Date().toISOString()
-      };
-      this.bookmarks.push(entry);
-    }
-
-    this.saveBookmarks();
+    this.readerState.toggleBookmark(this.selectedBookPath, this.selectedChapterId, this.wordOffset);
+    this.bookmarks = this.readerState.getBookmarks();
   }
 
   toggleBookmarksDropdown(): void {
@@ -1060,12 +1030,12 @@ export class BookReaderComponent implements OnInit, OnDestroy {
 
   onBookmarkSelected(bookmarkId: string): void {
     if (!bookmarkId) return;
-    const entry = this.bookmarks.find(b => b.id === bookmarkId);
+    const entry = this.readerState.getBookmarkById(bookmarkId);
     if (!entry) return;
 
     this.bookmarkSelectValue = bookmarkId;
     if (this.selectedChapterId === entry.chapterId && this.chapterContent) {
-      const totalWords = this.chapterContent.wordCount ?? this.countWords(this.chapterContent.content);
+      const totalWords = this.chapterContent.wordCount ?? this.textUtils.countWords(this.chapterContent.content);
       this.wordOffset = Math.max(0, Math.min(entry.wordOffset, totalWords));
       this.pendingWordOffset = null;
       this.updateReadingPosition();
@@ -1105,7 +1075,7 @@ export class BookReaderComponent implements OnInit, OnDestroy {
     // Use fixed 1000-word chunks based on current word offset
     const chunkSize = 1000;
     const chunkStartWord = Math.floor(this.wordOffset / chunkSize) * chunkSize;
-    const text = this.sliceByWords(this.chapterContent.content, chunkStartWord, chunkSize);
+    const text = this.textUtils.sliceByWords(this.chapterContent.content, chunkStartWord, chunkSize);
 
     const allKnownWords = this.vocabularyService.getKnownWordsForPrompt();
     // Limit to 100 most recent/varied known words to avoid overwhelming the AI
@@ -1557,8 +1527,8 @@ export class BookReaderComponent implements OnInit, OnDestroy {
   }
 
   private normalizeChapterContent(content: DropboxChapterContent): DropboxChapterContent {
-    const collapsed = this.collapseBlankLines(content.content);
-    const computedWordCount = this.countWords(collapsed);
+    const collapsed = this.textUtils.collapseBlankLines(content.content);
+    const computedWordCount = this.textUtils.countWords(collapsed);
     return {
       ...content,
       content: collapsed,
@@ -1571,7 +1541,7 @@ export class BookReaderComponent implements OnInit, OnDestroy {
     this.cachedPageSize = null;
     this.pageSizeCacheKey = null;
 
-    const computedWordCount = content.wordCount ?? this.countWords(content.content);
+    const computedWordCount = content.wordCount ?? this.textUtils.countWords(content.content);
     this.chapterContent = {
       ...content,
       wordCount: computedWordCount
@@ -1586,7 +1556,7 @@ export class BookReaderComponent implements OnInit, OnDestroy {
     } else if (this.pendingCharOffset != null && !goToLastPage) {
       // Handle character offset (but not -1, which is handled after recalcPageSize)
       const slice = content.content.slice(0, Math.min(this.pendingCharOffset, content.content.length));
-      this.wordOffset = this.countWords(slice);
+      this.wordOffset = this.textUtils.countWords(slice);
     } else if (!goToLastPage) {
       this.wordOffset = 0;
     }
@@ -1646,99 +1616,14 @@ export class BookReaderComponent implements OnInit, OnDestroy {
     });
   }
 
-  private loadPreviouslyViewed(): void {
-    if (typeof localStorage === 'undefined') return;
-
-    try {
-      const raw = localStorage.getItem('epub_recent');
-      if (!raw) return;
-      const parsed: unknown = JSON.parse(raw);
-      if (!Array.isArray(parsed)) {
-        this.previouslyViewed = [];
-        return;
-      }
-
-      this.previouslyViewed = parsed.map((item: unknown) => {
-        if (typeof item === 'object' && item !== null) {
-          const obj = item as Record<string, unknown>;
-          if ('fileName' in obj && 'readerKey' in obj) {
-            return obj as unknown as ViewedBook;
-          }
-          return {
-            fileName: (obj['path'] as string) ?? '',
-            readerKey: (obj['path'] as string) ?? '',
-            title: (obj['name'] as string) ?? (obj['path'] as string) ?? 'Unknown',
-            updatedAt: (obj['serverModified'] as string) ?? undefined
-          } as ViewedBook;
-        }
-        return null;
-      }).filter((entry): entry is ViewedBook => entry !== null && !!entry.fileName && !!entry.readerKey);
-      this.reconcilePreviouslyViewed();
-    } catch {
-      this.previouslyViewed = [];
-    }
-  }
-
-  private loadBookmarks(): void {
-    if (typeof localStorage === 'undefined') return;
-    try {
-      const raw = localStorage.getItem('epub_bookmarks');
-      if (!raw) {
-        this.bookmarks = [];
-        return;
-      }
-      const parsed = JSON.parse(raw) as BookmarkEntry[];
-      this.bookmarks = Array.isArray(parsed) ? parsed : [];
-    } catch {
-      this.bookmarks = [];
-    }
-  }
-
-  private saveBookmarks(): void {
-    if (typeof localStorage === 'undefined') return;
-    localStorage.setItem('epub_bookmarks', JSON.stringify(this.bookmarks));
-  }
-
-  private loadLastPositions(): void {
-    if (typeof localStorage === 'undefined') return;
-    try {
-      const raw = localStorage.getItem('epub_last_positions');
-      if (!raw) return;
-      const parsed = JSON.parse(raw) as Record<string, ReadingPosition>;
-      if (!parsed || typeof parsed !== 'object') return;
-      Object.entries(parsed).forEach(([key, value]) => {
-        if (value && typeof value.chapterId === 'number' && typeof value.wordOffset === 'number') {
-          this.lastPositions.set(key, value);
-        }
-      });
-    } catch {
-      this.lastPositions.clear();
-    }
-  }
-
-  private persistLastPositions(): void {
-    if (typeof localStorage === 'undefined') return;
-    const payload: Record<string, ReadingPosition> = {};
-    this.lastPositions.forEach((value, key) => {
-      payload[key] = value;
-    });
-    localStorage.setItem('epub_last_positions', JSON.stringify(payload));
-  }
-
   private updateReadingPosition(): void {
     if (!this.selectedBookPath || this.selectedChapterId === null) return;
-    const entry: ReadingPosition = {
-      chapterId: this.selectedChapterId,
-      wordOffset: this.wordOffset,
-      updatedAt: new Date().toISOString()
-    };
-    this.lastPositions.set(this.selectedBookPath, entry);
-    this.persistLastPositions();
+    this.readerState.updateReadingPosition(this.selectedBookPath, this.selectedChapterId, this.wordOffset);
   }
 
   private queueRestorePosition(readerKey: string): void {
     if (!readerKey) return;
-    const last = this.lastPositions.get(readerKey);
+    const last = this.readerState.getLastPosition(readerKey);
     if (!last) return;
     this.pendingRestorePosition = {
       readerKey,
@@ -1748,27 +1633,13 @@ export class BookReaderComponent implements OnInit, OnDestroy {
   }
 
   private recordViewed(book: LibraryReaderBook): void {
-    if (typeof localStorage === 'undefined') return;
-
-    const entry: ViewedBook = {
-      fileName: book.fileName,
-      readerKey: book.readerKey,
-      title: book.title,
-      updatedAt: new Date().toISOString()
-    };
-
-    this.previouslyViewed = [
-      entry,
-      ...this.previouslyViewed.filter(b => b.readerKey !== book.readerKey)
-    ].slice(0, 8);
-
-    this.persistPreviouslyViewed();
+    this.readerState.recordViewed(book);
+    this.previouslyViewed = this.readerState.getPreviouslyViewed();
   }
 
   clearPreviouslyViewed(): void {
-    if (typeof localStorage === 'undefined') return;
+    this.readerState.clearPreviouslyViewed();
     this.previouslyViewed = [];
-    localStorage.removeItem('epub_recent');
   }
 
   removeFromReader(): void {
@@ -1795,10 +1666,10 @@ export class BookReaderComponent implements OnInit, OnDestroy {
       .subscribe({
         next: () => {
           this.readerBooks = this.readerBooks.filter(book => book.fileName !== fileName);
-          this.removePreviouslyViewedEntry(fileName);
+          this.readerState.removePreviouslyViewedEntry(fileName);
+          this.previouslyViewed = this.readerState.getPreviouslyViewed();
           if (this.selectedBookPath) {
-            this.lastPositions.delete(this.selectedBookPath);
-            this.persistLastPositions();
+            this.readerState.removeLastPosition(this.selectedBookPath);
           }
           this.resetSelectedBookState();
         },
@@ -1812,22 +1683,8 @@ export class BookReaderComponent implements OnInit, OnDestroy {
   private reconcilePreviouslyViewed(): void {
     if (!this.readerBooks.length) return;
     const allowed = new Set(this.readerBooks.map(book => book.fileName));
-    const filtered = this.previouslyViewed.filter(entry => allowed.has(entry.fileName));
-    if (filtered.length === this.previouslyViewed.length) return;
-    this.previouslyViewed = filtered;
-    this.persistPreviouslyViewed();
-  }
-
-  private persistPreviouslyViewed(): void {
-    if (typeof localStorage === 'undefined') return;
-    localStorage.setItem('epub_recent', JSON.stringify(this.previouslyViewed));
-  }
-
-  private removePreviouslyViewedEntry(fileName: string): void {
-    const next = this.previouslyViewed.filter(entry => entry.fileName !== fileName);
-    if (next.length === this.previouslyViewed.length) return;
-    this.previouslyViewed = next;
-    this.persistPreviouslyViewed();
+    this.readerState.reconcilePreviouslyViewed(allowed);
+    this.previouslyViewed = this.readerState.getPreviouslyViewed();
   }
 
   private resetSelectedBookState(): void {
@@ -2227,21 +2084,15 @@ export class BookReaderComponent implements OnInit, OnDestroy {
   private refreshVocabLists(): void {
     const filter = this.vocabFilter === 'all' ? undefined : this.vocabFilter;
     this.vocabKnownList = this.vocabularyService.getKnownWords(filter)
-      .map(term => this.capitalizeWords(term))
+      .map(term => this.textUtils.capitalizeWords(term))
       .sort((a, b) => a.localeCompare(b));
     const unknownMap = this.vocabularyService.getUnknownWords(filter);
     this.vocabUnknownList = Array.from(unknownMap.entries())
       .map(([term, definition]) => ({
-        term: this.capitalizeWords(term),
+        term: this.textUtils.capitalizeWords(term),
         definition
       }))
       .sort((a, b) => a.term.localeCompare(b.term));
-  }
-
-  private capitalizeWords(text: string): string {
-    return text.split(' ').map(word =>
-      word.charAt(0).toUpperCase() + word.slice(1)
-    ).join(' ');
   }
 
   onVocabFilterChange(id: string): void {
@@ -2373,27 +2224,6 @@ export class BookReaderComponent implements OnInit, OnDestroy {
     return cleaned;
   }
 
-  private sliceByWords(text: string, startWord: number, count: number): string {
-    const regex = /\S+/g;
-    let match: RegExpExecArray | null;
-    let wordIndex = 0;
-    let startIdx: number | null = null;
-    let endIdx: number | null = null;
-
-    while ((match = regex.exec(text)) !== null) {
-      if (wordIndex === startWord) startIdx = match.index;
-      if (wordIndex === startWord + count) {
-        endIdx = match.index;
-        break;
-      }
-      wordIndex++;
-    }
-
-    if (startIdx === null) return '';
-    if (endIdx === null) endIdx = text.length;
-    return text.slice(startIdx, endIdx);
-  }
-
   @HostListener('mouseup')
   @HostListener('touchend')
   captureSelection(): void {
@@ -2409,21 +2239,6 @@ export class BookReaderComponent implements OnInit, OnDestroy {
     const selection = window.getSelection();
     const text = selection ? selection.toString().trim() : '';
     this.selectedText = text || null;
-  }
-
-  private countWords(text: string): number {
-    // Count words the same way sliceByWords iterates: any non-space token
-    const regex = /\S+/g;
-    const matches = text.match(regex);
-    return matches ? matches.length : 0;
-  }
-
-  private collapseBlankLines(text: string): string {
-    return text
-      .replace(/\n[ \t]*\n[ \t]*\n+/g, '\n\n')
-      .replace(/\n{3,}/g, '\n\n')
-      .replace(/^\s*\n+/, '')
-      .replace(/\n+\s*$/, '');
   }
 
   startResize(): void {
@@ -2669,19 +2484,6 @@ DO NOT include common words. Only create flashcards for terms that significantly
     this.recalcPageSize();
   }
 
-  private escapeRegExp(value: string): string {
-    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  }
-
-  private escapeHtml(value: string): string {
-    return value
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
-  }
-
   @HostListener('window:resize')
   onWindowResize(): void {
     this.recalcPageSize();
@@ -2774,14 +2576,14 @@ DO NOT include common words. Only create flashcards for terms that significantly
   private doesTextOverflowAtOffset(wordCount: number, testOffset: number): boolean {
     if (!this.measurementEl || !this.chapterContent) return false;
 
-    const testText = this.sliceByWords(
+    const testText = this.textUtils.sliceByWords(
       this.chapterContent.content,
       testOffset,
       wordCount
     );
 
     // Apply same formatting as highlightedVisibleText (without section annotations for speed)
-    const html = this.escapeHtml(testText).replace(/\n/g, '<br/>');
+    const html = this.textUtils.escapeHtml(testText).replace(/\n/g, '<br/>');
     this.measurementEl.innerHTML = `<pre style="white-space: pre-wrap; word-wrap: break-word; margin: 0; line-height: inherit;">${html}</pre>`;
 
     return this.measurementEl.scrollHeight > this.measurementEl.clientHeight;
@@ -2806,7 +2608,7 @@ DO NOT include common words. Only create flashcards for terms that significantly
   private findOptimalPageSize(): number {
     if (!this.chapterContent) return 200;
 
-    const totalChapterWords = this.countWords(this.chapterContent.content);
+    const totalChapterWords = this.textUtils.countWords(this.chapterContent.content);
     // Use fixed test offset (0) so page size is consistent across the chapter
     const testOffset = 0;
     const maxPossible = Math.min(totalChapterWords, 800); // Cap for performance

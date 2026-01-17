@@ -9,6 +9,7 @@
 
   <!-- LEFT column: form + counter -->
   <app-search-form
+    class="search-panel"
     [loading]="loading"
     [error]="error"
     [annaDomains]="annaDomains"
@@ -24,6 +25,7 @@
 
   <!-- RIGHT column: results -->
   <app-search-results
+    class="results-panel"
     [books]="filteredBooks"
     [loading]="loading"
     [searchPerformed]="searchPerformed"

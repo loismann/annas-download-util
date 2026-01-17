@@ -206,12 +206,37 @@ export class QuizComponent implements OnInit, OnDestroy {
     });
   }
 
+  markQuestionInvalid(question: QuizCatalogQuestion): void {
+    const reason = prompt('Why is this question invalid? (optional)');
+    if (reason === null) return; // User cancelled
+
+    this.quizApi.markQuestionInvalid(this.subjectId, question.id, reason || undefined).subscribe({
+      next: () => {
+        alert('Question marked as invalid and removed from the quiz pool.');
+        // Remove from local question bank
+        this.questionBank = this.questionBank.filter(q => q.id !== question.id);
+        // Flag locally as well
+        this.handleFlag(question.number);
+      },
+      error: err => {
+        this.logger.error(err);
+        alert('Failed to mark question as invalid. Please try again.');
+      }
+    });
+  }
+
   nextQuestion(): void {
     if (this.currentIndex < this.quizQuestions.length - 1) {
       this.currentIndex += 1;
     } else {
       this.status = 'results';
       this.celebrate('quiz', 'Quiz complete! Nice work.');
+    }
+  }
+
+  endQuizEarly(): void {
+    if (confirm('Are you sure you want to end the quiz? Your current progress will be saved.')) {
+      this.status = 'results';
     }
   }
 

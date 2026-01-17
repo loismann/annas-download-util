@@ -135,7 +135,8 @@ export class BookSearchApiService {
     if (coverUrl) params = params.set('coverUrl', coverUrl);
     if (authors) params = params.set('authors', authors);
     if (format) params = params.set('format', format);
-    if (fileSize) params = params.set('fileSize', fileSize);
+    const parsedSize = BookSearchApiService.parseFileSizeBytes(fileSize);
+    if (parsedSize !== undefined) params = params.set('fileSize', String(parsedSize));
     if (source) params = params.set('source', source);
     if (description) params = params.set('description', description);
 
@@ -254,7 +255,8 @@ export class BookSearchApiService {
     if (coverUrl) params = params.set('coverUrl', coverUrl);
     if (authors) params = params.set('authors', authors);
     if (format) params = params.set('format', format);
-    if (fileSize) params = params.set('fileSize', fileSize);
+    const parsedSize = BookSearchApiService.parseFileSizeBytes(fileSize);
+    if (parsedSize !== undefined) params = params.set('fileSize', String(parsedSize));
     if (source) params = params.set('source', source);
     if (description) params = params.set('description', description);
 
@@ -263,6 +265,22 @@ export class BookSearchApiService {
       null,
       { params }
     );
+  }
+
+  private static parseFileSizeBytes(size?: string): number | undefined {
+    if (!size) return undefined;
+    const match = size.trim().match(/^([\d.]+)\s*(B|KB|MB|GB)?$/i);
+    if (!match) return undefined;
+    const value = Number(match[1]);
+    if (!Number.isFinite(value)) return undefined;
+    const unit = (match[2] || 'B').toUpperCase();
+    const multipliers: Record<string, number> = {
+      B: 1,
+      KB: 1024,
+      MB: 1024 * 1024,
+      GB: 1024 * 1024 * 1024,
+    };
+    return Math.round(value * (multipliers[unit] || 1));
   }
 
   /* ══════════════════════════════════════════════════════════════

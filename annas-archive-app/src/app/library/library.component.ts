@@ -1,4 +1,4 @@
-import { ChangeDetectorRef, Component, ElementRef, HostListener, NgZone, OnInit, OnDestroy, ViewChild } from '@angular/core';
+import { ChangeDetectorRef, Component, HostListener, NgZone, OnInit, OnDestroy, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Subject } from 'rxjs';
@@ -71,8 +71,8 @@ export class LibraryComponent implements OnInit, OnDestroy {
   bulkEditMode = false;
   selectedBooksForBulk = new Set<string>();
   tileSize: 'small' | 'medium' | 'large' = 'medium';
+  sidebarCollapsed = false;
 
-  @ViewChild('libraryGrid') libraryGrid?: ElementRef<HTMLDivElement>;
   @ViewChild(CdkVirtualScrollViewport) virtualScroll?: CdkVirtualScrollViewport;
 
   /** Cached items per row - recalculated on resize */
@@ -101,25 +101,19 @@ export class LibraryComponent implements OnInit, OnDestroy {
     }
   }
 
-  /** Calculate items per row based on container width and tile size */
-  private calculateItemsPerRow(): number {
-    const container = this.libraryGrid?.nativeElement;
-    if (!container) return 6;
-
-    const containerWidth = container.offsetWidth - 64; // Account for alphabet index padding
-    let itemWidth: number;
+  /** Get items per row based on tile size - used for virtual scroll row grouping */
+  private getItemsPerRow(): number {
+    // Fixed items per row based on tile size - CSS handles the actual layout
     switch (this.tileSize) {
-      case 'small': itemWidth = 140; break;
-      case 'large': itemWidth = 220; break;
-      default: itemWidth = 170;
+      case 'small': return 8;
+      case 'large': return 4;
+      default: return 6;
     }
-    const gap = this.tileSize === 'small' ? 11 : this.tileSize === 'large' ? 18 : 14;
-    return Math.max(1, Math.floor((containerWidth + gap) / (itemWidth + gap)));
   }
 
   /** Recalculate items per row (called on resize and tile size change) */
   recalculateLayout(): void {
-    this.cachedItemsPerRow = this.calculateItemsPerRow();
+    this.cachedItemsPerRow = this.getItemsPerRow();
     this.virtualScroll?.checkViewportSize();
   }
 
@@ -145,6 +139,11 @@ export class LibraryComponent implements OnInit, OnDestroy {
   }
 
   ngOnInit(): void {
+    // Start with sidebar collapsed on mobile for better UX
+    if (window.innerWidth <= 768) {
+      this.sidebarCollapsed = true;
+    }
+
     this.libraryApi.getLibraryBooks().pipe(takeUntil(this.destroy$)).subscribe({
       next: (books) => {
         this.books = (books ?? []).map(book => ({
@@ -786,6 +785,11 @@ export class LibraryComponent implements OnInit, OnDestroy {
     if (!this.bulkEditMode) {
       this.selectedBooksForBulk.clear();
     }
+  }
+
+  /** Toggle mobile sidebar collapsed state */
+  toggleSidebar(): void {
+    this.sidebarCollapsed = !this.sidebarCollapsed;
   }
 
   toggleBookSelection(book: LibraryBook): void {

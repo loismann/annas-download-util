@@ -214,6 +214,8 @@ public class LibraryWatcherService : BackgroundService
             existing = await LoadExistingMetaAsync(metaPath, token);
             var metaInfo = new FileInfo(metaPath);
             var metaIsFresh = metaInfo.LastWriteTimeUtc >= fileInfo.LastWriteTimeUtc;
+            if (metaIsFresh && existing?.EnrichmentComplete == true)
+                return;
             if (metaIsFresh && existing?.HasCoreMetadata == true && existing.AiEnrichedAt != null &&
                 existing.GoodreadsRating.HasValue)
                 return;
@@ -262,7 +264,8 @@ public class LibraryWatcherService : BackgroundService
             ["personalRating"] = existing?.PersonalRating,
             ["readerEnabled"] = existing?.ReaderEnabled,
             ["openLibraryConfidence"] = existing?.OpenLibraryConfidence,
-            ["aiEnrichedAt"] = existing?.AiEnrichedAt
+            ["aiEnrichedAt"] = existing?.AiEnrichedAt,
+            ["enrichmentComplete"] = existing?.EnrichmentComplete ?? false
         };
 
         Log.Information($"[LibraryWatcher] Processing {Path.GetFileName(filePath)}");
@@ -396,6 +399,9 @@ public class LibraryWatcherService : BackgroundService
             else
                 meta["goodreadsRating"] ??= null;
         }
+
+        // Mark enrichment complete after a full pass
+        meta["enrichmentComplete"] = true;
 
         var json = JsonSerializer.Serialize(meta, new JsonSerializerOptions
         {
@@ -1210,7 +1216,9 @@ Return JSON with:
                 OpenLibraryConfidence = root.TryGetProperty("openLibraryConfidence", out var conf) && conf.ValueKind == JsonValueKind.Number
                     ? conf.GetDouble()
                     : null,
-                AiEnrichedAt = root.TryGetProperty("aiEnrichedAt", out var ai) ? ai.GetString() : null
+                AiEnrichedAt = root.TryGetProperty("aiEnrichedAt", out var ai) ? ai.GetString() : null,
+                EnrichmentComplete = root.TryGetProperty("enrichmentComplete", out var complete) &&
+                    complete.ValueKind == JsonValueKind.True
             };
         }
         catch
@@ -1257,6 +1265,7 @@ Return JSON with:
         public bool? ReaderEnabled { get; init; }
         public double? OpenLibraryConfidence { get; init; }
         public string? AiEnrichedAt { get; init; }
+        public bool EnrichmentComplete { get; init; }
 
         public bool HasCoreMetadata =>
             !string.IsNullOrWhiteSpace(Title) &&

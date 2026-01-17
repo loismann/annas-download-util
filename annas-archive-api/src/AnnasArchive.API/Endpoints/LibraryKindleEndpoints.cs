@@ -35,6 +35,8 @@ public static class LibraryKindleEndpoints
         IConfiguration cfg,
         HttpContext context)
     {
+        Log.Information("[library-send] Request fileName='{fileName}' target='{target}' toDropbox={toDropbox}", fileName, target, toDropbox);
+
         if (string.IsNullOrWhiteSpace(fileName))
             return Results.BadRequest(new { error = "fileName is required." });
 
@@ -68,12 +70,26 @@ public static class LibraryKindleEndpoints
 
         if (toDropbox)
         {
-            var dropboxPath = $"/KindleSync/{safeFileName}";
-            await using var fileStream = File.OpenRead(fullPath);
-            await dropbox.Files.UploadAsync(
-                dropboxPath,
-                WriteMode.Overwrite.Instance,
-                body: fileStream);
+            var uploadFolder = cfg["Dropbox:UploadFolderPath"] ?? string.Empty;
+            var dropboxPath = string.IsNullOrWhiteSpace(uploadFolder)
+                ? $"/{safeFileName}"
+                : $"{uploadFolder.TrimEnd('/')}/{safeFileName}";
+
+            try
+            {
+                await using var fileStream = File.OpenRead(fullPath);
+                Log.Information("[library-send] Uploading '{fileName}' to Dropbox: {dropboxPath}", safeFileName, dropboxPath);
+                await dropbox.Files.UploadAsync(
+                    dropboxPath,
+                    WriteMode.Overwrite.Instance,
+                    body: fileStream);
+                Log.Information("[library-send] Dropbox upload successful: {dropboxPath}", dropboxPath);
+            }
+            catch (Exception ex)
+            {
+                Log.Warning("[library-send] Dropbox upload failed: {Message}", ex.Message);
+                return Results.Ok(new { success = false, message = "Failed to upload file to Dropbox." });
+            }
 
             // Add Kindle target tag to library book metadata
             var userTag = LibraryHelpers.ResolveUserLibraryTag(context);

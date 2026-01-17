@@ -64,6 +64,28 @@ public static class QuizEndpoints
             return deleted ? Results.Ok(new { removed = true }) : Results.NotFound();
         });
 
+        quizGroup.MapGet("/invalid-questions", async (IQuizStorageService storage, CancellationToken token) =>
+        {
+            var invalidQuestions = await storage.GetInvalidQuestionsAsync(token);
+            return Results.Ok(invalidQuestions);
+        });
+
+        quizGroup.MapPost("/subjects/{subjectId}/questions/{questionId}/mark-invalid", async (
+            string subjectId,
+            string questionId,
+            MarkInvalidRequest? request,
+            IQuizStorageService storage,
+            CancellationToken token) =>
+        {
+            var success = await storage.MarkQuestionInvalidAsync(subjectId, questionId, request?.Reason, token);
+            return success ? Results.Ok(new { success = true }) : Results.NotFound();
+        });
+
         return app;
     }
+}
+
+public record MarkInvalidRequest
+{
+    public string? Reason { get; init; }
 }

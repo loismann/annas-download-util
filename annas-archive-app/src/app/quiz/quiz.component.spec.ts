@@ -58,7 +58,7 @@ describe('QuizComponent', () => {
   };
 
   beforeEach(async () => {
-    mockQuizApi = jasmine.createSpyObj('QuizApiService', ['getSubjects', 'getSubject']);
+    mockQuizApi = jasmine.createSpyObj('QuizApiService', ['getSubjects', 'getSubject', 'markQuestionInvalid']);
     mockLogger = jasmine.createSpyObj('LoggerService', ['log', 'warn', 'error']);
 
     mockQuizApi.getSubjects.and.returnValue(of(mockIndex));
@@ -308,5 +308,120 @@ describe('QuizComponent', () => {
 
       expect(component.maxAvailableQuestions).toBeGreaterThanOrEqual(1);
     });
+  });
+
+  describe('endQuizEarly', () => {
+    beforeEach(fakeAsync(() => {
+      fixture.detectChanges();
+      tick();
+      component.numQuestions = 2;
+      component.handleStart();
+    }));
+
+    it('should set status to results when user confirms', () => {
+      spyOn(window, 'confirm').and.returnValue(true);
+
+      component.endQuizEarly();
+
+      expect(component.status).toBe('results');
+    });
+
+    it('should not change status when user cancels', () => {
+      spyOn(window, 'confirm').and.returnValue(false);
+
+      component.endQuizEarly();
+
+      expect(component.status).toBe('quiz');
+    });
+  });
+
+  describe('markQuestionInvalid', () => {
+    beforeEach(fakeAsync(() => {
+      fixture.detectChanges();
+      tick();
+      component.numQuestions = 2;
+      component.handleStart();
+      mockQuizApi.markQuestionInvalid.and.returnValue(of({ success: true }));
+    }));
+
+    it('should do nothing when user cancels prompt', () => {
+      spyOn(window, 'prompt').and.returnValue(null);
+
+      const question = component.quizQuestions[0];
+      component.markQuestionInvalid(question);
+
+      expect(mockQuizApi.markQuestionInvalid).not.toHaveBeenCalled();
+    });
+
+    it('should call API when user enters reason', fakeAsync(() => {
+      spyOn(window, 'prompt').and.returnValue('Bad question');
+      spyOn(window, 'alert');
+
+      const question = component.quizQuestions[0];
+      component.markQuestionInvalid(question);
+      tick();
+
+      expect(mockQuizApi.markQuestionInvalid).toHaveBeenCalledWith('math', question.id, 'Bad question');
+    }));
+
+    it('should call API with undefined when user submits empty reason', fakeAsync(() => {
+      spyOn(window, 'prompt').and.returnValue('');
+      spyOn(window, 'alert');
+
+      const question = component.quizQuestions[0];
+      component.markQuestionInvalid(question);
+      tick();
+
+      expect(mockQuizApi.markQuestionInvalid).toHaveBeenCalledWith('math', question.id, undefined);
+    }));
+
+    it('should remove question from question bank on success', fakeAsync(() => {
+      spyOn(window, 'prompt').and.returnValue('Bad question');
+      spyOn(window, 'alert');
+
+      const question = component.quizQuestions[0];
+      const initialBankSize = component.questionBank.length;
+
+      component.markQuestionInvalid(question);
+      tick();
+
+      expect(component.questionBank.length).toBe(initialBankSize - 1);
+      expect(component.questionBank.some(q => q.id === question.id)).toBe(false);
+    }));
+
+    it('should flag question locally on success', fakeAsync(() => {
+      spyOn(window, 'prompt').and.returnValue('Bad question');
+      spyOn(window, 'alert');
+
+      const question = component.quizQuestions[0];
+      component.markQuestionInvalid(question);
+      tick();
+
+      expect(component.flaggedSet.has(question.number)).toBe(true);
+    }));
+
+    it('should alert on success', fakeAsync(() => {
+      spyOn(window, 'prompt').and.returnValue('Bad question');
+      spyOn(window, 'alert');
+
+      const question = component.quizQuestions[0];
+      component.markQuestionInvalid(question);
+      tick();
+
+      expect(window.alert).toHaveBeenCalledWith('Question marked as invalid and removed from the quiz pool.');
+    }));
+
+    it('should alert on error', fakeAsync(() => {
+      mockQuizApi.markQuestionInvalid.and.returnValue(throwError(() => new Error('Server error')));
+      spyOn(window, 'prompt').and.returnValue('Bad question');
+      spyOn(window, 'alert');
+
+      const question = component.quizQuestions[0];
+      component.markQuestionInvalid(question);
+      tick();
+
+      expect(window.alert).toHaveBeenCalledWith('Failed to mark question as invalid. Please try again.');
+      expect(mockLogger.error).toHaveBeenCalled();
+    }));
   });
 });

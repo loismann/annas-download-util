@@ -1,7 +1,26 @@
 :host {
   display: block;
+  height: 100%;
   --form-item-height: 56px;
   --form-item-gap: 1rem;
+}
+
+.search-form {
+  height: 100%;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: var(--form-item-gap);
+}
+
+.search-form form {
+  width: 100%;
+  max-width: 360px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--form-item-gap);
 }
 
 /* Anna's Archive Domain Health Status - Horizontal Row */
@@ -183,25 +202,13 @@
 
 /* Mobile: 480px and below */
 @media (max-width: 480px) {
+  /* Hide health status on small mobile screens */
   .health-status-row {
-    gap: 0.3rem;
-  }
-
-  .health-item {
-    padding: 0;
-    min-height: var(--form-item-height);
-  }
-
-  .health-domain {
-    font-size: 0.6rem;
-  }
-
-  .health-percent {
-    font-size: 0.75rem;
+    display: none;
   }
 
   .search-form {
-    padding: 4rem 0.75rem 0.75rem 0.75rem;
+    padding: 1rem 0.75rem 0.75rem 0.75rem;
   }
 
   .search-form.collapsed {
@@ -209,6 +216,6 @@
   }
 
   .search-form form {
-    gap: var(--form-item-gap);
+    gap: 0.75rem;
   }
 }

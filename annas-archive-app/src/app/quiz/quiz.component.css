@@ -61,6 +61,11 @@ h1 {
 .btn:active { transform: translateY(0); }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
+.btn-danger {
+  background: linear-gradient(135deg, #dc3545 0%, #a71d2a 100%);
+}
+.btn-danger:hover { box-shadow: 0 10px 20px rgba(220,53,69,0.3); }
+
 .progress { text-align: center; color: #666; margin-bottom: 20px; font-size: 1.1em; }
 .question-box { background: #f8f9fa; padding: 25px; border-radius: 12px; margin-bottom: 25px; min-height: 200px; }
 .question-text { font-size: 1.2em; color: #333; line-height: 1.6; margin-bottom: 20px; }

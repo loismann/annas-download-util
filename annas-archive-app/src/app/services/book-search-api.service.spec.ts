@@ -130,7 +130,7 @@ describe('BookSearchApiService', () => {
       expect(req.request.params.get('coverUrl')).toBe('https://covers.example.com/cover.jpg');
       expect(req.request.params.get('authors')).toBe('Test Author');
       expect(req.request.params.get('format')).toBe('EPUB');
-      expect(req.request.params.get('fileSize')).toBe('2.5 MB');
+      expect(req.request.params.get('fileSize')).toBe('2621440');
       expect(req.request.params.get('source')).toBe('anna');
       expect(req.request.params.get('description')).toBe('A great book about testing');
       req.flush(mockResponse);
@@ -288,7 +288,7 @@ describe('BookSearchApiService', () => {
       expect(req.request.params.get('coverUrl')).toBe('https://covers.example.com/cover.jpg');
       expect(req.request.params.get('authors')).toBe('LibGen Author');
       expect(req.request.params.get('format')).toBe('PDF');
-      expect(req.request.params.get('fileSize')).toBe('2.5 MB');
+      expect(req.request.params.get('fileSize')).toBe('2621440');
       expect(req.request.params.get('source')).toBe('libgen');
       expect(req.request.params.get('description')).toBe('A LibGen book description');
       req.flush(mockResponse);

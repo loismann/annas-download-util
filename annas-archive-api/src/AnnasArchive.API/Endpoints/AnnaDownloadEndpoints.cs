@@ -293,6 +293,8 @@ public static class AnnaDownloadEndpoints
         IConfiguration cfg,
         IDownloadTrackingService downloadTracking)
     {
+        Log.Information("[send-to-boox] Request received md5={md5} title='{title}' coverUrl='{coverUrl}'", md5, title, coverUrl);
+
         // Use shared validation helper with coverUrl validation
         var validationError = SendToTargetHelpers.ValidateSendParametersExtended(
             md5, title, coverUrl, authors: null, fileSize: null, description: null, validation);
@@ -322,7 +324,10 @@ public static class AnnaDownloadEndpoints
 
         using (resp)
         {
-            var uploadPath = $"{cfg["Dropbox:UploadFolderPath"]}/{fileName}";
+            var uploadFolder = cfg["Dropbox:UploadFolderPath"] ?? string.Empty;
+            var uploadPath = string.IsNullOrWhiteSpace(uploadFolder)
+                ? $"/{fileName}"
+                : $"{uploadFolder.TrimEnd('/')}/{fileName}";
             Stream ebookStream = await resp.Content.ReadAsStreamAsync();
 
             // Attempt cover replacement using shared helper
@@ -333,7 +338,7 @@ public static class AnnaDownloadEndpoints
 
             try
             {
-                Log.Information("Uploading '{fileName}' to Dropbox: {uploadPath}");
+                Log.Information("[send-to-boox] Uploading '{fileName}' to Dropbox: {uploadPath}", fileName, uploadPath);
 
                 var uploaded = await dropbox.Files.UploadAsync(
                     uploadPath,
@@ -341,7 +346,7 @@ public static class AnnaDownloadEndpoints
                     body: stream
                 );
 
-                Log.Information(" Dropbox upload successful! File: {uploaded.PathDisplay}");
+                Log.Information("[send-to-boox] Dropbox upload successful! File: {uploaded.PathDisplay}", uploaded.PathDisplay);
 
                 // Get user name from auth context
                 var userName = context.User?.FindFirst(ClaimTypes.Email)?.Value

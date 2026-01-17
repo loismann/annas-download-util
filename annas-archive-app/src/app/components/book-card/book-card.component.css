@@ -7,6 +7,11 @@
   border: 1px solid #e5e7eb;
   height: 100%;
   position: relative;
+  /* Width is controlled by parent flexbox - card fills available space */
+  width: 100%;
+  box-sizing: border-box;
+  /* Enable container queries for adaptive content */
+  container-type: inline-size;
 }
 
 /* Book card in bulk edit mode */
@@ -97,13 +102,14 @@
 }
 
 .personal-stars {
-  --star-gap: 3px;
+  --star-gap: 2px;
   margin-top: 6px;
   width: 100%;
   display: flex;
   justify-content: center;
   gap: var(--star-gap);
   padding-inline: var(--star-gap);
+  overflow: hidden;
 }
 
 .star-button {
@@ -111,10 +117,12 @@
   border: none;
   background: transparent;
   color: #cbd5f5;
-  font-size: clamp(1.1rem, 1.2vw + 0.7rem, 1.35rem);
+  /* Adaptive star size using container query units */
+  font-size: clamp(0.7rem, 4cqw, 1.3rem);
   padding: 0;
   cursor: pointer;
   line-height: 1;
+  flex-shrink: 1;
 }
 
 .star-button.filled {
@@ -128,23 +136,73 @@
 .card-actions {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 0.4rem;
-  padding: 0 12px 12px;
+  gap: 0.3rem;
+  padding: 0 8px 8px;
 }
 
 .card-actions button {
-  height: 30px;
-  font-size: 11px;
-  padding: 0 6px;
+  height: 28px;
+  font-size: 10px;
+  padding: 0 4px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   text-align: center;
   line-height: 1.1;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .card-actions button span {
   line-height: 1.1;
+}
+
+/* Kindle button text - full text by default */
+.kindle-btn-full {
+  display: inline;
+}
+
+.kindle-btn-compact {
+  display: none;
+}
+
+/* Use container queries to switch button display based on card width */
+@container (max-width: 180px) {
+  .kindle-btn-full {
+    display: none;
+  }
+  .kindle-btn-compact {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+  }
+  .kindle-btn-compact mat-icon {
+    font-size: 14px;
+    width: 14px;
+    height: 14px;
+  }
+  .card-actions button {
+    height: 26px;
+    font-size: 12px;
+  }
+  .personal-stars {
+    --star-gap: 1px;
+  }
+  .star-button {
+    font-size: 0.7rem;
+  }
+}
+
+@container (min-width: 181px) and (max-width: 220px) {
+  .star-button {
+    font-size: 0.85rem;
+  }
+}
+
+@container (min-width: 221px) {
+  .star-button {
+    font-size: 1.1rem;
+  }
 }
 
 /* Small Tile Size */

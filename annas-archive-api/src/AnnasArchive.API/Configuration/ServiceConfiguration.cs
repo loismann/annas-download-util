@@ -230,7 +230,11 @@ public static class ServiceConfiguration
         services.AddMemoryCache();
 
         // Background services
-        services.AddHostedService<LibraryWatcherService>();
+        var watcherEnabled = configuration.GetValue<bool>("LibraryWatcher:Enabled", false);
+        if (watcherEnabled)
+        {
+            services.AddHostedService<LibraryWatcherService>();
+        }
 
         // Library services
         services.AddSingleton<IGenreClassificationService, GenreClassificationService>();

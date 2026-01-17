@@ -9,6 +9,12 @@
 
 .library-wrapper {
   height: 100%;
+  position: relative;
+}
+
+/* Mobile sidebar toggle button (hidden on desktop) */
+.mobile-sidebar-toggle {
+  display: none;
 }
 
 .library-layout {
@@ -226,12 +232,13 @@
   padding-right: 64px;
   min-height: 0;
   margin-right: 10px;
+  overflow-x: hidden; /* Prevent horizontal scrolling on any device */
 }
 
-/* Row container for virtual scrolling */
+/* Row container for virtual scrolling - uses flexbox for adaptive layout */
 .library-row {
   display: flex;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   gap: 0.9rem;
   padding-bottom: 0.9rem;
 }
@@ -246,18 +253,54 @@
   padding-bottom: 1.1rem;
 }
 
-/* Cards in rows need fixed widths */
-.library-row .library-card {
-  flex: 0 0 auto;
-  width: 170px;
+/*
+ * Card sizing using CSS flexbox - no JavaScript calculations needed
+ * Desktop: small=8, medium=6, large=4 cards per row
+ * iPad: small=6, medium=4, large=3 cards per row
+ * Mobile: small=3, medium=2, large=2 cards per row
+ */
+
+/* Desktop - default */
+.library-row > :host ::ng-deep app-book-card,
+.library-row app-book-card {
+  flex: 0 0 calc((100% - 5 * 0.9rem) / 6); /* 6 cards with gaps */
+  min-width: 0;
 }
 
-.library-row .library-card-small {
-  width: 140px;
+.library-row-small > :host ::ng-deep app-book-card,
+.library-row-small app-book-card {
+  flex: 0 0 calc((100% - 7 * 0.7rem) / 8); /* 8 cards with gaps */
 }
 
-.library-row .library-card-large {
-  width: 220px;
+.library-row-large > :host ::ng-deep app-book-card,
+.library-row-large app-book-card {
+  flex: 0 0 calc((100% - 3 * 1.1rem) / 4); /* 4 cards with gaps */
+}
+
+/* iPad / Tablet (768px - 1024px) */
+@media (max-width: 1024px) {
+  .library-row app-book-card {
+    flex: 0 0 calc((100% - 3 * 0.9rem) / 4); /* 4 cards */
+  }
+  .library-row-small app-book-card {
+    flex: 0 0 calc((100% - 5 * 0.7rem) / 6); /* 6 cards */
+  }
+  .library-row-large app-book-card {
+    flex: 0 0 calc((100% - 2 * 1.1rem) / 3); /* 3 cards */
+  }
+}
+
+/* Mobile (< 768px) */
+@media (max-width: 768px) {
+  .library-row app-book-card {
+    flex: 0 0 calc((100% - 1 * 0.9rem) / 2); /* 2 cards */
+  }
+  .library-row-small app-book-card {
+    flex: 0 0 calc((100% - 2 * 0.7rem) / 3); /* 3 cards */
+  }
+  .library-row-large app-book-card {
+    flex: 0 0 calc((100% - 1 * 1.1rem) / 2); /* 2 cards */
+  }
 }
 
 .library-controls {
@@ -761,3 +804,53 @@
 }
 
 /* Grid adjustments removed - now handled by row-based virtual scrolling */
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Mobile Sidebar Collapse
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 768px) {
+  /* Show the mobile sidebar toggle button - positioned at bottom right for less intrusion */
+  .mobile-sidebar-toggle {
+    display: flex;
+    position: fixed;
+    bottom: 16px;
+    right: 16px;
+    z-index: 1000;
+    background: #3f51b5;
+    color: white;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+  }
+
+  .mobile-sidebar-toggle:hover {
+    background: #303f9f;
+  }
+
+  /* Stack layout vertically on mobile */
+  .library-layout {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  /* Sidebar container styles for mobile */
+  .sidebar-container {
+    display: block;
+  }
+
+  .sidebar-container.collapsed {
+    display: none;
+  }
+
+  /* Adjust padding */
+  :host {
+    padding: 16px;
+  }
+
+  /* Library panel takes full height when sidebar collapsed */
+  .library-panel {
+    height: calc(100vh - 120px);
+  }
+}

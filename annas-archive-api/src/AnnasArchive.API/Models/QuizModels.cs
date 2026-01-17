@@ -76,3 +76,18 @@ public record QuizValidationResult
     public bool IsValid => Errors.Count == 0;
     public List<string> Errors { get; init; } = new();
 }
+
+public record InvalidQuestionsFile
+{
+    public DateTime UpdatedAt { get; init; } = DateTime.UtcNow;
+    public List<InvalidQuestionEntry> Questions { get; init; } = new();
+}
+
+public record InvalidQuestionEntry
+{
+    public string SubjectId { get; init; } = string.Empty;
+    public string SubjectTitle { get; init; } = string.Empty;
+    public QuizQuestion Question { get; init; } = new();
+    public string? Reason { get; init; }
+    public DateTime MarkedInvalidAt { get; init; } = DateTime.UtcNow;
+}

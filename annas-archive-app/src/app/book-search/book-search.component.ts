@@ -145,6 +145,11 @@ export class BookSearchComponent implements OnInit, OnDestroy {
   }
 
   ngOnInit(): void {
+    // Start with search panel collapsed on mobile for better UX
+    if (window.innerWidth <= 480) {
+      this.searchPanelCollapsed = true;
+    }
+
     // Fetch domain health status once on page load
     this.fetchDomainHealth();
     this.fetchMirrorHealth();

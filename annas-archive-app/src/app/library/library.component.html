@@ -1,7 +1,16 @@
 <div class="library-wrapper">
+  <!-- Mobile sidebar collapse toggle button (only visible on mobile) -->
+  <button class="mobile-sidebar-toggle"
+          mat-icon-button
+          (click)="toggleSidebar()"
+          [attr.aria-label]="sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'">
+    <mat-icon>{{ sidebarCollapsed ? 'filter_list' : 'close' }}</mat-icon>
+  </button>
+
   <div class="library-layout">
-    <app-library-sidebar
-      [genres]="genres"
+    <div class="sidebar-container" [class.collapsed]="sidebarCollapsed">
+      <app-library-sidebar
+        [genres]="genres"
       [searchTerm]="searchTerm"
       [selectedGenre]="selectedGenre"
       [minPersonalRating]="minPersonalRating"
@@ -31,7 +40,8 @@
       (filterGenreCountChange)="filterGenreCount = $event"
       (filterGenreComparisonChange)="filterGenreComparison = $event"
       (wipeGenres)="wipeAllGenres()"
-    ></app-library-sidebar>
+      ></app-library-sidebar>
+    </div>
 
     <section class="library-panel">
       <div class="library-controls">
@@ -112,7 +122,6 @@
         *ngIf="!loading && !error"
         [itemSize]="rowHeight"
         class="library-grid-scroll"
-        #libraryGrid
         (scrolledIndexChange)="onGridScroll()"
       >
         <div

@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
-import { QuizIndex, QuizSubject } from './quiz.models';
+import { QuizIndex, QuizSubject, InvalidQuestionsFile } from './quiz.models';
 
 @Injectable({ providedIn: 'root' })
 export class QuizApiService {
@@ -27,5 +27,16 @@ export class QuizApiService {
 
   deleteSubject(subjectId: string): Observable<{ removed: boolean }> {
     return this.http.delete<{ removed: boolean }>(`${this.baseUrl}/subjects/${subjectId}`);
+  }
+
+  getInvalidQuestions(): Observable<InvalidQuestionsFile> {
+    return this.http.get<InvalidQuestionsFile>(`${this.baseUrl}/invalid-questions`);
+  }
+
+  markQuestionInvalid(subjectId: string, questionId: string, reason?: string): Observable<{ success: boolean }> {
+    return this.http.post<{ success: boolean }>(
+      `${this.baseUrl}/subjects/${subjectId}/questions/${questionId}/mark-invalid`,
+      { reason }
+    );
   }
 }

@@ -105,13 +105,19 @@
                       <div class="feedback" [class.correct]="grading.isCorrect" [class.incorrect]="!grading.isCorrect">
                         {{ grading.isCorrect ? '✓ Correct!' : '✗ Incorrect. The correct answer' + (question.multiSelect ? 's are' : ' is') + ': ' + grading.correctAnswer }}
                       </div>
-                      <button
-                        *ngIf="!grading.isCorrect"
-                        class="btn"
-                        style="margin-top: 10px;"
-                        (click)="handleFlag(question.number)">
-                        Mark question/answer as incorrect
-                      </button>
+                      <div style="margin-top: 10px; display: flex; gap: 10px; flex-wrap: wrap;">
+                        <button
+                          *ngIf="!grading.isCorrect"
+                          class="btn"
+                          (click)="handleFlag(question.number)">
+                          Flag for Review
+                        </button>
+                        <button
+                          class="btn btn-danger"
+                          (click)="markQuestionInvalid(question)">
+                          Mark Question Invalid
+                        </button>
+                      </div>
                     </ng-container>
                   </ng-container>
                 </ng-container>
@@ -123,6 +129,7 @@
               <button class="btn" (click)="nextQuestion()">
                 {{ currentIndex === questionCount - 1 ? 'Finish Quiz' : (questionAnswered[currentIndex] ? 'Next Question' : 'Skip') }}
               </button>
+              <button class="btn btn-danger" (click)="endQuizEarly()" style="margin-left: auto;">End Quiz</button>
             </div>
           </div>
         </div>

@@ -70,3 +70,16 @@ export interface QuizSessionQuestion {
   question: QuizQuestion;
   options: QuizOption[];
 }
+
+export interface InvalidQuestionsFile {
+  updatedAt: string;
+  questions: InvalidQuestionEntry[];
+}
+
+export interface InvalidQuestionEntry {
+  subjectId: string;
+  subjectTitle: string;
+  question: QuizQuestion;
+  reason?: string;
+  markedInvalidAt: string;
+}

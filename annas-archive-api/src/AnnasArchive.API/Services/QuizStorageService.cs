@@ -9,6 +9,8 @@ public interface IQuizStorageService
     Task<QuizSubject?> GetSubjectAsync(string subjectId, CancellationToken token = default);
     Task<QuizSubject> SaveSubjectAsync(string subjectId, QuizSubject subject, CancellationToken token = default);
     Task<bool> DeleteSubjectAsync(string subjectId, CancellationToken token = default);
+    Task<InvalidQuestionsFile> GetInvalidQuestionsAsync(CancellationToken token = default);
+    Task<bool> MarkQuestionInvalidAsync(string subjectId, string questionId, string? reason, CancellationToken token = default);
 }
 
 public class QuizStorageService : IQuizStorageService
@@ -180,7 +182,92 @@ public class QuizStorageService : IQuizStorageService
         return index;
     }
 
+    public async Task<InvalidQuestionsFile> GetInvalidQuestionsAsync(CancellationToken token = default)
+    {
+        var path = GetInvalidQuestionsPath();
+        if (!File.Exists(path))
+            return new InvalidQuestionsFile();
+
+        var json = await File.ReadAllTextAsync(path, token);
+        return JsonSerializer.Deserialize<InvalidQuestionsFile>(json, _jsonOptions) ?? new InvalidQuestionsFile();
+    }
+
+    public async Task<bool> MarkQuestionInvalidAsync(string subjectId, string questionId, string? reason, CancellationToken token = default)
+    {
+        var safeId = ValidateSubjectId(subjectId);
+
+        await _gate.WaitAsync(token);
+        try
+        {
+            // Load the subject
+            var subjectPath = GetSubjectPath(safeId);
+            if (!File.Exists(subjectPath))
+                return false;
+
+            var subjectJson = await File.ReadAllTextAsync(subjectPath, token);
+            var subject = JsonSerializer.Deserialize<QuizSubject>(subjectJson, _jsonOptions);
+            if (subject == null)
+                return false;
+
+            // Find the question in any question set
+            QuizQuestion? foundQuestion = null;
+            QuizQuestionSet? foundSet = null;
+            foreach (var set in subject.QuestionSets)
+            {
+                foundQuestion = set.Questions.FirstOrDefault(q => string.Equals(q.Id, questionId, StringComparison.OrdinalIgnoreCase));
+                if (foundQuestion != null)
+                {
+                    foundSet = set;
+                    break;
+                }
+            }
+
+            if (foundQuestion == null || foundSet == null)
+                return false;
+
+            // Load or create invalid questions file
+            var invalidPath = GetInvalidQuestionsPath();
+            var invalidFile = File.Exists(invalidPath)
+                ? JsonSerializer.Deserialize<InvalidQuestionsFile>(await File.ReadAllTextAsync(invalidPath, token), _jsonOptions) ?? new InvalidQuestionsFile()
+                : new InvalidQuestionsFile();
+
+            // Add to invalid questions
+            var entry = new InvalidQuestionEntry
+            {
+                SubjectId = subject.Id,
+                SubjectTitle = subject.Title,
+                Question = foundQuestion,
+                Reason = reason,
+                MarkedInvalidAt = DateTime.UtcNow
+            };
+            var updatedQuestions = invalidFile.Questions.ToList();
+            updatedQuestions.Add(entry);
+            invalidFile = invalidFile with { Questions = updatedQuestions, UpdatedAt = DateTime.UtcNow };
+
+            // Remove from subject
+            var updatedSetQuestions = foundSet.Questions.Where(q => !string.Equals(q.Id, questionId, StringComparison.OrdinalIgnoreCase)).ToList();
+            var updatedSet = foundSet with { Questions = updatedSetQuestions };
+            var updatedSets = subject.QuestionSets.Select(s => string.Equals(s.Id, foundSet.Id, StringComparison.OrdinalIgnoreCase) ? updatedSet : s).ToList();
+            var updatedSubject = subject with { QuestionSets = updatedSets, UpdatedAt = DateTime.UtcNow };
+
+            // Save both files
+            await File.WriteAllTextAsync(invalidPath, JsonSerializer.Serialize(invalidFile, _jsonOptions), token);
+            await File.WriteAllTextAsync(subjectPath, JsonSerializer.Serialize(updatedSubject, _jsonOptions), token);
+
+            // Update index
+            await UpdateIndexAsync(updatedSubject, token);
+
+            return true;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
     private string GetIndexPath() => Path.Combine(_rootPath, "index.json");
+
+    private string GetInvalidQuestionsPath() => Path.Combine(_rootPath, "invalid_questions.json");
 
     private string GetSubjectPath(string subjectId) => Path.Combine(_subjectsPath, $"{subjectId}.json");
 

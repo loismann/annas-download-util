@@ -21,4 +21,21 @@ public interface IDuplicateDetectionService
     /// <param name="libraryRoot">The library root directory.</param>
     /// <param name="filePath">Path to the file to delete.</param>
     void DeleteLibraryArtifacts(string libraryRoot, string filePath);
+
+    /// <summary>
+    /// Checks if a file would be a duplicate of an existing library book before import.
+    /// Uses title and author matching against existing .meta.json files.
+    /// </summary>
+    /// <param name="libraryRoot">The library root directory.</param>
+    /// <param name="title">Title of the book to check.</param>
+    /// <param name="authors">Authors of the book to check.</param>
+    /// <returns>Path to existing duplicate if found, null otherwise.</returns>
+    string? FindExistingDuplicate(string libraryRoot, string title, string[] authors);
+
+    /// <summary>
+    /// Builds an index of existing library books for fast duplicate checking.
+    /// Call this before processing a batch of imports.
+    /// </summary>
+    /// <param name="libraryRoot">The library root directory.</param>
+    void BuildLibraryIndex(string libraryRoot);
 }

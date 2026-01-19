@@ -16,6 +16,7 @@ import { MatDialog } from '@angular/material/dialog';
 import { LibraryApiService } from '../services/library-api.service';
 import { BookEditDialogComponent, BookEditDialogData, BookEditDialogResult } from '../components/book-edit-dialog/book-edit-dialog.component';
 import { BulkEditDialogComponent, BookBulkEditDialogData, BookBulkEditDialogResult } from '../components/bulk-edit-dialog/bulk-edit-dialog.component';
+import { FileUploadDialogComponent } from '../components/file-upload-dialog/file-upload-dialog.component';
 import { BookCardComponent, LibraryBook } from '../components/book-card/book-card.component';
 import { LibrarySidebarComponent } from '../components/library-sidebar/library-sidebar.component';
 import { AuthService } from '../services/auth.service';
@@ -60,6 +61,7 @@ export class LibraryComponent implements OnInit, OnDestroy {
   filterGenreCountEnabled = false;
   filterGenreCount = 1;
   filterGenreComparison: 'less' | 'more' = 'less';
+  filterBookmarked = false;
   minPersonalRating = 0;
   minGoodreadsRating = 0;
   sortOrder: 'title' | 'author' | 'recent' | 'series' | 'stars' | 'goodreads' = 'recent';
@@ -251,6 +253,10 @@ export class LibraryComponent implements OnInit, OnDestroy {
         if (goodreads <= 0) return false;
       }
 
+      if (this.filterBookmarked) {
+        if (!book.bookmarked) return false;
+      }
+
       return true;
     });
 
@@ -402,6 +408,10 @@ export class LibraryComponent implements OnInit, OnDestroy {
     setTimeout(() => this.recalculateLayout(), 0);
   }
 
+  toggleBookmarkFilter(): void {
+    this.filterBookmarked = !this.filterBookmarked;
+  }
+
   resetView(): void {
     // Reset search and filters
     this.searchTerm = '';
@@ -423,6 +433,7 @@ export class LibraryComponent implements OnInit, OnDestroy {
     this.filterGenreCountEnabled = false;
     this.filterGenreCount = 1;
     this.filterGenreComparison = 'less';
+    this.filterBookmarked = false;
 
     // Exit bulk edit mode
     this.bulkEditMode = false;
@@ -604,6 +615,26 @@ export class LibraryComponent implements OnInit, OnDestroy {
 
   onRatingChange(event: { book: LibraryBook; rating: number }): void {
     this.setPersonalRating(event.book, event.rating);
+  }
+
+  onBookmarkToggle(book: LibraryBook): void {
+    if (!book.fileName) return;
+
+    const newValue = !book.bookmarked;
+    book.bookmarked = newValue;
+
+    this.libraryApi.updateLibraryBookRatings(book.fileName, {
+      bookmarked: newValue
+    }).pipe(takeUntil(this.destroy$)).subscribe({
+      next: () => {
+        this.logger.log('[library] Updated bookmark:', book.fileName, newValue);
+      },
+      error: (err) => {
+        this.logger.error('[library] Failed to update bookmark:', err);
+        // Revert on error
+        book.bookmarked = !newValue;
+      }
+    });
   }
 
   onSendToKindle(event: { book: LibraryBook; target: 'dad' | 'mom' }): void {
@@ -802,6 +833,15 @@ export class LibraryComponent implements OnInit, OnDestroy {
     }
   }
 
+  selectAllVisible(): void {
+    if (!this.bulkEditMode) return;
+
+    // Add all currently visible (filtered) books to the selection
+    for (const book of this.filteredBooks) {
+      this.selectedBooksForBulk.add(book.fileName);
+    }
+  }
+
   openBulkEditDialog(): void {
     if (this.selectedBooksForBulk.size === 0) return;
 
@@ -823,6 +863,12 @@ export class LibraryComponent implements OnInit, OnDestroy {
     dialogRef.afterClosed().pipe(takeUntil(this.destroy$)).subscribe((result: BookBulkEditDialogResult | undefined) => {
       if (!result) return;
 
+      // Handle bulk delete
+      if (result.deleted) {
+        this.bulkDeleteBooks(selectedBooks);
+        return;
+      }
+
       // Update all selected books with the new metadata
       for (const book of selectedBooks) {
         if (result.authors) {
@@ -832,7 +878,16 @@ export class LibraryComponent implements OnInit, OnDestroy {
           book.primaryGenre = result.primaryGenre;
         }
         if (result.tags) {
-          book.tags = result.tags;
+          // Handle append vs replace mode for tags
+          if (result.tagsMode === 'append') {
+            // Merge existing tags with new tags, avoiding duplicates
+            const existingTags = book.tags ?? [];
+            const newTags = result.tags;
+            book.tags = [...new Set([...existingTags, ...newTags])];
+          } else {
+            // Replace mode: overwrite all tags
+            book.tags = result.tags;
+          }
         }
         if (result.series !== undefined) {
           book.series = result.series;
@@ -841,7 +896,7 @@ export class LibraryComponent implements OnInit, OnDestroy {
         // Update on backend
         this.libraryApi.updateLibraryBookMetadata(book.fileName, {
           primaryGenre: result.primaryGenre ?? book.primaryGenre ?? 'Uncategorized',
-          tags: result.tags ?? book.tags ?? [],
+          tags: book.tags ?? [],
           series: result.series ?? book.series ?? null,
           title: book.title,
           authors: result.authors ?? book.authors
@@ -891,7 +946,68 @@ export class LibraryComponent implements OnInit, OnDestroy {
     this.selectedBooksForBulk.clear();
   }
 
+  private async bulkDeleteBooks(selectedBooks: LibraryBook[]): Promise<void> {
+    let successCount = 0;
+    let failCount = 0;
+
+    for (const book of selectedBooks) {
+      try {
+        await this.libraryApi.deleteLibraryBook(book.fileName).toPromise();
+        // Remove from local array
+        this.books = this.books.filter(b => b.fileName !== book.fileName);
+        successCount++;
+        this.logger.log('[library] Deleted book:', book.fileName);
+      } catch (err) {
+        failCount++;
+        this.logger.error('[library] Failed to delete book:', book.fileName, err);
+      }
+    }
+
+    // Rebuild genre list after deletions
+    this.genres = this.buildGenreList(this.books);
+
+    // Exit bulk edit mode and clear selection
+    this.bulkEditMode = false;
+    this.selectedBooksForBulk.clear();
+
+    // Log summary
+    this.logger.log(`[library] Bulk delete complete: ${successCount} deleted, ${failCount} failed`);
+  }
+
   private delay(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  openUploadDialog(): void {
+    const dialogRef = this.dialog.open(FileUploadDialogComponent, {
+      width: '650px',
+      maxWidth: '95vw'
+    });
+
+    dialogRef.afterClosed().pipe(takeUntil(this.destroy$)).subscribe((hasUploads: boolean) => {
+      if (hasUploads) {
+        // Refresh the library to show newly uploaded books
+        this.loading = true;
+        this.libraryApi.getLibraryBooks().pipe(takeUntil(this.destroy$)).subscribe({
+          next: (books) => {
+            this.books = (books ?? []).map(book => ({
+              ...book,
+              dadsKindleState: 'idle',
+              momsKindleState: 'idle'
+            }));
+            this.genres = this.buildGenreList(this.books);
+            this.loading = false;
+            setTimeout(() => {
+              this.recalculateLayout();
+              this.onGridScroll();
+            }, 0);
+          },
+          error: (err) => {
+            this.logger.error('[library] failed to reload books after upload', err);
+            this.loading = false;
+          }
+        });
+      }
+    });
   }
 }

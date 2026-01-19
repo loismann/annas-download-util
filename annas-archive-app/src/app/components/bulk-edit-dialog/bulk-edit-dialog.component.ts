@@ -9,6 +9,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatChipsModule } from '@angular/material/chips';
 import { MatChipInputEvent } from '@angular/material/chips';
+import { MatSlideToggleModule } from '@angular/material/slide-toggle';
 import { COMMA, ENTER } from '@angular/cdk/keycodes';
 
 export interface BookBulkEditDialogData {
@@ -21,7 +22,9 @@ export interface BookBulkEditDialogResult {
   authors?: string[];
   primaryGenre?: string;
   tags?: string[];
+  tagsMode?: 'append' | 'replace';
   series?: string | null;
+  deleted?: boolean;
 }
 
 @Component({
@@ -36,7 +39,8 @@ export interface BookBulkEditDialogResult {
     MatSelectModule,
     MatButtonModule,
     MatIconModule,
-    MatChipsModule
+    MatChipsModule,
+    MatSlideToggleModule
   ],
   templateUrl: './bulk-edit-dialog.component.html',
   styleUrls: ['./bulk-edit-dialog.component.scss']
@@ -47,6 +51,7 @@ export class BulkEditDialogComponent {
   series = '';
   tags: string[] = [];
   genres: string[] = [];
+  appendTags = true; // Default to append mode
   readonly separatorKeysCodes = [ENTER, COMMA] as const;
 
   constructor(
@@ -100,6 +105,7 @@ export class BulkEditDialogComponent {
 
     if (this.tags.length > 0) {
       result.tags = this.tags;
+      result.tagsMode = this.appendTags ? 'append' : 'replace';
     }
 
     if (this.series.trim()) {
@@ -107,5 +113,22 @@ export class BulkEditDialogComponent {
     }
 
     this.dialogRef.close(result);
+  }
+
+  onDeleteAll(): void {
+    const count = this.data.bookFileNames.length;
+    const firstConfirm = window.confirm(
+      `Are you sure you want to DELETE ${count} book${count === 1 ? '' : 's'}?\n\nThis action CANNOT be undone!`
+    );
+
+    if (!firstConfirm) return;
+
+    const secondConfirm = window.confirm(
+      `FINAL WARNING: You are about to permanently delete ${count} book${count === 1 ? '' : 's'}.\n\nAre you absolutely sure?`
+    );
+
+    if (!secondConfirm) return;
+
+    this.dialogRef.close({ deleted: true });
   }
 }

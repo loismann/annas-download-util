@@ -22,6 +22,7 @@ export interface LibraryBook {
   md5?: string | null;
   goodreadsRating?: number | null;
   personalRating?: number | null;
+  bookmarked?: boolean | null;
   readerEnabled?: boolean | null;
   description?: string | null;
   dadsKindleState?: 'idle' | 'sending' | 'success' | 'error';
@@ -51,6 +52,7 @@ export class BookCardComponent {
 
   @Output() coverClick = new EventEmitter<LibraryBook>();
   @Output() ratingChange = new EventEmitter<{ book: LibraryBook; rating: number }>();
+  @Output() bookmarkToggle = new EventEmitter<LibraryBook>();
   @Output() sendToKindle = new EventEmitter<{ book: LibraryBook; target: 'dad' | 'mom' }>();
   @Output() selectionToggle = new EventEmitter<LibraryBook>();
   @Output() coverError = new EventEmitter<Event>();
@@ -72,6 +74,10 @@ export class BookCardComponent {
 
   setPersonalRating(rating: number): void {
     this.ratingChange.emit({ book: this.book, rating });
+  }
+
+  onBookmarkToggle(): void {
+    this.bookmarkToggle.emit(this.book);
   }
 
   onSendToKindle(target: 'dad' | 'mom'): void {

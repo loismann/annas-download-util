@@ -1,0 +1,83 @@
+<h2 mat-dialog-title>Upload Books</h2>
+
+<mat-dialog-content>
+  <!-- Drop zone -->
+  <div
+    class="drop-zone"
+    [class.drag-over]="isDragOver"
+    (dragover)="onDragOver($event)"
+    (dragleave)="onDragLeave($event)"
+    (drop)="onDrop($event)"
+  >
+    <mat-icon class="upload-icon">cloud_upload</mat-icon>
+    <p class="drop-text">Drag and drop files here</p>
+    <p class="drop-hint">or</p>
+    <label class="file-select-btn">
+      <input
+        type="file"
+        multiple
+        [accept]="supportedFormats.join(',')"
+        (change)="onFileSelected($event)"
+        hidden
+      />
+      <span>Browse Files</span>
+    </label>
+  </div>
+
+  <!-- Format info -->
+  <div class="format-info">
+    <mat-icon>info_outline</mat-icon>
+    <span>Supported formats: {{ supportedFormats.join(', ') }} (max {{ maxFileSizeMb }}MB)</span>
+  </div>
+
+  <!-- Upload queue -->
+  <div class="upload-queue" *ngIf="uploadQueue.length > 0">
+    <div class="queue-header">Files to upload:</div>
+
+    <div class="queue-item" *ngFor="let item of uploadQueue; let i = index" [class.error]="item.status === 'error'" [class.success]="item.status === 'success'">
+      <div class="item-info">
+        <mat-icon class="file-icon">
+          {{ item.status === 'success' ? 'check_circle' : item.status === 'error' ? 'error' : 'description' }}
+        </mat-icon>
+        <div class="file-details">
+          <span class="file-name">{{ item.file.name }}</span>
+          <span class="file-size">{{ formatFileSize(item.file.size) }}</span>
+        </div>
+      </div>
+
+      <div class="item-status">
+        <mat-progress-bar
+          *ngIf="item.status === 'uploading'"
+          mode="indeterminate"
+        ></mat-progress-bar>
+        <span class="status-text" *ngIf="item.status === 'pending'">Pending</span>
+        <span class="status-text success" *ngIf="item.status === 'success'">Uploaded</span>
+        <span class="status-text error" *ngIf="item.status === 'error'">{{ item.error }}</span>
+      </div>
+
+      <button
+        mat-icon-button
+        class="remove-btn"
+        (click)="removeFromQueue(i)"
+        [disabled]="item.status === 'uploading'"
+        *ngIf="item.status !== 'success'"
+      >
+        <mat-icon>close</mat-icon>
+      </button>
+    </div>
+  </div>
+</mat-dialog-content>
+
+<mat-dialog-actions align="end">
+  <button mat-button (click)="onClose()">
+    {{ allComplete ? 'Close' : 'Cancel' }}
+  </button>
+  <button
+    mat-raised-button
+    color="primary"
+    (click)="startUpload()"
+    [disabled]="!hasPendingFiles || isUploading"
+  >
+    {{ isUploading ? 'Uploading...' : 'Upload' }}
+  </button>
+</mat-dialog-actions>

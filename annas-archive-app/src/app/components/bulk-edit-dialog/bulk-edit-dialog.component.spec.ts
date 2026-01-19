@@ -234,6 +234,7 @@ describe('BulkEditDialogComponent', () => {
         authors: ['Author Name'],
         primaryGenre: 'Fiction',
         tags: ['Adventure'],
+        tagsMode: 'append',
         series: 'My Series'
       });
     });

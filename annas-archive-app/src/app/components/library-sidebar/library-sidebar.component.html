@@ -62,6 +62,16 @@
   <!-- Bulk Edit Section -->
   <div class="bulk-edit-section">
     <button
+      *ngIf="bulkEditMode"
+      mat-raised-button
+      color="primary"
+      (click)="onSelectAllVisible()"
+      class="select-all-visible-btn"
+    >
+      Select All Visible ({{ visibleBooksCount }})
+    </button>
+
+    <button
       mat-raised-button
       color="accent"
       (click)="onBulkEditToggle()"
@@ -117,6 +127,10 @@
     </button>
 
     <div class="admin-panel" *ngIf="adminOpen">
+      <button type="button" class="admin-upload" (click)="onUploadBooks()">
+        Upload Books
+      </button>
+
       <label class="admin-row">
         <input
           type="checkbox"

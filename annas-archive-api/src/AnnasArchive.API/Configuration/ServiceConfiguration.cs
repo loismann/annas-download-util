@@ -240,6 +240,7 @@ public static class ServiceConfiguration
         services.AddSingleton<IGenreClassificationService, GenreClassificationService>();
         services.AddSingleton<IDuplicateDetectionService, DuplicateDetectionService>();
         services.AddSingleton<IMetadataExtractionService, MetadataExtractionService>();
+        services.AddSingleton<IEnrichmentStatsService, EnrichmentStatsService>();
 
         // External API services
         services.AddSingleton<IOpenLibraryService, OpenLibraryService>();

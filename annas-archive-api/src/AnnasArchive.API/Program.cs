@@ -58,6 +58,7 @@ app.MapLibraryCoverEndpoints();
 app.MapLibraryBrowserEndpoints();
 app.MapLibraryMetadataEndpoints();
 app.MapLibraryReaderEndpoints();
+app.MapLibraryUploadEndpoints();
 app.MapAiUsageEndpoints();
 app.MapAiFlashcardsEndpoints();
 app.MapAiVocabEndpoints();

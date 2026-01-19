@@ -196,6 +196,91 @@ public class MetadataExtractionServiceTests
         Assert.NotNull(result.Title);
     }
 
+    [Fact]
+    public void ParseTitleAuthorFromFileName_StripsBracketedContent()
+    {
+        var result = _service.ParseTitleAuthorFromFileName("/path/to/[homes_pferrer] The Great Book.epub");
+        Assert.Equal("The Great Book", result.Title);
+        Assert.Null(result.Authors);
+    }
+
+    [Fact]
+    public void ParseTitleAuthorFromFileName_StripsMultipleBrackets()
+    {
+        var result = _service.ParseTitleAuthorFromFileName("/path/to/[homes_pferrer] [retail] The Great Book.epub");
+        Assert.Equal("The Great Book", result.Title);
+    }
+
+    [Fact]
+    public void ParseTitleAuthorFromFileName_StripsBracketsAndParsesAuthor()
+    {
+        // Note: Code expects "Author - Title" format, not "Title - Author"
+        var result = _service.ParseTitleAuthorFromFileName(
+            "/path/to/[homes_pferrer] [Wings of Fire 10] Tui T Sutherland - Darkness of Dragons [retail].epub");
+        Assert.Equal("Darkness of Dragons", result.Title);
+        Assert.NotNull(result.Authors);
+        Assert.Equal("Tui T Sutherland", result.Authors[0]);
+    }
+
+    [Fact]
+    public void ParseTitleAuthorFromFileName_StripsLeadingNumber()
+    {
+        var result = _service.ParseTitleAuthorFromFileName("/path/to/1 - The Butlerian Jihad.epub");
+        Assert.Equal("The Butlerian Jihad", result.Title);
+        Assert.Null(result.Authors);
+    }
+
+    [Fact]
+    public void ParseTitleAuthorFromFileName_StripsLeadingNumberWithZeros()
+    {
+        var result = _service.ParseTitleAuthorFromFileName("/path/to/002 - The Butlerian Jihad.epub");
+        Assert.Equal("The Butlerian Jihad", result.Title);
+    }
+
+    [Fact]
+    public void ParseTitleAuthorFromFileName_StripsLeadingNumberWithDot()
+    {
+        var result = _service.ParseTitleAuthorFromFileName("/path/to/10. The Butlerian Jihad.epub");
+        Assert.Equal("The Butlerian Jihad", result.Title);
+    }
+
+    [Fact]
+    public void ParseTitleAuthorFromFileName_StripsParenthesizedPrefix()
+    {
+        var result = _service.ParseTitleAuthorFromFileName("/path/to/(epub) The Great Book.epub");
+        Assert.Equal("The Great Book", result.Title);
+    }
+
+    [Fact]
+    public void ParseTitleAuthorFromFileName_ComplexSynologyFilename()
+    {
+        // Real-world example from user's Synology drive
+        var result = _service.ParseTitleAuthorFromFileName(
+            "/path/to/[homes_pferrer] 1 - The Butlerian Jihad.epub");
+        Assert.Equal("The Butlerian Jihad", result.Title);
+        Assert.Null(result.Authors);
+    }
+
+    [Fact]
+    public void ParseTitleAuthorFromFileName_BracketsWithAuthorDash()
+    {
+        var result = _service.ParseTitleAuthorFromFileName(
+            "/path/to/[retail] John Smith - The Great Book.epub");
+        Assert.Equal("The Great Book", result.Title);
+        Assert.NotNull(result.Authors);
+        Assert.Equal("John Smith", result.Authors[0]);
+    }
+
+    [Fact]
+    public void ParseTitleAuthorFromFileName_StripsLeadingDashAfterBrackets()
+    {
+        // When brackets are removed, a leading " - " separator may remain
+        var result = _service.ParseTitleAuthorFromFileName(
+            "/path/to/[tag] - The Great Book.epub");
+        Assert.Equal("The Great Book", result.Title);
+        Assert.Null(result.Authors);
+    }
+
     #endregion
 
     #region ExtractEpubMetadataAsync Integration Test Notes

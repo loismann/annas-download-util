@@ -23,6 +23,7 @@ export interface LibraryBook {
   series?: string | null;
   goodreadsRating?: number | null;
   personalRating?: number | null;
+  bookmarked?: boolean | null;
   readerEnabled?: boolean;
   dateAdded?: string;
 }
@@ -38,6 +39,7 @@ export interface LibraryBookMetadata {
 export interface LibraryBookRatings {
   goodreadsRating?: number | null;
   personalRating?: number | null;
+  bookmarked?: boolean | null;
 }
 
 export interface CoverCandidatesResponse {
@@ -52,6 +54,18 @@ export interface SendToKindleResponse {
 export interface LibraryBookSummaryResponse {
   summary: string | null;
   source: string | null;
+}
+
+export interface LibraryUploadResponse {
+  success: boolean;
+  fileName: string;
+  fileSize: string;
+  message: string;
+}
+
+export interface LibrarySupportedFormatsResponse {
+  formats: string[];
+  maxFileSizeMb: number;
 }
 
 /**
@@ -285,6 +299,32 @@ export class LibraryApiService {
     return this.http.get<DropboxBookSearchResult[]>(
       `${this.libraryBaseUrl}/reader/epub/search`,
       { params }
+    );
+  }
+
+  /* ══════════════════════════════════════════════════════════════
+     LIBRARY UPLOAD ENDPOINTS (Admin only)
+     ══════════════════════════════════════════════════════════════ */
+
+  /**
+   * Get supported upload formats and max file size.
+   */
+  getSupportedFormats(): Observable<LibrarySupportedFormatsResponse> {
+    return this.http.get<LibrarySupportedFormatsResponse>(
+      `${this.libraryBaseUrl}/upload/supported-formats`
+    );
+  }
+
+  /**
+   * Upload a book file to the library.
+   * Admin only - the backend will reject non-admin users.
+   */
+  uploadBook(file: File): Observable<LibraryUploadResponse> {
+    const formData = new FormData();
+    formData.append('file', file, file.name);
+    return this.http.post<LibraryUploadResponse>(
+      `${this.libraryBaseUrl}/book/upload`,
+      formData
     );
   }
 }

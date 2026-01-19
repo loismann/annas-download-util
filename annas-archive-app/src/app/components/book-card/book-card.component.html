@@ -40,13 +40,24 @@
       {{ book.authors.length ? book.authors.join(', ') : '' }}
     </div>
     <div class="meta">{{ book.format }} &nbsp;|&nbsp; {{ book.fileSize }}</div>
-    <div class="goodreads">
-      Goodreads
-      <span class="goodreads-value">
-        {{ book.goodreadsRating !== null && book.goodreadsRating !== undefined
-          ? (book.goodreadsRating | number:'1.1-1')
-          : 'NA' }}
-      </span>
+    <div class="goodreads-row">
+      <button
+        type="button"
+        class="bookmark-btn"
+        [class.bookmarked]="book.bookmarked"
+        (click)="onBookmarkToggle()"
+        aria-label="Toggle bookmark"
+      >
+        <mat-icon>{{ book.bookmarked ? 'bookmark' : 'bookmark_border' }}</mat-icon>
+      </button>
+      <div class="goodreads">
+        Goodreads
+        <span class="goodreads-value">
+          {{ book.goodreadsRating !== null && book.goodreadsRating !== undefined
+            ? (book.goodreadsRating | number:'1.1-1')
+            : 'NA' }}
+        </span>
+      </div>
     </div>
   </div>
   <div class="card-actions">

@@ -263,7 +263,16 @@ public class MetadataExtractionService : IMetadataExtractionService
         if (string.IsNullOrWhiteSpace(raw))
             return (null, null);
 
-        var cleaned = Regex.Replace(raw, @"_(?:sample|preview)$", "", RegexOptions.IgnoreCase).Trim();
+        // Strip bracketed content (e.g., [homes_pferrer], [retail], [Wings of Fire 10])
+        var cleaned = Regex.Replace(raw, @"\[[^\]]*\]", "").Trim();
+        // Strip parenthesized prefixes at start (e.g., "(epub)" but not "(Unabridged)" in title)
+        cleaned = Regex.Replace(cleaned, @"^\([^)]*\)\s*", "").Trim();
+        // Strip leading numbers with separators (e.g., "1 - ", "002 - ", "10.")
+        cleaned = Regex.Replace(cleaned, @"^\d{1,3}\s*[-–—.]\s*", "").Trim();
+        // Strip leading dash separators left after bracket removal (e.g., "- Title" from "[tag] - Title")
+        cleaned = Regex.Replace(cleaned, @"^[-–—]\s*", "").Trim();
+
+        cleaned = Regex.Replace(cleaned, @"_(?:sample|preview)$", "", RegexOptions.IgnoreCase).Trim();
         cleaned = Regex.Replace(cleaned, @"\.(tmp|tmp\d+)_\w+$", "", RegexOptions.IgnoreCase).Trim();
         cleaned = Regex.Replace(cleaned, @"_[A-Z0-9]{8,}$", "", RegexOptions.IgnoreCase).Trim();
         cleaned = Regex.Replace(cleaned, @"\bB0[A-Z0-9]{8,}\b$", "", RegexOptions.IgnoreCase).Trim();

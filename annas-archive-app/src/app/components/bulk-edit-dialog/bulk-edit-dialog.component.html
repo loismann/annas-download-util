@@ -65,10 +65,39 @@
       />
     </mat-form-field>
 
+    <!-- Tags Mode Toggle -->
+    <div class="tags-mode-toggle">
+      <mat-slide-toggle [(ngModel)]="appendTags" color="primary">
+        {{ appendTags ? 'Append to existing genres' : 'Replace all genres' }}
+      </mat-slide-toggle>
+      <div class="tags-mode-hint">
+        <mat-icon>info_outline</mat-icon>
+        <span *ngIf="appendTags">New genres will be added to each book's existing genres</span>
+        <span *ngIf="!appendTags">All existing genres will be replaced with these selections</span>
+      </div>
+    </div>
+
     <!-- Disabled fields notice -->
     <div class="disabled-fields-notice">
       <mat-icon>block</mat-icon>
       <span>Title and Cover cannot be edited in bulk mode</span>
+    </div>
+
+    <!-- Danger Zone -->
+    <div class="danger-zone">
+      <div class="danger-zone-header">
+        <mat-icon>warning</mat-icon>
+        <span>Danger Zone</span>
+      </div>
+      <button
+        mat-raised-button
+        color="warn"
+        class="delete-all-btn"
+        (click)="onDeleteAll()"
+      >
+        <mat-icon>delete_forever</mat-icon>
+        Delete All Selected Books
+      </button>
     </div>
   </div>
 </mat-dialog-content>

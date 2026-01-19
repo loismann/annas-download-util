@@ -88,9 +88,41 @@
   color: #444;
 }
 
-.goodreads {
+.goodreads-row {
   margin-top: auto;
   padding-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.bookmark-btn {
+  border: none;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  color: #94a3b8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s ease;
+}
+
+.bookmark-btn mat-icon {
+  font-size: 18px;
+  width: 18px;
+  height: 18px;
+}
+
+.bookmark-btn:hover {
+  color: #3f51b5;
+}
+
+.bookmark-btn.bookmarked {
+  color: #3f51b5;
+}
+
+.goodreads {
   font-size: 0.78rem;
   color: #475569;
 }
@@ -230,9 +262,18 @@
   font-size: 0.7rem;
 }
 
+.library-card-small .goodreads-row {
+  padding-top: 6px;
+}
+
 .library-card-small .goodreads {
   font-size: 0.7rem;
-  margin-top: 6px;
+}
+
+.library-card-small .bookmark-btn mat-icon {
+  font-size: 16px;
+  width: 16px;
+  height: 16px;
 }
 
 .library-card-small .personal-stars {
@@ -308,9 +349,18 @@
   font-size: 0.85rem;
 }
 
+.library-card-large .goodreads-row {
+  padding-top: 10px;
+}
+
 .library-card-large .goodreads {
   font-size: 0.88rem;
-  margin-top: 10px;
+}
+
+.library-card-large .bookmark-btn mat-icon {
+  font-size: 20px;
+  width: 20px;
+  height: 20px;
 }
 
 .library-card-large .personal-stars {

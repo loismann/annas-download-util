@@ -15,6 +15,7 @@ using System.Threading.Tasks;
 using System.Xml.Linq;
 using AnnasArchive.API.Configuration;
 using AnnasArchive.API.Services.Library;
+using Microsoft.Extensions.Configuration;
 using Serilog;
 using HtmlAgilityPack;
 using Microsoft.Extensions.Hosting;
@@ -32,21 +33,30 @@ public class LibraryWatcherService : BackgroundService
 
     private readonly ConcurrentDictionary<string, DateTime> _pending = new();
     private readonly IHttpClientFactory _httpFactory;
+    private readonly IConfiguration _configuration;
     private readonly IGenreClassificationService _genreClassification;
     private readonly IDuplicateDetectionService _duplicateDetection;
     private readonly IMetadataExtractionService _metadataExtraction;
+    private readonly IEnrichmentStatsService _statsService;
+    private readonly string? _autoTagNewBooks;
     private FileSystemWatcher? _watcher;
+    private int _processedSinceLastSave;
 
     public LibraryWatcherService(
         IHttpClientFactory httpFactory,
+        IConfiguration configuration,
         IGenreClassificationService genreClassification,
         IDuplicateDetectionService duplicateDetection,
-        IMetadataExtractionService metadataExtraction)
+        IMetadataExtractionService metadataExtraction,
+        IEnrichmentStatsService statsService)
     {
         _httpFactory = httpFactory;
+        _configuration = configuration;
         _genreClassification = genreClassification;
         _duplicateDetection = duplicateDetection;
         _metadataExtraction = metadataExtraction;
+        _statsService = statsService;
+        _autoTagNewBooks = configuration["LibraryWatcher:AutoTagNewBooks"];
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -54,6 +64,12 @@ public class LibraryWatcherService : BackgroundService
         var libraryRoot = ResolveLibraryRoot();
         Directory.CreateDirectory(libraryRoot);
         Directory.CreateDirectory(Path.Combine(libraryRoot, "_covers"));
+
+        // Load existing stats
+        await _statsService.LoadAsync(stoppingToken);
+
+        // Build library index for duplicate checking
+        _duplicateDetection.BuildLibraryIndex(libraryRoot);
 
         StartWatcher(libraryRoot);
 
@@ -73,6 +89,9 @@ public class LibraryWatcherService : BackgroundService
                 _watcher.Dispose();
                 _watcher = null;
             }
+
+            // Save stats on shutdown
+            await _statsService.SaveAsync(cancellationToken);
         }
         catch
         {
@@ -161,49 +180,92 @@ public class LibraryWatcherService : BackgroundService
             _duplicateDetection.DeleteLibraryArtifacts(libraryRoot, duplicate);
         }
 
-        // Filter out duplicates and process in batches
-        var filesToProcess = files.Where(f => !duplicates.Contains(f)).ToList();
-        var totalFiles = filesToProcess.Count;
-        var processedCount = 0;
+        // Filter out duplicates
+        var allFiles = files.Where(f => !duplicates.Contains(f)).ToList();
+        var totalFiles = allFiles.Count;
+
+        // Pre-scan to find files that need enrichment (skip already complete)
+        var filesToEnrich = new List<string>();
+        var alreadyComplete = 0;
+        foreach (var file in allFiles)
+        {
+            var metaPath = $"{file}.meta.json";
+            if (File.Exists(metaPath))
+            {
+                try
+                {
+                    var json = await File.ReadAllTextAsync(metaPath, token);
+                    using var doc = JsonDocument.Parse(json);
+                    if (doc.RootElement.TryGetProperty("enrichmentComplete", out var prop) && prop.GetBoolean())
+                    {
+                        alreadyComplete++;
+                        continue;
+                    }
+                }
+                catch { }
+            }
+            filesToEnrich.Add(file);
+        }
+
+        Log.Information("[LibraryWatcher] Scan starting: {Total} files total, {NeedsWork} need enrichment, {Complete} already complete",
+            totalFiles, filesToEnrich.Count, alreadyComplete);
+
+        if (filesToEnrich.Count == 0)
+        {
+            Log.Information("[LibraryWatcher] All files already enriched, nothing to do");
+            return;
+        }
+
+        var enrichedCount = 0;
         var batchNumber = 0;
+        var needsEnrichment = filesToEnrich.Count;
 
-        Log.Information("[LibraryWatcher] Starting full scan of {Count} files in batches of {BatchSize}", totalFiles, AiThrottlingConfiguration.BatchSize);
-
-        foreach (var batch in filesToProcess.Chunk(AiThrottlingConfiguration.BatchSize))
+        foreach (var batch in filesToEnrich.Chunk(AiThrottlingConfiguration.BatchSize))
         {
             if (token.IsCancellationRequested)
                 break;
 
             batchNumber++;
-            Log.Information("[LibraryWatcher] Processing batch {Batch} ({Processed}/{Total} files)", batchNumber, processedCount, totalFiles);
+            var batchEnrichedCount = 0;
 
             foreach (var file in batch)
             {
                 if (token.IsCancellationRequested)
                     break;
 
-                await ProcessFileAsync(libraryRoot, file, token);
-                processedCount++;
+                var wasEnriched = await ProcessFileAsync(libraryRoot, file, token);
 
-                // Throttle between books within a batch
-                await AiThrottlingConfiguration.ThrottleBetweenBooksAsync(token);
+                if (wasEnriched)
+                {
+                    enrichedCount++;
+                    batchEnrichedCount++;
+                    Log.Information("[LibraryWatcher] Progress: {Done}/{Total} books enriched", enrichedCount, needsEnrichment);
+                    // Only throttle between books that were actually enriched
+                    await AiThrottlingConfiguration.ThrottleBetweenBooksAsync(token);
+                }
             }
 
-            // Pause between batches to let rate limits recover
-            if (processedCount < totalFiles && !token.IsCancellationRequested)
+            // Only pause between batches if we actually did enrichment work
+            if (batchEnrichedCount > 0 && enrichedCount < needsEnrichment && !token.IsCancellationRequested)
             {
-                Log.Information("[LibraryWatcher] Batch {Batch} complete. Pausing {Delay}s before next batch", batchNumber, AiThrottlingConfiguration.LibraryDelayBetweenBatches.TotalSeconds);
+                Log.Information("[LibraryWatcher] Batch {Batch} complete. Pausing {Delay}s before next batch",
+                    batchNumber, AiThrottlingConfiguration.LibraryDelayBetweenBatches.TotalSeconds);
                 await AiThrottlingConfiguration.ThrottleLibraryBatchAsync(token);
             }
+            // No log or delay when batch has no work - just continue silently
         }
 
-        Log.Information("[LibraryWatcher] Full scan complete. Processed {Count} files", processedCount);
+        Log.Information("[LibraryWatcher] Scan complete. Enriched {Enriched} books", enrichedCount);
     }
 
-    private async Task ProcessFileAsync(string libraryRoot, string filePath, CancellationToken token)
+    /// <summary>
+    /// Processes a single file for enrichment.
+    /// </summary>
+    /// <returns>True if enrichment was performed, false if file was skipped.</returns>
+    private async Task<bool> ProcessFileAsync(string libraryRoot, string filePath, CancellationToken token)
     {
         if (!File.Exists(filePath))
-            return;
+            return false;
 
         var fileInfo = new FileInfo(filePath);
         var metaPath = $"{filePath}.meta.json";
@@ -212,24 +274,18 @@ public class LibraryWatcherService : BackgroundService
         if (File.Exists(metaPath))
         {
             existing = await LoadExistingMetaAsync(metaPath, token);
-            var metaInfo = new FileInfo(metaPath);
-            var metaIsFresh = metaInfo.LastWriteTimeUtc >= fileInfo.LastWriteTimeUtc;
-            if (metaIsFresh && existing?.EnrichmentComplete == true)
-                return;
-            if (metaIsFresh && existing?.HasCoreMetadata == true && existing.AiEnrichedAt != null &&
-                existing.GoodreadsRating.HasValue)
-                return;
-            if (metaIsFresh && existing?.HasCoreMetadata == true &&
-                existing.OpenLibraryConfidence is >= 0.75 &&
-                existing.GoodreadsRating.HasValue &&
-                !string.IsNullOrWhiteSpace(existing.CoverUrl))
-                return;
+
+            // Simple check: if enrichment is complete, skip this file
+            if (existing?.EnrichmentComplete == true)
+            {
+                return false;
+            }
         }
 
         if (!await WaitForStableFileAsync(filePath, token))
         {
             EnqueueIfSupported(filePath);
-            return;
+            return false;
         }
 
         var ext = Path.GetExtension(filePath);
@@ -267,6 +323,18 @@ public class LibraryWatcherService : BackgroundService
             ["aiEnrichedAt"] = existing?.AiEnrichedAt,
             ["enrichmentComplete"] = existing?.EnrichmentComplete ?? false
         };
+
+        // Auto-tag new books (files that haven't been fully enriched yet)
+        if (existing?.EnrichmentComplete != true && !string.IsNullOrWhiteSpace(_autoTagNewBooks))
+        {
+            var currentTags = (meta["tags"] as string[] ?? Array.Empty<string>()).ToList();
+            if (!currentTags.Contains(_autoTagNewBooks, StringComparer.OrdinalIgnoreCase))
+            {
+                currentTags.Add(_autoTagNewBooks);
+                meta["tags"] = currentTags.ToArray();
+                Log.Information("[LibraryWatcher] Auto-tagged new book with '{Tag}'", _autoTagNewBooks);
+            }
+        }
 
         Log.Information($"[LibraryWatcher] Processing {Path.GetFileName(filePath)}");
         Log.Information($"[LibraryWatcher]   Existing CoverUrl: {existing?.CoverUrl}");
@@ -310,6 +378,9 @@ public class LibraryWatcherService : BackgroundService
         if (IsMetadataReliable(title, authors))
         {
             openLibraryData = await FetchOpenLibraryDataAsync(title!, authors!, token);
+            var olSuccess = openLibraryData != null && openLibraryData.Confidence >= 0.5;
+            _statsService.RecordCall("OpenLibrary", olSuccess, openLibraryData?.Confidence);
+
             if (openLibraryData != null)
             {
                 meta["openLibraryConfidence"] = openLibraryData.Confidence;
@@ -337,6 +408,10 @@ public class LibraryWatcherService : BackgroundService
 
         // API Call 2: Combined AI validation + enrichment (single call instead of two)
         // Only call if OpenLibrary confidence is low AND no prior AI enrichment
+        var aiProvidedBetterMetadata = false;
+        string? aiTitle = null;
+        string[]? aiAuthors = null;
+
         if (string.IsNullOrWhiteSpace(aiEnrichedAt) && (openLibraryData?.Confidence ?? 0) < 0.75 && IsMetadataReliable(title, authors))
         {
             var aiResult = await FetchAiValidationAndEnrichmentAsync(
@@ -345,6 +420,8 @@ public class LibraryWatcherService : BackgroundService
                 fileInfo.Name,
                 openLibraryData,
                 token);
+
+            _statsService.RecordCall("GPT4", aiResult != null);
 
             if (aiResult != null)
             {
@@ -362,6 +439,11 @@ public class LibraryWatcherService : BackgroundService
                 }
                 else if (!string.IsNullOrWhiteSpace(aiResult.Title))
                 {
+                    // AI provided better metadata - save for retry
+                    aiTitle = aiResult.Title;
+                    aiAuthors = aiResult.Authors;
+                    aiProvidedBetterMetadata = true;
+
                     // Use AI-provided metadata
                     meta["title"] = aiResult.Title;
                     meta["authors"] = aiResult.Authors;
@@ -378,11 +460,49 @@ public class LibraryWatcherService : BackgroundService
             await AiThrottlingConfiguration.ThrottleAsync(token);
         }
 
+        // API Call 2b: RETRY OpenLibrary with AI-corrected title/author
+        // This is the key improvement - if AI gave us better metadata, try OpenLibrary again
+        if (aiProvidedBetterMetadata && !string.IsNullOrWhiteSpace(aiTitle))
+        {
+            Log.Information("[LibraryWatcher] Retrying OpenLibrary with AI-corrected metadata: {Title}", aiTitle);
+            var retryOlData = await FetchOpenLibraryDataAsync(aiTitle!, aiAuthors ?? Array.Empty<string>(), token);
+            _statsService.RecordCall("OpenLibrary_Retry", retryOlData != null && retryOlData.Confidence >= 0.75, retryOlData?.Confidence);
+
+            if (retryOlData != null && retryOlData.Confidence >= 0.75)
+            {
+                Log.Information("[LibraryWatcher] OpenLibrary retry successful! Confidence: {Confidence}", retryOlData.Confidence);
+                meta["openLibraryConfidence"] = retryOlData.Confidence;
+
+                // Update metadata from high-confidence OpenLibrary result
+                if (!string.IsNullOrWhiteSpace(retryOlData.Title))
+                    meta["title"] = retryOlData.Title;
+                if (retryOlData.Authors.Length > 0)
+                    meta["authors"] = retryOlData.Authors;
+                if (retryOlData.FirstPublishYear != null)
+                    meta["publishedDate"] = retryOlData.FirstPublishYear.ToString();
+
+                coverUrl = TryGetMetaValue(meta, "coverUrl") as string;
+                if (!IsLocalCover(coverUrl) && string.IsNullOrWhiteSpace(coverUrl) && !string.IsNullOrWhiteSpace(retryOlData.CoverUrl))
+                    meta["coverUrl"] = retryOlData.CoverUrl;
+
+                if (string.IsNullOrWhiteSpace(TryGetMetaValue(meta, "series") as string) && !string.IsNullOrWhiteSpace(retryOlData.Series))
+                    meta["series"] = retryOlData.Series;
+            }
+
+            await AiThrottlingConfiguration.ThrottleAsync(token);
+        }
+
+        // Re-read title/authors after potential updates
+        title = TryGetMetaValue(meta, "title") as string;
+        authors = TryGetMetaArray(meta, "authors") ?? Array.Empty<string>();
+
         // API Call 3: Google Books (only for cover if still missing)
         coverUrl = TryGetMetaValue(meta, "coverUrl") as string;
         if (!IsLocalCover(coverUrl) && string.IsNullOrWhiteSpace(coverUrl))
         {
             var externalCover = await FetchGoogleBooksCoverAsync(title ?? "", authors, token);
+            _statsService.RecordCall("GoogleBooks", !string.IsNullOrWhiteSpace(externalCover));
+
             if (!string.IsNullOrWhiteSpace(externalCover))
                 meta["coverUrl"] = externalCover;
 
@@ -394,6 +514,8 @@ public class LibraryWatcherService : BackgroundService
         if (!goodreadsRating.HasValue && IsMetadataReliable(title, authors))
         {
             var fetchedRating = await FetchGoodreadsRatingSimpleAsync(title ?? "", authors, token);
+            _statsService.RecordCall("Goodreads", fetchedRating.HasValue);
+
             if (fetchedRating.HasValue)
                 meta["goodreadsRating"] = fetchedRating.Value;
             else
@@ -402,6 +524,19 @@ public class LibraryWatcherService : BackgroundService
 
         // Mark enrichment complete after a full pass
         meta["enrichmentComplete"] = true;
+
+        // Track book processed
+        var hasGoodMetadata = !string.IsNullOrWhiteSpace(TryGetMetaValue(meta, "title") as string) &&
+                              (TryGetMetaArray(meta, "authors")?.Length ?? 0) > 0;
+        _statsService.RecordBookProcessed(hasGoodMetadata);
+
+        // Save stats periodically (every 10 books)
+        _processedSinceLastSave++;
+        if (_processedSinceLastSave >= 10)
+        {
+            _processedSinceLastSave = 0;
+            _ = _statsService.SaveAsync(token);
+        }
 
         var json = JsonSerializer.Serialize(meta, new JsonSerializerOptions
         {
@@ -412,6 +547,8 @@ public class LibraryWatcherService : BackgroundService
         Log.Information($"[LibraryWatcher]   Final CoverUrl before write: {meta["coverUrl"]}");
         await File.WriteAllTextAsync(metaPath, json, token);
         Log.Information($"[LibraryWatcher]   WROTE metadata to {metaPath}");
+
+        return true; // Enrichment was performed
     }
 
     private async Task<bool> WaitForStableFileAsync(string filePath, CancellationToken token)

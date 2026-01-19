@@ -42,6 +42,7 @@ export class LibrarySidebarComponent {
   // Bulk edit inputs
   @Input() bulkEditMode = false;
   @Input() selectedBooksCount = 0;
+  @Input() visibleBooksCount = 0;
 
   // Admin inputs
   @Input() isAdmin = false;
@@ -62,6 +63,7 @@ export class LibrarySidebarComponent {
   // Bulk edit outputs
   @Output() bulkEditToggle = new EventEmitter<void>();
   @Output() openBulkEdit = new EventEmitter<void>();
+  @Output() selectAllVisible = new EventEmitter<void>();
   @Output() bulkSend = new EventEmitter<'dropbox' | 'kindle-dad' | 'kindle-mom'>();
 
   // Admin outputs
@@ -72,6 +74,7 @@ export class LibrarySidebarComponent {
   @Output() filterGenreCountChange = new EventEmitter<number>();
   @Output() filterGenreComparisonChange = new EventEmitter<'less' | 'more'>();
   @Output() wipeGenres = new EventEmitter<void>();
+  @Output() uploadBooks = new EventEmitter<void>();
 
   onResetView(): void {
     this.resetView.emit();
@@ -99,6 +102,10 @@ export class LibrarySidebarComponent {
 
   onOpenBulkEdit(): void {
     this.openBulkEdit.emit();
+  }
+
+  onSelectAllVisible(): void {
+    this.selectAllVisible.emit();
   }
 
   onBulkSend(action: 'dropbox' | 'kindle-dad' | 'kindle-mom'): void {
@@ -131,5 +138,9 @@ export class LibrarySidebarComponent {
 
   onWipeGenres(): void {
     this.wipeGenres.emit();
+  }
+
+  onUploadBooks(): void {
+    this.uploadBooks.emit();
   }
 }

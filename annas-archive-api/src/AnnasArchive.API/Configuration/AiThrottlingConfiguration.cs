@@ -76,7 +76,7 @@ public static class AiThrottlingConfiguration
     /// Delay between batches for LibraryWatcher.
     /// Longer delay since this is background processing and can afford to be slower.
     /// </summary>
-    public static readonly TimeSpan LibraryDelayBetweenBatches = TimeSpan.FromSeconds(30);
+    public static readonly TimeSpan LibraryDelayBetweenBatches = TimeSpan.FromSeconds(10);
 
     #endregion
 

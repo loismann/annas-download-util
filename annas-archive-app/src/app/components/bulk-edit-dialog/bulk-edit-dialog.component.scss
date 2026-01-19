@@ -48,6 +48,30 @@
   margin-bottom: 8px;
 }
 
+.tags-mode-toggle {
+  padding: 12px;
+  background: #f0f9ff;
+  border: 1px solid #bae6fd;
+  border-radius: 8px;
+  margin-top: -8px;
+
+  .tags-mode-hint {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 8px;
+    font-size: 0.8rem;
+    color: #0369a1;
+
+    mat-icon {
+      font-size: 16px;
+      width: 16px;
+      height: 16px;
+      color: #0284c7;
+    }
+  }
+}
+
 .disabled-fields-notice {
   display: flex;
   align-items: center;
@@ -75,4 +99,43 @@
 mat-dialog-content {
   max-height: 600px;
   overflow-y: auto;
+}
+
+.danger-zone {
+  margin-top: 24px;
+  padding: 16px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+
+  .danger-zone-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+    font-weight: 600;
+    color: #991b1b;
+    font-size: 0.9rem;
+
+    mat-icon {
+      color: #dc2626;
+      font-size: 20px;
+      width: 20px;
+      height: 20px;
+    }
+  }
+
+  .delete-all-btn {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+
+    mat-icon {
+      font-size: 20px;
+      width: 20px;
+      height: 20px;
+    }
+  }
 }

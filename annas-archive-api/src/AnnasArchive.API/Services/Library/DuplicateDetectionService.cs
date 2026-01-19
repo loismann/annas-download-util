@@ -9,6 +9,76 @@ namespace AnnasArchive.API.Services.Library;
 /// </summary>
 public class DuplicateDetectionService : IDuplicateDetectionService
 {
+    // Index for pre-import duplicate checking
+    private readonly Dictionary<string, string> _libraryIndex = new(StringComparer.OrdinalIgnoreCase);
+    private string? _indexedLibraryRoot;
+
+    /// <inheritdoc />
+    public void BuildLibraryIndex(string libraryRoot)
+    {
+        _libraryIndex.Clear();
+        _indexedLibraryRoot = libraryRoot;
+
+        var metaFiles = Directory.GetFiles(libraryRoot, "*.meta.json");
+        foreach (var metaFile in metaFiles)
+        {
+            try
+            {
+                var json = File.ReadAllText(metaFile);
+                using var doc = JsonDocument.Parse(json);
+                var root = doc.RootElement;
+
+                var title = root.TryGetProperty("title", out var titleProp) ? titleProp.GetString() : null;
+                var authors = root.TryGetProperty("authors", out var authorsProp) && authorsProp.ValueKind == JsonValueKind.Array
+                    ? authorsProp.EnumerateArray()
+                        .Select(v => v.GetString())
+                        .Where(v => !string.IsNullOrWhiteSpace(v))
+                        .Select(v => v!.Trim())
+                        .ToArray()
+                    : Array.Empty<string>();
+
+                if (!string.IsNullOrWhiteSpace(title))
+                {
+                    var key = BuildIndexKey(title, authors);
+                    var bookFile = metaFile.Replace(".meta.json", "");
+                    if (!_libraryIndex.ContainsKey(key) && File.Exists(bookFile))
+                    {
+                        _libraryIndex[key] = bookFile;
+                    }
+                }
+            }
+            catch
+            {
+                // Ignore malformed meta files
+            }
+        }
+    }
+
+    /// <inheritdoc />
+    public string? FindExistingDuplicate(string libraryRoot, string title, string[] authors)
+    {
+        // Rebuild index if library root changed or index is empty
+        if (_indexedLibraryRoot != libraryRoot || _libraryIndex.Count == 0)
+        {
+            BuildLibraryIndex(libraryRoot);
+        }
+
+        if (string.IsNullOrWhiteSpace(title))
+            return null;
+
+        var key = BuildIndexKey(title, authors);
+        return _libraryIndex.TryGetValue(key, out var existingPath) ? existingPath : null;
+    }
+
+    private static string BuildIndexKey(string title, string[] authors)
+    {
+        var normalizedTitle = NormalizeTitleForDedup(title);
+        var normalizedAuthors = NormalizeAuthorForDedup(authors);
+        return string.IsNullOrWhiteSpace(normalizedAuthors)
+            ? normalizedTitle
+            : $"{normalizedTitle}||{normalizedAuthors}";
+    }
+
     /// <inheritdoc />
     public HashSet<string> FindDuplicates(string libraryRoot, List<string> files)
     {
@@ -213,7 +283,16 @@ public class DuplicateDetectionService : IDuplicateDetectionService
         if (string.IsNullOrWhiteSpace(raw))
             return (null, null);
 
-        var cleaned = Regex.Replace(raw, @"_(?:sample|preview)$", "", RegexOptions.IgnoreCase).Trim();
+        // Strip bracketed content (e.g., [homes_pferrer], [retail], [Wings of Fire 10])
+        var cleaned = Regex.Replace(raw, @"\[[^\]]*\]", "").Trim();
+        // Strip parenthesized prefixes at start (e.g., "(epub)" but not "(Unabridged)" in title)
+        cleaned = Regex.Replace(cleaned, @"^\([^)]*\)\s*", "").Trim();
+        // Strip leading numbers with separators (e.g., "1 - ", "002 - ", "10.")
+        cleaned = Regex.Replace(cleaned, @"^\d{1,3}\s*[-–—.]\s*", "").Trim();
+        // Strip leading dash separators left after bracket removal (e.g., "- Title" from "[tag] - Title")
+        cleaned = Regex.Replace(cleaned, @"^[-–—]\s*", "").Trim();
+
+        cleaned = Regex.Replace(cleaned, @"_(?:sample|preview)$", "", RegexOptions.IgnoreCase).Trim();
         cleaned = Regex.Replace(cleaned, @"\.(tmp|tmp\d+)_\w+$", "", RegexOptions.IgnoreCase).Trim();
         cleaned = Regex.Replace(cleaned, @"_[A-Z0-9]{8,}$", "", RegexOptions.IgnoreCase).Trim();
         cleaned = Regex.Replace(cleaned, @"\bB0[A-Z0-9]{8,}\b$", "", RegexOptions.IgnoreCase).Trim();

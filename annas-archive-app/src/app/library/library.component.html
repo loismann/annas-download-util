@@ -18,6 +18,7 @@
       [totalBooks]="filteredBooks.length"
       [bulkEditMode]="bulkEditMode"
       [selectedBooksCount]="selectedBooksForBulk.size"
+      [visibleBooksCount]="filteredBooks.length"
       [isAdmin]="authService.isAdmin()"
       [adminOpen]="adminOpen"
       [filterMissingAuthor]="filterMissingAuthor"
@@ -32,6 +33,7 @@
       (minGoodreadsRatingChange)="minGoodreadsRating = $event"
       (bulkEditToggle)="toggleBulkEditMode()"
       (openBulkEdit)="openBulkEditDialog()"
+      (selectAllVisible)="selectAllVisible()"
       (bulkSend)="bulkSend($event)"
       (adminToggle)="toggleAdmin()"
       (filterMissingAuthorChange)="filterMissingAuthor = $event"
@@ -40,6 +42,7 @@
       (filterGenreCountChange)="filterGenreCount = $event"
       (filterGenreComparisonChange)="filterGenreComparison = $event"
       (wipeGenres)="wipeAllGenres()"
+      (uploadBooks)="openUploadDialog()"
       ></app-library-sidebar>
     </div>
 
@@ -86,6 +89,16 @@
             aria-label="Large tiles"
           >
             <mat-icon>view_agenda</mat-icon>
+          </button>
+          <button
+            mat-icon-button
+            type="button"
+            class="bookmark-filter-btn"
+            [class.active]="filterBookmarked"
+            (click)="toggleBookmarkFilter()"
+            aria-label="Filter bookmarked books"
+          >
+            <mat-icon>{{ filterBookmarked ? 'bookmark' : 'bookmark_border' }}</mat-icon>
           </button>
         </div>
         <div class="sort-combo">
@@ -141,6 +154,7 @@
             [placeholderUrl]="placeholderUrl"
             (coverClick)="onCoverClick($event)"
             (ratingChange)="onRatingChange($event)"
+            (bookmarkToggle)="onBookmarkToggle($event)"
             (sendToKindle)="onSendToKindle($event)"
             (selectionToggle)="toggleBookSelection($event)"
           ></app-book-card>

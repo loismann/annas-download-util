@@ -6,6 +6,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Caching.Memory;
 using Serilog;
 
 namespace AnnasArchive.Core.Services;
@@ -13,10 +14,14 @@ namespace AnnasArchive.Core.Services;
 public class GoogleBooksService : IGoogleBooksService
 {
     private readonly IHttpClientFactory _httpFactory;
+    private readonly IMemoryCache _cache;
+    private static readonly TimeSpan CoverCacheDuration = TimeSpan.FromHours(24);
+    private static readonly TimeSpan CoverNotFoundCacheDuration = TimeSpan.FromHours(4);
 
-    public GoogleBooksService(IHttpClientFactory httpFactory)
+    public GoogleBooksService(IHttpClientFactory httpFactory, IMemoryCache cache)
     {
         _httpFactory = httpFactory;
+        _cache = cache;
     }
 
     #region Book Description
@@ -96,6 +101,14 @@ public class GoogleBooksService : IGoogleBooksService
     {
         if (string.IsNullOrWhiteSpace(title)) return null;
 
+        // Check cache first (includes negative caching for "not found")
+        var cacheKey = $"gbooks_cover_{title.Trim().ToLowerInvariant()}_{author?.Trim().ToLowerInvariant() ?? ""}";
+        if (_cache.TryGetValue(cacheKey, out string? cached))
+        {
+            Log.Debug("[GoogleBooks] Cover cache hit for {Title}", title);
+            return cached; // May be null for negative cache
+        }
+
         try
         {
             var http = _httpFactory.CreateClient("GoogleBooks");
@@ -129,18 +142,28 @@ public class GoogleBooksService : IGoogleBooksService
                         urlValue = smallThumb.GetString();
 
                     if (string.IsNullOrWhiteSpace(urlValue)) continue;
-                    return urlValue.Replace("http://", "https://", StringComparison.OrdinalIgnoreCase);
+                    var coverUrl = urlValue.Replace("http://", "https://", StringComparison.OrdinalIgnoreCase);
+                    _cache.Set(cacheKey, coverUrl, CoverCacheDuration);
+                    return coverUrl;
                 }
             }
 
             if (!string.IsNullOrWhiteSpace(author))
-                return await GetCoverUrlAsync(title, null);
+            {
+                var result = await GetCoverUrlAsync(title, null);
+                // Don't double-cache - the recursive call already cached
+                return result;
+            }
         }
         catch
         {
+            // Cache the failure to prevent repeated API calls
+            _cache.Set(cacheKey, (string?)null, CoverNotFoundCacheDuration);
             return null;
         }
 
+        // Not found - cache negative result
+        _cache.Set(cacheKey, (string?)null, CoverNotFoundCacheDuration);
         return null;
     }
 

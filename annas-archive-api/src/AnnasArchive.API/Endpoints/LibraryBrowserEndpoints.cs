@@ -35,167 +35,83 @@ public static class LibraryBrowserEndpoints
         return app;
     }
 
-    private static IResult HandleListBooks(HttpContext context)
+    private static IResult HandleListBooks(
+        HttpContext context,
+        LibraryIndexCache cache,
+        [FromQuery] int? skip = null,
+        [FromQuery] int? take = null,
+        [FromQuery] string? sortBy = null,
+        [FromQuery] bool? sortDesc = null)
     {
-        var libraryRoot = LibraryHelpers.ResolveLibraryRoot();
-        if (!Directory.Exists(libraryRoot))
-            return Results.Json(Array.Empty<LibraryBookDto>());
+        Log.Information("[library] HandleListBooks called with skip={Skip}, take={Take}, sortBy={SortBy}, sortDesc={SortDesc}",
+            skip, take, sortBy, sortDesc);
 
-        var metaFiles = Directory.GetFiles(libraryRoot, "*.meta.json");
-        var jsonOptions = LibraryHelpers.CreateLibraryJsonOptions();
-        var books = new List<LibraryBookDto>();
-        var metaLookup = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var baseUrl = $"{context.Request.Scheme}://{context.Request.Host}";
 
-        foreach (var metaFile in metaFiles)
+        // If pagination parameters are provided, use paginated response
+        if (skip.HasValue || take.HasValue)
         {
-            try
+            var (books, totalCount) = cache.GetBooksPaginated(
+                baseUrl,
+                skip: skip ?? 0,
+                take: take ?? 50,
+                sortBy: sortBy ?? "date",
+                sortDesc: sortDesc ?? true);
+
+            Log.Information("[library] Returning {Count}/{Total} books (paginated, cached: {IsCached})",
+                books.Count, totalCount, cache.IsCached);
+
+            return Results.Json(new
             {
-                var json = File.ReadAllText(metaFile);
-                var meta = JsonSerializer.Deserialize<LibraryBookMeta>(json, jsonOptions);
-                if (meta == null)
-                    continue;
-
-                metaLookup.Add(meta.FileName);
-                var coverUrl = LibraryHelpers.NormalizeLibraryCoverUrl(meta.CoverUrl, baseUrl)
-                    ?? LibraryHelpers.FindLocalCoverUrl(libraryRoot, meta.FileName, baseUrl);
-
-                var genres = meta.Genres ?? Array.Empty<string>();
-                var tags = meta.Tags ?? genres;
-                var primaryGenre = meta.PrimaryGenre ?? genres.FirstOrDefault() ?? tags.FirstOrDefault();
-
-                books.Add(new LibraryBookDto(
-                    meta.Title ?? Path.GetFileNameWithoutExtension(meta.FileName),
-                    meta.Authors ?? Array.Empty<string>(),
-                    meta.Format ?? Path.GetExtension(meta.FileName).TrimStart('.').ToUpperInvariant(),
-                    meta.FileSize ?? "",
-                    meta.FileName,
-                    coverUrl,
-                    meta.Source,
-                    meta.Md5,
-                    meta.SavedAt,
-                    primaryGenre,
-                    tags,
-                    meta.Series,
-                    genres,
-                    meta.PublishedDate,
-                    meta.Pages,
-                    meta.GoodreadsRating,
-                    meta.PersonalRating,
-                    meta.ReaderEnabled
-                ));
-            }
-            catch
-            {
-                // ignore malformed meta files
-            }
+                books,
+                totalCount,
+                skip = skip ?? 0,
+                take = take ?? 50
+            });
         }
 
-        var supportedExts = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        { ".epub", ".pdf", ".mobi", ".azw3", ".azw", ".kfx", ".pobi", ".fb2" };
-
-        foreach (var filePath in Directory.GetFiles(libraryRoot))
-        {
-            try
-            {
-                var ext = Path.GetExtension(filePath);
-                if (!supportedExts.Contains(ext))
-                    continue;
-
-                var fileName = Path.GetFileName(filePath);
-                if (string.IsNullOrWhiteSpace(fileName) || metaLookup.Contains(fileName))
-                    continue;
-
-                var info = new FileInfo(filePath);
-                books.Add(new LibraryBookDto(
-                    Path.GetFileNameWithoutExtension(fileName),
-                    Array.Empty<string>(),
-                    ext.TrimStart('.').ToUpperInvariant(),
-                    LibraryHelpers.FormatFileSize(info.Length),
-                    fileName,
-                    null,
-                    null,
-                    null,
-                    info.LastWriteTimeUtc,
-                    null,
-                    Array.Empty<string>(),
-                    null,
-                    Array.Empty<string>(),
-                    null,
-                    null,
-                    null,
-                    null,
-                    null
-                ));
-            }
-            catch (Exception ex)
-            {
-                Log.Information("[library] Skipping file {filePath}: {ex.Message}");
-            }
-        }
-
-        var ordered = books
-            .OrderBy(b => b.Title, StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-        return Results.Json(ordered);
+        // Legacy: return all books for backward compatibility
+        var allBooks = cache.GetBooks(baseUrl);
+        Log.Information("[library] Returning {Count} books (cached: {IsCached})", allBooks.Count, cache.IsCached);
+        return Results.Json(allBooks);
     }
 
-    private static IResult HandleListReaderBooks(HttpContext context)
+    private static IResult HandleListReaderBooks(HttpContext context, LibraryIndexCache cache)
     {
-        var libraryRoot = LibraryHelpers.ResolveLibraryRoot();
-        if (!Directory.Exists(libraryRoot))
-            return Results.Json(Array.Empty<ReaderBookDto>());
-
-        var metaFiles = Directory.GetFiles(libraryRoot, "*.meta.json");
-        var jsonOptions = LibraryHelpers.CreateLibraryJsonOptions();
-        var results = new List<ReaderBookDto>();
         var baseUrl = $"{context.Request.Scheme}://{context.Request.Host}";
+        var allBooks = cache.GetBooks(baseUrl);
 
         var existingKeys = AiContentCache.GetExistingSummaryKeys();
+        var results = new List<ReaderBookDto>();
 
-        foreach (var metaFile in metaFiles)
+        foreach (var book in allBooks)
         {
-            try
-            {
-                var json = File.ReadAllText(metaFile);
-                var meta = JsonSerializer.Deserialize<LibraryBookMeta>(json, jsonOptions);
-                if (meta == null)
-                    continue;
+            // Only include EPUBs
+            if (!string.Equals(book.Format, "EPUB", StringComparison.OrdinalIgnoreCase))
+                continue;
 
-                var ext = Path.GetExtension(meta.FileName);
-                if (!string.Equals(ext, ".epub", StringComparison.OrdinalIgnoreCase))
-                    continue;
+            var readerKey = ResolveReaderKey(book.FileName, existingKeys);
+            var hasSummaries = AiContentCache.HasAnySummaries(readerKey, existingKeys);
+            var include = book.ReaderEnabled == true || hasSummaries;
 
-                var readerKey = ResolveReaderKey(meta.FileName, existingKeys);
-                var hasSummaries = AiContentCache.HasAnySummaries(readerKey, existingKeys);
-                var include = meta.ReaderEnabled == true || hasSummaries;
-                if (!include)
-                    continue;
+            if (!include)
+                continue;
 
-                var coverUrl = LibraryHelpers.NormalizeLibraryCoverUrl(meta.CoverUrl, baseUrl)
-                    ?? LibraryHelpers.FindLocalCoverUrl(libraryRoot, meta.FileName, baseUrl);
-
-                results.Add(new ReaderBookDto(
-                    meta.FileName,
-                    readerKey,
-                    meta.Title ?? Path.GetFileNameWithoutExtension(meta.FileName),
-                    meta.Authors ?? Array.Empty<string>(),
-                    meta.Format ?? Path.GetExtension(meta.FileName).TrimStart('.').ToUpperInvariant(),
-                    coverUrl,
-                    hasSummaries
-                ));
-            }
-            catch
-            {
-                // ignore malformed meta files
-            }
+            results.Add(new ReaderBookDto(
+                book.FileName,
+                readerKey,
+                book.Title,
+                book.Authors,
+                book.Format,
+                book.CoverUrl,
+                hasSummaries
+            ));
         }
 
         return Results.Json(results.OrderBy(r => r.Title, StringComparer.OrdinalIgnoreCase).ToList());
     }
 
-    private static IResult HandleDeleteBook([FromRoute] string fileName)
+    private static IResult HandleDeleteBook([FromRoute] string fileName, LibraryIndexCache cache)
     {
         var safeFileName = Path.GetFileName(fileName);
         if (!string.Equals(fileName, safeFileName, StringComparison.Ordinal))
@@ -224,6 +140,9 @@ public static class LibraryBrowserEndpoints
             {
                 try { File.Delete(cover); } catch { /* ignore */ }
             }
+
+            // Remove from cache immediately (file watcher will also catch this)
+            cache.RemoveBook(safeFileName);
 
             return Results.Ok(new { success = true });
         }

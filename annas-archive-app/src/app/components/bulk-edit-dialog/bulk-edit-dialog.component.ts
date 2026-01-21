@@ -25,6 +25,7 @@ export interface BookBulkEditDialogResult {
   tagsMode?: 'append' | 'replace';
   series?: string | null;
   deleted?: boolean;
+  bookmarkAll?: boolean;
 }
 
 @Component({
@@ -130,5 +131,9 @@ export class BulkEditDialogComponent {
     if (!secondConfirm) return;
 
     this.dialogRef.close({ deleted: true });
+  }
+
+  onBookmarkAll(): void {
+    this.dialogRef.close({ bookmarkAll: true });
   }
 }

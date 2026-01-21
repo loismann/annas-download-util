@@ -162,6 +162,7 @@ export class BookReaderComponent implements OnInit, OnDestroy {
   rightFlex = '1 1 0';
   showSidebar = true;
   showSettingsSection = false;
+  showReadingToolsSection = false;
   showChapterRegenerateConfirm = false;
   fontFamily: 'serif' | 'sans' | 'mono' = 'serif';
   fontSize: number = 14;
@@ -198,6 +199,16 @@ export class BookReaderComponent implements OnInit, OnDestroy {
   private pendingChapterId: number | null = null;
   private autoSelectFirstChapter = false;
   private autoSelectChapterId: number | null = null;
+
+  // Touch swipe tracking for page navigation
+  private touchStartX: number | null = null;
+  private touchStartY: number | null = null;
+  private readonly SWIPE_THRESHOLD = 50; // Minimum distance in pixels to trigger swipe
+  private readonly SWIPE_VERTICAL_LIMIT = 100; // Max vertical movement to still count as horizontal swipe
+
+  // Fullscreen reading mode
+  isReaderFullscreen = false;
+  private readonly SWIPE_DOWN_THRESHOLD = 80; // Pixels to swipe down to exit fullscreen
 
   get readerTextStyles(): { 'font-family': string; 'font-size.px': number } {
     return {
@@ -863,6 +874,73 @@ export class BookReaderComponent implements OnInit, OnDestroy {
     // Normal page back within same chapter
     this.wordOffset = Math.max(0, newOffset);
     this.updateReadingPosition();
+  }
+
+  // Touch swipe handlers for iPad/touch navigation
+  onTextWindowTouchStart(event: TouchEvent): void {
+    if (event.touches.length === 1) {
+      this.touchStartX = event.touches[0].clientX;
+      this.touchStartY = event.touches[0].clientY;
+    }
+  }
+
+  onTextWindowTouchEnd(event: TouchEvent): void {
+    if (this.touchStartX === null || this.touchStartY === null) {
+      return;
+    }
+
+    if (event.changedTouches.length !== 1) {
+      this.touchStartX = null;
+      this.touchStartY = null;
+      return;
+    }
+
+    const touchEndX = event.changedTouches[0].clientX;
+    const touchEndY = event.changedTouches[0].clientY;
+
+    const deltaX = touchEndX - this.touchStartX;
+    const deltaY = touchEndY - this.touchStartY;
+    const absDeltaX = Math.abs(deltaX);
+    const absDeltaY = Math.abs(deltaY);
+
+    // Reset tracking
+    this.touchStartX = null;
+    this.touchStartY = null;
+
+    // Check for swipe-down to exit fullscreen mode
+    if (this.isReaderFullscreen && deltaY > this.SWIPE_DOWN_THRESHOLD && absDeltaX < this.SWIPE_VERTICAL_LIMIT) {
+      this.exitReaderFullscreen();
+      return;
+    }
+
+    // Check if this is a horizontal swipe (not too much vertical movement)
+    if (absDeltaY > this.SWIPE_VERTICAL_LIMIT) {
+      return; // Too much vertical movement, likely scrolling
+    }
+
+    // Check if swipe distance meets threshold
+    if (absDeltaX < this.SWIPE_THRESHOLD) {
+      return; // Swipe too short
+    }
+
+    // Swipe left = next page, Swipe right = previous page
+    if (deltaX < 0 && this.canPageForward()) {
+      this.pageForward();
+    } else if (deltaX > 0 && this.canPageBack()) {
+      this.pageBack();
+    }
+  }
+
+  enterReaderFullscreen(): void {
+    this.isReaderFullscreen = true;
+  }
+
+  exitReaderFullscreen(): void {
+    this.isReaderFullscreen = false;
+  }
+
+  toggleReaderFullscreen(): void {
+    this.isReaderFullscreen = !this.isReaderFullscreen;
   }
 
   startIndexing(): void {

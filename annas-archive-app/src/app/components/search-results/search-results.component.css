@@ -13,7 +13,8 @@
 }
 
 .results-inner {
-  width: 82%;
+  width: 57%;
+  max-width: 800px;
 }
 
 /* card spacing */
@@ -222,7 +223,8 @@
   }
 
   .results-inner {
-    width: 90%;
+    width: 75%;
+    max-width: none;
   }
 
   :host ::ng-deep mat-card.book-card .info .mat-card-header {
@@ -248,6 +250,10 @@
 
 /* Smaller tablets (iPad Air/Pro portrait ~820-1024px, iPad Mini landscape ~1133px) */
 @media (max-width: 1180px) {
+  .results-inner {
+    width: 85%;
+  }
+
   :host ::ng-deep mat-card.book-card .cover {
     flex: 0 0 140px;
     width: 140px;

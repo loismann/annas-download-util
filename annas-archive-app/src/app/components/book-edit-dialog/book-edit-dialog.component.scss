@@ -1,3 +1,44 @@
+// Delete Confirmation Banner
+.delete-confirm-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  margin: 0 24px 16px 24px;
+  color: #991b1b;
+  font-size: 0.9rem;
+  animation: pulse-border 1s ease-in-out infinite;
+
+  mat-icon {
+    color: #dc2626;
+    font-size: 24px;
+    width: 24px;
+    height: 24px;
+    flex-shrink: 0;
+  }
+
+  strong {
+    background: #fee2e2;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: monospace;
+  }
+}
+
+@keyframes pulse-border {
+  0%, 100% {
+    border-color: #fecaca;
+    box-shadow: 0 0 0 0 rgba(220, 38, 38, 0);
+  }
+  50% {
+    border-color: #f87171;
+    box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.15);
+  }
+}
+
 .dialog-layout {
   display: flex;
   gap: 2rem;

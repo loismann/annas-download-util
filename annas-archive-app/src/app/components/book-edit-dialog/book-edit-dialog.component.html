@@ -1,5 +1,11 @@
 <h2 mat-dialog-title>Edit Book Details</h2>
 
+<!-- Delete Confirmation Banner -->
+<div class="delete-confirm-banner" *ngIf="deleteConfirmPending">
+  <mat-icon>warning</mat-icon>
+  <span>Press <strong>Enter</strong> to delete "{{ data.title }}" or <strong>Escape</strong> to cancel</span>
+</div>
+
 <mat-dialog-content>
   <div class="dialog-layout">
     <!-- Left Column: Cover + Buttons + Summary -->

@@ -33,14 +33,14 @@ export const SCROLL_DEBOUNCE_MS = 100;
 // Staggered Loading Delays
 // ============================================================================
 
-/** Delay between cover lookups to avoid rate limiting (200ms) */
-export const COVER_LOOKUP_STAGGER_MS = 200;
+/** Delay between cover lookups to avoid rate limiting external APIs (750ms) */
+export const COVER_LOOKUP_STAGGER_MS = 750;
 
 /** Delay between description fetches to avoid rate limiting (100ms) */
 export const DESCRIPTION_FETCH_STAGGER_MS = 100;
 
-/** Delay between related books cover lookups (120ms) */
-export const RELATED_BOOKS_STAGGER_MS = 120;
+/** Delay between related books cover lookups to avoid rate limiting external APIs (600ms) */
+export const RELATED_BOOKS_STAGGER_MS = 600;
 
 // ============================================================================
 // UI Feedback Delays

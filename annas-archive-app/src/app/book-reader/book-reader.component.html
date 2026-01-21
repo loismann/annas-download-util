@@ -1,4 +1,4 @@
-<div class="reader-wrapper" [class.sidebar-hidden]="!showSidebar">
+<div class="reader-wrapper" [class.sidebar-hidden]="!showSidebar" [class.reader-fullscreen]="isReaderFullscreen">
   <section class="controls" *ngIf="showSidebar">
     <div class="control-header">
       <h2>Ebook Reader</h2>
@@ -78,55 +78,60 @@
       (chapterSelected)="onChapterSelected($event)"
     ></app-chapter-list>
 
-    <div class="book-search" *ngIf="selectedBookPath">
-      <h3>Search entire book</h3>
-      <mat-form-field appearance="outline" class="w-100">
-        <mat-label>Enter at least 10 characters</mat-label>
-        <input
-          matInput
-          [(ngModel)]="bookSearchTerm"
-          (keyup.enter)="searchWholeBook()"
-          placeholder="Search across all chapters" />
-        <button
-          mat-icon-button
-          matSuffix
-          aria-label="Run search"
-          (click)="searchWholeBook()">
-          <mat-icon>search</mat-icon>
-        </button>
-      </mat-form-field>
-      <div class="error" *ngIf="bookSearchError">{{ bookSearchError }}</div>
-
-      <div class="book-results">
-        <mat-form-field appearance="outline" class="w-100" [class.dropdown-disabled]="!bookSearchResults.length">
-          <mat-label>Matching chapters</mat-label>
-          <mat-select (selectionChange)="goToBookMatch($event.value)" [disabled]="!bookSearchResults.length">
-            <mat-option *ngFor="let res of bookSearchResults" [value]="res">
-              <div class="chapter-line">
-                <span class="chapter-title">{{ res.title }}</span>
-                <span class="chapter-meta">({{ res.matchCount }} hits)</span>
-              </div>
-              <div class="snippet">{{ res.snippet }}</div>
-            </mat-option>
-          </mat-select>
-        </mat-form-field>
-      </div>
-    </div>
-
     <div class="reading-tools-section">
-      <h3 class="section-header">Reading Tools</h3>
-      <button mat-flat-button color="accent" class="w-100 vocab-btn-main"
-        (click)="openVocabModal()">
-        <mat-icon>menu_book</mat-icon>
-        Vocab
+      <button mat-button class="cache-toggle settings-toggle" (click)="showReadingToolsSection = !showReadingToolsSection">
+        <mat-icon>{{ showReadingToolsSection ? 'expand_less' : 'expand_more' }}</mat-icon>
+        Reading Tools
       </button>
+      <div class="settings-content" *ngIf="showReadingToolsSection">
+        <div class="settings-subsection reading-tools-buttons">
+          <button mat-flat-button color="accent" class="w-100 vocab-btn-main"
+            (click)="openVocabModal()">
+            <mat-icon>menu_book</mat-icon>
+            Vocab
+          </button>
 
-      <button mat-flat-button color="primary" class="w-100 character-graph-btn"
-        (click)="openCharacterGraphModal()"
-        [disabled]="!selectedBook">
-        <mat-icon>account_tree</mat-icon>
-        Characters
-      </button>
+          <button mat-flat-button color="primary" class="w-100 character-graph-btn"
+            (click)="openCharacterGraphModal()"
+            [disabled]="!selectedBook">
+            <mat-icon>account_tree</mat-icon>
+            Characters
+          </button>
+        </div>
+
+        <div class="settings-subsection book-search-subsection" *ngIf="selectedBookPath">
+          <div class="settings-subsection-header">Search Book</div>
+          <mat-form-field appearance="outline" class="w-100">
+            <mat-label>Enter at least 10 characters</mat-label>
+            <input
+              matInput
+              [(ngModel)]="bookSearchTerm"
+              (keyup.enter)="searchWholeBook()"
+              placeholder="Search across all chapters" />
+            <button
+              mat-icon-button
+              matSuffix
+              aria-label="Run search"
+              (click)="searchWholeBook()">
+              <mat-icon>search</mat-icon>
+            </button>
+          </mat-form-field>
+          <div class="error" *ngIf="bookSearchError">{{ bookSearchError }}</div>
+
+          <mat-form-field appearance="outline" class="w-100" [class.dropdown-disabled]="!bookSearchResults.length">
+            <mat-label>Matching chapters</mat-label>
+            <mat-select (selectionChange)="goToBookMatch($event.value)" [disabled]="!bookSearchResults.length">
+              <mat-option *ngFor="let res of bookSearchResults" [value]="res">
+                <div class="chapter-line">
+                  <span class="chapter-title">{{ res.title }}</span>
+                  <span class="chapter-meta">({{ res.matchCount }} hits)</span>
+                </div>
+                <div class="snippet">{{ res.snippet }}</div>
+              </mat-option>
+            </mat-select>
+          </mat-form-field>
+        </div>
+      </div>
     </div>
 
     <div class="settings-section">
@@ -286,6 +291,8 @@
         [ngStyle]="readerTextStyles"
         [ngClass]="['reader-theme-' + theme, 'reader-font-' + fontFamily]"
         [style.flex]="leftFlex"
+        (touchstart)="onTextWindowTouchStart($event)"
+        (touchend)="onTextWindowTouchEnd($event)"
         #textWindow>
         <pre [innerHTML]="highlightedVisibleText"></pre>
       </div>
@@ -543,6 +550,15 @@
         </span>
       </div>
       <div class="reader-controls-right">
+        <div class="control-group">
+          <button
+            mat-icon-button
+            class="fullscreen-btn"
+            (click)="enterReaderFullscreen()"
+            aria-label="Enter fullscreen reading mode">
+            <mat-icon>fullscreen</mat-icon>
+          </button>
+        </div>
         <div class="control-group bookmark-group">
           <button
             type="button"

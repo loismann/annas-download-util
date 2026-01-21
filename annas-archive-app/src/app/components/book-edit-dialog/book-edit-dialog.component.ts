@@ -97,6 +97,8 @@ export class BookEditDialogComponent implements OnInit, OnDestroy {
   coverCandidatesLoading = false;
   coverCandidatesError: string | null = null;
   isDeleting = false;
+  deleteConfirmPending = false;
+  private deleteConfirmTimeout: ReturnType<typeof setTimeout> | null = null;
   dadsKindleState: 'idle' | 'sending' | 'success' | 'error' = 'idle';
   momsKindleState: 'idle' | 'sending' | 'success' | 'error' = 'idle';
   dropboxState: 'idle' | 'sending' | 'success' | 'error' = 'idle';
@@ -142,6 +144,9 @@ export class BookEditDialogComponent implements OnInit, OnDestroy {
   ngOnDestroy(): void {
     this.destroy$.next();
     this.destroy$.complete();
+    if (this.deleteConfirmTimeout) {
+      clearTimeout(this.deleteConfirmTimeout);
+    }
   }
 
   ngOnInit(): void {
@@ -178,13 +183,37 @@ export class BookEditDialogComponent implements OnInit, OnDestroy {
       return;
     }
     event.preventDefault();
+
+    // If delete confirmation is pending, execute the delete
+    if (this.deleteConfirmPending) {
+      this.executeDelete();
+      return;
+    }
+
     this.onSave();
   }
 
   @HostListener('document:keydown.escape', ['$event'])
   handleEscapeKey(event: KeyboardEvent): void {
     event.preventDefault();
+
+    // If delete confirmation is pending, cancel it
+    if (this.deleteConfirmPending) {
+      this.cancelDeleteConfirm();
+      return;
+    }
+
     this.onCancel();
+  }
+
+  @HostListener('document:keydown.delete', ['$event'])
+  handleDeleteKey(event: KeyboardEvent): void {
+    // Don't trigger if typing in an input
+    if (this.isInputElement(event.target as HTMLElement)) {
+      return;
+    }
+    event.preventDefault();
+    this.initiateDeleteConfirm();
   }
 
   addTag(event: MatChipInputEvent): void {
@@ -340,7 +369,41 @@ export class BookEditDialogComponent implements OnInit, OnDestroy {
     const ok = window.confirm(`Delete "${this.data.title}" from the library? This cannot be undone.`);
     if (!ok) return;
 
+    this.executeDelete();
+  }
+
+  initiateDeleteConfirm(): void {
+    if (this.isDeleting || !this.data.fileName || this.deleteConfirmPending) {
+      return;
+    }
+
+    this.deleteConfirmPending = true;
+
+    // Auto-cancel after 5 seconds if user doesn't confirm
+    if (this.deleteConfirmTimeout) {
+      clearTimeout(this.deleteConfirmTimeout);
+    }
+    this.deleteConfirmTimeout = setTimeout(() => {
+      this.cancelDeleteConfirm();
+    }, 5000);
+  }
+
+  cancelDeleteConfirm(): void {
+    this.deleteConfirmPending = false;
+    if (this.deleteConfirmTimeout) {
+      clearTimeout(this.deleteConfirmTimeout);
+      this.deleteConfirmTimeout = null;
+    }
+  }
+
+  private executeDelete(): void {
+    if (this.isDeleting || !this.data.fileName) {
+      return;
+    }
+
+    this.cancelDeleteConfirm();
     this.isDeleting = true;
+
     this.libraryApi.deleteLibraryBook(this.data.fileName).pipe(takeUntil(this.destroy$)).subscribe({
       next: () => {
         this.dialogRef.close({ deleted: true } as BookEditDialogResult);
@@ -507,5 +570,10 @@ export class BookEditDialogComponent implements OnInit, OnDestroy {
       if (placeholder.includes('add tag')) return true;
     }
     return !!target.closest('mat-chip-grid');
+  }
+
+  private isInputElement(target: HTMLElement | null): boolean {
+    if (!target) return false;
+    return target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || !!target.closest('mat-chip-grid');
   }
 }

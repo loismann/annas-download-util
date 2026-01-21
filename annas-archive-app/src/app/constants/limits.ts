@@ -10,11 +10,11 @@
 /** Default number of search results to fetch */
 export const DEFAULT_SEARCH_LIMIT = 50;
 
-/** Maximum books to fetch descriptions for automatically */
-export const AUTO_DESCRIPTION_FETCH_LIMIT = 10;
+/** Maximum books to fetch descriptions for automatically (0 = disabled, users click to fetch) */
+export const AUTO_DESCRIPTION_FETCH_LIMIT = 0;
 
-/** Maximum books to fetch covers for automatically */
-export const AUTO_COVER_FETCH_LIMIT = 50;
+/** Maximum books to fetch covers for automatically (0 = disabled to prevent rate limiting external APIs) */
+export const AUTO_COVER_FETCH_LIMIT = 0;
 
 // ============================================================================
 // Reader & Content

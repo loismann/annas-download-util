@@ -236,7 +236,9 @@ public static class ServiceConfiguration
             services.AddHostedService<LibraryWatcherService>();
         }
 
-        // Library services
+        // Library services - LibraryIndexCache warms on startup via IHostedService
+        services.AddSingleton<LibraryIndexCache>();
+        services.AddHostedService(sp => sp.GetRequiredService<LibraryIndexCache>());
         services.AddSingleton<IGenreClassificationService, GenreClassificationService>();
         services.AddSingleton<IDuplicateDetectionService, DuplicateDetectionService>();
         services.AddSingleton<IMetadataExtractionService, MetadataExtractionService>();

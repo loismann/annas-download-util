@@ -87,7 +87,8 @@ public static class LibraryMetadataEndpoints
             var updatedJson = JsonSerializer.Serialize(meta, jsonOptions);
             await File.WriteAllTextAsync(metaPath, updatedJson);
 
-            Log.Information("[library] Updated metadata for {safeFileName}: Genre={meta.PrimaryGenre}, Tags={string.Join(\", \", meta.Tags)}, Series={meta.Series}");
+            Log.Information("[library] Updated metadata for {FileName}: Genre={Genre}, Tags={Tags}, Series={Series}",
+                safeFileName, meta.PrimaryGenre, string.Join(", ", meta.Tags ?? Array.Empty<string>()), meta.Series);
 
             return Results.Ok(new { success = true, message = "Metadata updated successfully." });
         }
@@ -138,10 +139,15 @@ public static class LibraryMetadataEndpoints
                 meta.PersonalRating = pr;
             }
 
+            if (update.Bookmarked.HasValue)
+            {
+                meta.Bookmarked = update.Bookmarked.Value;
+            }
+
             var updatedJson = JsonSerializer.Serialize(meta, jsonOptions);
             await File.WriteAllTextAsync(metaPath, updatedJson);
 
-            Log.Information("[library] Updated ratings for {safeFileName}: Goodreads={meta.GoodreadsRating}, Personal={meta.PersonalRating}");
+            Log.Information("[library] Updated ratings for {safeFileName}: Goodreads={meta.GoodreadsRating}, Personal={meta.PersonalRating}, Bookmarked={meta.Bookmarked}");
 
             return Results.Ok(new { success = true, message = "Ratings updated successfully." });
         }

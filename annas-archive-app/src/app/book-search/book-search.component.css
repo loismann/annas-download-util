@@ -81,7 +81,7 @@
   .search-wrapper {
     display: grid;
     grid-template-columns: minmax(320px, 420px) 1fr;
-    height: 100vh;
+    height: 100%;
     overflow: hidden;
     position: relative;
   }
@@ -93,18 +93,12 @@
   
   /* ─── LEFT column ─────────────────────────────── */
   .search-panel {
-    height: 100vh;
-    overflow: hidden;
-  }
-
-  .search-form {
+    height: 100%;
     display: flex;
     flex-direction: column;
     justify-content: center;
     align-items: center;
-    gap: var(--form-item-gap);
-    overflow-y: auto;
-    height: 100%;
+    overflow: hidden;
   }
   
   .search-form form {
@@ -279,11 +273,7 @@
     height: 100vh;
     overflow: hidden;
   }
-  
-  .results-inner {
-    width: 82%;
-  }
-  
+
   /* card spacing */
   .book-card {
     margin-bottom: 1rem;
@@ -495,14 +485,6 @@
 
   /* Medium tablets (iPad Air/Pro landscape ~1180-1366px, iPad Pro 12.9" portrait 1024px) */
   @media (max-width: 1366px) {
-    .search-results {
-      padding: 3rem 0;
-    }
-
-    .results-inner {
-      width: 90%;
-    }
-
     :host ::ng-deep mat-card.book-card .info .mat-card-header {
       padding: 24px 24px 0 24px;
     }
@@ -559,10 +541,6 @@
 
   /* iPad Mini portrait and smaller tablets portrait (744-820px) - still 2-column but tighter */
   @media (min-width: 745px) and (max-width: 834px) {
-    .results-inner {
-      width: 95%;
-    }
-
     :host ::ng-deep mat-card.book-card .cover {
       flex: 0 0 100px;
       width: 100px;
@@ -652,14 +630,6 @@
     .search-form form {
       max-width: 100%;
     }
-
-    .search-results {
-      padding: 1rem;
-    }
-
-    .results-inner {
-      width: 100%;
-    }
   }
 
   /* Mobile: 480px and below */
@@ -711,10 +681,6 @@
 
     .format-filter {
       min-width: unset;
-    }
-
-    .search-results {
-      padding: 0.5rem;
     }
 
     /* Stack book card vertically on very small screens */

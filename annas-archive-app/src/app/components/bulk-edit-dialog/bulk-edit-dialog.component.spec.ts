@@ -239,4 +239,59 @@ describe('BulkEditDialogComponent', () => {
       });
     });
   });
+
+  describe('onBookmarkAll', () => {
+    beforeEach(() => createComponent());
+
+    it('should close dialog with bookmarkAll true', () => {
+      component.onBookmarkAll();
+
+      expect(mockDialogRef.close).toHaveBeenCalledWith({ bookmarkAll: true });
+    });
+  });
+
+  describe('onDeleteAll', () => {
+    beforeEach(() => createComponent());
+
+    it('should not close dialog if first confirmation is cancelled', () => {
+      spyOn(window, 'confirm').and.returnValue(false);
+
+      component.onDeleteAll();
+
+      expect(mockDialogRef.close).not.toHaveBeenCalled();
+    });
+
+    it('should not close dialog if second confirmation is cancelled', () => {
+      spyOn(window, 'confirm').and.returnValues(true, false);
+
+      component.onDeleteAll();
+
+      expect(mockDialogRef.close).not.toHaveBeenCalled();
+    });
+
+    it('should close dialog with deleted true when both confirmations pass', () => {
+      spyOn(window, 'confirm').and.returnValue(true);
+
+      component.onDeleteAll();
+
+      expect(mockDialogRef.close).toHaveBeenCalledWith({ deleted: true });
+    });
+
+    it('should show two confirmation dialogs', () => {
+      const confirmSpy = spyOn(window, 'confirm').and.returnValue(true);
+
+      component.onDeleteAll();
+
+      expect(confirmSpy).toHaveBeenCalledTimes(2);
+    });
+
+    it('should include book count in confirmation messages', () => {
+      const confirmSpy = spyOn(window, 'confirm').and.returnValue(true);
+
+      component.onDeleteAll();
+
+      expect(confirmSpy.calls.first().args[0]).toContain('2 books');
+      expect(confirmSpy.calls.mostRecent().args[0]).toContain('2 books');
+    });
+  });
 });

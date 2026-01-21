@@ -146,9 +146,16 @@ export class LibraryComponent implements OnInit, OnDestroy {
       this.sidebarCollapsed = true;
     }
 
-    this.libraryApi.getLibraryBooks().pipe(takeUntil(this.destroy$)).subscribe({
-      next: (books) => {
-        this.books = (books ?? []).map(book => ({
+    // Load first batch quickly for fast initial render
+    this.logger.log('[library] Starting paginated load...');
+    this.libraryApi.getLibraryBooksPaginated(0, 100, 'date', true).pipe(takeUntil(this.destroy$)).subscribe({
+      next: (response) => {
+        this.logger.log('[library] Paginated response received', {
+          booksCount: response?.books?.length ?? 0,
+          totalCount: response?.totalCount ?? 0,
+          firstBook: response?.books?.[0]?.title
+        });
+        this.books = (response.books ?? []).map(book => ({
           ...book,
           dadsKindleState: 'idle',
           momsKindleState: 'idle'
@@ -159,11 +166,47 @@ export class LibraryComponent implements OnInit, OnDestroy {
           this.recalculateLayout();
           this.onGridScroll();
         }, 0);
+
+        // If there are more books, load them in the background
+        if (response.totalCount > response.books.length) {
+          this.loadRemainingBooks(response.books.length, response.totalCount);
+        }
       },
       error: (err) => {
-        this.logger.error('[library] failed to load books', err);
-        this.error = 'Failed to load library.';
-        this.loading = false;
+        // Fallback to loading all books if paginated endpoint fails
+        this.logger.error('[library] paginated load failed, falling back', {
+          status: err?.status,
+          statusText: err?.statusText,
+          message: err?.message,
+          url: err?.url,
+          error: err?.error
+        });
+        this.libraryApi.getLibraryBooks().pipe(takeUntil(this.destroy$)).subscribe({
+          next: (books) => {
+            this.books = (books ?? []).map(book => ({
+              ...book,
+              dadsKindleState: 'idle',
+              momsKindleState: 'idle'
+            }));
+            this.genres = this.buildGenreList(this.books);
+            this.loading = false;
+            setTimeout(() => {
+              this.recalculateLayout();
+              this.onGridScroll();
+            }, 0);
+          },
+          error: (fallbackErr) => {
+            this.logger.error('[library] fallback load also failed', {
+              status: fallbackErr?.status,
+              statusText: fallbackErr?.statusText,
+              message: fallbackErr?.message,
+              url: fallbackErr?.url,
+              error: fallbackErr?.error
+            });
+            this.error = 'Failed to load library.';
+            this.loading = false;
+          }
+        });
       }
     });
   }
@@ -174,6 +217,55 @@ export class LibraryComponent implements OnInit, OnDestroy {
       return;
     }
     img.src = this.placeholderUrl;
+  }
+
+  /**
+   * Load remaining books in the background after initial render.
+   * This allows the UI to be responsive while the rest of the library loads.
+   */
+  private loadRemainingBooks(loaded: number, total: number): void {
+    const batchSize = 500;
+    let skip = loaded;
+
+    const loadNextBatch = () => {
+      if (skip >= total) {
+        this.logger.log('[library] All books loaded', { total: this.books.length });
+        // Update genres with full data
+        this.genres = this.buildGenreList(this.books);
+        return;
+      }
+
+      this.libraryApi.getLibraryBooksPaginated(skip, batchSize, 'date', true)
+        .pipe(takeUntil(this.destroy$))
+        .subscribe({
+          next: (response) => {
+            const newBooks = (response.books ?? []).map(book => ({
+              ...book,
+              dadsKindleState: 'idle' as const,
+              momsKindleState: 'idle' as const
+            }));
+
+            // Append new books
+            this.books = [...this.books, ...newBooks];
+            skip += response.books.length;
+
+            this.logger.log('[library] Background batch loaded', {
+              loaded: this.books.length,
+              total: response.totalCount
+            });
+
+            // Load next batch
+            loadNextBatch();
+          },
+          error: (err) => {
+            this.logger.error('[library] Background load failed', err);
+            // Don't show error to user - we already have some books loaded
+          }
+        });
+    };
+
+    // Start loading in the background
+    loadNextBatch();
   }
 
   get filteredBooks(): LibraryBook[] {
@@ -869,6 +961,12 @@ export class LibraryComponent implements OnInit, OnDestroy {
         return;
       }
 
+      // Handle bulk bookmark
+      if (result.bookmarkAll) {
+        this.bulkBookmarkBooks(selectedBooks);
+        return;
+      }
+
       // Update all selected books with the new metadata
       for (const book of selectedBooks) {
         if (result.authors) {
@@ -972,6 +1070,31 @@ export class LibraryComponent implements OnInit, OnDestroy {
 
     // Log summary
     this.logger.log(`[library] Bulk delete complete: ${successCount} deleted, ${failCount} failed`);
+  }
+
+  private async bulkBookmarkBooks(selectedBooks: LibraryBook[]): Promise<void> {
+    let successCount = 0;
+    let failCount = 0;
+
+    for (const book of selectedBooks) {
+      try {
+        await this.libraryApi.updateLibraryBookRatings(book.fileName, { bookmarked: true }).toPromise();
+        // Update local state
+        book.bookmarked = true;
+        successCount++;
+        this.logger.log('[library] Bookmarked book:', book.fileName);
+      } catch (err) {
+        failCount++;
+        this.logger.error('[library] Failed to bookmark book:', book.fileName, err);
+      }
+    }
+
+    // Exit bulk edit mode and clear selection
+    this.bulkEditMode = false;
+    this.selectedBooksForBulk.clear();
+
+    // Log summary
+    this.logger.log(`[library] Bulk bookmark complete: ${successCount} bookmarked, ${failCount} failed`);
   }
 
   private delay(ms: number): Promise<void> {

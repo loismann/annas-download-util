@@ -17,6 +17,7 @@ describe('LibraryComponent', () => {
   beforeEach(async () => {
     mockLibraryApiService = jasmine.createSpyObj('LibraryApiService', [
       'getLibraryBooks',
+      'getLibraryBooksPaginated',
       'updateLibraryBookMetadata',
       'updateLibraryBookCover',
       'uploadLibraryBookCoverBytes',
@@ -32,6 +33,12 @@ describe('LibraryComponent', () => {
 
     // Default mock returns
     mockLibraryApiService.getLibraryBooks.and.returnValue(of([]));
+    mockLibraryApiService.getLibraryBooksPaginated.and.returnValue(of({
+      books: [],
+      totalCount: 0,
+      skip: 0,
+      take: 100
+    }));
     mockAuthService.isAdmin.and.returnValue(true);
 
     await TestBed.configureTestingModule({
@@ -419,7 +426,12 @@ describe('LibraryComponent', () => {
         }
       ];
 
-      mockLibraryApiService.getLibraryBooks.and.returnValue(of(testBooks));
+      mockLibraryApiService.getLibraryBooksPaginated.and.returnValue(of({
+        books: testBooks,
+        totalCount: testBooks.length,
+        skip: 0,
+        take: 100
+      }));
 
       // Act - trigger ngOnInit which loads books and builds genre list
       component.ngOnInit();

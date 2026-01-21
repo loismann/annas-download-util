@@ -15,6 +15,8 @@ public class OpenLibraryService : IOpenLibraryService
     private readonly IHttpClientFactory _httpFactory;
     private readonly IMemoryCache _cache;
     private static readonly TimeSpan AuthorCacheDuration = TimeSpan.FromHours(6);
+    private static readonly TimeSpan CoverCacheDuration = TimeSpan.FromHours(24);
+    private static readonly TimeSpan CoverNotFoundCacheDuration = TimeSpan.FromHours(4);
 
     public OpenLibraryService(IHttpClientFactory httpFactory, IMemoryCache cache)
     {
@@ -143,6 +145,14 @@ public class OpenLibraryService : IOpenLibraryService
     {
         if (string.IsNullOrWhiteSpace(title)) return null;
 
+        // Check cache first (includes negative caching for "not found")
+        var cacheKey = $"openlib_cover_{title.Trim().ToLowerInvariant()}_{author?.Trim().ToLowerInvariant() ?? ""}";
+        if (_cache.TryGetValue(cacheKey, out string? cached))
+        {
+            Log.Debug("[OpenLibrary] Cover cache hit for {Title}", title);
+            return cached; // May be null for negative cache
+        }
+
         try
         {
             var http = _httpFactory.CreateClient("OpenLibrary");
@@ -185,17 +195,29 @@ public class OpenLibraryService : IOpenLibraryService
                 }
 
                 if (bestCoverId > 0)
-                    return $"https://covers.openlibrary.org/b/id/{bestCoverId}-L.jpg";
+                {
+                    var coverUrl = $"https://covers.openlibrary.org/b/id/{bestCoverId}-L.jpg";
+                    _cache.Set(cacheKey, coverUrl, CoverCacheDuration);
+                    return coverUrl;
+                }
             }
 
             if (!string.IsNullOrWhiteSpace(author))
-                return await GetCoverUrlAsync(title, null);
+            {
+                var result = await GetCoverUrlAsync(title, null);
+                // Don't double-cache - the recursive call already cached
+                return result;
+            }
         }
         catch
         {
+            // Cache the failure to prevent repeated API calls
+            _cache.Set(cacheKey, (string?)null, CoverNotFoundCacheDuration);
             return null;
         }
 
+        // Not found - cache negative result
+        _cache.Set(cacheKey, (string?)null, CoverNotFoundCacheDuration);
         return null;
     }
 

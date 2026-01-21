@@ -259,4 +259,34 @@ describe('BookCardComponent', () => {
       expect(authorEl.classList.contains('author-missing')).toBe(true);
     });
   });
+
+  describe('Bookmark functionality', () => {
+    it('should display bookmark button', () => {
+      const bookmarkBtn = fixture.nativeElement.querySelector('.bookmark-btn');
+      expect(bookmarkBtn).toBeTruthy();
+    });
+
+    it('should show empty bookmark icon when not bookmarked', () => {
+      component.book = { ...mockBook, bookmarked: false };
+      fixture.detectChanges();
+      const bookmarkBtn = fixture.nativeElement.querySelector('.bookmark-btn');
+      expect(bookmarkBtn.textContent).toContain('bookmark_border');
+      expect(bookmarkBtn.classList.contains('bookmarked')).toBe(false);
+    });
+
+    it('should show filled bookmark icon when bookmarked', () => {
+      component.book = { ...mockBook, bookmarked: true };
+      fixture.detectChanges();
+      const bookmarkBtn = fixture.nativeElement.querySelector('.bookmark-btn');
+      expect(bookmarkBtn.textContent).toContain('bookmark');
+      expect(bookmarkBtn.classList.contains('bookmarked')).toBe(true);
+    });
+
+    it('should emit bookmarkToggle when bookmark button is clicked', () => {
+      spyOn(component.bookmarkToggle, 'emit');
+      const bookmarkBtn = fixture.nativeElement.querySelector('.bookmark-btn');
+      bookmarkBtn.click();
+      expect(component.bookmarkToggle.emit).toHaveBeenCalledWith(component.book);
+    });
+  });
 });

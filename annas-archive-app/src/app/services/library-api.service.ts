@@ -1,6 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
-import { Observable } from 'rxjs';
+import { Observable, BehaviorSubject, of } from 'rxjs';
+import { tap, shareReplay, map } from 'rxjs/operators';
 import { LoggerService } from './logger.service';
 import {
   DropboxChapterContent,
@@ -68,6 +69,13 @@ export interface LibrarySupportedFormatsResponse {
   maxFileSizeMb: number;
 }
 
+export interface LibraryBooksPaginatedResponse {
+  books: LibraryBook[];
+  totalCount: number;
+  skip: number;
+  take: number;
+}
+
 /**
  * Service for library management operations.
  * Handles library books, metadata, covers, ratings, and reader functionality.
@@ -80,6 +88,11 @@ export class LibraryApiService {
     : 'https://fs01pfbooks.synology.me:5051';
   private readonly libraryBaseUrl = `${this.apiHost}/api/library`;
 
+  // Client-side cache for library books
+  private cachedBooks$ = new BehaviorSubject<LibraryBook[] | null>(null);
+  private cacheTimestamp: number | null = null;
+  private readonly cacheMaxAgeMs = 5 * 60 * 1000; // 5 minutes
+
   constructor(
     private http: HttpClient,
     private logger: LoggerService
@@ -89,15 +102,71 @@ export class LibraryApiService {
     }
   }
 
+  /**
+   * Invalidate the client-side library cache.
+   * Call this after any operation that modifies library books.
+   */
+  invalidateCache(): void {
+    this.cachedBooks$.next(null);
+    this.cacheTimestamp = null;
+    this.logger.log('[LibraryApiService] Cache invalidated');
+  }
+
+  /**
+   * Check if cache is valid (exists and not expired).
+   */
+  private isCacheValid(): boolean {
+    if (!this.cachedBooks$.value || !this.cacheTimestamp) {
+      return false;
+    }
+    const age = Date.now() - this.cacheTimestamp;
+    return age < this.cacheMaxAgeMs;
+  }
+
   /* ══════════════════════════════════════════════════════════════
      LIBRARY BOOK ENDPOINTS
      ══════════════════════════════════════════════════════════════ */
 
   /**
    * Get all books in the library.
+   * Uses client-side caching to avoid re-fetching on page navigation.
    */
   getLibraryBooks(): Observable<LibraryBook[]> {
-    return this.http.get<LibraryBook[]>(`${this.libraryBaseUrl}/books`);
+    // Return cached data if valid
+    if (this.isCacheValid()) {
+      this.logger.log('[LibraryApiService] Returning cached books', { count: this.cachedBooks$.value?.length });
+      return of(this.cachedBooks$.value!);
+    }
+
+    // Fetch from server and update cache
+    this.logger.log('[LibraryApiService] Fetching books from server');
+    return this.http.get<LibraryBook[]>(`${this.libraryBaseUrl}/books`).pipe(
+      tap(books => {
+        this.cachedBooks$.next(books);
+        this.cacheTimestamp = Date.now();
+        this.logger.log('[LibraryApiService] Cache updated', { count: books.length });
+      })
+    );
+  }
+
+  /**
+   * Get library books with pagination support.
+   * Use this for initial load to get books faster.
+   */
+  getLibraryBooksPaginated(
+    skip = 0,
+    take = 50,
+    sortBy: 'title' | 'date' | 'author' = 'date',
+    sortDesc = true
+  ): Observable<LibraryBooksPaginatedResponse> {
+    const params = new HttpParams()
+      .set('skip', skip.toString())
+      .set('take', take.toString())
+      .set('sortBy', sortBy)
+      .set('sortDesc', sortDesc.toString());
+
+    this.logger.log('[LibraryApiService] Fetching paginated books', { skip, take, sortBy, sortDesc });
+    return this.http.get<LibraryBooksPaginatedResponse>(`${this.libraryBaseUrl}/books`, { params });
   }
 
   /**
@@ -194,6 +263,8 @@ export class LibraryApiService {
     return this.http.post<{ success: boolean; updated: number }>(
       `${this.libraryBaseUrl}/books/genres/wipe`,
       null
+    ).pipe(
+      tap(() => this.invalidateCache())
     );
   }
 
@@ -203,6 +274,8 @@ export class LibraryApiService {
   deleteLibraryBook(fileName: string): Observable<{ success: boolean }> {
     return this.http.delete<{ success: boolean }>(
       `${this.libraryBaseUrl}/book/${encodeURIComponent(fileName)}`
+    ).pipe(
+      tap(() => this.invalidateCache())
     );
   }
 
@@ -325,6 +398,8 @@ export class LibraryApiService {
     return this.http.post<LibraryUploadResponse>(
       `${this.libraryBaseUrl}/book/upload`,
       formData
+    ).pipe(
+      tap(() => this.invalidateCache())
     );
   }
 }

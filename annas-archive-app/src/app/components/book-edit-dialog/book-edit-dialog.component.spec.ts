@@ -4,7 +4,7 @@ import { MAT_DIALOG_DATA, MatDialog, MatDialogRef } from '@angular/material/dial
 import { GenreMappingService } from '../../services/genre-mapping.service';
 import { LibraryApiService } from '../../services/library-api.service';
 import { Router } from '@angular/router';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 import { BrowserAnimationsModule } from '@angular/platform-browser/animations';
 
 describe('BookEditDialogComponent', () => {
@@ -315,6 +315,117 @@ describe('BookEditDialogComponent', () => {
 
       // Assert
       expect(component.tags).toEqual(initialTags);
+    });
+  });
+
+  describe('Keyboard Delete Shortcut', () => {
+    beforeEach(() => {
+      // Reset state before each test
+      component.isDeleting = false;
+      component.deleteConfirmPending = false;
+      component.data.fileName = 'test-book.epub';
+    });
+
+    it('should set deleteConfirmPending when initiateDeleteConfirm is called', () => {
+      // Act
+      component.initiateDeleteConfirm();
+
+      // Assert
+      expect(component.deleteConfirmPending).toBe(true);
+    });
+
+    it('should not set deleteConfirmPending if already deleting', () => {
+      // Arrange
+      component.isDeleting = true;
+
+      // Act
+      component.initiateDeleteConfirm();
+
+      // Assert
+      expect(component.deleteConfirmPending).toBe(false);
+    });
+
+    it('should not set deleteConfirmPending if no fileName', () => {
+      // Arrange
+      component.data.fileName = null;
+
+      // Act
+      component.initiateDeleteConfirm();
+
+      // Assert
+      expect(component.deleteConfirmPending).toBe(false);
+    });
+
+    it('should cancel delete confirmation when cancelDeleteConfirm is called', () => {
+      // Arrange
+      component.deleteConfirmPending = true;
+
+      // Act
+      component.cancelDeleteConfirm();
+
+      // Assert
+      expect(component.deleteConfirmPending).toBe(false);
+    });
+
+    it('should execute delete when executeDelete is called', () => {
+      // Arrange
+      mockLibraryApiService.deleteLibraryBook.and.returnValue(of({ success: true }));
+
+      // Act
+      (component as any).executeDelete();
+
+      // Assert
+      expect(mockLibraryApiService.deleteLibraryBook).toHaveBeenCalledWith('test-book.epub');
+    });
+
+    it('should close dialog with deleted true after successful delete', () => {
+      // Arrange
+      mockLibraryApiService.deleteLibraryBook.and.returnValue(of({ success: true }));
+
+      // Act
+      (component as any).executeDelete();
+
+      // Assert
+      expect(mockDialogRef.close).toHaveBeenCalledWith({ deleted: true });
+    });
+
+    it('should set isDeleting to false on delete error', () => {
+      // Arrange
+      mockLibraryApiService.deleteLibraryBook.and.returnValue(throwError(() => new Error('Delete failed')));
+
+      // Act
+      (component as any).executeDelete();
+
+      // Assert
+      expect(component.isDeleting).toBe(false);
+    });
+
+    it('should handle enter key by executing delete when confirmation is pending', () => {
+      // Arrange
+      component.deleteConfirmPending = true;
+      mockLibraryApiService.deleteLibraryBook.and.returnValue(of({ success: true }));
+      const event = new KeyboardEvent('keydown', { key: 'Enter' });
+      spyOn(event, 'preventDefault');
+
+      // Act
+      component.handleEnterKey(event);
+
+      // Assert
+      expect(mockLibraryApiService.deleteLibraryBook).toHaveBeenCalled();
+    });
+
+    it('should handle escape key by canceling delete confirmation', () => {
+      // Arrange
+      component.deleteConfirmPending = true;
+      const event = new KeyboardEvent('keydown', { key: 'Escape' });
+      spyOn(event, 'preventDefault');
+
+      // Act
+      component.handleEscapeKey(event);
+
+      // Assert
+      expect(component.deleteConfirmPending).toBe(false);
+      expect(mockDialogRef.close).not.toHaveBeenCalled();
     });
   });
 });

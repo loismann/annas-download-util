@@ -19,6 +19,7 @@
     <img
       class="cover"
       [src]="book.coverUrl || placeholderUrl"
+      loading="lazy"
       (error)="onCoverError($event)"
       [alt]="book.title + ' cover'"
     />

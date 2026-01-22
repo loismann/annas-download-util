@@ -52,7 +52,8 @@ public class YouTubeDownloadService : IYouTubeDownloadService, IDisposable
             ?? configuration.GetValue<string>("YouTube:DownloadRoot")
             ?? "/volume1/media/YouTube";
 
-        _ytDlpPath = configuration.GetValue<string>("YouTube:YtDlpPath") ?? "yt-dlp";
+        _ytDlpPath = configuration.GetValue<string>("YouTube:YtDlpPath")
+            ?? (File.Exists("/usr/local/bin/yt-dlp") ? "/usr/local/bin/yt-dlp" : "yt-dlp");
 
         Directory.CreateDirectory(_downloadRoot);
 

@@ -27,7 +27,9 @@ public static class LibraryUploadEndpoints
         app.MapPost("/api/library/book/upload", HandleUploadBook)
             .RequireAuthorization()
             .RequireRateLimiting("api")
-            .DisableAntiforgery();
+            .DisableAntiforgery()
+            .WithMetadata(new RequestSizeLimitAttribute(MaxFileSizeBytes))
+            .WithMetadata(new RequestFormLimitsAttribute { MultipartBodyLengthLimit = MaxFileSizeBytes });
 
         // GET /api/library/upload/supported-formats - Get list of supported formats
         app.MapGet("/api/library/upload/supported-formats", HandleGetSupportedFormats)
@@ -52,11 +54,12 @@ public static class LibraryUploadEndpoints
         IDuplicateDetectionService duplicateDetection,
         IMetadataExtractionService metadataExtraction)
     {
-        // Check if user is admin
-        var isAdmin = context.User?.HasClaim("IsAdmin", "true") ?? false;
+        // Check if user is admin (Role claim is set in AuthEndpoints)
+        var isAdmin = context.User?.IsInRole("Admin") ?? false;
         if (!isAdmin)
         {
-            Log.Warning("[LibraryUpload] Non-admin user attempted to upload a book");
+            Log.Warning("[LibraryUpload] Non-admin user {User} attempted to upload a book",
+                context.User?.Identity?.Name ?? "unknown");
             return Results.Forbid();
         }
 

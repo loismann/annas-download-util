@@ -1,0 +1,171 @@
+<div class="youtube-downloader">
+  <h1>YouTube Downloader</h1>
+
+  <!-- URL Input Section -->
+  <mat-card class="input-card">
+    <mat-card-content>
+      <div class="url-input-row">
+        <mat-form-field appearance="outline" class="url-field">
+          <mat-label>YouTube URL</mat-label>
+          <input
+            matInput
+            [(ngModel)]="url"
+            placeholder="https://www.youtube.com/watch?v=..."
+            [disabled]="viewState === 'fetching' || viewState === 'downloading'"
+            (keyup.enter)="fetchVideoInfo()"
+          />
+        </mat-form-field>
+
+        <button
+          mat-raised-button
+          color="primary"
+          (click)="fetchVideoInfo()"
+          [disabled]="!url.trim() || viewState === 'fetching' || viewState === 'downloading'"
+        >
+          <mat-icon>search</mat-icon>
+          Fetch Info
+        </button>
+
+        <button
+          mat-button
+          (click)="resetForm()"
+          *ngIf="viewState !== 'idle'"
+        >
+          <mat-icon>refresh</mat-icon>
+          Reset
+        </button>
+      </div>
+    </mat-card-content>
+  </mat-card>
+
+  <!-- Loading State -->
+  <div class="loading-state" *ngIf="viewState === 'fetching'">
+    <mat-spinner diameter="40"></mat-spinner>
+    <p>Fetching video information...</p>
+  </div>
+
+  <!-- Error State -->
+  <mat-card class="error-card" *ngIf="errorMessage">
+    <mat-card-content>
+      <mat-icon color="warn">error</mat-icon>
+      <span>{{ errorMessage }}</span>
+    </mat-card-content>
+  </mat-card>
+
+  <!-- Video Info & Format Selection -->
+  <mat-card class="video-card" *ngIf="videoInfo && viewState === 'selecting'">
+    <mat-card-content>
+      <div class="video-info">
+        <img
+          *ngIf="videoInfo.thumbnail"
+          [src]="videoInfo.thumbnail"
+          alt="Video thumbnail"
+          class="thumbnail"
+        />
+        <div class="video-details">
+          <h2>{{ videoInfo.title }}</h2>
+          <p class="uploader">{{ videoInfo.uploader }}</p>
+          <p class="duration">Duration: {{ videoInfo.duration }}</p>
+        </div>
+      </div>
+
+      <mat-divider></mat-divider>
+
+      <div class="format-selection">
+        <h3>Select Format</h3>
+
+        <div class="format-groups">
+          <div class="format-group" *ngIf="videoFormats.length > 0">
+            <h4>Video</h4>
+            <mat-form-field appearance="outline" class="format-select">
+              <mat-label>Video Quality</mat-label>
+              <mat-select [(ngModel)]="selectedFormat">
+                <mat-option *ngFor="let format of videoFormats" [value]="format">
+                  {{ format.resolution }} ({{ format.extension }}) - {{ format.fileSize }}
+                </mat-option>
+              </mat-select>
+            </mat-form-field>
+          </div>
+
+          <div class="format-group" *ngIf="audioFormats.length > 0">
+            <h4>Audio Only</h4>
+            <mat-form-field appearance="outline" class="format-select">
+              <mat-label>Audio Quality</mat-label>
+              <mat-select [(ngModel)]="selectedFormat">
+                <mat-option *ngFor="let format of audioFormats" [value]="format">
+                  {{ format.quality }} ({{ format.extension }}) - {{ format.fileSize }}
+                </mat-option>
+              </mat-select>
+            </mat-form-field>
+          </div>
+        </div>
+
+        <button
+          mat-raised-button
+          color="accent"
+          (click)="startDownload()"
+          [disabled]="!selectedFormat"
+          class="download-btn"
+        >
+          <mat-icon>download</mat-icon>
+          Download
+        </button>
+      </div>
+    </mat-card-content>
+  </mat-card>
+
+  <!-- Download Progress -->
+  <mat-card class="progress-card" *ngIf="viewState === 'downloading' && currentJob">
+    <mat-card-content>
+      <h3>Downloading: {{ currentJob.title }}</h3>
+
+      <mat-progress-bar
+        mode="determinate"
+        [value]="currentJob.progressPercent"
+      ></mat-progress-bar>
+
+      <div class="progress-details">
+        <span class="percent">{{ currentJob.progressPercent | number: '1.1-1' }}%</span>
+        <span class="speed" *ngIf="currentJob.currentSpeed">{{ currentJob.currentSpeed }}</span>
+        <span class="eta" *ngIf="currentJob.eta">ETA: {{ currentJob.eta }}</span>
+      </div>
+
+      <button mat-button color="warn" (click)="cancelDownload()">
+        <mat-icon>cancel</mat-icon>
+        Cancel
+      </button>
+    </mat-card-content>
+  </mat-card>
+
+  <!-- Download History -->
+  <mat-card class="history-card" *ngIf="downloadHistory.length > 0">
+    <mat-card-header>
+      <mat-card-title>Recent Downloads</mat-card-title>
+    </mat-card-header>
+    <mat-card-content>
+      <mat-list>
+        <mat-list-item *ngFor="let job of downloadHistory">
+          <mat-icon
+            matListItemIcon
+            [style.color]="getStatusColor(job.status)"
+          >
+            {{ getStatusIcon(job.status) }}
+          </mat-icon>
+          <div matListItemTitle>{{ job.title }}</div>
+          <div matListItemLine>
+            {{ job.status }}
+            <span *ngIf="job.completedAt"> - {{ job.completedAt | date: 'short' }}</span>
+          </div>
+          <button
+            mat-icon-button
+            matListItemMeta
+            (click)="deleteFromHistory(job)"
+            aria-label="Delete"
+          >
+            <mat-icon>delete</mat-icon>
+          </button>
+        </mat-list-item>
+      </mat-list>
+    </mat-card-content>
+  </mat-card>
+</div>

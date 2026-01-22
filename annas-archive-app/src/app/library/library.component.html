@@ -27,20 +27,20 @@
       [filterGenreCount]="filterGenreCount"
       [filterGenreComparison]="filterGenreComparison"
       (resetView)="resetView()"
-      (searchTermChange)="searchTerm = $event"
-      (selectedGenreChange)="selectedGenre = $event"
-      (minPersonalRatingChange)="minPersonalRating = $event"
-      (minGoodreadsRatingChange)="minGoodreadsRating = $event"
+      (searchTermChange)="searchTerm = $event; invalidateFilterCache()"
+      (selectedGenreChange)="selectedGenre = $event; invalidateFilterCache()"
+      (minPersonalRatingChange)="minPersonalRating = $event; invalidateFilterCache()"
+      (minGoodreadsRatingChange)="minGoodreadsRating = $event; invalidateFilterCache()"
       (bulkEditToggle)="toggleBulkEditMode()"
       (openBulkEdit)="openBulkEditDialog()"
       (selectAllVisible)="selectAllVisible()"
       (bulkSend)="bulkSend($event)"
       (adminToggle)="toggleAdmin()"
-      (filterMissingAuthorChange)="filterMissingAuthor = $event"
-      (filterMissingCoverChange)="filterMissingCover = $event"
-      (filterGenreCountEnabledChange)="filterGenreCountEnabled = $event"
-      (filterGenreCountChange)="filterGenreCount = $event"
-      (filterGenreComparisonChange)="filterGenreComparison = $event"
+      (filterMissingAuthorChange)="filterMissingAuthor = $event; invalidateFilterCache()"
+      (filterMissingCoverChange)="filterMissingCover = $event; invalidateFilterCache()"
+      (filterGenreCountEnabledChange)="filterGenreCountEnabled = $event; invalidateFilterCache()"
+      (filterGenreCountChange)="filterGenreCount = $event; invalidateFilterCache()"
+      (filterGenreComparisonChange)="filterGenreComparison = $event; invalidateFilterCache()"
       (wipeGenres)="wipeAllGenres()"
       (uploadBooks)="openUploadDialog()"
       ></app-library-sidebar>
@@ -127,6 +127,12 @@
 
       <div *ngIf="loading" class="library-loading">
         <mat-spinner diameter="36"></mat-spinner>
+      </div>
+
+      <!-- Sorting indicator - shown while books exist but sort is in progress -->
+      <div *ngIf="sorting && !loading && displayBooks.length > 0" class="library-sorting-indicator">
+        <mat-spinner diameter="20"></mat-spinner>
+        <span>Sorting...</span>
       </div>
 
       <div *ngIf="error" class="library-error">{{ error }}</div>

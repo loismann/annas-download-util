@@ -20,6 +20,12 @@ builder.ValidateRequiredConfiguration();
 builder.Services.AddApplicationServices(builder.Configuration);
 builder.Services.AddHealthCheckServices(builder.Configuration);
 
+// ─── Configure Kestrel for large file uploads ────────────────────────────
+builder.WebHost.ConfigureKestrel(options =>
+{
+    options.Limits.MaxRequestBodySize = 500 * 1024 * 1024; // 500MB
+});
+
 var app = builder.Build();
 
 // ─── Development tools ───────────────────────────────────────────────────
@@ -34,7 +40,7 @@ app.UseCorrelationId();
 app.UseGlobalExceptionHandler();
 app.UseAppCors();
 app.UseSecurityHeaders();
-app.UseRequestBodySizeLimit();
+app.UseRequestBodySizeLimit(maxBodySize: 500 * 1024 * 1024); // 500MB to match upload endpoint
 app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
@@ -50,6 +56,7 @@ app.MapBookSearchEndpoints();
 app.MapLibGenEndpoints();
 app.MapGamingEndpoints();
 app.MapMediaEndpoints();
+app.MapYouTubeDownloadEndpoints();
 app.MapQuizEndpoints();
 app.MapVocabEndpoints();
 app.MapDropboxReaderEndpoints();

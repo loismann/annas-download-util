@@ -95,6 +95,10 @@ import { switchMap, filter } from 'rxjs/operators';
           <mat-icon>quiz</mat-icon>
           <span>Lucy Quiz</span>
         </button>
+        <button *ngIf="authService.isAdmin()" mat-menu-item routerLink="/youtube">
+          <mat-icon>video_library</mat-icon>
+          <span>YouTube Downloader</span>
+        </button>
       </mat-menu>
 
           <span style="flex: 1"></span>

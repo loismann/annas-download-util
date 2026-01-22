@@ -283,6 +283,9 @@ public static class ServiceConfiguration
         services.AddSingleton<IQuizValidationService, QuizValidationService>();
         services.AddSingleton<IQuizStorageService, QuizStorageService>();
 
+        // YouTube download service
+        services.AddSingleton<IYouTubeDownloadService, YouTubeDownloadService>();
+
         // Text processing
         services.AddSingleton<ITextProcessingService, TextProcessingService>();
 

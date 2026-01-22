@@ -418,6 +418,20 @@
   color: #666;
 }
 
+.library-sorting-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: rgba(63, 81, 181, 0.1);
+  border-radius: 4px;
+  margin: 8px auto;
+  width: fit-content;
+  color: #3f51b5;
+  font-size: 14px;
+}
+
 /* Legacy grid styles - kept for fallback but overridden by row styles */
 .library-grid {
   display: flex;

@@ -1,0 +1,265 @@
+.youtube-downloader {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 24px;
+
+  h1 {
+    margin-bottom: 24px;
+    color: #333;
+  }
+}
+
+.input-card {
+  margin-bottom: 16px;
+
+  .url-input-row {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+
+    .url-field {
+      flex: 1;
+    }
+
+    button {
+      margin-top: 4px;
+    }
+  }
+}
+
+.loading-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 40px;
+  gap: 16px;
+
+  p {
+    color: #666;
+  }
+}
+
+.error-card {
+  margin-bottom: 16px;
+  background-color: #fff3f3;
+
+  mat-card-content {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    color: #d32f2f;
+  }
+}
+
+.video-card {
+  margin-bottom: 16px;
+
+  .video-info {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 16px;
+
+    .thumbnail {
+      width: 200px;
+      height: auto;
+      border-radius: 8px;
+      object-fit: cover;
+    }
+
+    .video-details {
+      flex: 1;
+
+      h2 {
+        margin: 0 0 8px 0;
+        font-size: 1.25rem;
+        line-height: 1.4;
+      }
+
+      .uploader {
+        color: #666;
+        margin: 0 0 4px 0;
+      }
+
+      .duration {
+        color: #888;
+        margin: 0;
+        font-size: 0.9rem;
+      }
+    }
+  }
+
+  mat-divider {
+    margin: 16px 0;
+  }
+
+  .format-selection {
+    h3 {
+      margin: 0 0 16px 0;
+    }
+
+    .format-groups {
+      display: flex;
+      gap: 24px;
+      margin-bottom: 16px;
+
+      .format-group {
+        flex: 1;
+
+        h4 {
+          margin: 0 0 8px 0;
+          color: #666;
+          font-size: 0.9rem;
+        }
+
+        .format-select {
+          width: 100%;
+        }
+      }
+    }
+
+    .download-btn {
+      width: 100%;
+      padding: 12px;
+      font-size: 1rem;
+    }
+  }
+}
+
+.progress-card {
+  margin-bottom: 16px;
+
+  h3 {
+    margin: 0 0 16px 0;
+    font-size: 1rem;
+  }
+
+  mat-progress-bar {
+    margin-bottom: 12px;
+  }
+
+  .progress-details {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 12px;
+    font-size: 0.9rem;
+
+    .percent {
+      font-weight: 500;
+    }
+
+    .speed,
+    .eta {
+      color: #666;
+    }
+  }
+}
+
+.history-card {
+  mat-card-title {
+    font-size: 1rem;
+  }
+
+  mat-list-item {
+    .mat-mdc-list-item-title {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+  }
+}
+
+// Dark mode support
+@media (prefers-color-scheme: dark) {
+  .youtube-downloader {
+    h1 {
+      color: #e0e0e0;
+    }
+  }
+
+  .error-card {
+    background-color: #3d2525;
+
+    mat-card-content {
+      color: #ef9a9a;
+    }
+  }
+
+  .video-card {
+    .video-info {
+      .video-details {
+        .uploader {
+          color: #aaa;
+        }
+
+        .duration {
+          color: #888;
+        }
+      }
+    }
+
+    .format-selection {
+      .format-groups {
+        .format-group {
+          h4 {
+            color: #aaa;
+          }
+        }
+      }
+    }
+  }
+
+  .progress-card {
+    .progress-details {
+      .speed,
+      .eta {
+        color: #aaa;
+      }
+    }
+  }
+
+  .loading-state {
+    p {
+      color: #aaa;
+    }
+  }
+}
+
+// Mobile responsiveness
+@media (max-width: 600px) {
+  .youtube-downloader {
+    padding: 16px;
+  }
+
+  .input-card {
+    .url-input-row {
+      flex-direction: column;
+
+      .url-field {
+        width: 100%;
+      }
+
+      button {
+        width: 100%;
+        margin-top: 0;
+      }
+    }
+  }
+
+  .video-card {
+    .video-info {
+      flex-direction: column;
+
+      .thumbnail {
+        width: 100%;
+        max-width: 300px;
+      }
+    }
+
+    .format-selection {
+      .format-groups {
+        flex-direction: column;
+        gap: 16px;
+      }
+    }
+  }
+}

@@ -9,39 +9,54 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Diagnostics;
 using HtmlAgilityPack;
 using AnnasArchive.Core.Models;
+using AnnasArchive.Core.Telemetry;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace AnnasArchive.Core.Services;
 
 public class AnnaArchiveService
 {
     private readonly HttpClient _http;
+    private readonly IMemoryCache _cache;
+    private readonly Func<string, Task<string>>? _playwrightFetcher;
     public HttpClient HttpClient => _http;               // expose for streaming
 
-    public AnnaArchiveService(HttpClient http) => _http = http;
+    // Short TTL — this is purely to avoid re-scraping (several seconds
+    // through Playwright/Cloudflare) for an identical repeated search
+    // moments later, e.g. re-opening a search, adjusting a client-side
+    // filter that doesn't change the query, or a stray double-submit. Not
+    // meant to serve stale results for long.
+    private static readonly TimeSpan SearchCacheDuration = TimeSpan.FromMinutes(5);
 
-    private static readonly string[] BaseDomains =
+    public AnnaArchiveService(HttpClient http, IMemoryCache cache, Func<string, Task<string>>? playwrightFetcher = null)
     {
-        "https://annas-archive.org",
-        "https://annas-archive.li",
-        "https://annas-archive.se",
-        "https://annas-archive.pm",
-        "https://annas-archive.in"
+        _http = http;
+        _cache = cache;
+        _playwrightFetcher = playwrightFetcher;
+    }
+
+    // Public so callers like the /api/anna/mirror-health endpoint check the
+    // exact same domains this service actually uses, instead of maintaining
+    // a second hardcoded copy that drifts out of sync.
+    public static readonly string[] BaseDomains =
+    {
+        "https://annas-archive.gl",
+        "https://annas-archive.pk",
+        "https://annas-archive.gd"
     };
 
-    private const int MaxDetailFetches = 5;
-    private static readonly TimeSpan DetailCacheTtl = TimeSpan.FromHours(12);
-    private static readonly Dictionary<string, (DateTime fetchedAt, string? isbn, string? cover)> DetailCache = new();
-    private static readonly object DetailCacheLock = new();
-
-    private static readonly Regex IsbnRx =
-        new(@"ISBN(?:-1[03])?:?\s*([0-9Xx\-]{10,17})", RegexOptions.IgnoreCase);
-
-    private static readonly Regex ImgRx =
-        new(@"https://[^""']+/covers[0-9]*/[^""']+\.jpg", RegexOptions.IgnoreCase);
-
-    public async Task<IEnumerable<BookDto>> SearchAsync(string query, int limit = 50, bool exact = false)
+    /// <summary>
+    /// <paramref name="startPage"/> lets a caller resume scraping from a
+    /// specific Anna's Archive results page instead of always starting at
+    /// page 1 — used to split a search into a fast first batch (page 1,
+    /// returned to the caller immediately) followed by a background
+    /// continuation request (startPage: 2) for the rest, instead of
+    /// blocking one HTTP response on fetching everything up front.
+    /// </summary>
+    public async Task<IEnumerable<BookDto>> SearchAsync(string query, int limit = 50, bool exact = false, int startPage = 1)
     {
         if (limit <= 0)
             return Enumerable.Empty<BookDto>();
@@ -50,8 +65,12 @@ public class AnnaArchiveService
         if (string.IsNullOrWhiteSpace(trimmedQuery))
             return Enumerable.Empty<BookDto>();
 
+        var cacheKey = $"annasearch_{trimmedQuery.ToLowerInvariant()}_{limit}_{exact}_{startPage}";
+        if (_cache.TryGetValue(cacheKey, out List<BookDto>? cached))
+            return cached!;
+
         var collected = new List<HtmlNode>();   // parent containers for each book
-        var page = 1;
+        var page = Math.Max(1, startPage);
         var advancedQuery = BuildSearchQuery(trimmedQuery, exact);
         var effectiveQuery = advancedQuery;
         var fallbackAttempted = false;
@@ -74,6 +93,34 @@ public class AnnaArchiveService
 
             if (bookContainers.Count == 0)
             {
+                // Diagnostic: distinguishes "genuinely no results" from "the page
+                // structure/selectors no longer match" — a Cloudflare challenge
+                // page and a changed Anna's Archive layout both land here silently
+                // otherwise, and look identical to a real empty result from the
+                // caller's perspective.
+                var looksLikeChallenge = html.Contains("challenge-running", StringComparison.OrdinalIgnoreCase)
+                    || html.Contains("cf-spinner", StringComparison.OrdinalIgnoreCase)
+                    || html.Contains("Checking your browser", StringComparison.OrdinalIgnoreCase);
+                Console.WriteLine(
+                    $"[AnnaArchiveService] 0 book containers found for query='{effectiveQuery}' page={page - 1} " +
+                    $"htmlLength={html.Length} looksLikeCloudflareChallenge={looksLikeChallenge}");
+
+                // Dump the raw HTML so it can be inspected directly — this is a
+                // temporary diagnostic for tracking down selector drift, safe to
+                // remove once parsing is confirmed fixed against the real page.
+                try
+                {
+                    var debugDir = Path.Combine(AppContext.BaseDirectory, "logs");
+                    Directory.CreateDirectory(debugDir);
+                    var debugPath = Path.Combine(debugDir, $"debug-search-empty-{DateTime.UtcNow:yyyyMMdd-HHmmss}.html");
+                    File.WriteAllText(debugPath, html);
+                    Console.WriteLine($"[AnnaArchiveService] Dumped raw HTML to {debugPath}");
+                }
+                catch (Exception dumpEx)
+                {
+                    Console.WriteLine($"[AnnaArchiveService] Failed to dump debug HTML: {dumpEx.Message}");
+                }
+
                 if (!fallbackAttempted && !string.Equals(effectiveQuery, trimmedQuery, StringComparison.Ordinal) && page == 2)
                 {
                     // Fallback to basic query if advanced syntax yields no results.
@@ -90,9 +137,19 @@ public class AnnaArchiveService
         /* 2️⃣  trim to the requested limit */
         collected = collected.Take(limit).ToList();
 
-        /* 3️⃣  build DTOs in parallel */
-        var sem   = new SemaphoreSlim(6);
-        var tasks = collected.Select(async (container, index) =>
+        /* 3️⃣  build DTOs — no per-book network calls here anymore. This used
+         * to fetch each book's full detail page (ISBN + cover) synchronously
+         * for the first 5 results, which for Anna's Archive results routes
+         * through the Playwright/Cloudflare-bypass browser and could add
+         * several seconds per book, blocking the entire search response.
+         * The frontend already has its own lazy, staggered cover-lookup
+         * fallback (queueCoverLookups/lookupCoverForBook in
+         * book-search.component.ts) that kicks in per-book after results
+         * render, so there's no need to block search on this at all — we
+         * just grab whatever thumbnail is already sitting in the search
+         * listing HTML for free (zero extra requests) and let the frontend
+         * fill in the rest lazily. */
+        var results = collected.Select((container, index) =>
         {
             try
             {
@@ -105,31 +162,12 @@ public class AnnaArchiveService
 
                 var dto = BuildDtoFromAnchor(container, md5);
 
-                if (index < MaxDetailFetches)
+                // Free thumbnail, if the listing page includes one — no extra
+                // request needed, it's already part of the HTML we fetched.
+                var thumbSrc = coverLink.SelectSingleNode(".//img")?.GetAttributeValue("src", null);
+                if (!string.IsNullOrWhiteSpace(thumbSrc))
                 {
-                    await sem.WaitAsync();
-                    try
-                    {
-                        var (isbn, cover) = await GetIsbnAndCoverAsync(md5);
-                        dto.Isbn = isbn;
-
-                        // Prioritize Open Library covers - they typically have proper 2:3 aspect ratio
-                        // Standard ebook cover size is 1600×2560px (2:3 ratio)
-                        if (!string.IsNullOrEmpty(isbn))
-                        {
-                            // Insert Open Library cover at the front - most likely to have correct dimensions
-                            dto.CoverCandidates.Insert(0,
-                                $"https://covers.openlibrary.org/b/isbn/{isbn}-L.jpg?default=false");
-                        }
-
-                        if (!string.IsNullOrEmpty(cover))
-                        {
-                            // Anna's Archive detail page cover as second priority
-                            var insertPosition = string.IsNullOrEmpty(isbn) ? 0 : 1;
-                            dto.CoverCandidates.Insert(insertPosition, cover);
-                        }
-                    }
-                    finally { sem.Release(); }
+                    dto.CoverCandidates.Add(thumbSrc);
                 }
 
                 var deduped = dto.CoverCandidates
@@ -143,14 +181,36 @@ public class AnnaArchiveService
 
                 return dto;
             }
-            catch
+            catch (Exception ex)
             {
+                Console.WriteLine($"[AnnaArchiveService] Failed to build DTO for container index={index}: {ex}");
                 return null;
             }
         });
 
-        var results = await Task.WhenAll(tasks);
-        return results.Where(r => r != null)!;
+        var finalResults = results.Where(r => r != null).ToList()!;
+        _cache.Set(cacheKey, finalResults, SearchCacheDuration);
+        return finalResults;
+    }
+
+    /// <summary>
+    /// Cover lookup for books with only a title/author (no MD5) — e.g. the AI
+    /// Related Books flow, which deals in GPT-suggested titles that don't
+    /// exist as an Anna's Archive result yet. Reuses the free thumbnail
+    /// already embedded in search listing HTML (populated in SearchAsync
+    /// above) instead of Google Books (quota exhausted) or OpenLibrary's
+    /// search API (down) — no new external dependency, and no per-book
+    /// detail-page fetch, just whatever's already sitting in one small
+    /// search response.
+    /// </summary>
+    public async Task<string?> GetCoverByTitleAuthorAsync(string title, string? author = null)
+    {
+        if (string.IsNullOrWhiteSpace(title))
+            return null;
+
+        var query = string.IsNullOrWhiteSpace(author) ? title : $"{title} {author}";
+        var results = await SearchAsync(query, limit: 5, exact: false);
+        return results.FirstOrDefault(r => r.CoverCandidates.Count > 0)?.CoverCandidates.FirstOrDefault();
     }
 
     private static string BuildSearchQuery(string query, bool exact)
@@ -163,62 +223,6 @@ public class AnnaArchiveService
             return $"\"{trimmed}\"";
 
         return trimmed;
-    }
-
-    private async Task<(string? isbn, string? cover)> GetIsbnAndCoverAsync(string md5)
-    {
-        if (TryGetCachedDetails(md5, out var cached))
-            return cached;
-
-        var html = await GetStringWithFallbackAsync($"/md5/{md5}");
-
-        string? isbn = null;
-        var m = IsbnRx.Match(html);
-        if (m.Success)
-            isbn = m.Groups[1].Value.Replace("-", "");
-
-        string? cover = null;
-        var doc = new HtmlDocument();
-        doc.LoadHtml(html);
-        cover = doc.DocumentNode
-                   .SelectSingleNode("//img[contains(@class,'cover') or @itemprop='image']")
-                   ?.GetAttributeValue("src", null);
-
-        if (string.IsNullOrEmpty(cover))
-        {
-            var cm = ImgRx.Match(html);
-            if (cm.Success) cover = cm.Value;
-        }
-
-        SetCachedDetails(md5, isbn, cover);
-        return (isbn, cover);
-    }
-
-    private static bool TryGetCachedDetails(string md5, out (string? isbn, string? cover) cached)
-    {
-        lock (DetailCacheLock)
-        {
-            if (DetailCache.TryGetValue(md5, out var entry))
-            {
-                if (DateTime.UtcNow - entry.fetchedAt <= DetailCacheTtl)
-                {
-                    cached = (entry.isbn, entry.cover);
-                    return true;
-                }
-                DetailCache.Remove(md5);
-            }
-        }
-
-        cached = (null, null);
-        return false;
-    }
-
-    private static void SetCachedDetails(string md5, string? isbn, string? cover)
-    {
-        lock (DetailCacheLock)
-        {
-            DetailCache[md5] = (DateTime.UtcNow, isbn, cover);
-        }
     }
 
     private static BookDto BuildDtoFromAnchor(HtmlNode container, string md5)
@@ -334,8 +338,6 @@ public class AnnaArchiveService
             }
         }
 
-        var fanOut = $"{md5[..2]}/{md5.Substring(2, 2)}/{md5.Substring(4, 2)}/{md5}.jpg";
-
         var dto = new BookDto(
             title,
             md5,
@@ -351,16 +353,83 @@ public class AnnaArchiveService
             null
         );
 
-        dto.CoverCandidates.AddRange(new[]
-        {
-            $"https://covers.zlibcdn2.com/covers/{fanOut}",
-            $"https://covers.zlibcdn.com/covers/{md5}.jpg",
-            $"{BaseDomains[0]}/covers/{md5}.jpg",
-            $"{BaseDomains[1]}/covers/{md5}.jpg",
-            $"{BaseDomains[2]}/covers/{md5}.jpg"
-        });
+        // No speculative guessed cover URLs here anymore — they were unverified
+        // (zlibcdn/zlibcdn2 domains, arbitrary {domain}/covers/{md5}.jpg
+        // patterns against the search domains) and confirmed dead via browser
+        // testing (ERR_SSL_PROTOCOL_ERROR). Leaving CoverCandidates empty when
+        // there's no free listing-page thumbnail lets the frontend's
+        // needsExternalCoverLookup() correctly detect "needs a cover" and
+        // immediately use the reliable MD5→ISBN→OpenLibrary-CDN lookup
+        // (GetCoverByMd5Async) instead of wasting a cascade of failed
+        // image loads on dead guesses first.
 
         return dto;
+    }
+
+    private static readonly Regex IsbnRx =
+        new(@"ISBN(?:-1[03])?:?\s*([0-9Xx\-]{10,17})", RegexOptions.IgnoreCase);
+
+    private const int IsbnCoverCacheLimit = 2000;
+    private static readonly Dictionary<string, (DateTime fetchedAt, string? coverUrl)> IsbnCoverCache = new();
+    private static readonly object IsbnCoverCacheLock = new();
+    private static readonly TimeSpan IsbnCoverCacheTtl = TimeSpan.FromHours(12);
+
+    /// <summary>
+    /// Looks up a book's cover via its ISBN, extracted from Anna's Archive's
+    /// detail page, resolved against OpenLibrary's cover CDN (which is a
+    /// separate, independently-reliable service from OpenLibrary's search
+    /// API — the latter can be down without affecting this). Deliberately
+    /// NOT called from SearchAsync (that's what made search slow before) —
+    /// this is meant to be called lazily, per-book, on demand from the
+    /// frontend after search results have already rendered.
+    /// </summary>
+    public async Task<string?> GetCoverByMd5Async(string md5)
+    {
+        if (string.IsNullOrWhiteSpace(md5))
+            return null;
+
+        var key = md5.ToLowerInvariant();
+        lock (IsbnCoverCacheLock)
+        {
+            if (IsbnCoverCache.TryGetValue(key, out var cached) &&
+                DateTime.UtcNow - cached.fetchedAt <= IsbnCoverCacheTtl)
+            {
+                return cached.coverUrl;
+            }
+        }
+
+        string? coverUrl = null;
+        try
+        {
+            var html = await GetStringWithFallbackAsync($"/md5/{key}");
+            var match = IsbnRx.Match(html);
+            if (match.Success)
+            {
+                var isbn = match.Groups[1].Value.Replace("-", "");
+                coverUrl = $"https://covers.openlibrary.org/b/isbn/{isbn}-L.jpg?default=false";
+                Console.WriteLine($"[AnnaArchiveService] GetCoverByMd5Async md5={key} found ISBN={isbn} coverUrl={coverUrl}");
+            }
+            else
+            {
+                Console.WriteLine($"[AnnaArchiveService] GetCoverByMd5Async md5={key} no ISBN found on detail page (htmlLength={html.Length})");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[AnnaArchiveService] GetCoverByMd5Async md5={key} failed: {ex.GetType().Name}: {ex.Message}");
+        }
+
+        lock (IsbnCoverCacheLock)
+        {
+            // Simple unbounded-growth guard — this is a lazy best-effort cache,
+            // not something that needs LRU precision.
+            if (IsbnCoverCache.Count >= IsbnCoverCacheLimit)
+                IsbnCoverCache.Clear();
+
+            IsbnCoverCache[key] = (DateTime.UtcNow, coverUrl);
+        }
+
+        return coverUrl;
     }
 
     public async Task<List<string>> GetDownloadLinksAsync(string md5)
@@ -529,15 +598,47 @@ public class AnnaArchiveService
 
     private static bool IsAnnaArchiveHost(string host)
     {
-        return host.EndsWith("annas-archive.org", StringComparison.OrdinalIgnoreCase)
-            || host.EndsWith("annas-archive.li", StringComparison.OrdinalIgnoreCase)
-            || host.EndsWith("annas-archive.se", StringComparison.OrdinalIgnoreCase)
-            || host.EndsWith("annas-archive.pm", StringComparison.OrdinalIgnoreCase)
-            || host.EndsWith("annas-archive.in", StringComparison.OrdinalIgnoreCase);
+        return BaseDomains.Any(domain =>
+            host.EndsWith(new Uri(domain).Host, StringComparison.OrdinalIgnoreCase));
     }
 
     private async Task<string> GetStringWithFallbackAsync(string pathAndQuery)
     {
+        // Use Playwright fetcher if available (bypasses Cloudflare)
+        if (_playwrightFetcher != null)
+        {
+            var fallbackSw = Stopwatch.StartNew();
+            // Try each domain with Playwright — sequential by necessity today
+            // (no racing), so each failed/slow domain pays its full latency
+            // before the next is even attempted. This loop's total duration
+            // is exactly that cost.
+            foreach (var domain in BaseDomains)
+            {
+                var domainSw = Stopwatch.StartNew();
+                try
+                {
+                    var url = $"{domain}{pathAndQuery}";
+                    var html = await _playwrightFetcher(url);
+                    if (!string.IsNullOrEmpty(html) && !html.Contains("challenge-running"))
+                    {
+                        Console.WriteLine($"[AnnasArchive] Playwright successfully fetched from {domain}");
+                        PerfLog.Record("AnnasArchive.DomainFetch", domainSw.Elapsed.TotalMilliseconds, true, ("Domain", domain));
+                        PerfLog.Record("AnnasArchive.DomainFallback", fallbackSw.Elapsed.TotalMilliseconds, true, ("WinningDomain", domain));
+                        return html;
+                    }
+                    PerfLog.Record("AnnasArchive.DomainFetch", domainSw.Elapsed.TotalMilliseconds, false, ("Domain", domain), ("Reason", "empty or challenge page"));
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[AnnasArchive] Playwright failed for {domain}: {ex.Message}");
+                    PerfLog.Record("AnnasArchive.DomainFetch", domainSw.Elapsed.TotalMilliseconds, false, ("Domain", domain), ("Error", ex.Message));
+                }
+            }
+            // Fall through to HttpClient if Playwright fails for all domains
+            Console.WriteLine("[AnnasArchive] Playwright failed for all domains, falling back to HttpClient");
+            PerfLog.Record("AnnasArchive.DomainFallback", fallbackSw.Elapsed.TotalMilliseconds, false, ("Reason", "all domains failed via Playwright"));
+        }
+
         using var resp = await GetWithFallbackAsync(pathAndQuery);
         return await resp.Content.ReadAsStringAsync();
     }
@@ -559,11 +660,13 @@ public class AnnaArchiveService
     {
         HttpResponseMessage? lastResponse = null;
         Exception? lastException = null;
+        var fallbackSw = Stopwatch.StartNew();
 
         for (var i = 0; i < BaseDomains.Length; i++)
         {
             var domain = BaseDomains[i];
             var uri = new Uri($"{domain}{pathAndQuery}");
+            var domainSw = Stopwatch.StartNew();
             try
             {
                 var resp = await _http.GetAsync(uri);
@@ -574,20 +677,26 @@ public class AnnaArchiveService
                         // Log successful fallback
                         Console.WriteLine($"[AnnasArchive] Successfully connected via fallback domain: {domain}");
                     }
+                    PerfLog.Record("AnnasArchive.DomainFetch", domainSw.Elapsed.TotalMilliseconds, true, ("Domain", domain), ("Via", "HttpClient"));
+                    PerfLog.Record("AnnasArchive.DomainFallback", fallbackSw.Elapsed.TotalMilliseconds, true, ("WinningDomain", domain), ("Via", "HttpClient"));
                     return resp;
                 }
 
                 lastResponse?.Dispose();
                 lastResponse = resp;
+                PerfLog.Record("AnnasArchive.DomainFetch", domainSw.Elapsed.TotalMilliseconds, false, ("Domain", domain), ("Via", "HttpClient"), ("StatusCode", (int)resp.StatusCode));
                 Console.WriteLine($"[AnnasArchive] Domain {domain} returned {(int)resp.StatusCode}, trying next...");
             }
             catch (Exception ex)
             {
                 lastException = ex;
+                PerfLog.Record("AnnasArchive.DomainFetch", domainSw.Elapsed.TotalMilliseconds, false, ("Domain", domain), ("Via", "HttpClient"), ("Error", ex.Message));
                 Console.WriteLine($"[AnnasArchive] Domain {domain} failed: {ex.Message}, trying next...");
                 // continue to next domain
             }
         }
+
+        PerfLog.Record("AnnasArchive.DomainFallback", fallbackSw.Elapsed.TotalMilliseconds, false, ("Via", "HttpClient"), ("Reason", "all domains failed"));
 
         if (lastResponse != null)
         {

@@ -140,4 +140,32 @@ button {
   border-radius: 16px !important;
 }
 
+/* Video Player Dialog - fullscreen-like dark backdrop */
+.video-player-dialog-panel {
+  overflow: hidden !important;
+}
+
+.video-player-dialog-panel .mat-mdc-dialog-container {
+  padding: 0 !important;
+  background: transparent !important;
+}
+
+.video-player-dialog-panel .mdc-dialog__surface {
+  border-radius: 8px !important;
+  background: #0f0f0f !important;
+}
+
+.cdk-overlay-dark-backdrop {
+  background: rgba(0, 0, 0, 0.85) !important;
+}
+
+/* Video Edit Dialog */
+.video-edit-dialog-panel {
+  overflow: hidden !important;
+}
+
+.video-edit-dialog-panel .mat-mdc-dialog-container {
+  overflow: hidden !important;
+}
+
 /* …any other global styles… */

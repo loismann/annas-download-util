@@ -6,6 +6,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatTooltipModule } from '@angular/material/tooltip';
 
 import { BookDto } from '../../models/book-dto.model';
+import { AUTO_DESCRIPTION_FETCH_LIMIT } from '../../constants/limits';
 
 export interface SendToLibraryEvent {
   book: BookDto;
@@ -43,6 +44,16 @@ export interface CoverErrorEvent {
   styleUrls: ['./search-results.component.css']
 })
 export class SearchResultsComponent {
+  // Exposed for the template — the manual "Retrieve Summary" button should
+  // only appear for books past whatever range book-search.component.ts's
+  // fetchBookDescriptions() already auto-fetches. Was hardcoded as a
+  // literal `10` in the template, which silently went stale when
+  // AUTO_DESCRIPTION_FETCH_LIMIT was turned down to 0 (auto-fetch disabled
+  // entirely) — every book was then in the auto-fetch limit's "index < 10"
+  // dead zone with no description and no way to request one. Binding to
+  // the real constant keeps these two in sync going forward.
+  readonly autoDescriptionFetchLimit = AUTO_DESCRIPTION_FETCH_LIMIT;
+
   @Input() books: BookDto[] = [];
   @Input() loading = false;
   @Input() searchPerformed = false;

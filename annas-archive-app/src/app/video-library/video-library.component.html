@@ -1,0 +1,147 @@
+<div class="video-library-wrapper">
+  <!-- Mobile sidebar collapse toggle button -->
+  <button class="mobile-sidebar-toggle"
+          mat-icon-button
+          (click)="toggleSidebar()"
+          [attr.aria-label]="sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'">
+    <mat-icon>{{ sidebarCollapsed ? 'filter_list' : 'close' }}</mat-icon>
+  </button>
+
+  <div class="video-library-layout">
+    <div class="sidebar-container" [class.collapsed]="sidebarCollapsed">
+      <app-video-sidebar
+        [genres]="genres"
+        [searchTerm]="searchTerm"
+        [selectedGenre]="selectedGenre"
+        [minPersonalRating]="minPersonalRating"
+        [totalVideos]="filteredVideos.length"
+        [bulkEditMode]="bulkEditMode"
+        [selectedVideosCount]="selectedVideosForBulk.size"
+        [visibleVideosCount]="filteredVideos.length"
+        [isAdmin]="authService.isAdmin()"
+        [viewMode]="viewMode"
+        (resetView)="resetView()"
+        (searchTermChange)="searchTerm = $event; invalidateFilterCache()"
+        (selectedGenreChange)="selectedGenre = $event; invalidateFilterCache()"
+        (minPersonalRatingChange)="minPersonalRating = $event; invalidateFilterCache()"
+        (bulkEditToggle)="toggleBulkEditMode()"
+        (selectAllVisible)="selectAllVisible()"
+        (viewModeChange)="setViewMode($event)"
+      ></app-video-sidebar>
+    </div>
+
+    <!-- Library View -->
+    <section class="video-library-panel" *ngIf="viewMode === 'library'">
+      <div class="video-library-controls">
+        <div class="tile-size-controls">
+          <button
+            mat-icon-button
+            type="button"
+            class="tile-size-btn"
+            [class.active]="tileSize === 'small'"
+            (click)="setTileSize('small')"
+            aria-label="Small tiles"
+          >
+            <mat-icon>view_comfy</mat-icon>
+          </button>
+          <button
+            mat-icon-button
+            type="button"
+            class="tile-size-btn"
+            [class.active]="tileSize === 'medium'"
+            (click)="setTileSize('medium')"
+            aria-label="Medium tiles"
+          >
+            <mat-icon>view_module</mat-icon>
+          </button>
+          <button
+            mat-icon-button
+            type="button"
+            class="tile-size-btn"
+            [class.active]="tileSize === 'large'"
+            (click)="setTileSize('large')"
+            aria-label="Large tiles"
+          >
+            <mat-icon>view_agenda</mat-icon>
+          </button>
+          <button
+            mat-icon-button
+            type="button"
+            class="bookmark-filter-btn"
+            [class.active]="filterBookmarked"
+            (click)="toggleBookmarkFilter()"
+            aria-label="Filter bookmarked videos"
+          >
+            <mat-icon>{{ filterBookmarked ? 'bookmark' : 'bookmark_border' }}</mat-icon>
+          </button>
+        </div>
+        <div class="sort-combo">
+          <mat-form-field appearance="outline" class="sort-field">
+            <mat-label>Sort by</mat-label>
+            <mat-select [(ngModel)]="sortOrder" (selectionChange)="onSortChange()">
+              <mat-option value="title">Title</mat-option>
+              <mat-option value="channel">Channel</mat-option>
+              <mat-option value="duration">Duration</mat-option>
+              <mat-option value="rating">Rating</mat-option>
+              <mat-option value="date">Most recent</mat-option>
+            </mat-select>
+          </mat-form-field>
+          <button
+            mat-icon-button
+            type="button"
+            class="sort-direction-toggle"
+            (click)="toggleSortDirection()"
+            aria-label="Toggle sort direction"
+          >
+            <mat-icon>{{ sortDirection === 'down' ? 'arrow_downward' : 'arrow_upward' }}</mat-icon>
+          </button>
+        </div>
+      </div>
+
+      <div *ngIf="loading" class="video-library-loading">
+        <mat-spinner diameter="36"></mat-spinner>
+      </div>
+
+      <div *ngIf="sorting && !loading && displayVideos.length > 0" class="video-library-sorting-indicator">
+        <mat-spinner diameter="20"></mat-spinner>
+        <span>Sorting...</span>
+      </div>
+
+      <div *ngIf="error" class="video-library-error">{{ error }}</div>
+
+      <cdk-virtual-scroll-viewport
+        *ngIf="!loading && !error"
+        [itemSize]="rowHeight"
+        class="video-library-grid-scroll"
+      >
+        <div
+          *cdkVirtualFor="let row of videoRows; trackBy: trackByRow"
+          class="video-library-row"
+          [class.video-library-row-small]="tileSize === 'small'"
+          [class.video-library-row-medium]="tileSize === 'medium'"
+          [class.video-library-row-large]="tileSize === 'large'"
+        >
+          <app-video-card
+            *ngFor="let video of row; trackBy: trackByFileName"
+            [video]="video"
+            [tileSize]="tileSize"
+            [bulkEditMode]="bulkEditMode"
+            [isSelected]="selectedVideosForBulk.has(video.fileName)"
+            [placeholderUrl]="placeholderUrl"
+            (thumbnailClick)="onThumbnailClick($event)"
+            (ratingChange)="onRatingChange($event)"
+            (bookmarkToggle)="onBookmarkToggle($event)"
+            (editClick)="onEditClick($event)"
+            (playClick)="onPlayClick($event)"
+            (selectionToggle)="toggleVideoSelection($event)"
+          ></app-video-card>
+        </div>
+      </cdk-virtual-scroll-viewport>
+    </section>
+
+    <!-- Download View -->
+    <section class="video-download-panel" *ngIf="viewMode === 'download'">
+      <app-youtube-downloader></app-youtube-downloader>
+    </section>
+  </div>
+</div>

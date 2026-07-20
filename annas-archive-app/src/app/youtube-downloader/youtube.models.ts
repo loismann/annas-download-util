@@ -31,6 +31,7 @@ export interface DownloadJob {
   eta?: string;
   outputPath?: string;
   error?: string;
+  statusMessage?: string;
   startedAt: string;
   completedAt?: string;
 }

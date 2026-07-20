@@ -18,6 +18,7 @@ describe('LibraryComponent', () => {
     mockLibraryApiService = jasmine.createSpyObj('LibraryApiService', [
       'getLibraryBooks',
       'getLibraryBooksPaginated',
+      'searchLibraryBooks',
       'updateLibraryBookMetadata',
       'updateLibraryBookCover',
       'uploadLibraryBookCoverBytes',
@@ -38,6 +39,13 @@ describe('LibraryComponent', () => {
       totalCount: 0,
       skip: 0,
       take: 100
+    }));
+    mockLibraryApiService.searchLibraryBooks.and.returnValue(of({
+      books: [],
+      totalCount: 0,
+      skip: 0,
+      take: 100,
+      genres: []
     }));
     mockAuthService.isAdmin.and.returnValue(true);
 
@@ -400,7 +408,7 @@ describe('LibraryComponent', () => {
       expect(dialogData.availableGenres).toContain('Science Fiction');
     });
 
-    it('should not include owner tags in regular genre filter list', () => {
+    it('should not include owner tags in regular genre filter list', fakeAsync(() => {
       // Arrange
       const testBooks = [
         {
@@ -426,22 +434,25 @@ describe('LibraryComponent', () => {
         }
       ];
 
-      mockLibraryApiService.getLibraryBooksPaginated.and.returnValue(of({
+      // Server now returns genres filtered (without owner tags)
+      mockLibraryApiService.searchLibraryBooks.and.returnValue(of({
         books: testBooks,
         totalCount: testBooks.length,
         skip: 0,
-        take: 100
+        take: 100,
+        genres: ['Fantasy']  // Server filters out owner tags
       }));
 
-      // Act - trigger ngOnInit which loads books and builds genre list
+      // Act - trigger ngOnInit which loads books via server-side search
       component.ngOnInit();
+      tick();  // Wait for async search to complete
 
-      // Assert - owner tags should NOT be in the regular genre list
+      // Assert - owner tags should NOT be in the regular genre list (server filters them)
       expect(component.genres).not.toContain("Dad's Books");
       expect(component.genres).not.toContain("Mom's Books");
       expect(component.genres).not.toContain("Paul's Books");
       expect(component.genres).toContain('Fantasy');
-    });
+    }));
   });
 
   describe('Tile Size Controls', () => {
@@ -514,7 +525,7 @@ describe('LibraryComponent', () => {
       it('should group books into rows based on cachedItemsPerRow', () => {
         const books = createTestBooks(15);
         component.books = books;
-        component.displayBooks = books; // filteredBooks returns displayBooks
+        // filteredBooks now returns this.books directly (server-side filtering)
         // Access private property for testing
         (component as any).cachedItemsPerRow = 5;
 
@@ -529,7 +540,7 @@ describe('LibraryComponent', () => {
       it('should handle partial last row correctly', () => {
         const books = createTestBooks(13);
         component.books = books;
-        component.displayBooks = books; // filteredBooks returns displayBooks
+        // filteredBooks now returns this.books directly (server-side filtering)
         (component as any).cachedItemsPerRow = 5;
 
         const rows = component.bookRows;
@@ -542,7 +553,7 @@ describe('LibraryComponent', () => {
 
       it('should return empty array for empty books', () => {
         component.books = [];
-        component.displayBooks = [];
+        // filteredBooks now returns this.books directly (server-side filtering)
         (component as any).cachedItemsPerRow = 5;
 
         const rows = component.bookRows;
@@ -553,7 +564,7 @@ describe('LibraryComponent', () => {
       it('should handle single book', () => {
         const books = createTestBooks(1);
         component.books = books;
-        component.displayBooks = books; // filteredBooks returns displayBooks
+        // filteredBooks now returns this.books directly (server-side filtering)
         (component as any).cachedItemsPerRow = 5;
 
         const rows = component.bookRows;
@@ -630,7 +641,7 @@ describe('LibraryComponent', () => {
           { ...createTestBooks(1)[0], title: 'Foxtrot Book', fileName: 'foxtrot.epub' }
         ];
         component.books = books;
-        component.displayBooks = books; // filteredBooks returns displayBooks
+        // filteredBooks now returns this.books directly (server-side filtering)
         component.sortOrder = 'title';
         (component as any).cachedItemsPerRow = 2;
       });
@@ -671,7 +682,7 @@ describe('LibraryComponent', () => {
       it('should scroll to top when sort changes', () => {
         const books = createTestBooks(5);
         component.books = books;
-        component.displayBooks = books; // filteredBooks returns displayBooks
+        // filteredBooks now returns this.books directly (server-side filtering)
         // Initialize component to avoid change detection issues
         fixture.detectChanges();
 
@@ -685,35 +696,49 @@ describe('LibraryComponent', () => {
         expect(mockScrollToIndex).toHaveBeenCalledWith(0);
       });
 
-      it('should update activeLetter based on first book after sort', () => {
+      it('should update activeLetter based on first book after sort', fakeAsync(() => {
         const books = [
           { ...createTestBooks(1)[0], title: 'Zebra Book' }
         ];
-        component.books = books;
-        component.displayBooks = books; // filteredBooks returns displayBooks
+        // Mock searchLibraryBooks to return the test books
+        mockLibraryApiService.searchLibraryBooks.and.returnValue(of({
+          books,
+          totalCount: 1,
+          skip: 0,
+          take: 100,
+          genres: []
+        }));
         component.sortOrder = 'title';
         (component as any).virtualScroll = {
           scrollToIndex: jasmine.createSpy('scrollToIndex')
         };
 
         component.onSortChange();
+        tick(150);  // Wait for setTimeout(100ms) + buffer
 
         expect(component.activeLetter).toBe('Z');
-      });
+      }));
 
-      it('should set activeLetter to # for non-alpha sorts', () => {
+      it('should set activeLetter to # for non-alpha sorts', fakeAsync(() => {
         const books = createTestBooks(5);
-        component.books = books;
-        component.displayBooks = books; // filteredBooks returns displayBooks
+        // Mock searchLibraryBooks to return the test books
+        mockLibraryApiService.searchLibraryBooks.and.returnValue(of({
+          books,
+          totalCount: 5,
+          skip: 0,
+          take: 100,
+          genres: []
+        }));
         component.sortOrder = 'recent';
         (component as any).virtualScroll = {
           scrollToIndex: jasmine.createSpy('scrollToIndex')
         };
 
         component.onSortChange();
+        tick(150);  // Wait for setTimeout(100ms) + buffer
 
         expect(component.activeLetter).toBe('#');
-      });
+      }));
     });
   });
 
@@ -1017,33 +1042,32 @@ describe('LibraryComponent', () => {
       };
 
       it('should handle rapid filter changes', () => {
+        // With server-side filtering, filteredBooks returns this.books directly
+        // Filter changes trigger server requests via invalidateFilterCache()
         const allBooks = createTestBooks(20);
         component.books = allBooks;
 
-        // With async filtering, we test the internal filter logic directly
-        // The filtered result is now computed asynchronously via displayBooks
-        // Test that filtering logic works correctly
-        component.selectedGenre = 'Fiction';
+        // filteredBooks now returns books directly (server handles filtering)
+        expect(component.filteredBooks.length).toBe(20);
+
+        // Simulate server returning filtered results
         const filtered1 = allBooks.filter(b => b.primaryGenre === 'Fiction');
-        component.displayBooks = filtered1;
+        component.books = filtered1;
         expect(component.filteredBooks.every(b => b.primaryGenre === 'Fiction')).toBe(true);
 
-        component.selectedGenre = 'Non-Fiction';
         const filtered2 = allBooks.filter(b => b.primaryGenre === 'Non-Fiction');
-        component.displayBooks = filtered2;
+        component.books = filtered2;
         expect(component.filteredBooks.every(b => b.primaryGenre === 'Non-Fiction')).toBe(true);
 
-        component.selectedGenre = '';
-        component.displayBooks = allBooks;
+        component.books = allBooks;
         expect(component.filteredBooks.length).toBe(20);
       });
 
       it('should handle rapid sort changes', () => {
+        // With server-side sorting, books come pre-sorted from server
         const books = createTestBooks(10);
-        component.books = books;
 
-        // Test that different sort orders produce different results
-        // Create sorted versions to simulate async behavior
+        // Create sorted versions to simulate server responses
         const sortedByTitle = [...books].sort((a, b) => (a.title || '').localeCompare(b.title || ''));
         const sortedByRecent = [...books].sort((a, b) => {
           const aTime = a.savedAt ? new Date(a.savedAt).getTime() : 0;
@@ -1051,11 +1075,13 @@ describe('LibraryComponent', () => {
           return bTime - aTime; // Recent first
         });
 
+        // Simulate server returning title-sorted books
+        component.books = sortedByTitle;
         component.sortOrder = 'title';
-        component.displayBooks = sortedByTitle;
 
+        // Simulate server returning recent-sorted books
+        component.books = sortedByRecent;
         component.sortOrder = 'recent';
-        component.displayBooks = sortedByRecent;
 
         // Title sort and recent sort should produce different orders
         expect(sortedByTitle).not.toEqual(sortedByRecent);

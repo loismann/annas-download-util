@@ -16,10 +16,12 @@
     <PackageReference Include="Serilog.Enrichers.Environment" Version="3.0.1" />
     <PackageReference Include="Serilog.Enrichers.Thread" Version="4.0.0" />
     <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
+    <PackageReference Include="Serilog.Sinks.Seq" Version="8.0.0" />
     <PackageReference Include="VersOne.Epub" Version="3.3.4" />
     <ProjectReference Include="..\AnnasArchive.Core\AnnasArchive.Core.csproj" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.7.0" />
     <PackageReference Include="Microsoft.Extensions.Http.Resilience" Version="8.11.0" />
+    <PackageReference Include="Microsoft.Playwright" Version="1.49.0" />
   </ItemGroup>
 
   <ItemGroup>

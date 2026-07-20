@@ -106,11 +106,11 @@ static class LibraryEpubCache
         }
         catch (ArgumentException ex)
         {
-            Log.Information($"[library] Invalid argument for quick index build {filePath}: {ex.ParamName}");
+            Log.Information("[library] Invalid argument for quick index build {FilePath}: {ParamName}", filePath, ex.ParamName);
         }
         catch (Exception ex)
         {
-            Log.Information($"[library] Quick index build failed for {filePath}: {ex.Message}");
+            Log.Information("[library] Quick index build failed for {FilePath}: {ErrorMessage}", filePath, ex.Message);
         }
 
         var fresh = await TryReadIndex(metaPath);
@@ -297,7 +297,7 @@ static class LibraryEpubCache
                     var repaired = TryRepairZip(workingBytes);
                     if (repaired != null)
                     {
-                        Log.Information($"[epub] Repaired zip structure for {label}");
+                        Log.Information("[epub] Repaired zip structure for {Label}", label);
                         workingBytes = repaired;
                         zipRepairAttempted = true;
                         continue;
@@ -319,7 +319,7 @@ static class LibraryEpubCache
                     throw;
                 }
 
-                Log.Information($"[epub] Missing content '{missingPath}' in {label}. Injecting placeholder.");
+                Log.Information("[epub] Missing content '{MissingPath}' in {Label}. Injecting placeholder.", missingPath, label);
                 workingBytes = EnsureZipEntry(workingBytes, missingPath);
                 added.Add(missingPath);
             }
@@ -345,7 +345,7 @@ static class LibraryEpubCache
         }
         catch (ArgumentException ex)
         {
-            Log.Information($"[library] Invalid argument parsing EPUB {label}: {ex.ParamName}");
+            Log.Information("[library] Invalid argument parsing EPUB {Label}: {ParamName}", label, ex.ParamName);
             throw;
         }
         catch (Exception ex)
@@ -421,11 +421,11 @@ static class LibraryEpubCache
             }
             catch (ArgumentException ex)
             {
-                Log.Information($"[epub] Invalid argument parsing OPF for tolerant fallback ({label}): {ex.ParamName}");
+                Log.Information("[epub] Invalid argument parsing OPF for tolerant fallback ({Label}): {ParamName}", label, ex.ParamName);
             }
             catch (Exception ex)
             {
-                Log.Information($"[epub] Failed to parse OPF for tolerant fallback ({label}): {ex.Message}");
+                Log.Information("[epub] Failed to parse OPF for tolerant fallback ({Label}): {ErrorMessage}", label, ex.Message);
             }
         }
 
@@ -454,7 +454,7 @@ static class LibraryEpubCache
         if (chapters.Count == 0)
             return null;
 
-        Log.Information($"[epub] Tolerant fallback used for {label}. Chapters={chapters.Count}");
+        Log.Information("[epub] Tolerant fallback used for {Label}. Chapters={ChapterCount}", label, chapters.Count);
         return (bookTitle, chapters);
     }
 
@@ -490,12 +490,12 @@ static class LibraryEpubCache
         }
         catch (ArgumentException ex)
         {
-            Log.Information($"[epub] Invalid argument reading zip entries for tolerant fallback ({label}): {ex.ParamName}");
+            Log.Information("[epub] Invalid argument reading zip entries for tolerant fallback ({Label}): {ParamName}", label, ex.ParamName);
             return false;
         }
         catch (Exception ex)
         {
-            Log.Information($"[epub] Failed to read zip entries for tolerant fallback ({label}): {ex.Message}");
+            Log.Information("[epub] Failed to read zip entries for tolerant fallback ({Label}): {ErrorMessage}", label, ex.Message);
             return false;
         }
     }
@@ -643,12 +643,12 @@ static class LibraryEpubCache
         }
         catch (ArgumentException ex)
         {
-            Log.Information($"[epub] Invalid argument for zip repair: {ex.ParamName}");
+            Log.Information("[epub] Invalid argument for zip repair: {ParamName}", ex.ParamName);
             return null;
         }
         catch (Exception ex)
         {
-            Log.Information($"[epub] Zip repair failed: {ex.Message}");
+            Log.Information("[epub] Zip repair failed: {ErrorMessage}", ex.Message);
             return null;
         }
     }
@@ -712,7 +712,7 @@ static class LibraryEpubCache
         }
         catch (InvalidDataException ex)
         {
-            Log.Information($"[epub] Invalid zip structure while adding '{entryPath}': {ex.Message}");
+            Log.Information("[epub] Invalid zip structure while adding '{EntryPath}': {ErrorMessage}", entryPath, ex.Message);
             return sourceBytes;
         }
     }
@@ -881,12 +881,12 @@ static class LibraryEpubCache
         }
         catch (ArgumentException ex)
         {
-            Log.Information($"[library] Invalid argument reading chapter {chapterId} from {filePath}: {ex.ParamName}");
+            Log.Information("[library] Invalid argument reading chapter {ChapterId} from {FilePath}: {ParamName}", chapterId, filePath, ex.ParamName);
             return null;
         }
         catch (Exception ex)
         {
-            Log.Information($"[library] Failed to read chapter {chapterId} from {filePath}: {ex.Message}");
+            Log.Information("[library] Failed to read chapter {ChapterId} from {FilePath}: {ErrorMessage}", chapterId, filePath, ex.Message);
             return null;
         }
     }

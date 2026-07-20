@@ -17,9 +17,9 @@
 
   <div class="cover-frame" (click)="onCoverClick()" style="cursor: pointer;">
     <img
+      #coverImage
       class="cover"
-      [src]="book.coverUrl || placeholderUrl"
-      loading="lazy"
+      [src]="currentCoverUrl"
       (error)="onCoverError($event)"
       [alt]="book.title + ' cover'"
     />

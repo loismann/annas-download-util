@@ -143,22 +143,22 @@ public static class LibGenEndpoints
             return Results.BadRequest(new { error = validationError });
 
         var userName = GetUserName(context);
-        Log.Information(" [LibGen] Downloading book {md5} for user {userName}...");
+        Log.Information("[LibGen] Downloading book {Md5} for user {UserName}...", md5, userName);
 
         var resp = await libgen.GetDownloadResponseAsync(md5, HttpCompletionOption.ResponseHeadersRead);
         if (resp == null || !resp.IsSuccessStatusCode)
         {
             var (downloadsLeft, downloadsPerDay) = downloadTracking.GetDownloadStatus();
-            Log.Warning(" [LibGen] Failed to download book {md5}");
+            Log.Warning("[LibGen] Failed to download book {Md5}", md5);
             return Results.Ok(new { success = false, message = "Failed to download book from LibGen.", accountFastInfo = new AccountFastDownloadInfoDto(downloadsLeft, downloadsPerDay) });
         }
 
         var downloadUrl = await libgen.GetDownloadUrlAsync(md5);
         var (_, ext, fileName) = BuildFileInfo(title, md5, downloadUrl, resp);
-        Log.Information(" [LibGen] Downloaded: {fileName}");
+        Log.Information("[LibGen] Downloaded: {FileName}", fileName);
 
         downloadTracking.RecordDownload(md5, userName);
-        Log.Information("[download-libgen] Recorded download for user {userName}, MD5: {md5}");
+        Log.Information("[download-libgen] Recorded download for user {UserName}, MD5: {Md5}", userName, md5);
 
         using (resp)
         {
@@ -192,13 +192,13 @@ public static class LibGenEndpoints
 
         var userName = GetUserName(context);
         var userTag = LibraryHelpers.ResolveUserLibraryTag(context);
-        Log.Information(" [LibGen] Saving book {md5} to library for user {userName}...");
+        Log.Information("[LibGen] Saving book {Md5} to library for user {UserName}...", md5, userName);
 
         var resp = await libgen.GetDownloadResponseAsync(md5, HttpCompletionOption.ResponseHeadersRead);
         if (resp == null || !resp.IsSuccessStatusCode)
         {
             var (downloadsLeft, downloadsPerDay) = downloadTracking.GetDownloadStatus();
-            Log.Warning(" [LibGen] Failed to download book {md5}");
+            Log.Warning("[LibGen] Failed to download book {Md5}", md5);
             return Results.Ok(new { success = false, message = "Failed to download book from LibGen.", accountFastInfo = new AccountFastDownloadInfoDto(downloadsLeft, downloadsPerDay) });
         }
 
@@ -206,7 +206,7 @@ public static class LibGenEndpoints
         var (_, ext, fileName) = BuildFileInfo(title, md5, downloadUrl, resp);
 
         downloadTracking.RecordDownload(md5, userName);
-        Log.Information("[library-libgen] Recorded download for user {userName}, MD5: {md5}");
+        Log.Information("[library-libgen] Recorded download for user {UserName}, MD5: {Md5}", userName, md5);
 
         var (currentDownloadsLeft, currentDownloadsPerDay) = downloadTracking.GetDownloadStatus();
         var trackingInfo = new AccountFastDownloadInfoDto(currentDownloadsLeft, currentDownloadsPerDay);

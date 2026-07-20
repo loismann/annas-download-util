@@ -26,6 +26,32 @@ import { firstValueFrom } from 'rxjs';
 import { LoggerService } from '../services/logger.service';
 import { RELATED_BOOKS_STAGGER_MS } from '../constants/timeouts';
 
+// How many per-book candidate searches run at once during "Review
+// Selections". Kept deliberately small — see the comment at its call site
+// in reviewSelections() for why unbounded concurrency here backfired.
+const MATCH_SEARCH_CONCURRENCY = 2;
+
+// Runs `fn` over `items` with at most `limit` calls in flight at once,
+// preserving input order in the returned array.
+async function runWithConcurrencyLimit<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T, index: number) => Promise<R>
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let nextIndex = 0;
+
+  async function worker(): Promise<void> {
+    while (nextIndex < items.length) {
+      const index = nextIndex++;
+      results[index] = await fn(items[index], index);
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => worker()));
+  return results;
+}
+
 export interface RelatedBooksModalData {
   bookTitle: string;
   author: string;
@@ -185,36 +211,38 @@ export class RelatedBooksModalComponent implements OnDestroy {
     const format = this.selectedFormat;
     const author = this.data.mode === 'ai' ? 'Unknown' : this.data.author;
 
-    // Step 1: Search for all books and collect candidates
-    const booksWithCandidates: BookWithCandidates[] = [];
+    // Step 1: Search for all books and collect candidates — a *capped*
+    // amount of concurrency (MATCH_SEARCH_CONCURRENCY at a time), not fully
+    // sequential and not unbounded. Firing every book's search at once
+    // (unbounded Promise.all) turned out to backfire badly in practice: a
+    // burst of simultaneous requests against Anna's Archive made Cloudflare
+    // slow down every single one of them (individual fetches went from a
+    // few seconds to 10s-60s+, some timing out outright), which is worse
+    // than doing them one at a time. A small fixed batch size gets some
+    // overlap without looking like a burst to Cloudflare's anti-bot checks.
+    const booksWithCandidates: BookWithCandidates[] = await runWithConcurrencyLimit(
+      this.selectedBooks,
+      MATCH_SEARCH_CONCURRENCY,
+      async (book): Promise<BookWithCandidates> => {
+        try {
+          const searchResults = await firstValueFrom(this.annaApi.searchBooks(book.title, false));
 
-    for (const book of this.selectedBooks) {
-      try {
-        const searchResults = await firstValueFrom(this.annaApi.searchBooks(book.title, false));
+          // Convert BookDto[] to CandidateBook[]
+          const candidates: CandidateBook[] = (searchResults ?? []).map(result => ({
+            md5: result.md5,
+            title: result.title,
+            authors: result.authors,
+            format: result.format,
+            fileSize: result.fileSize
+          }));
 
-        // Convert BookDto[] to CandidateBook[]
-        const candidates: CandidateBook[] = (searchResults ?? []).map(result => ({
-          md5: result.md5,
-          title: result.title,
-          authors: result.authors,
-          format: result.format,
-          fileSize: result.fileSize
-        }));
-
-        booksWithCandidates.push({
-          title: book.title,
-          order: book.order,
-          candidates
-        });
-      } catch (err) {
-        this.logger.error(`Failed to search for "${book.title}"`, err);
-        booksWithCandidates.push({
-          title: book.title,
-          order: book.order,
-          candidates: []
-        });
+          return { title: book.title, order: book.order, candidates };
+        } catch (err) {
+          this.logger.error(`Failed to search for "${book.title}"`, err);
+          return { title: book.title, order: book.order, candidates: [] };
+        }
       }
-    }
+    );
 
     // Step 2: Use GPT to intelligently match books
     try {

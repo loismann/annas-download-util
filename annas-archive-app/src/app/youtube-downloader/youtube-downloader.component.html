@@ -114,18 +114,35 @@
     </mat-card-content>
   </mat-card>
 
+  <!-- Download Starting (waiting for first status) -->
+  <mat-card class="progress-card" *ngIf="viewState === 'downloading' && !currentJob">
+    <mat-card-content>
+      <h3>Starting download...</h3>
+      <div class="status-message">
+        <mat-icon class="status-icon spinning">sync</mat-icon>
+        <span>Initializing download...</span>
+      </div>
+      <mat-progress-bar mode="indeterminate"></mat-progress-bar>
+    </mat-card-content>
+  </mat-card>
+
   <!-- Download Progress -->
   <mat-card class="progress-card" *ngIf="viewState === 'downloading' && currentJob">
     <mat-card-content>
       <h3>Downloading: {{ currentJob.title }}</h3>
 
+      <div class="status-message" *ngIf="currentJob.statusMessage">
+        <mat-icon class="status-icon spinning" *ngIf="currentJob.progressPercent < 100">sync</mat-icon>
+        <span>{{ currentJob.statusMessage }}</span>
+      </div>
+
       <mat-progress-bar
-        mode="determinate"
+        [mode]="currentJob.progressPercent > 0 ? 'determinate' : 'indeterminate'"
         [value]="currentJob.progressPercent"
       ></mat-progress-bar>
 
       <div class="progress-details">
-        <span class="percent">{{ currentJob.progressPercent | number: '1.1-1' }}%</span>
+        <span class="percent" *ngIf="currentJob.progressPercent > 0">{{ currentJob.progressPercent | number: '1.1-1' }}%</span>
         <span class="speed" *ngIf="currentJob.currentSpeed">{{ currentJob.currentSpeed }}</span>
         <span class="eta" *ngIf="currentJob.eta">ETA: {{ currentJob.eta }}</span>
       </div>

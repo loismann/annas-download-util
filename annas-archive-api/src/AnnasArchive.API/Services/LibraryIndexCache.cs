@@ -196,6 +196,186 @@ public class LibraryIndexCache : IHostedService, IDisposable
     }
 
     /// <summary>
+    /// Searches and filters library books with full server-side processing.
+    /// This is the optimized endpoint for large libraries - all filtering, sorting, and pagination
+    /// happens on the server so clients never need to load all books.
+    /// </summary>
+    public (List<LibraryBookDto> Books, int TotalCount, string[] AvailableGenres) SearchBooks(
+        string baseUrl,
+        string? searchTerm = null,
+        string? genre = null,
+        string[]? ownerTags = null,
+        int minPersonalRating = 0,
+        double minGoodreadsRating = 0,
+        bool? bookmarked = null,
+        bool? missingAuthor = null,
+        bool? missingCover = null,
+        int? genreCountLessThan = null,
+        int? genreCountMoreThan = null,
+        string sortBy = "date",
+        bool sortDesc = true,
+        int skip = 0,
+        int take = 50)
+    {
+        var allBooks = GetBooks(baseUrl);
+
+        // Build genre list before filtering for sidebar display
+        var availableGenres = allBooks
+            .SelectMany(b => (b.Tags ?? Array.Empty<string>()).Concat(new[] { b.PrimaryGenre ?? "" }))
+            .Where(g => !string.IsNullOrWhiteSpace(g) &&
+                        g != "Dad's Books" && g != "Mom's Books" && g != "Paul's Books")
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(g => g, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        // Apply filters
+        var filtered = allBooks.AsEnumerable();
+
+        // Search term filter (searches title, authors, series, tags)
+        if (!string.IsNullOrWhiteSpace(searchTerm))
+        {
+            var term = searchTerm.Trim().ToLowerInvariant();
+            filtered = filtered.Where(b =>
+            {
+                var haystack = string.Join(" ",
+                    b.Title ?? "",
+                    string.Join(" ", b.Authors ?? Array.Empty<string>()),
+                    b.Series ?? "",
+                    b.PrimaryGenre ?? "",
+                    string.Join(" ", b.Tags ?? Array.Empty<string>())
+                ).ToLowerInvariant();
+                return haystack.Contains(term);
+            });
+        }
+
+        // Genre filter
+        if (!string.IsNullOrWhiteSpace(genre))
+        {
+            var genreLower = genre.ToLowerInvariant();
+            filtered = filtered.Where(b =>
+            {
+                var primary = b.PrimaryGenre?.ToLowerInvariant() ?? "";
+                var tags = (b.Tags ?? Array.Empty<string>()).Select(t => t.ToLowerInvariant());
+                return primary == genreLower || tags.Contains(genreLower);
+            });
+        }
+
+        // Owner tags filter (e.g., "Dad's Books", "Mom's Books")
+        if (ownerTags != null && ownerTags.Length > 0)
+        {
+            var ownerTagsSet = new HashSet<string>(ownerTags, StringComparer.OrdinalIgnoreCase);
+            filtered = filtered.Where(b =>
+                (b.Tags ?? Array.Empty<string>()).Any(t => ownerTagsSet.Contains(t)));
+        }
+
+        // Personal rating filter
+        if (minPersonalRating > 0)
+        {
+            filtered = filtered.Where(b => (b.PersonalRating ?? 0) >= minPersonalRating);
+        }
+
+        // Goodreads rating filter
+        if (minGoodreadsRating > 0)
+        {
+            filtered = filtered.Where(b => (b.GoodreadsRating ?? 0) >= minGoodreadsRating);
+        }
+
+        // Bookmarked filter
+        if (bookmarked == true)
+        {
+            filtered = filtered.Where(b => b.Bookmarked == true);
+        }
+
+        // Missing author filter
+        if (missingAuthor == true)
+        {
+            filtered = filtered.Where(b =>
+                b.Authors == null || b.Authors.Length == 0 ||
+                b.Authors.All(a => string.IsNullOrWhiteSpace(a)));
+        }
+
+        // Missing cover filter
+        if (missingCover == true)
+        {
+            filtered = filtered.Where(b => string.IsNullOrWhiteSpace(b.CoverUrl));
+        }
+
+        // Genre count filters
+        if (genreCountLessThan.HasValue)
+        {
+            filtered = filtered.Where(b =>
+            {
+                var count = (b.Tags?.Length ?? 0) + (string.IsNullOrWhiteSpace(b.PrimaryGenre) ? 0 : 1);
+                return count < genreCountLessThan.Value;
+            });
+        }
+        if (genreCountMoreThan.HasValue)
+        {
+            filtered = filtered.Where(b =>
+            {
+                var count = (b.Tags?.Length ?? 0) + (string.IsNullOrWhiteSpace(b.PrimaryGenre) ? 0 : 1);
+                return count > genreCountMoreThan.Value;
+            });
+        }
+
+        // Sort-specific filters (series mode only shows books with series, stars mode only shows rated books)
+        if (sortBy.Equals("series", StringComparison.OrdinalIgnoreCase))
+        {
+            filtered = filtered.Where(b => !string.IsNullOrWhiteSpace(b.Series));
+        }
+        if (sortBy.Equals("stars", StringComparison.OrdinalIgnoreCase))
+        {
+            filtered = filtered.Where(b => (b.PersonalRating ?? 0) >= 1);
+        }
+        if (sortBy.Equals("goodreads", StringComparison.OrdinalIgnoreCase))
+        {
+            filtered = filtered.Where(b => (b.GoodreadsRating ?? 0) > 0);
+        }
+
+        // Materialize filtered list for count
+        var filteredList = filtered.ToList();
+        var totalCount = filteredList.Count;
+
+        // Apply sorting
+        IEnumerable<LibraryBookDto> sorted = sortBy.ToLowerInvariant() switch
+        {
+            "title" => sortDesc
+                ? filteredList.OrderByDescending(b => b.Title, StringComparer.OrdinalIgnoreCase)
+                : filteredList.OrderBy(b => b.Title, StringComparer.OrdinalIgnoreCase),
+            "author" => sortDesc
+                ? filteredList.OrderByDescending(b => b.Authors?.FirstOrDefault() ?? "", StringComparer.OrdinalIgnoreCase)
+                : filteredList.OrderBy(b => b.Authors?.FirstOrDefault() ?? "", StringComparer.OrdinalIgnoreCase),
+            "series" => sortDesc
+                ? filteredList.OrderByDescending(b => b.Series ?? "", StringComparer.OrdinalIgnoreCase)
+                    .ThenByDescending(b => b.Title, StringComparer.OrdinalIgnoreCase)
+                : filteredList.OrderBy(b => b.Series ?? "", StringComparer.OrdinalIgnoreCase)
+                    .ThenBy(b => b.Title, StringComparer.OrdinalIgnoreCase),
+            "stars" => sortDesc
+                ? filteredList.OrderByDescending(b => b.PersonalRating ?? 0)
+                    .ThenBy(b => b.Title, StringComparer.OrdinalIgnoreCase)
+                : filteredList.OrderBy(b => b.PersonalRating ?? 0)
+                    .ThenBy(b => b.Title, StringComparer.OrdinalIgnoreCase),
+            "goodreads" => sortDesc
+                ? filteredList.OrderByDescending(b => b.GoodreadsRating ?? 0)
+                    .ThenBy(b => b.Title, StringComparer.OrdinalIgnoreCase)
+                : filteredList.OrderBy(b => b.GoodreadsRating ?? 0)
+                    .ThenBy(b => b.Title, StringComparer.OrdinalIgnoreCase),
+            "date" or _ => sortDesc
+                ? filteredList.OrderByDescending(b => b.SavedAt ?? DateTime.MinValue)
+                : filteredList.OrderBy(b => b.SavedAt ?? DateTime.MinValue)
+        };
+
+        // Apply pagination
+        var paginated = sorted.Skip(skip);
+        if (take > 0)
+        {
+            paginated = paginated.Take(take);
+        }
+
+        return (paginated.ToList(), totalCount, availableGenres);
+    }
+
+    /// <summary>
     /// Normalizes cover URLs with the actual base URL.
     /// This is needed because the cache may be built before we know the base URL.
     /// </summary>

@@ -1,0 +1,70 @@
+services:
+  annas-archive:
+    build:
+      context: .
+      args:
+        BUILD_TIMESTAMP: "${BUILD_TIMESTAMP:-unknown}"
+    container_name: annas-archive
+    restart: unless-stopped
+    # Bound to loopback only — never exposed on the LAN. Reachable exclusively
+    # via `tailscale serve`, which proxies from the tailnet to 127.0.0.1:8080.
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      - seq
+    environment:
+      - LIBRARY_ROOT=/data/library
+      - EPUB_CACHE_ROOT=/data/epub-cache
+      - AI_CACHE_ROOT=/data/ai-cache
+      - YouTube__DownloadRoot=/data/youtube
+      - DownloadTracking__StoragePath=/app/state/download-tracking.json
+      - Quiz__StoragePath=/app/state/quiz-data
+      - Logging__FilePath=/app/logs/annas-api-.log
+      # Seq's ingestion API — internal Docker network address, not exposed
+      # to the host directly. The container talks to Seq by its service name.
+      - Logging__SeqUrl=http://seq:5341
+      - Gaming__Enabled=false
+      - API_RATE_LIMIT=300
+      - LOGIN_RATE_LIMIT=30
+    volumes:
+      # ../data lives outside this synced source directory on purpose — a
+      # repo re-sync (rsync --delete) must never be able to touch it.
+      - ../data/library:/data/library
+      - ../data/epub-cache:/data/epub-cache
+      - ../data/ai-cache:/data/ai-cache
+      - ../data/youtube:/data/youtube
+      - ../data/logs:/app/logs
+      - ../data/state:/app/state
+      # Secrets — never baked into the image. This mounts the same
+      # appsettings.json used for local dev, synced over from the Mac.
+      - ./annas-archive-api/src/AnnasArchive.API/appsettings.json:/app/appsettings.json:ro
+    healthcheck:
+      # /health/live only runs checks tagged "live" (currently just
+      # filesystem) — deliberately excludes external-dependency checks
+      # (googlebooks/openai/openlibrary), so a third-party outage (Google
+      # Books' quota has been exhausted for a while now) can't make Docker
+      # think the container itself is unhealthy and needs restarting.
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  # Structured log server — Serilog ships logs here (in addition to the
+  # rolling file sink) so request timings/durations become queryable and
+  # chartable instead of just grep-able text. Bound to loopback only, same
+  # as the main app; reach its web UI over Tailscale, not the public LAN.
+  seq:
+    image: datalust/seq:latest
+    container_name: annas-seq
+    restart: unless-stopped
+    environment:
+      - ACCEPT_EULA=Y
+      # Loopback-bound, Tailscale-only — same trust model as the main app —
+      # so skipping Seq's own login screen is fine; nothing public-facing.
+      - SEQ_FIRSTRUN_NOAUTHENTICATION=true
+    ports:
+      - "127.0.0.1:8081:80"   # web UI
+      - "127.0.0.1:5341:5341" # ingestion API
+    volumes:
+      - ../data/seq:/data

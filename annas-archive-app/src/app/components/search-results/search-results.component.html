@@ -53,11 +53,19 @@
                   matTooltip="From OpenLibrary">
                   eco
                 </mat-icon>
+                <mat-icon
+                  *ngIf="book.descriptionSource === 'wikipedia'"
+                  class="description-source-icon wiki-icon"
+                  aria-label="Wikipedia description"
+                  matTooltip="From Wikipedia">
+                  public
+                </mat-icon>
               </p>
             </div>
 
-            <!-- Retrieve Summary Button (for books 11+) -->
-            <div class="book-description retrieve-summary-container" *ngIf="!book.description && i >= 10">
+            <!-- Retrieve Summary Button — shown for any book past whatever
+                 range is auto-fetched (see autoDescriptionFetchLimit) -->
+            <div class="book-description retrieve-summary-container" *ngIf="!book.description && i >= autoDescriptionFetchLimit">
               <button
                 mat-raised-button
                 color="accent"

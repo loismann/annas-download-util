@@ -211,6 +211,10 @@ describe('BookCardComponent', () => {
 
   describe('Cover error handling', () => {
     it('should set placeholder on cover error', () => {
+      // Simulate image being loaded (IntersectionObserver triggered)
+      component.imageLoaded = true;
+      fixture.detectChanges();
+
       const img = fixture.nativeElement.querySelector('.cover') as HTMLImageElement;
       const errorEvent = new Event('error');
       Object.defineProperty(errorEvent, 'target', { value: img });
@@ -221,6 +225,10 @@ describe('BookCardComponent', () => {
     });
 
     it('should emit coverError event on cover error', () => {
+      // Simulate image being loaded (IntersectionObserver triggered)
+      component.imageLoaded = true;
+      fixture.detectChanges();
+
       spyOn(component.coverError, 'emit');
       const img = fixture.nativeElement.querySelector('.cover') as HTMLImageElement;
       const errorEvent = new Event('error');

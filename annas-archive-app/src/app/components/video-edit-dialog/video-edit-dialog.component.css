@@ -1,0 +1,136 @@
+.video-edit-layout {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  gap: 24px;
+  min-height: 400px;
+}
+
+.video-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.thumbnail-container {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #1a1a1a;
+}
+
+.video-thumbnail {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.duration-badge {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  background: rgba(0, 0, 0, 0.8);
+  color: white;
+  font-size: 0.8rem;
+  font-weight: 500;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+.video-info {
+  background: #f8fafc;
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.info-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 0;
+  font-size: 0.85rem;
+}
+
+.info-label {
+  color: #64748b;
+}
+
+.info-value {
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.action-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.action-buttons button {
+  width: 100%;
+}
+
+.action-buttons button mat-icon {
+  margin-right: 8px;
+}
+
+.video-edit-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.full-width {
+  width: 100%;
+}
+
+.description-section {
+  margin-top: 16px;
+}
+
+.description-section h4 {
+  margin: 16px 0 8px;
+  font-size: 0.9rem;
+  color: #475569;
+}
+
+.description-text {
+  font-size: 0.85rem;
+  color: #64748b;
+  line-height: 1.5;
+  max-height: 120px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 8px;
+  background: #f8fafc;
+  border-radius: 6px;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.delete-btn {
+  margin-right: auto;
+}
+
+mat-dialog-actions {
+  padding: 16px 24px;
+  margin: 0;
+}
+
+mat-dialog-content {
+  padding: 0 24px;
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+@media (max-width: 768px) {
+  .video-edit-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .video-preview {
+    order: -1;
+  }
+}

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using AnnasArchive.API.Configuration;
@@ -6,6 +7,7 @@ using AnnasArchive.API.Helpers;
 using AnnasArchive.API.Models;
 using AnnasArchive.API.Services;
 using AnnasArchive.Core.Services;
+using AnnasArchive.Core.Telemetry;
 using Microsoft.AspNetCore.Mvc;
 using Serilog;
 
@@ -74,7 +76,7 @@ public static class AiBookSearchEndpoints
                 var openLibraryAuthors = await FetchAuthorsFromOpenLibraryAsync(request.BookTitle, httpFactory);
                 if (openLibraryAuthors.Count > 0)
                 {
-                    Log.Information("✅ Author suggestions (OpenLibrary) for '{request.BookTitle}': {openLibraryAuthors.Count} authors found");
+                    Log.Information("✅ Author suggestions (OpenLibrary) for '{BookTitle}': {AuthorCount} authors found", request.BookTitle, openLibraryAuthors.Count);
                     return Results.Ok(new SuggestAuthorsResponse(openLibraryAuthors));
                 }
             }
@@ -121,7 +123,9 @@ Do NOT include any markdown formatting, explanations, or text outside the JSON a
                 temperature: 0.3
             );
 
+            var aiSw = Stopwatch.StartNew();
             var response = await http.PostAsJsonAsync("https://api.openai.com/v1/chat/completions", payload);
+            PerfLog.Record("OpenAI.ChatCompletion", aiSw.Elapsed.TotalMilliseconds, response.IsSuccessStatusCode, ("Endpoint", "suggest-authors"), ("Model", model));
             if (!response.IsSuccessStatusCode)
             {
                 var body = await response.Content.ReadAsStringAsync();
@@ -187,7 +191,7 @@ Do NOT include any markdown formatting, explanations, or text outside the JSON a
                 }
             }
 
-            Log.Information("✅ Author suggestions for '{request.BookTitle}': {authors.Count} authors found");
+            Log.Information("✅ Author suggestions for '{BookTitle}': {AuthorCount} authors found", request.BookTitle, authors.Count);
             return Results.Ok(new SuggestAuthorsResponse(authors));
         }
         catch (ArgumentException ex)
@@ -197,7 +201,7 @@ Do NOT include any markdown formatting, explanations, or text outside the JSON a
         }
         catch (Exception ex)
         {
-            Log.Information("❌ OpenAI suggest-authors failed: {ex.Message}");
+            Log.Information("❌ OpenAI suggest-authors failed: {ErrorMessage}", ex.Message);
             return ApiResponse.InternalError("Failed to suggest authors.");
         }
     }
@@ -212,8 +216,7 @@ Do NOT include any markdown formatting, explanations, or text outside the JSON a
         IOpenAiModelHelper modelHelper,
         IAiResponseParser aiResponseParser,
         IModelSelectionService modelSelection,
-        IGoogleBooksService googleBooks,
-        IOpenLibraryService openLibrary)
+        IWikipediaService wikipedia)
     {
         if (request is null || string.IsNullOrWhiteSpace(request.BookTitle) || string.IsNullOrWhiteSpace(request.Author))
             return Results.BadRequest(new { error = "BookTitle and Author are required." });
@@ -279,7 +282,9 @@ Rules:
                 temperature: 0.3
             );
 
+            var aiSw = Stopwatch.StartNew();
             var response = await http.PostAsJsonAsync("https://api.openai.com/v1/chat/completions", payload);
+            PerfLog.Record("OpenAI.ChatCompletion", aiSw.Elapsed.TotalMilliseconds, response.IsSuccessStatusCode, ("Endpoint", "related-books"), ("Model", model));
             if (!response.IsSuccessStatusCode)
             {
                 var body = await response.Content.ReadAsStringAsync();
@@ -414,7 +419,12 @@ Rules:
                 var query = seriesSearchQuery ?? seriesName ?? $"{request.BookTitle} {request.Author}";
                 try
                 {
-                    var searchResults = await annaArchiveService.SearchAsync(query, 80, exact: false);
+                    // 25, not 80 — Anna's Archive returns ~25 results per page, so
+                    // 80 forced a second sequential page fetch (each fetch can be
+                    // several seconds through Playwright) for marginal benefit;
+                    // this is just confirming/expanding series titles by
+                    // author+series substring match, not an exhaustive search.
+                    var searchResults = await annaArchiveService.SearchAsync(query, 25, exact: false);
                     var normalizedAuthor = Normalize(request.Author);
                     var normalizedSeries = Normalize(seriesName ?? request.BookTitle);
 
@@ -439,10 +449,16 @@ Rules:
                 }
             }
 
-            // ───────── Fetch descriptions (Google Books -> OpenLibrary -> GPT-4) ─────────
+            // ───────── Fetch descriptions (Wikipedia -> GPT-4) ─────────
+            // Google Books (quota exhausted) and OpenLibrary (down) were
+            // removed from this chain — every call to either was a guaranteed
+            // dead end that just added latency. Wikipedia is a real-data
+            // source without those rate-limit problems; GPT regeneration is
+            // now the last resort, not the routine outcome.
             // THROTTLED: Limit to MaxRelatedBookDescriptions to prevent rate limiting
             var maxDescriptions = AiThrottlingConfiguration.MaxRelatedBookDescriptions;
             Log.Information("[Books API] Fetching descriptions for up to {Max} books (sameSeries: {Count})...", maxDescriptions, sameSeries.Count);
+            var descriptionLoopSw = Stopwatch.StartNew();
 
             // Process sameSeries books (limited)
             var sameSeriesProcessed = 0;
@@ -459,32 +475,20 @@ Rules:
                         await AiThrottlingConfiguration.ThrottleAsync();
                     }
 
-                    // Try Google Books first
-                    var gbDescription = await googleBooks.GetBookDescriptionAsync(book.Title, request.Author);
+                    var wikiDescription = await wikipedia.GetBookDescriptionAsync(book.Title, request.Author);
 
-                    if (!string.IsNullOrWhiteSpace(gbDescription))
+                    if (!string.IsNullOrWhiteSpace(wikiDescription))
                     {
-                        sameSeries[i] = new SeriesBook(book.Title, book.Order, gbDescription, book.CoverUrl, "googlebooks");
-                        Log.Information("[GoogleBooks] ✓ Got description for '{book.Title}'");
+                        sameSeries[i] = new SeriesBook(book.Title, book.Order, wikiDescription, book.CoverUrl, "wikipedia");
+                        Log.Information("[Wikipedia] ✓ Got description for '{book.Title}'");
                     }
                     else
                     {
-                        // Fallback to OpenLibrary
-                        var olDescription = await openLibrary.GetBookDescriptionAsync(book.Title, request.Author);
-
-                        if (!string.IsNullOrWhiteSpace(olDescription))
-                        {
-                            sameSeries[i] = new SeriesBook(book.Title, book.Order, olDescription, book.CoverUrl, "openlibrary");
-                            Log.Information("[OpenLibrary] ✓ Got description for '{book.Title}'");
-                        }
-                        else
-                        {
-                            // Fallback to GPT-4 generated no-spoiler description
-                            var gptDescription = await AiDescriptionHelpers.GenerateNoSpoilerDescriptionAsync(
-                                book.Title, request.Author, http, model, modelHelper, aiResponseParser);
-                            sameSeries[i] = new SeriesBook(book.Title, book.Order, gptDescription, book.CoverUrl, "gpt");
-                            Log.Information("[GPT-4] ✓ Generated description for '{book.Title}'");
-                        }
+                        // Fallback to GPT-4 generated no-spoiler description
+                        var gptDescription = await AiDescriptionHelpers.GenerateNoSpoilerDescriptionAsync(
+                            book.Title, request.Author, http, model, modelHelper, aiResponseParser);
+                        sameSeries[i] = new SeriesBook(book.Title, book.Order, gptDescription, book.CoverUrl, "gpt");
+                        Log.Information("[GPT-4] ✓ Generated description for '{book.Title}'");
                     }
 
                     sameSeriesProcessed++;
@@ -523,31 +527,19 @@ Rules:
                             await AiThrottlingConfiguration.ThrottleAsync();
                         }
 
-                        // Try Google Books first
-                        var gbDescription = await googleBooks.GetBookDescriptionAsync(book.Title, request.Author);
+                        var wikiDescription = await wikipedia.GetBookDescriptionAsync(book.Title, request.Author);
 
-                        if (!string.IsNullOrWhiteSpace(gbDescription))
+                        if (!string.IsNullOrWhiteSpace(wikiDescription))
                         {
-                            updatedBooks.Add(new SeriesBook(book.Title, book.Order, gbDescription, book.CoverUrl, "googlebooks"));
-                            Log.Information("[GoogleBooks] ✓ Got description for '{book.Title}'");
+                            updatedBooks.Add(new SeriesBook(book.Title, book.Order, wikiDescription, book.CoverUrl, "wikipedia"));
+                            Log.Information("[Wikipedia] ✓ Got description for '{book.Title}'");
                         }
                         else
                         {
-                            // Fallback to OpenLibrary
-                            var olDescription = await openLibrary.GetBookDescriptionAsync(book.Title, request.Author);
-
-                            if (!string.IsNullOrWhiteSpace(olDescription))
-                            {
-                                updatedBooks.Add(new SeriesBook(book.Title, book.Order, olDescription, book.CoverUrl, "openlibrary"));
-                                Log.Information("[OpenLibrary] ✓ Got description for '{book.Title}'");
-                            }
-                            else
-                            {
-                                var gptDescription = await AiDescriptionHelpers.GenerateNoSpoilerDescriptionAsync(
-                                    book.Title, request.Author, http, model, modelHelper, aiResponseParser);
-                                updatedBooks.Add(new SeriesBook(book.Title, book.Order, gptDescription, book.CoverUrl, "gpt"));
-                                Log.Information("[GPT-4] ✓ Generated description for '{book.Title}'");
-                            }
+                            var gptDescription = await AiDescriptionHelpers.GenerateNoSpoilerDescriptionAsync(
+                                book.Title, request.Author, http, model, modelHelper, aiResponseParser);
+                            updatedBooks.Add(new SeriesBook(book.Title, book.Order, gptDescription, book.CoverUrl, "gpt"));
+                            Log.Information("[GPT-4] ✓ Generated description for '{book.Title}'");
                         }
 
                         otherSeriesProcessed++;
@@ -570,6 +562,8 @@ Rules:
             var totalDescriptions = sameSeriesProcessed + otherSeriesProcessed;
             Log.Information("[Books API] Fetched {Total} descriptions (sameSeries: {Same}, otherSeries: {Other})",
                 totalDescriptions, sameSeriesProcessed, otherSeriesProcessed);
+            PerfLog.Record("RelatedBooks.DescriptionLoop", descriptionLoopSw.Elapsed.TotalMilliseconds, true,
+                ("TotalDescriptions", totalDescriptions), ("SameSeries", sameSeriesProcessed), ("OtherSeries", otherSeriesProcessed));
 
             Log.Information("✅ Related books for '{request.BookTitle}': {sameSeries.Count} series books, {otherSeries.Count} other series");
 
@@ -596,9 +590,6 @@ Rules:
         IOpenAiModelHelper modelHelper,
         IAiResponseParser aiResponseParser,
         IModelSelectionService modelSelection,
-        IGoogleBooksService googleBooks,
-        IOpenLibraryService openLibrary,
-        ICoverLookupService coverLookupService,
         CancellationToken cancellationToken)
     {
         if (request is null || string.IsNullOrWhiteSpace(request.Query))
@@ -667,7 +658,9 @@ Rules:
                 temperature: 0.3
             );
 
+            var aiSw = Stopwatch.StartNew();
             var response = await http.PostAsJsonAsync("https://api.openai.com/v1/chat/completions", payload);
+            PerfLog.Record("OpenAI.ChatCompletion", aiSw.Elapsed.TotalMilliseconds, response.IsSuccessStatusCode, ("Endpoint", "book-search"), ("Model", model), ("Retry", false));
             if (!response.IsSuccessStatusCode)
             {
                 var body = await response.Content.ReadAsStringAsync();
@@ -729,6 +722,14 @@ Rules:
 
             if (root.TryGetProperty("books", out var booksProp) && booksProp.ValueKind == JsonValueKind.Array)
             {
+                // Deliberately NOT calling googleBooks/openLibrary/coverLookupService here
+                // per-book — the single OpenAI call above already generated a usable
+                // summary for every book, and re-fetching descriptions from Google
+                // Books (quota-exhausted) and OpenLibrary (currently down) one book
+                // at a time was adding several seconds of dead-end HTTP calls PER
+                // BOOK to the response. Covers are fetched lazily by the frontend
+                // after this list renders (same pattern as search results), instead
+                // of blocking the whole response on them here.
                 foreach (var item in booksProp.EnumerateArray())
                 {
                     var title = item.TryGetProperty("title", out var t) ? t.GetString() ?? "" : "";
@@ -738,49 +739,7 @@ Rules:
 
                     if (string.IsNullOrWhiteSpace(title)) continue;
 
-                    // Try Google Books -> OpenLibrary -> GPT-4
-                    string bookSummary = gptSummary;
-                    string? descriptionSource = null;
-
-                    // Try Google Books first
-                    var gbDescription = await googleBooks.GetBookDescriptionAsync(title, author);
-
-                    if (!string.IsNullOrWhiteSpace(gbDescription))
-                    {
-                        bookSummary = gbDescription;
-                        descriptionSource = "googlebooks";
-                        Log.Information("[GoogleBooks] ✓ Got description for '{title}' by {author}");
-                    }
-                    else
-                    {
-                        // Fallback to OpenLibrary
-                        var olDescription = await openLibrary.GetBookDescriptionAsync(title, author);
-
-                        if (!string.IsNullOrWhiteSpace(olDescription))
-                        {
-                            bookSummary = olDescription;
-                            descriptionSource = "openlibrary";
-                            Log.Information("[OpenLibrary] ✓ Got description for '{title}' by {author}");
-                        }
-                        else if (string.IsNullOrWhiteSpace(gptSummary))
-                        {
-                            // If all sources failed, generate a fallback
-                            bookSummary = await AiDescriptionHelpers.GenerateNoSpoilerDescriptionAsync(
-                                title, author, http, model, modelHelper, aiResponseParser);
-                            descriptionSource = "gpt";
-                            Log.Information("[GPT-4] ✓ Generated fallback description for '{title}'");
-                        }
-                        else
-                        {
-                            // Use GPT summary as fallback
-                            descriptionSource = "gpt";
-                            Log.Information("[GPT-4] ✓ Using GPT-generated description for '{title}' (no external sources)");
-                        }
-                    }
-
-                    var coverResult = await coverLookupService.GetCoverAsync(title, author);
-
-                    books.Add(new AiBookSearchItem(title, author, bookSummary, importance, coverResult.CoverUrl, descriptionSource));
+                    books.Add(new AiBookSearchItem(title, author, gptSummary, importance, null, "gpt"));
                 }
             }
 
@@ -819,7 +778,9 @@ Rules:
                     temperature: 0.4
                 );
 
+                var retrySw = Stopwatch.StartNew();
                 var retryResponse = await http.PostAsJsonAsync("https://api.openai.com/v1/chat/completions", retryPayload, cancellationToken);
+                PerfLog.Record("OpenAI.ChatCompletion", retrySw.Elapsed.TotalMilliseconds, retryResponse.IsSuccessStatusCode, ("Endpoint", "book-search"), ("Model", "gpt-4o"), ("Retry", true));
                 if (retryResponse.IsSuccessStatusCode)
                 {
                     using var retryStream = await retryResponse.Content.ReadAsStreamAsync(cancellationToken);
@@ -851,49 +812,10 @@ Rules:
 
                                 if (string.IsNullOrWhiteSpace(title)) continue;
 
-                                // Try Google Books -> OpenLibrary -> GPT-4 (retry path)
-                                string bookSummary = gptSummary;
-                                string? descriptionSource = null;
-
-                                // Try Google Books first
-                                var gbDescription = await googleBooks.GetBookDescriptionAsync(title, author);
-
-                                if (!string.IsNullOrWhiteSpace(gbDescription))
-                                {
-                                    bookSummary = gbDescription;
-                                    descriptionSource = "googlebooks";
-                                    Log.Information("[GoogleBooks] ✓ Got description for '{title}' by {author} (retry)");
-                                }
-                                else
-                                {
-                                    // Fallback to OpenLibrary
-                                    var olDescription = await openLibrary.GetBookDescriptionAsync(title, author);
-
-                                    if (!string.IsNullOrWhiteSpace(olDescription))
-                                    {
-                                        bookSummary = olDescription;
-                                        descriptionSource = "openlibrary";
-                                        Log.Information("[OpenLibrary] ✓ Got description for '{title}' by {author} (retry)");
-                                    }
-                                    else if (string.IsNullOrWhiteSpace(gptSummary))
-                                    {
-                                        // If all sources failed, generate a fallback
-                                        bookSummary = await AiDescriptionHelpers.GenerateNoSpoilerDescriptionAsync(
-                                            title, author, http, model, modelHelper, aiResponseParser);
-                                        descriptionSource = "gpt";
-                                        Log.Information("[GPT-4] ✓ Generated fallback description for '{title}' (retry)");
-                                    }
-                                    else
-                                    {
-                                        // Use GPT summary as fallback
-                                        descriptionSource = "gpt";
-                                        Log.Information("[GPT-4] ✓ Using GPT-generated description for '{title}' (retry, no external sources)");
-                                    }
-                                }
-
-                                var coverResult = await coverLookupService.GetCoverAsync(title, author);
-
-                                books.Add(new AiBookSearchItem(title, author, bookSummary, importance, coverResult.CoverUrl, descriptionSource));
+                                // Same rationale as the main path above — use the
+                                // AI's own summary directly, cover fetched lazily
+                                // by the frontend afterward.
+                                books.Add(new AiBookSearchItem(title, author, gptSummary, importance, null, "gpt"));
                             }
                         }
                     }
@@ -991,7 +913,9 @@ Rules:
                 temperature: 0.2
             );
 
+            var aiSw = Stopwatch.StartNew();
             var response = await http.PostAsJsonAsync("https://api.openai.com/v1/chat/completions", payload);
+            PerfLog.Record("OpenAI.ChatCompletion", aiSw.Elapsed.TotalMilliseconds, response.IsSuccessStatusCode, ("Endpoint", "match-series-books"), ("Model", model));
             if (!response.IsSuccessStatusCode)
             {
                 var body = await response.Content.ReadAsStringAsync();

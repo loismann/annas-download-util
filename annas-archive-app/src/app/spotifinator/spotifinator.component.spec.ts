@@ -1,61 +1,69 @@
 import { TestBed } from '@angular/core/testing';
+import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClientTesting } from '@angular/common/http/testing';
+import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { SpotifinatorComponent } from './spotifinator.component';
 
-/**
- * Unit tests for SpotifinatorComponent
- * Verifies the spotifinator component renders correctly
- */
 describe('SpotifinatorComponent', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
-      imports: [SpotifinatorComponent]
+      imports: [SpotifinatorComponent, NoopAnimationsModule],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting()
+      ]
     }).compileComponents();
   });
 
-  it('should render the title', () => {
+  it('should create', () => {
     const fixture = TestBed.createComponent(SpotifinatorComponent);
-    fixture.detectChanges();
-    const compiled = fixture.nativeElement as HTMLElement;
-    const title = compiled.querySelector('.coming-soon-title');
-    expect(title).toBeTruthy();
-    expect(title?.textContent).toContain('Spotif-inator');
+    const component = fixture.componentInstance;
+    expect(component).toBeTruthy();
   });
 
-  it('should render the subtitle', () => {
+  it('should render the chat card', () => {
     const fixture = TestBed.createComponent(SpotifinatorComponent);
     fixture.detectChanges();
     const compiled = fixture.nativeElement as HTMLElement;
-    const subtitle = compiled.querySelector('.coming-soon-subtitle');
-    expect(subtitle).toBeTruthy();
-    expect(subtitle?.textContent).toContain('Admin Feature');
+    const card = compiled.querySelector('.chat-card');
+    expect(card).toBeTruthy();
   });
 
-  it('should render loading dots animation', () => {
+  it('should have a welcome message on init', () => {
     const fixture = TestBed.createComponent(SpotifinatorComponent);
-    fixture.detectChanges();
-    const compiled = fixture.nativeElement as HTMLElement;
-    const dots = compiled.querySelectorAll('.dot');
-    expect(dots.length).toBe(3);
+    const component = fixture.componentInstance;
+    expect(component.messages.length).toBe(1);
+    expect(component.messages[0].role).toBe('assistant');
   });
 
-  it('should use Material Design styling (light background)', () => {
+  it('should render the input area', () => {
     const fixture = TestBed.createComponent(SpotifinatorComponent);
     fixture.detectChanges();
     const compiled = fixture.nativeElement as HTMLElement;
-    const container = compiled.querySelector('.spotifinator-container');
-    expect(container).toBeTruthy();
-
-    const containerStyles = window.getComputedStyle(container as Element);
-    // Verify it's not using purple gradient (should be #fafafa or similar light color)
-    expect(containerStyles.background).not.toContain('667eea');
-    expect(containerStyles.background).not.toContain('764ba2');
+    const inputArea = compiled.querySelector('.input-area');
+    expect(inputArea).toBeTruthy();
   });
 
-  it('should render content card with proper styling', () => {
+  it('should have idle viewState initially', () => {
     const fixture = TestBed.createComponent(SpotifinatorComponent);
-    fixture.detectChanges();
-    const compiled = fixture.nativeElement as HTMLElement;
-    const contentCard = compiled.querySelector('.content-card');
-    expect(contentCard).toBeTruthy();
+    const component = fixture.componentInstance;
+    expect(component.viewState).toBe('idle');
+  });
+
+  it('should not submit empty messages', () => {
+    const fixture = TestBed.createComponent(SpotifinatorComponent);
+    const component = fixture.componentInstance;
+    component.userInput = '   ';
+    component.onSubmit();
+    // Should still only have the welcome message
+    expect(component.messages.length).toBe(1);
+  });
+
+  it('should format duration correctly', () => {
+    const fixture = TestBed.createComponent(SpotifinatorComponent);
+    const component = fixture.componentInstance;
+    expect(component.formatDuration(180000)).toBe('3:00');
+    expect(component.formatDuration(65000)).toBe('1:05');
+    expect(component.formatDuration(30000)).toBe('0:30');
   });
 });

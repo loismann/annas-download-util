@@ -1,0 +1,102 @@
+<aside class="video-sidebar">
+  <div class="sidebar-header">
+    <h2>Videos</h2>
+    <p>{{ viewMode === 'library' ? 'Browse your downloaded videos.' : 'Download videos from YouTube.' }}</p>
+  </div>
+
+  <!-- View Mode Toggle -->
+  <mat-button-toggle-group
+    *ngIf="isAdmin"
+    [value]="viewMode"
+    (change)="onViewModeChange($event.value)"
+    class="view-mode-toggle"
+  >
+    <mat-button-toggle value="library">
+      <mat-icon>video_library</mat-icon>
+      Library
+    </mat-button-toggle>
+    <mat-button-toggle value="download">
+      <mat-icon>download</mat-icon>
+      Download
+    </mat-button-toggle>
+  </mat-button-toggle-group>
+
+  <!-- Library Mode Controls -->
+  <ng-container *ngIf="viewMode === 'library'">
+    <button type="button" class="reset-view-btn" (click)="onResetView()">Reset View!</button>
+
+    <mat-form-field appearance="outline" class="w-100">
+      <mat-label>Search</mat-label>
+      <input
+        matInput
+        [ngModel]="searchTerm"
+        (ngModelChange)="onSearchTermChange($event)"
+        placeholder="Title, channel, tags"
+      />
+    </mat-form-field>
+
+    <mat-form-field appearance="outline" class="w-100">
+      <mat-label>Genre</mat-label>
+      <mat-select [ngModel]="selectedGenre" (ngModelChange)="onSelectedGenreChange($event)">
+        <mat-option value="">All Genres</mat-option>
+        <mat-option *ngFor="let genre of genres" [value]="genre">{{ genre }}</mat-option>
+      </mat-select>
+    </mat-form-field>
+
+    <div class="rating-filter">
+      <div class="rating-label">Minimum Star Rating:</div>
+      <div class="rating-control">
+        <input
+          type="range"
+          min="0"
+          max="5"
+          step="1"
+          [ngModel]="minPersonalRating"
+          (ngModelChange)="onMinPersonalRatingChange($event)"
+        />
+        <span class="rating-value">{{ minPersonalRating }}</span>
+      </div>
+    </div>
+
+    <div class="sidebar-meta">
+      <div class="meta-label">Total videos</div>
+      <div class="meta-value">{{ totalVideos }}</div>
+    </div>
+
+    <!-- Bulk Edit Section -->
+    <div class="bulk-edit-section" *ngIf="isAdmin">
+      <button
+        *ngIf="bulkEditMode"
+        mat-raised-button
+        color="primary"
+        (click)="onSelectAllVisible()"
+        class="select-all-visible-btn"
+      >
+        Select All Visible ({{ visibleVideosCount }})
+      </button>
+
+      <button
+        mat-raised-button
+        color="accent"
+        (click)="onBulkEditToggle()"
+        class="bulk-edit-toggle"
+      >
+        {{ bulkEditMode ? 'Exit Bulk Edit' : 'Bulk Edit' }}
+      </button>
+
+      <div *ngIf="bulkEditMode && selectedVideosCount > 0" class="bulk-edit-controls">
+        <div class="selection-counter">
+          {{ selectedVideosCount }} video{{ selectedVideosCount === 1 ? '' : 's' }} selected
+        </div>
+      </div>
+    </div>
+  </ng-container>
+
+  <!-- Download Mode - minimal sidebar content -->
+  <ng-container *ngIf="viewMode === 'download'">
+    <div class="download-mode-info">
+      <p>Enter a YouTube URL in the main panel to download videos.</p>
+      <p class="download-hint">Downloaded videos will appear in your library.</p>
+    </div>
+  </ng-container>
+</aside>

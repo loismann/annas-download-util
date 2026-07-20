@@ -77,6 +77,12 @@
                     aria-label="OpenLibrary description">
                     eco
                   </mat-icon>
+                  <mat-icon
+                    *ngIf="book.descriptionSource === 'wikipedia'"
+                    class="description-source-icon wiki-icon"
+                    aria-label="Wikipedia description">
+                    public
+                  </mat-icon>
                 </p>
                 <button
                   *ngIf="data.mode !== 'ai'"

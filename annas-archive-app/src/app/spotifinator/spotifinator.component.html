@@ -1,12 +1,165 @@
 <div class="spotifinator-container">
-  <div class="content-card">
-    <h1 class="coming-soon-title">Spotif-inator</h1>
-    <p class="coming-soon-subtitle">Admin Feature - Under Development</p>
-    <p class="coming-soon-subtitle">This page will be used to manage Spotify integrations and music features.</p>
-    <div class="dots">
-      <span class="dot"></span>
-      <span class="dot"></span>
-      <span class="dot"></span>
-    </div>
-  </div>
+  <mat-card class="chat-card">
+    <mat-card-header>
+      <mat-icon mat-card-avatar class="spotify-icon">headphones</mat-icon>
+      <mat-card-title>Spotifinator</mat-card-title>
+      <mat-card-subtitle>Natural language Spotify control</mat-card-subtitle>
+    </mat-card-header>
+
+    <mat-card-content>
+      <!-- Chat Messages -->
+      <div class="chat-messages" #chatContainer>
+        @for (message of messages; track message.id) {
+          <div class="message" [class.user]="message.role === 'user'" [class.assistant]="message.role === 'assistant'" [class.error]="message.error">
+
+            <!-- Pending indicator -->
+            @if (message.pending) {
+              <div class="pending-indicator">
+                <mat-spinner diameter="20"></mat-spinner>
+                <span>Thinking...</span>
+              </div>
+            } @else {
+              <!-- Message content -->
+              <div class="message-content">
+                <pre class="message-text">{{ message.content }}</pre>
+              </div>
+
+              <!-- Track results -->
+              @if (isSearchResult(message.data) && message.data.tracks.length > 0) {
+                <div class="results-container">
+                  <mat-list class="track-list">
+                    @for (track of message.data.tracks; track track.id) {
+                      <mat-list-item class="track-item" (click)="openInSpotify(track.spotifyUrl)">
+                        @if (track.albumArtUrl) {
+                          <img matListItemAvatar [src]="track.albumArtUrl" [alt]="track.albumName" class="album-art" />
+                        } @else {
+                          <mat-icon matListItemAvatar>album</mat-icon>
+                        }
+                        <div matListItemTitle class="track-title">{{ track.name }}</div>
+                        <div matListItemLine class="track-meta">
+                          {{ track.artists }} · {{ track.albumName }} · {{ formatDuration(track.durationMs) }}
+                        </div>
+                      </mat-list-item>
+                    }
+                  </mat-list>
+                </div>
+              }
+
+              <!-- Playlist array results -->
+              @if (isPlaylistArray(message.data)) {
+                <div class="results-container">
+                  <mat-list class="playlist-list">
+                    @for (playlist of message.data; track playlist.id) {
+                      <mat-list-item class="playlist-item" (click)="openInSpotify(playlist.spotifyUrl)">
+                        @if (playlist.imageUrl) {
+                          <img matListItemAvatar [src]="playlist.imageUrl" [alt]="playlist.name" class="playlist-art" />
+                        } @else {
+                          <mat-icon matListItemAvatar>queue_music</mat-icon>
+                        }
+                        <div matListItemTitle>{{ playlist.name }}</div>
+                        <div matListItemLine>{{ playlist.trackCount }} tracks</div>
+                      </mat-list-item>
+                    }
+                  </mat-list>
+                </div>
+              }
+
+              <!-- Single playlist result -->
+              @if (isPlaylist(message.data)) {
+                <div class="results-container single-playlist">
+                  <mat-card class="playlist-card" (click)="openInSpotify(message.data.spotifyUrl)">
+                    @if (message.data.imageUrl) {
+                      <img [src]="message.data.imageUrl" [alt]="message.data.name" class="playlist-cover" />
+                    } @else {
+                      <mat-icon class="playlist-placeholder">queue_music</mat-icon>
+                    }
+                    <div class="playlist-info">
+                      <span class="playlist-name">{{ message.data.name }}</span>
+                      <span class="playlist-tracks">{{ message.data.trackCount }} tracks</span>
+                    </div>
+                  </mat-card>
+                </div>
+              }
+
+              <!-- Vibe generation results -->
+              @if (isVibeGenerationResult(message.data)) {
+                <div class="results-container">
+                  <!-- Show created playlist if available -->
+                  @if (message.data.createdPlaylist) {
+                    <div class="single-playlist" style="margin-bottom: 1rem;">
+                      <mat-card class="playlist-card" (click)="openInSpotify(message.data.createdPlaylist.spotifyUrl)">
+                        @if (message.data.createdPlaylist.imageUrl) {
+                          <img [src]="message.data.createdPlaylist.imageUrl" [alt]="message.data.createdPlaylist.name" class="playlist-cover" />
+                        } @else {
+                          <mat-icon class="playlist-placeholder">queue_music</mat-icon>
+                        }
+                        <div class="playlist-info">
+                          <span class="playlist-name">{{ message.data.createdPlaylist.name }}</span>
+                          <span class="playlist-tracks">{{ message.data.createdPlaylist.trackCount }} tracks</span>
+                        </div>
+                      </mat-card>
+                    </div>
+                  }
+
+                  <!-- Show found tracks -->
+                  @if (message.data.foundTracks.length > 0) {
+                    <mat-list class="track-list">
+                      @for (track of message.data.foundTracks; track track.id) {
+                        <mat-list-item class="track-item" (click)="openInSpotify(track.spotifyUrl)">
+                          @if (track.albumArtUrl) {
+                            <img matListItemAvatar [src]="track.albumArtUrl" [alt]="track.albumName" class="album-art" />
+                          } @else {
+                            <mat-icon matListItemAvatar>album</mat-icon>
+                          }
+                          <div matListItemTitle class="track-title">{{ track.name }}</div>
+                          <div matListItemLine class="track-meta">
+                            {{ track.artists }} · {{ track.albumName }} · {{ formatDuration(track.durationMs) }}
+                          </div>
+                        </mat-list-item>
+                      }
+                    </mat-list>
+                  }
+
+                  <!-- Show not found songs -->
+                  @if (message.data.notFoundSongs.length > 0) {
+                    <div class="not-found-songs">
+                      <small>Couldn't find on Spotify: {{ message.data.notFoundSongs.join(', ') }}</small>
+                    </div>
+                  }
+                </div>
+              }
+            }
+          </div>
+        }
+      </div>
+
+      <!-- Input Area -->
+      <div class="input-area">
+        <mat-form-field appearance="outline" class="message-input">
+          <mat-label>Type a command...</mat-label>
+          <input
+            matInput
+            #messageInput
+            [(ngModel)]="userInput"
+            (keydown)="onKeyDown($event)"
+            [disabled]="viewState === 'processing'"
+            placeholder="e.g., Search for chill music"
+          />
+        </mat-form-field>
+        <button
+          mat-fab
+          color="primary"
+          (click)="onSubmit()"
+          [disabled]="!userInput.trim() || viewState === 'processing'"
+          matTooltip="Send message"
+        >
+          @if (viewState === 'processing') {
+            <mat-spinner diameter="24" color="accent"></mat-spinner>
+          } @else {
+            <mat-icon>send</mat-icon>
+          }
+        </button>
+      </div>
+    </mat-card-content>
+  </mat-card>
 </div>

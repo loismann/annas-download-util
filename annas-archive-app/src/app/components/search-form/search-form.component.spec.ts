@@ -12,9 +12,9 @@ describe('SearchFormComponent', () => {
   let mockLoggerService: jasmine.SpyObj<LoggerService>;
 
   const mockDomains: DomainHealth[] = [
-    { name: "Anna's Archive ORG", extension: 'org', health: 95, certExpDays: 30 },
-    { name: "Anna's Archive SE", extension: 'se', health: 72, certExpDays: 15 },
-    { name: "Anna's Archive LI", extension: 'li', health: 45, certExpDays: 60 }
+    { name: "Anna's Archive GL", extension: 'gl', health: 95, certExpDays: 30 },
+    { name: "Anna's Archive PK", extension: 'pk', health: 72, certExpDays: 15 },
+    { name: "Anna's Archive GD", extension: 'gd', health: 45, certExpDays: 60 }
   ];
 
   beforeEach(async () => {

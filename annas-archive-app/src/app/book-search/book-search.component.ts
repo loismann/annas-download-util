@@ -95,11 +95,9 @@ export class BookSearchComponent implements OnInit, OnDestroy {
 
   /* ───────── Anna's Archive domain health ───────── */
   annaDomains: DomainHealth[] = [
-    { name: "Anna's Archive ORG", extension: 'org', health: null, certExpDays: null },
-    { name: "Anna's Archive SE", extension: 'se', health: null, certExpDays: null },
-    { name: "Anna's Archive LI", extension: 'li', health: null, certExpDays: null },
-    { name: "Anna's Archive PM", extension: 'pm', health: null, certExpDays: null },
-    { name: "Anna's Archive IN", extension: 'in', health: null, certExpDays: null }
+    { name: "Anna's Archive GL", extension: 'gl', health: null, certExpDays: null },
+    { name: "Anna's Archive PK", extension: 'pk', health: null, certExpDays: null },
+    { name: "Anna's Archive GD", extension: 'gd', health: null, certExpDays: null }
   ];
 
   /* ───────── author suggestion state ───────── */
@@ -197,30 +195,32 @@ export class BookSearchComponent implements OnInit, OnDestroy {
       const domain = this.annaDomains.find(d => d.extension === entry.extension);
       if (!domain) return;
 
-      if (domain.health === null || entry.extension === 'pm' || entry.extension === 'in') {
-        domain.health = typeof entry.health === 'number' ? entry.health : null;
-      }
+      domain.health = typeof entry.health === 'number' ? entry.health : null;
     });
   }
 
   private parseDomainHealth(data: SlumHealthResponse): void {
     if (!data || !Array.isArray(data)) return;
 
-    // Find the entries for Anna's Archive domains
-    const orgEntry = data.find((entry: SlumHealthEntry) => entry.name === "Anna's Archive ORG");
-    const seEntry = data.find((entry: SlumHealthEntry) => entry.name === "Anna's Archive SE");
-    const liEntry = data.find((entry: SlumHealthEntry) => entry.name === "Anna's Archive LI");
+    // Best-effort: this data comes from a third-party status monitor
+    // (open-slum.org) we don't control, so these entries only populate if
+    // that service happens to track the current domains. mirror-health
+    // (our own backend, hitting the domains directly) is the reliable
+    // source — this is a bonus enrichment layered on top when available.
+    const glEntry = data.find((entry: SlumHealthEntry) => entry.name === "Anna's Archive GL");
+    const pkEntry = data.find((entry: SlumHealthEntry) => entry.name === "Anna's Archive PK");
+    const gdEntry = data.find((entry: SlumHealthEntry) => entry.name === "Anna's Archive GD");
 
-    if (orgEntry) {
-      this.updateDomainHealth('org', orgEntry);
+    if (glEntry) {
+      this.updateDomainHealth('gl', glEntry);
     }
 
-    if (seEntry) {
-      this.updateDomainHealth('se', seEntry);
+    if (pkEntry) {
+      this.updateDomainHealth('pk', pkEntry);
     }
 
-    if (liEntry) {
-      this.updateDomainHealth('li', liEntry);
+    if (gdEntry) {
+      this.updateDomainHealth('gd', gdEntry);
     }
   }
 
@@ -388,38 +388,80 @@ export class BookSearchComponent implements OnInit, OnDestroy {
     this.searchPerformed = true;
     // Keep selectedFormat so it persists across searches
 
-    const searchObservable = this.useLibGen
-      ? this.bookSearchApi.searchBooksLibGen(searchQuery, false)
-      : this.bookSearchApi.searchBooks(searchQuery, false);
+    const initIdleState = (b: BookDto) => {
+      b.sendState = 'idle';
+      b.libraryState = 'idle';
+      b.dadsKindleState = 'idle';
+      b.momsKindleState = 'idle';
+    };
 
-    searchObservable.subscribe({
+    if (this.useLibGen) {
+      // LibGen's search doesn't paginate the same way (general vs. fiction
+      // search, not simple page accumulation) — single-shot for now.
+      this.bookSearchApi.searchBooksLibGen(searchQuery, false).subscribe({
+        next: books => {
+          this.books = books;
+          this.books.forEach(initIdleState);
+          this.loading = false;
+          this.queueCoverLookups();
+          this.fetchBookDescriptions();
+        },
+        error: err => this.handleSearchError(err),
+      });
+      return;
+    }
+
+    // Page 1 renders as soon as it arrives instead of waiting for the full
+    // ~50-result budget — page 2 is fetched in the background afterward and
+    // appended when it lands, so the user sees results immediately instead
+    // of staring at a spinner for two sequential Anna's Archive page fetches.
+    this.bookSearchApi.searchBooks(searchQuery, false, 1).subscribe({
       next: books => {
         this.books = books;
-        this.books.forEach(b => {
-          b.sendState = 'idle';
-          b.libraryState = 'idle';
-          b.dadsKindleState = 'idle';
-          b.momsKindleState = 'idle';
-        });
+        this.books.forEach(initIdleState);
         this.loading = false;
         this.queueCoverLookups();
         this.fetchBookDescriptions();
+
+        this.bookSearchApi.searchBooks(searchQuery, false, 2).subscribe({
+          next: more => {
+            more.forEach(initIdleState);
+            this.books = [...this.books, ...more];
+            // queueCoverLookups() re-filters this.books for whatever still
+            // needs a lookup, so it naturally picks up page 2's additions.
+            // fetchBookDescriptions() isn't re-called here — it always
+            // targets the first AUTO_DESCRIPTION_FETCH_LIMIT books by index,
+            // which page 1 alone already covers, and calling it again would
+            // risk double-firing an in-flight fetch for a page-1 book that
+            // hasn't resolved yet (no in-flight guard on that path).
+            this.queueCoverLookups();
+          },
+          error: err => {
+            // A 404 here just means there's no page 2 — not a real error,
+            // don't surface it to the user who already has page 1 results.
+            if (err.status !== 404) {
+              this.logger.error('[Book Search] Page 2 fetch failed:', err);
+            }
+          },
+        });
       },
-      error: err => {
-        this.logger.error('[Book Search] Error:', err);
-        if (err.name === 'TimeoutError') {
-          this.error = `Search timed out. ${this.useLibGen ? 'LibGen' : "Anna's Archive"} may be slow or unavailable.`;
-        } else if (err.status === 404) {
-          this.error = 'No books found.';
-        } else if (err.status === 0) {
-          this.error = 'Cannot connect to server. Please check your connection.';
-        } else {
-          this.error = `Error fetching books from ${this.useLibGen ? 'LibGen' : "Anna's Archive"}: ${err.message || err.statusText || 'Unknown error'}`;
-        }
-        this.logger.error(err);
-        this.loading = false;
-      },
+      error: err => this.handleSearchError(err),
     });
+  }
+
+  private handleSearchError(err: any): void {
+    this.logger.error('[Book Search] Error:', err);
+    if (err.name === 'TimeoutError') {
+      this.error = `Search timed out. ${this.useLibGen ? 'LibGen' : "Anna's Archive"} may be slow or unavailable.`;
+    } else if (err.status === 404) {
+      this.error = 'No books found.';
+    } else if (err.status === 0) {
+      this.error = 'Cannot connect to server. Please check your connection.';
+    } else {
+      this.error = `Error fetching books from ${this.useLibGen ? 'LibGen' : "Anna's Archive"}: ${err.message || err.statusText || 'Unknown error'}`;
+    }
+    this.logger.error(err);
+    this.loading = false;
   }
 
   /* ───────── download button ───────── */
@@ -627,20 +669,63 @@ export class BookSearchComponent implements OnInit, OnDestroy {
 
     this.coverLookupsInFlight.add(book.md5);
     const author = book.authors?.[0];
-    this.bookSearchApi.fetchCover(book.title, author).subscribe({
+
+    const addCoverAndFinish = (coverUrl: string) => {
+      if (!book.coverCandidates) {
+        book.coverCandidates = [];
+      }
+      book.coverCandidates.unshift(coverUrl);
+      this.coverLookupsInFlight.delete(book.md5);
+    };
+
+    const fallbackToTitleSearch = () => {
+      this.bookSearchApi.fetchCover(book.title, author).subscribe({
+        next: (resp) => {
+          if (resp.coverUrl) {
+            addCoverAndFinish(resp.coverUrl);
+          } else {
+            this.coverLookupsInFlight.delete(book.md5);
+          }
+        },
+        error: () => this.coverLookupsInFlight.delete(book.md5)
+      });
+    };
+
+    // Try MD5-based ISBN lookup first — independent of OpenLibrary's search
+    // API and Google Books' quota, so it works even when those don't. Falls
+    // back to the title/author search only if this doesn't find anything.
+    this.bookSearchApi.fetchCoverByMd5(book.md5).subscribe({
       next: (resp) => {
         if (resp.coverUrl) {
-          if (!book.coverCandidates) {
-            book.coverCandidates = [];
-          }
-          book.coverCandidates.unshift(resp.coverUrl);
+          addCoverAndFinish(resp.coverUrl);
+        } else {
+          fallbackToTitleSearch();
         }
-        this.coverLookupsInFlight.delete(book.md5);
       },
-      error: () => {
-        this.coverLookupsInFlight.delete(book.md5);
-        // no-op
-      }
+      error: () => fallbackToTitleSearch()
+    });
+  }
+
+  /**
+   * Staggered, best-effort cover fetch for AI Book Search results — these
+   * are AI-suggested titles with no MD5 yet (nothing's been matched to a
+   * real download), so this uses the title/author lookup rather than the
+   * MD5-based one. Failures are silent; a missing cover just stays a
+   * placeholder, same as everywhere else covers are optional.
+   */
+  private queueAiCoverLookups(results: { title: string; author?: string; coverUrl?: string }[]): void {
+    results.forEach((book, index) => {
+      if (book.coverUrl) return;
+      setTimeout(() => {
+        this.bookSearchApi.fetchCover(book.title, book.author).subscribe({
+          next: (resp) => {
+            if (resp.coverUrl) {
+              book.coverUrl = resp.coverUrl;
+            }
+          },
+          error: () => { /* no-op — placeholder stays */ }
+        });
+      }, index * COVER_LOOKUP_STAGGER_MS);
     });
   }
 
@@ -732,14 +817,28 @@ export class BookSearchComponent implements OnInit, OnDestroy {
           book.description = resp.description;
           book.descriptionSource = 'openlibrary';
         } else {
-          // If OpenLibrary fails, try GPT-4
+          this.tryWikipedia(book);
+        }
+      },
+      error: () => this.tryWikipedia(book)
+    });
+  }
+
+  private tryWikipedia(book: BookDto): void {
+    const author = book.authors?.[0];
+
+    this.bookSearchApi.fetchDescriptionFromWikipedia(book.title, author).subscribe({
+      next: (resp) => {
+        if (resp.description) {
+          book.description = resp.description;
+          book.descriptionSource = 'wikipedia';
+        } else {
+          // Last resort — only reachable if Wikipedia has no real article
+          // for this title either.
           this.tryGPT4(book);
         }
       },
-      error: () => {
-        // If OpenLibrary fails, try GPT-4
-        this.tryGPT4(book);
-      }
+      error: () => this.tryGPT4(book)
     });
   }
 
@@ -937,6 +1036,7 @@ export class BookSearchComponent implements OnInit, OnDestroy {
       next: (resp: AiBookSearchResult) => {
         const results = (resp.books ?? []).map((book, index) => ({
           title: book.title,
+          author: book.author,
           order: index + 1,
           description: [book.summary, book.importance].filter(Boolean).join(' • '),
           coverUrl: book.coverUrl || undefined,
@@ -951,6 +1051,12 @@ export class BookSearchComponent implements OnInit, OnDestroy {
         dialogRef.componentInstance.addStatus(`Found ${results.length} book${results.length === 1 ? '' : 's'}.`);
 
         this.loading = false;
+
+        // Covers are fetched lazily here, one at a time, rather than by the
+        // backend up front — the AI response now returns almost instantly
+        // instead of waiting on per-book description/cover lookups against
+        // OpenLibrary/Google Books for every result.
+        this.queueAiCoverLookups(results);
       },
       error: (err) => {
         this.loading = false;

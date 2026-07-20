@@ -152,7 +152,7 @@ Return ONLY this JSON array:
         if (!response.IsSuccessStatusCode)
         {
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
-            Log.Information($"OpenAI chapter-labeling failed status={(int)response.StatusCode} body={body}");
+            Log.Information("OpenAI chapter-labeling failed status={StatusCode} body={Body}", (int)response.StatusCode, body);
             return null;
         }
 
@@ -180,12 +180,12 @@ Return ONLY this JSON array:
         }
         catch (ArgumentException ex)
         {
-            Log.Information($"Invalid argument parsing chapter labels JSON: {ex.ParamName}");
+            Log.Information("Invalid argument parsing chapter labels JSON: {ParamName}", ex.ParamName);
             return null;
         }
         catch (Exception ex)
         {
-            Log.Information($"Failed to parse chapter labels JSON: {ex.Message}");
+            Log.Information("Failed to parse chapter labels JSON: {ErrorMessage}", ex.Message);
             return null;
         }
     }

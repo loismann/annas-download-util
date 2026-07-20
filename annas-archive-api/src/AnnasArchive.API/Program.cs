@@ -1,5 +1,6 @@
 using AnnasArchive.API.Configuration;
 using AnnasArchive.API.Endpoints;
+using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -37,8 +38,13 @@ if (app.Environment.IsDevelopment())
 
 // ─── Middleware ──────────────────────────────────────────────────────────
 app.UseCorrelationId();
+// Emits one structured log line per request with the elapsed time as a real
+// numeric field — this is what "endpoint duration over time" charts in Seq
+// key off of, with zero manual instrumentation per endpoint.
+app.UseSerilogRequestLogging();
 app.UseGlobalExceptionHandler();
 app.UseAppCors();
+app.UseStaticFiles();
 app.UseSecurityHeaders();
 app.UseRequestBodySizeLimit(maxBodySize: 500 * 1024 * 1024); // 500MB to match upload endpoint
 app.UseRateLimiter();
@@ -54,9 +60,15 @@ app.MapAuthEndpoints();
 app.MapAnnaDownloadEndpoints();
 app.MapBookSearchEndpoints();
 app.MapLibGenEndpoints();
-app.MapGamingEndpoints();
+if (app.Configuration.GetValue<bool>("Gaming:Enabled", false))
+{
+    app.MapGamingEndpoints();
+}
 app.MapMediaEndpoints();
 app.MapYouTubeDownloadEndpoints();
+app.MapSpotifyEndpoints();
+app.MapVideoLibraryBrowserEndpoints();
+app.MapVideoLibraryMetadataEndpoints();
 app.MapQuizEndpoints();
 app.MapVocabEndpoints();
 app.MapDropboxReaderEndpoints();
@@ -75,6 +87,10 @@ app.MapAiSummarizeEndpoints();
 app.MapAiSectionSummaryEndpoints();
 app.MapDevEndpoints();
 app.MapHealthCheckEndpoints();
+
+// SPA fallback: any request that doesn't match an API route or a static file
+// falls back to index.html so Angular's client-side router can handle it.
+app.MapFallbackToFile("index.html");
 
 app.Run();
 

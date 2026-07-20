@@ -11,6 +11,7 @@ using AnnasArchive.Core.Services;
 using Dropbox.Api;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using Serilog;
@@ -157,18 +158,45 @@ public static class ServiceConfiguration
     /// </summary>
     public static IServiceCollection AddHttpClients(this IServiceCollection services, IConfiguration configuration)
     {
-        // Anna's Archive HTTP client (scraping with domain fallback)
-        services.AddHttpClient<AnnaArchiveService>(c =>
+        // Cloudflare bypass service using Playwright (singleton to manage browser lifecycle)
+        services.AddSingleton<ICloudflareBypassService, CloudflareBypassService>();
+
+        // Anna's Archive HTTP client (named client for fallback/downloads)
+        services.AddHttpClient("AnnasArchive", c =>
         {
             c.BaseAddress = new Uri("https://annas-archive.org");
             c.DefaultRequestHeaders.UserAgent.ParseAdd(
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
-                "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36");
+                "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36");
             c.DefaultRequestHeaders.Add("Accept",
-                "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
+                "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8");
             c.DefaultRequestHeaders.Add("Accept-Language", "en-US,en;q=0.9");
+            c.DefaultRequestHeaders.Add("Accept-Encoding", "gzip, deflate, br");
+            c.DefaultRequestHeaders.Add("sec-ch-ua", "\"Google Chrome\";v=\"131\", \"Chromium\";v=\"131\", \"Not_A Brand\";v=\"24\"");
+            c.DefaultRequestHeaders.Add("sec-ch-ua-mobile", "?0");
+            c.DefaultRequestHeaders.Add("sec-ch-ua-platform", "\"Windows\"");
+            c.DefaultRequestHeaders.Add("sec-fetch-dest", "document");
+            c.DefaultRequestHeaders.Add("sec-fetch-mode", "navigate");
+            c.DefaultRequestHeaders.Add("sec-fetch-site", "none");
+            c.DefaultRequestHeaders.Add("sec-fetch-user", "?1");
+            c.DefaultRequestHeaders.Add("upgrade-insecure-requests", "1");
+            c.DefaultRequestHeaders.Add("Cache-Control", "max-age=0");
         })
         .AddScrapingResilience("AnnasArchive");
+
+        // Anna's Archive service with Playwright integration
+        services.AddScoped<AnnaArchiveService>(provider =>
+        {
+            var httpClientFactory = provider.GetRequiredService<IHttpClientFactory>();
+            var httpClient = httpClientFactory.CreateClient("AnnasArchive");
+            var bypassService = provider.GetRequiredService<ICloudflareBypassService>();
+            var cache = provider.GetRequiredService<IMemoryCache>();
+
+            // Create delegate that uses Playwright for HTML fetching
+            Func<string, Task<string>> playwrightFetcher = url => bypassService.FetchHtmlAsync(url);
+
+            return new AnnaArchiveService(httpClient, cache, playwrightFetcher);
+        });
 
         // LibGen HTTP client (scraping with domain fallback)
         services.AddHttpClient<LibGenService>(c =>
@@ -214,9 +242,25 @@ public static class ServiceConfiguration
         })
         .AddStandardResilience("GoogleBooks");
 
+        // Wikipedia HTTP Client (external API) — real-data fallback for
+        // descriptions, free and not subject to the rate limits that made
+        // OpenLibrary/Google Books unreliable. Wikipedia's API etiquette
+        // requires a descriptive User-Agent or it may reject requests.
+        services.AddHttpClient("Wikipedia", client =>
+        {
+            client.Timeout = HttpTimeouts.StandardApiTimeout;
+            client.DefaultRequestHeaders.Add("User-Agent", "AnnaArchiveApp/1.0 (personal self-hosted library tool)");
+        })
+        .AddStandardResilience("Wikipedia");
+        services.AddSingleton<IWikipediaService, WikipediaService>();
+
         // Ebook Cover Service (with HTTP client and standard resilience)
         services.AddHttpClient<IEbookCoverService, EbookCoverService>()
             .AddStandardResilience("EbookCover");
+
+        // Spotify HTTP client (external API)
+        services.AddHttpClient<ISpotifyService, SpotifyService>()
+            .AddStandardResilience("Spotify");
 
         return services;
     }
@@ -239,6 +283,11 @@ public static class ServiceConfiguration
         // Library services - LibraryIndexCache warms on startup via IHostedService
         services.AddSingleton<LibraryIndexCache>();
         services.AddHostedService(sp => sp.GetRequiredService<LibraryIndexCache>());
+
+        // Video library services - VideoIndexCache warms on startup via IHostedService
+        services.AddSingleton<VideoIndexCache>();
+        services.AddHostedService(sp => sp.GetRequiredService<VideoIndexCache>());
+
         services.AddSingleton<IGenreClassificationService, GenreClassificationService>();
         services.AddSingleton<IDuplicateDetectionService, DuplicateDetectionService>();
         services.AddSingleton<IMetadataExtractionService, MetadataExtractionService>();
@@ -248,7 +297,11 @@ public static class ServiceConfiguration
         services.AddSingleton<IOpenLibraryService, OpenLibraryService>();
         services.AddSingleton<IGoogleBooksService, GoogleBooksService>();
         services.AddSingleton<Services.IDescriptionFetcherService, Services.DescriptionFetcherService>();
-        services.AddSingleton<Services.ICoverLookupService, Services.CoverLookupService>();
+        // Scoped, not Singleton — CoverLookupService now depends on the
+        // Scoped AnnaArchiveService (for the Anna's-Archive-thumbnail cover
+        // path), and a Singleton can't safely consume a Scoped dependency
+        // without capturing it forever across requests.
+        services.AddScoped<Services.ICoverLookupService, Services.CoverLookupService>();
 
         // Email service
         services.AddSingleton<IEmailService, EmailService>();
@@ -285,6 +338,9 @@ public static class ServiceConfiguration
 
         // YouTube download service
         services.AddSingleton<IYouTubeDownloadService, YouTubeDownloadService>();
+
+        // Spotify configuration
+        services.Configure<SpotifyConfiguration>(configuration.GetSection(SpotifyConfiguration.SectionName));
 
         // Text processing
         services.AddSingleton<ITextProcessingService, TextProcessingService>();

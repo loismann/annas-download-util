@@ -8,7 +8,7 @@ export class QuizApiService {
   private readonly isLocalDev = window.location.hostname === 'localhost';
   private readonly apiHost = this.isLocalDev
     ? 'http://localhost:5001'
-    : 'https://fs01pfbooks.synology.me:5051';
+    : '';
   private readonly baseUrl = `${this.apiHost}/api/quiz`;
 
   constructor(private http: HttpClient) {}

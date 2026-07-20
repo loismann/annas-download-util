@@ -287,7 +287,7 @@ public static class DropboxEpubCache
                     var repaired = TryRepairZip(workingBytes);
                     if (repaired != null)
                     {
-                        Log.Information($"[epub] Repaired zip structure for {label}");
+                        Log.Information("[epub] Repaired zip structure for {Label}", label);
                         workingBytes = repaired;
                         zipRepairAttempted = true;
                         continue;
@@ -309,7 +309,7 @@ public static class DropboxEpubCache
                     throw;
                 }
 
-                Log.Information($"[epub] Missing content '{missingPath}' in {label}. Injecting placeholder.");
+                Log.Information("[epub] Missing content '{MissingPath}' in {Label}. Injecting placeholder.", missingPath, label);
                 workingBytes = EnsureZipEntry(workingBytes, missingPath);
                 added.Add(missingPath);
             }
@@ -334,7 +334,7 @@ public static class DropboxEpubCache
         }
         catch (ArgumentException ex)
         {
-            Log.Information($"[dropbox] Invalid argument parsing EPUB {label}: {ex.ParamName}");
+            Log.Information("[dropbox] Invalid argument parsing EPUB {Label}: {ParamName}", label, ex.ParamName);
             throw;
         }
         catch (Exception ex)
@@ -410,11 +410,11 @@ public static class DropboxEpubCache
             }
             catch (ArgumentException ex)
             {
-                Log.Information($"[epub] Invalid argument parsing OPF for tolerant fallback ({label}): {ex.ParamName}");
+                Log.Information("[epub] Invalid argument parsing OPF for tolerant fallback ({Label}): {ParamName}", label, ex.ParamName);
             }
             catch (Exception ex)
             {
-                Log.Information($"[epub] Failed to parse OPF for tolerant fallback ({label}): {ex.Message}");
+                Log.Information("[epub] Failed to parse OPF for tolerant fallback ({Label}): {ErrorMessage}", label, ex.Message);
             }
         }
 
@@ -443,7 +443,7 @@ public static class DropboxEpubCache
         if (chapters.Count == 0)
             return null;
 
-        Log.Information($"[epub] Tolerant fallback used for {label}. Chapters={chapters.Count}");
+        Log.Information("[epub] Tolerant fallback used for {Label}. Chapters={ChapterCount}", label, chapters.Count);
         return (bookTitle, chapters);
     }
 
@@ -479,12 +479,12 @@ public static class DropboxEpubCache
         }
         catch (ArgumentException ex)
         {
-            Log.Information($"[epub] Invalid argument reading zip entries for tolerant fallback ({label}): {ex.ParamName}");
+            Log.Information("[epub] Invalid argument reading zip entries for tolerant fallback ({Label}): {ParamName}", label, ex.ParamName);
             return false;
         }
         catch (Exception ex)
         {
-            Log.Information($"[epub] Failed to read zip entries for tolerant fallback ({label}): {ex.Message}");
+            Log.Information("[epub] Failed to read zip entries for tolerant fallback ({Label}): {ErrorMessage}", label, ex.Message);
             return false;
         }
     }
@@ -632,12 +632,12 @@ public static class DropboxEpubCache
         }
         catch (ArgumentException ex)
         {
-            Log.Information($"[epub] Invalid argument for zip repair: {ex.ParamName}");
+            Log.Information("[epub] Invalid argument for zip repair: {ParamName}", ex.ParamName);
             return null;
         }
         catch (Exception ex)
         {
-            Log.Information($"[epub] Zip repair failed: {ex.Message}");
+            Log.Information("[epub] Zip repair failed: {ErrorMessage}", ex.Message);
             return null;
         }
     }
@@ -701,7 +701,7 @@ public static class DropboxEpubCache
         }
         catch (InvalidDataException ex)
         {
-            Log.Information($"[epub] Invalid zip structure while adding '{entryPath}': {ex.Message}");
+            Log.Information("[epub] Invalid zip structure while adding '{EntryPath}': {ErrorMessage}", entryPath, ex.Message);
             return sourceBytes;
         }
     }

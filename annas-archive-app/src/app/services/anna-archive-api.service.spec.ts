@@ -388,8 +388,8 @@ describe('AnnaArchiveApiService', () => {
 
   it('should get SLUM health status', () => {
     const mockResponse = [
-      { name: "Anna's Archive ORG", health: '95%', cert_exp: '90 days' },
-      { name: "Anna's Archive SE", health: '92%', cert_exp: '85 days' }
+      { name: "Anna's Archive GL", health: '95%', cert_exp: '90 days' },
+      { name: "Anna's Archive PK", health: '92%', cert_exp: '85 days' }
     ];
 
     service.getSlumHealth().subscribe(response => {
@@ -403,8 +403,8 @@ describe('AnnaArchiveApiService', () => {
 
   it('should get mirror health status', () => {
     const mockResponse = [
-      { extension: 'pm', health: 88 },
-      { extension: 'in', health: 85 }
+      { extension: 'pk', health: 88 },
+      { extension: 'gd', health: 85 }
     ];
 
     service.getMirrorHealth().subscribe(response => {

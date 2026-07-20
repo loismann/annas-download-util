@@ -24,7 +24,11 @@ public record VideoInfo(
     string Title,
     string Uploader,
     string Duration,
+    long DurationSeconds,
     string Thumbnail,
+    string? VideoId,
+    string? Description,
+    string? Resolution,
     List<VideoFormat> Formats
 );
 
@@ -50,6 +54,7 @@ public record DownloadJob(
     string? Eta,
     string? OutputPath,
     string? Error,
+    string? StatusMessage,
     DateTime StartedAt,
     DateTime? CompletedAt
 );
@@ -80,9 +85,19 @@ public class DownloadJobState
     public string? Eta { get; set; }
     public string? OutputPath { get; set; }
     public string? Error { get; set; }
+    public string? StatusMessage { get; set; }
     public DateTime StartedAt { get; init; } = DateTime.UtcNow;
     public DateTime? CompletedAt { get; set; }
     public CancellationTokenSource? CancellationSource { get; set; }
+
+    // Additional metadata for video library
+    public string? Channel { get; set; }
+    public string? Duration { get; set; }
+    public long? DurationSeconds { get; set; }
+    public string? ThumbnailUrl { get; set; }
+    public string? YouTubeId { get; set; }
+    public string? Description { get; set; }
+    public string? Resolution { get; set; }
 
     public DownloadJob ToRecord() => new(
         JobId,
@@ -94,6 +109,7 @@ public class DownloadJobState
         Eta,
         OutputPath,
         Error,
+        StatusMessage,
         StartedAt,
         CompletedAt
     );

@@ -53,7 +53,7 @@ export class BookSearchApiService {
   private readonly isLocalDev = window.location.hostname === 'localhost';
   private readonly apiHost = this.isLocalDev
     ? 'http://localhost:5001'
-    : 'https://fs01pfbooks.synology.me:5051';
+    : '';
   private readonly baseUrl = `${this.apiHost}/api/anna`;
   private readonly libgenBaseUrl = `${this.apiHost}/api/libgen`;
 
@@ -74,14 +74,15 @@ export class BookSearchApiService {
    * Search for books on Anna's Archive.
    * Always returns an array, even when the API returns a single object.
    */
-  searchBooks(name: string, exact: boolean): Observable<BookDto[]> {
+  searchBooks(name: string, exact: boolean, page: number = 1): Observable<BookDto[]> {
     const params = new HttpParams()
       .set('name', name)
-      .set('exact', exact.toString());
+      .set('exact', exact.toString())
+      .set('page', page.toString());
 
-    const label = `searchBooks:${name}:${exact}`;
+    const label = `searchBooks:${name}:${exact}:${page}`;
     this.logger.debug('timer-start: ' + label);
-    this.logger.log('[searchBooks] start', { name, exact });
+    this.logger.log('[searchBooks] start', { name, exact, page });
 
     return this.http
       .get<BookDto | BookDto[]>(`${this.baseUrl}/book`, { params })
@@ -327,6 +328,17 @@ export class BookSearchApiService {
   }
 
   /**
+   * Fetch cover URL via ISBN extracted from Anna's Archive's own detail page,
+   * resolved through OpenLibrary's cover CDN. Independent of OpenLibrary's
+   * search API and Google Books' quota, so it works even when those don't.
+   */
+  fetchCoverByMd5(md5: string): Observable<CoverLookupResponse> {
+    return this.http.get<CoverLookupResponse>(
+      `${this.baseUrl}/book/${md5}/cover-by-isbn`
+    );
+  }
+
+  /**
    * Fetch book description from Google Books.
    */
   fetchDescriptionFromGoogleBooks(title: string, author?: string): Observable<DescriptionLookupResponse> {
@@ -350,6 +362,21 @@ export class BookSearchApiService {
     }
     return this.http.get<DescriptionLookupResponse>(
       `${this.baseUrl}/book/description/openlibrary`,
+      { params }
+    );
+  }
+
+  /**
+   * Fetch book description from Wikipedia — a real, non-AI source that's
+   * still actually working (unlike Google Books/OpenLibrary above).
+   */
+  fetchDescriptionFromWikipedia(title: string, author?: string): Observable<DescriptionLookupResponse> {
+    let params = new HttpParams().set('title', title);
+    if (author) {
+      params = params.set('author', author);
+    }
+    return this.http.get<DescriptionLookupResponse>(
+      `${this.baseUrl}/book/description/wikipedia`,
       { params }
     );
   }

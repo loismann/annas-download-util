@@ -1,0 +1,56 @@
+<div class="video-player-container">
+  <div class="video-header">
+    <div class="video-info">
+      <h2 class="video-title">{{ data.title }}</h2>
+      <span class="video-channel" *ngIf="data.channel && data.channel !== 'Unknown'">{{ data.channel }}</span>
+    </div>
+    <div class="header-actions">
+      <button
+        *ngIf="data.youTubeId"
+        mat-icon-button
+        (click)="openOnYouTube()"
+        aria-label="Open on YouTube"
+        class="youtube-btn"
+      >
+        <mat-icon>open_in_new</mat-icon>
+      </button>
+      <button mat-icon-button (click)="onClose()" aria-label="Close">
+        <mat-icon>close</mat-icon>
+      </button>
+    </div>
+  </div>
+
+  <div class="video-wrapper">
+    <div *ngIf="isLoading" class="loading-overlay">
+      <mat-spinner diameter="48"></mat-spinner>
+      <span>Loading video...</span>
+    </div>
+
+    <div *ngIf="hasError" class="error-overlay">
+      <mat-icon class="error-icon">error_outline</mat-icon>
+      <span>{{ errorMessage }}</span>
+      <button *ngIf="data.youTubeId" mat-raised-button color="primary" (click)="openOnYouTube()">
+        Watch on YouTube
+      </button>
+    </div>
+
+    <video
+      #videoPlayer
+      [src]="data.streamUrl"
+      controls
+      autoplay
+      playsinline
+      class="video-element"
+      [class.hidden]="hasError"
+    >
+      Your browser does not support the video tag.
+    </video>
+  </div>
+
+  <div class="video-controls">
+    <button mat-icon-button (click)="toggleFullscreen()" aria-label="Fullscreen">
+      <mat-icon>fullscreen</mat-icon>
+    </button>
+    <span class="hint-text">Press Space to play/pause, Esc to close</span>
+  </div>
+</div>

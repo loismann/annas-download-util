@@ -22,6 +22,11 @@ public static class LibraryBrowserEndpoints
             .RequireAuthorization()
             .RequireRateLimiting("api");
 
+        // GET /api/library/books/search - Search and filter library books (optimized for large libraries)
+        app.MapGet("/api/library/books/search", HandleSearchBooks)
+            .RequireAuthorization()
+            .RequireRateLimiting("api");
+
         // GET /api/library/reader/books - List reader-enabled books
         app.MapGet("/api/library/reader/books", HandleListReaderBooks)
             .RequireAuthorization()
@@ -74,6 +79,68 @@ public static class LibraryBrowserEndpoints
         var allBooks = cache.GetBooks(baseUrl);
         Log.Information("[library] Returning {Count} books (cached: {IsCached})", allBooks.Count, cache.IsCached);
         return Results.Json(allBooks);
+    }
+
+    /// <summary>
+    /// Optimized search endpoint for large libraries.
+    /// All filtering, sorting, and pagination happens server-side.
+    /// Clients should use this endpoint with infinite scroll for best performance.
+    /// </summary>
+    private static IResult HandleSearchBooks(
+        HttpContext context,
+        LibraryIndexCache cache,
+        [FromQuery] string? q = null,
+        [FromQuery] string? genre = null,
+        [FromQuery] string? ownerTags = null,
+        [FromQuery] int minPersonalRating = 0,
+        [FromQuery] double minGoodreadsRating = 0,
+        [FromQuery] bool? bookmarked = null,
+        [FromQuery] bool? missingAuthor = null,
+        [FromQuery] bool? missingCover = null,
+        [FromQuery] int? genreCountLessThan = null,
+        [FromQuery] int? genreCountMoreThan = null,
+        [FromQuery] string sortBy = "date",
+        [FromQuery] bool sortDesc = true,
+        [FromQuery] int skip = 0,
+        [FromQuery] int take = 50)
+    {
+        var baseUrl = $"{context.Request.Scheme}://{context.Request.Host}";
+
+        // Parse owner tags (comma-separated)
+        string[]? ownerTagsArray = null;
+        if (!string.IsNullOrWhiteSpace(ownerTags))
+        {
+            ownerTagsArray = ownerTags.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        }
+
+        var (books, totalCount, availableGenres) = cache.SearchBooks(
+            baseUrl,
+            searchTerm: q,
+            genre: genre,
+            ownerTags: ownerTagsArray,
+            minPersonalRating: minPersonalRating,
+            minGoodreadsRating: minGoodreadsRating,
+            bookmarked: bookmarked,
+            missingAuthor: missingAuthor,
+            missingCover: missingCover,
+            genreCountLessThan: genreCountLessThan,
+            genreCountMoreThan: genreCountMoreThan,
+            sortBy: sortBy,
+            sortDesc: sortDesc,
+            skip: skip,
+            take: take);
+
+        Log.Debug("[library-search] q={Query}, genre={Genre}, sort={SortBy}, returning {Count}/{Total}",
+            q, genre, sortBy, books.Count, totalCount);
+
+        return Results.Json(new
+        {
+            books,
+            totalCount,
+            skip,
+            take,
+            genres = availableGenres
+        });
     }
 
     private static IResult HandleListReaderBooks(HttpContext context, LibraryIndexCache cache)

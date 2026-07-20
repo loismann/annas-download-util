@@ -2,7 +2,7 @@ import { ChangeDetectorRef, Component, HostListener, NgZone, OnInit, OnDestroy, 
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Subject } from 'rxjs';
-import { takeUntil } from 'rxjs/operators';
+import { takeUntil, debounceTime, distinctUntilChanged } from 'rxjs/operators';
 import { ScrollingModule, CdkVirtualScrollViewport } from '@angular/cdk/scrolling';
 import { MatCardModule } from '@angular/material/card';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
@@ -13,7 +13,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MatDialog } from '@angular/material/dialog';
-import { LibraryApiService } from '../services/library-api.service';
+import { LibraryApiService, LibrarySearchParams } from '../services/library-api.service';
 import { BookEditDialogComponent, BookEditDialogData, BookEditDialogResult } from '../components/book-edit-dialog/book-edit-dialog.component';
 import { BulkEditDialogComponent, BookBulkEditDialogData, BookBulkEditDialogResult } from '../components/bulk-edit-dialog/bulk-edit-dialog.component';
 import { FileUploadDialogComponent } from '../components/file-upload-dialog/file-upload-dialog.component';
@@ -46,16 +46,17 @@ import { BATCH_DELAY_MS } from '../constants/timeouts';
 })
 export class LibraryComponent implements OnInit, OnDestroy {
   private destroy$ = new Subject<void>();
+  private searchTrigger$ = new Subject<void>();  // Debounced search trigger
 
   placeholderUrl = '/assets/placeholder.jpg';
   loading = true;
-  sorting = false;  // True when filter/sort computation is in progress
+  loadingMore = false;  // True when fetching more books for infinite scroll
   error: string | null = null;
-  books: LibraryBook[] = [];
-  displayBooks: LibraryBook[] = [];  // The computed/filtered/sorted books shown in UI
+  books: LibraryBook[] = [];  // Currently loaded books (server-filtered/sorted)
+  totalCount = 0;  // Total count from server (for "showing X of Y")
   searchTerm = '';
   selectedGenre = '';
-  genres: string[] = [];
+  genres: string[] = [];  // Available genres from server
   private readonly kindleFormats = new Set(['EPUB', 'KFX', 'AZW', 'AZW3', 'POBI', 'MOBI']);
   adminOpen = false;
   filterMissingAuthor = false;
@@ -77,14 +78,10 @@ export class LibraryComponent implements OnInit, OnDestroy {
   tileSize: 'small' | 'medium' | 'large' = 'medium';
   sidebarCollapsed = false;
 
-  /** Two-level caching: filtered books (before sort) and sorted books (final result) */
-  private _cachedFilteredBooks: LibraryBook[] | null = null;  // After filtering, before sorting
-  private _cachedSortedBooks: LibraryBook[] | null = null;    // Final sorted result
-  private _lastSortOrder: string | null = null;
-  private _lastSortDirection: string | null = null;
-  private _filterCacheVersion = 0;
-  private _booksVersion = 0;
-  private _isBackgroundLoading = false;
+  /** Server-side pagination state */
+  private readonly PAGE_SIZE = 100;  // Number of books to fetch per request
+  private hasMoreBooks = true;  // Whether more books can be loaded
+  private currentSearchParams: LibrarySearchParams = {};  // Current search parameters
 
   @ViewChild(CdkVirtualScrollViewport) virtualScroll?: CdkVirtualScrollViewport;
 
@@ -127,7 +124,10 @@ export class LibraryComponent implements OnInit, OnDestroy {
   /** Recalculate items per row (called on resize and tile size change) */
   recalculateLayout(): void {
     this.cachedItemsPerRow = this.getItemsPerRow();
-    this.virtualScroll?.checkViewportSize();
+    // Check method exists for test compatibility
+    if (this.virtualScroll && typeof this.virtualScroll.checkViewportSize === 'function') {
+      this.virtualScroll.checkViewportSize();
+    }
   }
 
   @HostListener('window:resize')
@@ -157,73 +157,118 @@ export class LibraryComponent implements OnInit, OnDestroy {
       this.sidebarCollapsed = true;
     }
 
-    // Load first batch quickly for fast initial render
-    this.logger.log('[library] Starting paginated load...');
-    this.libraryApi.getLibraryBooksPaginated(0, 100, 'date', true).pipe(takeUntil(this.destroy$)).subscribe({
+    // Set up debounced search trigger (300ms debounce for filter changes)
+    this.searchTrigger$.pipe(
+      debounceTime(300),
+      takeUntil(this.destroy$)
+    ).subscribe(() => {
+      this.executeSearch(true);  // Reset and search from beginning
+    });
+
+    // Initial load
+    this.logger.log('[library] Starting server-side search load...');
+    this.executeSearch(true);
+  }
+
+  /**
+   * Execute server-side search with current filter/sort parameters.
+   * @param reset If true, resets pagination and replaces all books. If false, appends to existing.
+   */
+  private executeSearch(reset: boolean): void {
+    if (reset) {
+      this.loading = true;
+      this.books = [];
+      this.hasMoreBooks = true;
+    } else {
+      if (!this.hasMoreBooks || this.loadingMore) return;
+      this.loadingMore = true;
+    }
+
+    // Build search parameters from current filter state
+    const params: LibrarySearchParams = {
+      q: this.searchTerm.trim() || undefined,
+      genre: this.selectedGenre || undefined,
+      ownerTags: this.selectedOwnerTags.size > 0 ? Array.from(this.selectedOwnerTags) : undefined,
+      minPersonalRating: this.minPersonalRating > 0 ? this.minPersonalRating : undefined,
+      minGoodreadsRating: this.minGoodreadsRating > 0 ? this.minGoodreadsRating : undefined,
+      bookmarked: this.filterBookmarked || undefined,
+      missingAuthor: this.filterMissingAuthor || undefined,
+      missingCover: this.filterMissingCover || undefined,
+      genreCountLessThan: this.filterGenreCountEnabled && this.filterGenreComparison === 'less' ? this.filterGenreCount : undefined,
+      genreCountMoreThan: this.filterGenreCountEnabled && this.filterGenreComparison === 'more' ? this.filterGenreCount : undefined,
+      sortBy: this.sortOrder === 'recent' ? 'date' : this.sortOrder,
+      sortDesc: this.sortDirection === 'down',
+      skip: reset ? 0 : this.books.length,
+      take: this.PAGE_SIZE
+    };
+
+    this.currentSearchParams = params;
+
+    this.libraryApi.searchLibraryBooks(params).pipe(takeUntil(this.destroy$)).subscribe({
       next: (response) => {
-        this.logger.log('[library] Paginated response received', {
-          booksCount: response?.books?.length ?? 0,
-          totalCount: response?.totalCount ?? 0,
-          firstBook: response?.books?.[0]?.title
+        this.logger.log('[library] Search response', {
+          booksReturned: response.books?.length ?? 0,
+          totalCount: response.totalCount,
+          skip: response.skip,
+          reset
         });
-        this.books = (response.books ?? []).map(book => ({
+
+        const newBooks = (response.books ?? []).map(book => ({
           ...book,
-          dadsKindleState: 'idle',
-          momsKindleState: 'idle'
+          dadsKindleState: 'idle' as const,
+          momsKindleState: 'idle' as const
         }));
-        // Initial books are already sorted by date desc from server
-        this.displayBooks = this.books;
-        this.genres = this.buildGenreList(this.books);
+
+        if (reset) {
+          this.books = newBooks;
+        } else {
+          this.books = [...this.books, ...newBooks];
+        }
+
+        this.totalCount = response.totalCount;
+        this.genres = response.genres ?? [];
+        this.hasMoreBooks = this.books.length < response.totalCount;
         this.loading = false;
+        this.loadingMore = false;
+
         setTimeout(() => {
           this.recalculateLayout();
           this.onGridScroll();
         }, 0);
-
-        // If there are more books, load them in the background
-        if (response.totalCount > response.books.length) {
-          this.loadRemainingBooks(response.books.length, response.totalCount);
-        }
       },
       error: (err) => {
-        // Fallback to loading all books if paginated endpoint fails
-        this.logger.error('[library] paginated load failed, falling back', {
+        this.logger.error('[library] Search failed', {
           status: err?.status,
-          statusText: err?.statusText,
           message: err?.message,
-          url: err?.url,
           error: err?.error
         });
-        this.libraryApi.getLibraryBooks().pipe(takeUntil(this.destroy$)).subscribe({
-          next: (books) => {
-            this.books = (books ?? []).map(book => ({
-              ...book,
-              dadsKindleState: 'idle',
-              momsKindleState: 'idle'
-            }));
-            this.genres = this.buildGenreList(this.books);
-            this.loading = false;
-            // Trigger async recomputation for full dataset
-            this.recomputeDisplayBooksAsync();
-            setTimeout(() => {
-              this.recalculateLayout();
-              this.onGridScroll();
-            }, 0);
-          },
-          error: (fallbackErr) => {
-            this.logger.error('[library] fallback load also failed', {
-              status: fallbackErr?.status,
-              statusText: fallbackErr?.statusText,
-              message: fallbackErr?.message,
-              url: fallbackErr?.url,
-              error: fallbackErr?.error
-            });
-            this.error = 'Failed to load library.';
-            this.loading = false;
-          }
-        });
+        this.error = 'Failed to load library.';
+        this.loading = false;
+        this.loadingMore = false;
       }
     });
+  }
+
+  /**
+   * Check if we need to load more books (infinite scroll trigger).
+   * Called when virtual scroll position changes.
+   */
+  private checkInfiniteScroll(): void {
+    if (!this.virtualScroll || !this.hasMoreBooks || this.loadingMore || this.loading) return;
+
+    const range = this.virtualScroll.getRenderedRange();
+    const totalRows = this.bookRows.length;
+
+    // Load more when within 5 rows of the end
+    if (range.end >= totalRows - 5) {
+      this.logger.log('[library] Infinite scroll: loading more books', {
+        renderedEnd: range.end,
+        totalRows,
+        currentBooks: this.books.length,
+        totalCount: this.totalCount
+      });
+      this.executeSearch(false);
+    }
   }
 
   onCoverError(evt: Event): void {
@@ -235,364 +280,19 @@ export class LibraryComponent implements OnInit, OnDestroy {
   }
 
   /**
-   * Load remaining books in the background after initial render.
-   * Runs outside Angular zone to prevent change detection on each batch.
-   * Only updates the view when all books are loaded.
+   * Trigger a debounced search when filters change.
+   * This replaces the old client-side filtering - all filtering now happens server-side.
    */
-  private loadRemainingBooks(loaded: number, total: number): void {
-    const batchSize = 2000; // Large batches to minimize requests
-    let skip = loaded;
-    const pendingBooks: LibraryBook[] = [];
-    this._isBackgroundLoading = true;
-
-    // Run outside Angular zone to prevent change detection during loading
-    this.zone.runOutsideAngular(() => {
-      const loadNextBatch = () => {
-        if (skip >= total) {
-          // All batches loaded - update view
-          this.zone.run(() => {
-            this._isBackgroundLoading = false;
-            this.books = [...this.books, ...pendingBooks];
-            this._booksVersion++;
-            this._cachedFilteredBooks = null; // Invalidate both caches
-            this._cachedSortedBooks = null;
-            this.genres = this.buildGenreList(this.books);
-            this.logger.log('[library] All books loaded', { total: this.books.length });
-            // Trigger progressive display update
-            this.recomputeDisplayBooksAsync();
-          });
-          return;
-        }
-
-        this.libraryApi.getLibraryBooksPaginated(skip, batchSize, 'date', true)
-          .pipe(takeUntil(this.destroy$))
-          .subscribe({
-            next: (response) => {
-              const newBooks = (response.books ?? []).map(book => ({
-                ...book,
-                dadsKindleState: 'idle' as const,
-                momsKindleState: 'idle' as const
-              }));
-
-              // Accumulate books without triggering change detection
-              pendingBooks.push(...newBooks);
-              skip += response.books.length;
-
-              this.logger.log('[library] Background batch loaded', {
-                pending: pendingBooks.length,
-                total: response.totalCount
-              });
-
-              // Continue to next batch
-              loadNextBatch();
-            },
-            error: (err) => {
-              this.logger.error('[library] Background load failed', err);
-              // Still update view with what we have
-              this.zone.run(() => {
-                this._isBackgroundLoading = false;
-                if (pendingBooks.length > 0) {
-                  this.books = [...this.books, ...pendingBooks];
-                  this._booksVersion++;
-                  this._cachedFilteredBooks = null;
-                  this._cachedSortedBooks = null;
-                  this.genres = this.buildGenreList(this.books);
-                  this.recomputeDisplayBooksAsync();
-                }
-              });
-            }
-          });
-      };
-
-      // Start loading
-      loadNextBatch();
-    });
-  }
-
-  /** Invalidate both filter and sort caches and trigger async recomputation */
   invalidateFilterCache(): void {
-    this._cachedFilteredBooks = null;
-    this._cachedSortedBooks = null;
-    this._filterCacheVersion++;
-    this.recomputeDisplayBooksAsync();
+    this.searchTrigger$.next();
   }
 
-  /** Invalidate only the sort cache and trigger async recomputation */
-  private invalidateSortCache(): void {
-    this._cachedSortedBooks = null;
-    this.recomputeDisplayBooksAsync();
-  }
-
-  /** Recompute displayBooks progressively - show first batch immediately, rest in background */
-  private recomputeDisplayBooksAsync(): void {
-    const INITIAL_BATCH = 150;  // Show this many immediately
-    const CHUNK_SIZE = 500;     // Process rest in chunks
-
-    // Show sorting indicator
-    this.sorting = true;
-
-    // Step 1: Filter books (relatively fast)
-    const filtered = this._cachedFilteredBooks ?? this.filterBooksInternal();
-    this._cachedFilteredBooks = filtered;
-
-    // Step 2: Sort just the first batch quickly for immediate display
-    const firstBatch = filtered.slice(0, INITIAL_BATCH);
-    const sortedFirstBatch = this.sortBooks(firstBatch);
-
-    // Show first batch immediately
-    this.displayBooks = sortedFirstBatch;
-    this.sorting = filtered.length > INITIAL_BATCH;  // Still sorting if more to come
-    this.cdr.detectChanges();
-
-    // Step 3: Sort remaining books progressively in background
-    if (filtered.length > INITIAL_BATCH) {
-      this.zone.runOutsideAngular(() => {
-        let processed = INITIAL_BATCH;
-        const allSorted: LibraryBook[] = [...sortedFirstBatch];
-
-        const processNextChunk = () => {
-          if (processed >= filtered.length) {
-            // All done
-            this._cachedSortedBooks = allSorted;
-            this._lastSortOrder = this.sortOrder;
-            this._lastSortDirection = this.sortDirection;
-            this.zone.run(() => {
-              this.displayBooks = allSorted;
-              this.sorting = false;
-              this.cdr.detectChanges();
-            });
-            return;
-          }
-
-          // Process next chunk
-          const end = Math.min(processed + CHUNK_SIZE, filtered.length);
-          const chunk = filtered.slice(processed, end);
-          const sortedChunk = this.sortBooks(chunk);
-
-          // Merge sorted chunk into allSorted maintaining sort order
-          this.mergeSortedArrays(allSorted, sortedChunk);
-          processed = end;
-
-          // Update UI periodically (every 2000 items)
-          if (processed % 2000 === 0 || processed >= filtered.length) {
-            this.zone.run(() => {
-              this.displayBooks = [...allSorted];
-              this.cdr.detectChanges();
-            });
-          }
-
-          // Continue processing
-          setTimeout(processNextChunk, 0);
-        };
-
-        // Start background processing
-        setTimeout(processNextChunk, 10);
-      });
-    } else {
-      // Small dataset - we're done
-      this._cachedSortedBooks = sortedFirstBatch;
-      this._lastSortOrder = this.sortOrder;
-      this._lastSortDirection = this.sortDirection;
-    }
-  }
-
-  /** Merge a sorted chunk into an existing sorted array maintaining sort order */
-  private mergeSortedArrays(target: LibraryBook[], chunk: LibraryBook[]): void {
-    // For simplicity, just append and re-sort the combined section
-    // This is faster than true merge for our use case
-    target.push(...chunk);
-    // Sort the newly added portion with the last few existing items
-    const startIdx = Math.max(0, target.length - chunk.length - 100);
-    const toSort = target.splice(startIdx);
-    const sorted = this.sortBooks(toSort);
-    target.push(...sorted);
-  }
-
-  /** Compute filtered and sorted books (call from async context) */
-  private computeFilteredBooks(): LibraryBook[] {
-    // Check if we can use cached sorted result
-    const sortChanged = this._lastSortOrder !== this.sortOrder ||
-                        this._lastSortDirection !== this.sortDirection;
-
-    if (this._cachedSortedBooks !== null && !sortChanged) {
-      return this._cachedSortedBooks;
-    }
-
-    // Step 1: Get or compute filtered books
-    let filtered: LibraryBook[];
-    if (this._cachedFilteredBooks !== null) {
-      filtered = this._cachedFilteredBooks;
-    } else {
-      filtered = this.filterBooksInternal();
-      this._cachedFilteredBooks = filtered;
-    }
-
-    // Step 2: Sort
-    const sorted = this.sortBooks(filtered);
-    this._cachedSortedBooks = sorted;
-    this._lastSortOrder = this.sortOrder;
-    this._lastSortDirection = this.sortDirection;
-
-    return sorted;
-  }
-
-  /** Internal filtering logic */
-  private filterBooksInternal(): LibraryBook[] {
-    const term = this.searchTerm.trim().toLowerCase();
-    const genre = this.selectedGenre.toLowerCase();
-
-    return this.books.filter(book => {
-      if (this.sortOrder === 'series') {
-        const seriesName = book.series?.trim();
-        if (!seriesName) return false;
-      }
-
-      if (genre) {
-        const primary = book.primaryGenre?.toLowerCase() ?? '';
-        const tags = (book.tags ?? []).map(tag => tag.toLowerCase());
-        if (primary !== genre && !tags.includes(genre)) {
-          return false;
-        }
-      }
-
-      if (this.selectedOwnerTags.size > 0) {
-        const tags = book.tags ?? [];
-        const matchesOwner = tags.some(tag => this.selectedOwnerTags.has(tag));
-        if (!matchesOwner) return false;
-      }
-
-      const haystack = [
-        book.title,
-        ...(book.authors ?? []),
-        book.series ?? '',
-        book.primaryGenre ?? '',
-        ...(book.tags ?? [])
-      ]
-        .join(' ')
-        .toLowerCase();
-
-      if (term && !haystack.includes(term)) {
-        return false;
-      }
-
-      if (this.filterMissingAuthor) {
-        const hasAuthor = (book.authors ?? []).some(author => author.trim().length > 0);
-        if (hasAuthor) return false;
-      }
-
-      if (this.filterMissingCover) {
-        if (book.coverUrl) return false;
-      }
-
-      if (this.filterGenreCountEnabled) {
-        const tagCount = (book.tags ?? []).length;
-        const count = tagCount + (book.primaryGenre ? 1 : 0);
-        if (this.filterGenreComparison === 'less') {
-          if (count >= this.filterGenreCount) return false;
-        } else {
-          if (count <= this.filterGenreCount) return false;
-        }
-      }
-
-      if (this.minPersonalRating > 0) {
-        const personal = book.personalRating ?? 0;
-        if (personal < this.minPersonalRating) return false;
-      }
-
-      if (this.minGoodreadsRating > 0) {
-        const goodreads = book.goodreadsRating ?? 0;
-        if (goodreads < this.minGoodreadsRating) return false;
-      }
-
-      if (this.sortOrder === 'stars') {
-        const personal = book.personalRating ?? 0;
-        if (personal < 1) return false;
-      }
-
-      if (this.sortOrder === 'goodreads') {
-        const goodreads = book.goodreadsRating ?? 0;
-        if (goodreads <= 0) return false;
-      }
-
-      if (this.filterBookmarked) {
-        if (!book.bookmarked) return false;
-      }
-
-      return true;
-    });
-  }
-
-  /** Returns the async-computed filtered and sorted books */
+  /**
+   * Returns the server-filtered and sorted books.
+   * Books are already filtered/sorted by the server - no client-side processing needed.
+   */
   get filteredBooks(): LibraryBook[] {
-    return this.displayBooks;
-  }
-
-  /** Optimized sorting using pre-computed sort keys to avoid repeated localeCompare */
-  private sortBooks(books: LibraryBook[]): LibraryBook[] {
-    if (books.length === 0) return books;
-
-    // Pre-compute sort keys once for all books
-    type SortableBook = { book: LibraryBook; key: string | number };
-    let sortable: SortableBook[];
-
-    switch (this.sortOrder) {
-      case 'title':
-        sortable = books.map(book => ({
-          book,
-          key: (book.title || '').toLowerCase()
-        }));
-        sortable.sort((a, b) => this.applyDirection(
-          (a.key as string).localeCompare(b.key as string)
-        ));
-        break;
-
-      case 'author':
-        sortable = books.map(book => ({
-          book,
-          key: (book.authors?.[0] || '').toLowerCase()
-        }));
-        sortable.sort((a, b) => this.applyDirection(
-          (a.key as string).localeCompare(b.key as string)
-        ));
-        break;
-
-      case 'series':
-        // For series, we need compound sorting
-        return books.slice().sort((a, b) => this.compareBooks(a, b));
-
-      case 'stars':
-        sortable = books.map(book => ({
-          book,
-          key: book.personalRating ?? 0
-        }));
-        sortable.sort((a, b) => {
-          if (a.key !== b.key) return this.applyDirection((a.key as number) - (b.key as number));
-          return (a.book.title || '').localeCompare(b.book.title || '');
-        });
-        break;
-
-      case 'goodreads':
-        sortable = books.map(book => ({
-          book,
-          key: book.goodreadsRating ?? 0
-        }));
-        sortable.sort((a, b) => {
-          if (a.key !== b.key) return this.applyDirection((a.key as number) - (b.key as number));
-          return (a.book.title || '').localeCompare(b.book.title || '');
-        });
-        break;
-
-      case 'recent':
-      default:
-        sortable = books.map(book => ({
-          book,
-          key: book.savedAt ? new Date(book.savedAt).getTime() : 0
-        }));
-        sortable.sort((a, b) => this.applyDirection((a.key as number) - (b.key as number)));
-        break;
-    }
-
-    return sortable.map(s => s.book);
+    return this.books;
   }
 
   trackByFileName(index: number, book: LibraryBook): string {
@@ -612,60 +312,13 @@ export class LibraryComponent implements OnInit, OnDestroy {
     return this.sortOrder === 'title' || this.sortOrder === 'author' || this.sortOrder === 'series';
   }
 
-  private compareBooks(a: LibraryBook, b: LibraryBook): number {
-    switch (this.sortOrder) {
-      case 'title':
-        return this.applyDirection(
-          (a.title || '').localeCompare(b.title || '', undefined, { sensitivity: 'base' })
-        );
-      case 'author':
-        return this.applyDirection(
-          (a.authors?.[0] || '').localeCompare(b.authors?.[0] || '', undefined, { sensitivity: 'base' })
-        );
-      case 'series': {
-        const aSeries = a.series?.trim() || 'zzzzzz';
-        const bSeries = b.series?.trim() || 'zzzzzz';
-        const seriesCompare = aSeries.localeCompare(bSeries, undefined, { sensitivity: 'base' });
-        if (seriesCompare !== 0) return seriesCompare;
-        return this.applyDirection(
-          (a.title || '').localeCompare(b.title || '', undefined, { sensitivity: 'base' })
-        );
-      }
-      case 'stars': {
-        const aStars = a.personalRating ?? 0;
-        const bStars = b.personalRating ?? 0;
-        if (aStars !== bStars) return this.applyDirection(aStars - bStars);
-        return this.applyDirection(
-          (a.title || '').localeCompare(b.title || '', undefined, { sensitivity: 'base' })
-        );
-      }
-      case 'goodreads': {
-        const aRating = a.goodreadsRating ?? 0;
-        const bRating = b.goodreadsRating ?? 0;
-        if (aRating !== bRating) return this.applyDirection(aRating - bRating);
-        return this.applyDirection(
-          (a.title || '').localeCompare(b.title || '', undefined, { sensitivity: 'base' })
-        );
-      }
-      case 'recent':
-      default: {
-        const aTime = a.savedAt ? Date.parse(a.savedAt) : 0;
-        const bTime = b.savedAt ? Date.parse(b.savedAt) : 0;
-        return this.applyDirection(aTime - bTime);
-      }
-    }
-  }
-
-  private applyDirection(value: number): number {
-    const isAlphaSort = this.sortOrder === 'title' || this.sortOrder === 'author' || this.sortOrder === 'series';
-    const multiplier = isAlphaSort
-      ? (this.sortDirection === 'down' ? 1 : -1)
-      : (this.sortDirection === 'down' ? -1 : 1);
-    return value * multiplier;
-  }
-
   onGridScroll(): void {
     if (!this.virtualScroll) return;
+
+    // Check for infinite scroll (load more books when near end)
+    this.checkInfiniteScroll();
+
+    // Update alphabet index active letter
     if (!this.showAlphabetIndex) return;
     if (this.scrollFrameRequested) return;
     this.scrollFrameRequested = true;
@@ -711,33 +364,30 @@ export class LibraryComponent implements OnInit, OnDestroy {
   }
 
   onSortChange(preserveDirection = false): void {
-    // Only invalidate filter cache if sort mode affects filtering
-    // (stars, goodreads, series modes filter out certain books)
-    const filterAffectingSorts = ['stars', 'goodreads', 'series'];
-    const oldSortAffectsFilter = filterAffectingSorts.includes(this._lastSortOrder || '');
-    const newSortAffectsFilter = filterAffectingSorts.includes(this.sortOrder);
-    if (oldSortAffectsFilter || newSortAffectsFilter) {
-      this.invalidateFilterCache(); // Full invalidation needed
-    } else {
-      this.invalidateSortCache(); // Only sort cache needs clearing
-    }
-
     if (!preserveDirection) {
       this.sortDirection = this.getDefaultSortDirection(this.sortOrder);
     }
+
     // Scroll to top using virtual scroll
     this.virtualScroll?.scrollToIndex(0);
+
+    // Trigger server-side search with new sort parameters
+    this.executeSearch(true);
+
     if (!this.showAlphabetIndex) {
       this.activeLetter = '#';
       return;
     }
-    const books = this.filteredBooks;
-    if (books.length === 0) {
-      this.activeLetter = '#';
-      return;
-    }
-    this.activeLetter = this.getBookLetter(books[0]);
-    setTimeout(() => this.onGridScroll(), 0);
+
+    // Update active letter after search completes
+    setTimeout(() => {
+      const books = this.filteredBooks;
+      if (books.length === 0) {
+        this.activeLetter = '#';
+        return;
+      }
+      this.activeLetter = this.getBookLetter(books[0]);
+    }, 100);
   }
 
   toggleSortDirection(): void {
@@ -757,7 +407,6 @@ export class LibraryComponent implements OnInit, OnDestroy {
   }
 
   resetView(): void {
-    this.invalidateFilterCache();
     // Reset search and filters
     this.searchTerm = '';
     this.selectedGenre = '';
@@ -791,6 +440,9 @@ export class LibraryComponent implements OnInit, OnDestroy {
     setTimeout(() => this.recalculateLayout(), 0);
 
     this.activeLetter = '#';
+
+    // Trigger server-side search with reset filters
+    this.executeSearch(true);
   }
 
   private getDefaultSortDirection(order: typeof this.sortOrder): 'down' | 'up' {

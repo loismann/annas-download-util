@@ -15,7 +15,7 @@
       [selectedGenre]="selectedGenre"
       [minPersonalRating]="minPersonalRating"
       [minGoodreadsRating]="minGoodreadsRating"
-      [totalBooks]="filteredBooks.length"
+      [totalBooks]="totalCount"
       [bulkEditMode]="bulkEditMode"
       [selectedBooksCount]="selectedBooksForBulk.size"
       [visibleBooksCount]="filteredBooks.length"
@@ -129,10 +129,9 @@
         <mat-spinner diameter="36"></mat-spinner>
       </div>
 
-      <!-- Sorting indicator - shown while books exist but sort is in progress -->
-      <div *ngIf="sorting && !loading && displayBooks.length > 0" class="library-sorting-indicator">
-        <mat-spinner diameter="20"></mat-spinner>
-        <span>Sorting...</span>
+      <!-- Book count indicator -->
+      <div *ngIf="!loading && books.length > 0" class="library-count-indicator">
+        Showing {{ books.length }} of {{ totalCount }} books
       </div>
 
       <div *ngIf="error" class="library-error">{{ error }}</div>
@@ -164,6 +163,11 @@
             (sendToKindle)="onSendToKindle($event)"
             (selectionToggle)="toggleBookSelection($event)"
           ></app-book-card>
+        </div>
+        <!-- Loading more indicator at the bottom -->
+        <div *ngIf="loadingMore" class="library-loading-more">
+          <mat-spinner diameter="24"></mat-spinner>
+          <span>Loading more books...</span>
         </div>
       </cdk-virtual-scroll-viewport>
 

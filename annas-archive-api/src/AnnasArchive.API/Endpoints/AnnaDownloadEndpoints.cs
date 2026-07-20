@@ -162,7 +162,7 @@ public static class AnnaDownloadEndpoints
 
         // Record successful download in our tracking system
         downloadTracking.RecordDownload(md5, userName);
-        Log.Information("[download-member] Recorded download for user {userName}, MD5: {md5}");
+        Log.Information("[download-member] Recorded download for user {UserName}, MD5: {Md5}", userName, md5);
 
         // Get updated download status
         var (currentDownloadsLeft, currentDownloadsPerDay) = downloadTracking.GetDownloadStatus();
@@ -233,7 +233,7 @@ public static class AnnaDownloadEndpoints
 
         // Record successful download in our tracking system
         downloadTracking.RecordDownload(md5, userName);
-        Log.Information("[library-anna] Recorded download for user {userName}, MD5: {md5}");
+        Log.Information("[library-anna] Recorded download for user {UserName}, MD5: {Md5}", userName, md5);
 
         // Get updated download status
         var (currentDownloadsLeft, currentDownloadsPerDay) = downloadTracking.GetDownloadStatus();
@@ -355,7 +355,7 @@ public static class AnnaDownloadEndpoints
 
                 // Record successful download in our tracking system
                 downloadTracking.RecordDownload(md5, userName);
-                Log.Information("[send-to-boox] Recorded download for user {userName}, MD5: {md5}");
+                Log.Information("[send-to-boox] Recorded download for user {UserName}, MD5: {Md5}", userName, md5);
 
                 // Get updated download tracking status
                 var (downloadsLeft, downloadsPerDay) = downloadTracking.GetDownloadStatus();
@@ -517,7 +517,7 @@ public static class AnnaDownloadEndpoints
 
                     using (var fileStream = new FileStream(tempFilePath, FileMode.Open, FileAccess.Read, FileShare.Read))
                     {
-                        Log.Information("[send-to-kindle] Uploading '{fileName}' to Dropbox: {dropboxPath}");
+                        Log.Information("[send-to-kindle] Uploading '{FileName}' to Dropbox: {DropboxPath}", fileName, dropboxPath);
 
                         var uploaded = await dropbox.Files.UploadAsync(
                             dropboxPath,
@@ -527,29 +527,29 @@ public static class AnnaDownloadEndpoints
 
                         dropboxPathResult = uploaded.PathDisplay;
                         dropboxSuccess = true;
-                        Log.Information(" Dropbox backup successful! Path: {dropboxPathResult}");
+                        Log.Information(" Dropbox backup successful! Path: {DropboxPath}", dropboxPathResult);
                     }
                 }
                 catch (Dropbox.Api.ApiException<UploadError> ex)
                 {
                     var details = ex.ErrorResponse?.ToString() ?? ex.ToString();
-                    Log.Information("⚠️ Dropbox backup failed (non-critical): {ex.Message} | Details: {details}");
+                    Log.Information("⚠️ Dropbox backup failed (non-critical): {ErrorMessage} | Details: {Details}", ex.Message, details);
                 }
                 catch (Dropbox.Api.HttpException ex)
                 {
-                    Log.Information("⚠️ Dropbox backup failed (non-critical, HTTP {ex.StatusCode}): {ex.Message}");
+                    Log.Information("⚠️ Dropbox backup failed (non-critical, HTTP {StatusCode}): {ErrorMessage}", ex.StatusCode, ex.Message);
                 }
                 catch (Dropbox.Api.DropboxException ex)
                 {
-                    Log.Information("⚠️ Dropbox backup failed (non-critical): {ex}");
+                    Log.Information("⚠️ Dropbox backup failed (non-critical): {ErrorMessage}", ex.Message);
                 }
                 catch (ArgumentException ex)
                 {
-                    Log.Information("⚠️ Dropbox backup failed (non-critical, ArgumentException): {Message}", ex.Message);
+                    Log.Information("⚠️ Dropbox backup failed (non-critical, ArgumentException): {ErrorMessage}", ex.Message);
                 }
                 catch (Exception ex)
                 {
-                    Log.Information("⚠️ Dropbox backup failed (non-critical): {ex.Message}");
+                    Log.Information("⚠️ Dropbox backup failed (non-critical): {ErrorMessage}", ex.Message);
                 }
 
                 // Get user name from auth context
@@ -559,7 +559,7 @@ public static class AnnaDownloadEndpoints
 
                 // Record successful download in our tracking system
                 downloadTracking.RecordDownload(md5, userName);
-                Log.Information("[send-to-kindle] Recorded download for user {userName}, MD5: {md5}");
+                Log.Information("[send-to-kindle] Recorded download for user {UserName}, MD5: {Md5}", userName, md5);
 
                 // Get updated download tracking status
                 var (downloadsLeft, downloadsPerDay) = downloadTracking.GetDownloadStatus();

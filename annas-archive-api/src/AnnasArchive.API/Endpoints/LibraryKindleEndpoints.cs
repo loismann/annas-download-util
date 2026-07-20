@@ -101,7 +101,17 @@ public static class LibraryKindleEndpoints
         {
             var subject = "Book from Library";
             var body = $"Sent from Library: {title ?? safeFileName}";
-            await emailService.SendEmailWithAttachmentAsync(kindleEmail, subject, body, fullPath, safeFileName);
+
+            try
+            {
+                await emailService.SendEmailWithAttachmentAsync(kindleEmail, subject, body, fullPath, safeFileName);
+                Log.Information("[library-send] Email sent successfully to {Target} ({KindleEmail}): {FileName}", target, kindleEmail, safeFileName);
+            }
+            catch (Exception ex)
+            {
+                Log.Warning("[library-send] Email failed to {Target} ({KindleEmail}): {ErrorMessage}", target, kindleEmail, ex.Message);
+                return Results.Ok(new { success = false, message = "Failed to send email to Kindle." });
+            }
 
             // Add Kindle target tag to library book metadata
             var userTag = LibraryHelpers.ResolveUserLibraryTag(context);

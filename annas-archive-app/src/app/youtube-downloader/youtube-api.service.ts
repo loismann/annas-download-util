@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Observable } from 'rxjs';
+import { Observable, timeout } from 'rxjs';
 import {
   VideoInfo,
   StartDownloadRequest,
@@ -13,15 +13,16 @@ export class YouTubeApiService {
   private readonly isLocalDev = window.location.hostname === 'localhost';
   private readonly apiHost = this.isLocalDev
     ? 'http://localhost:5001'
-    : 'https://fs01pfbooks.synology.me:5051';
+    : '';
   private readonly baseUrl = `${this.apiHost}/api/youtube`;
 
   constructor(private http: HttpClient) {}
 
   getVideoInfo(url: string): Observable<VideoInfo> {
+    // yt-dlp can take 30-60+ seconds to fetch video info, use a 2-minute timeout
     return this.http.get<VideoInfo>(`${this.baseUrl}/formats`, {
       params: { url },
-    });
+    }).pipe(timeout(120000));
   }
 
   startDownload(request: StartDownloadRequest): Observable<{ jobId: string }> {

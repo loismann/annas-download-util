@@ -14,8 +14,9 @@ public static class LoggingConfiguration
     public static WebApplicationBuilder AddSerilogLogging(this WebApplicationBuilder builder)
     {
         var logPath = builder.Configuration["Logging:FilePath"] ?? "logs/annas-api-.log";
+        var seqUrl = builder.Configuration["Logging:SeqUrl"];
 
-        Log.Logger = new LoggerConfiguration()
+        var loggerConfig = new LoggerConfiguration()
             .MinimumLevel.Information()
             .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
             .MinimumLevel.Override("Microsoft.Hosting.Lifetime", LogEventLevel.Information)
@@ -31,8 +32,18 @@ public static class LoggingConfiguration
                 path: logPath,
                 rollingInterval: RollingInterval.Day,
                 retainedFileCountLimit: 14,
-                outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {CorrelationId} {SourceContext} {Message:lj}{NewLine}{Exception}")
-            .CreateLogger();
+                outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {CorrelationId} {SourceContext} {Message:lj}{NewLine}{Exception}");
+
+        // Optional — only wired up when a Seq URL is configured (set via
+        // Logging__SeqUrl in docker-compose). Local dev without a Seq
+        // container running just skips this sink entirely rather than
+        // failing or spamming connection-refused noise.
+        if (!string.IsNullOrWhiteSpace(seqUrl))
+        {
+            loggerConfig = loggerConfig.WriteTo.Seq(seqUrl);
+        }
+
+        Log.Logger = loggerConfig.CreateLogger();
 
         builder.Host.UseSerilog();
 

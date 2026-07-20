@@ -336,12 +336,12 @@ public class LibraryWatcherService : BackgroundService
             }
         }
 
-        Log.Information($"[LibraryWatcher] Processing {Path.GetFileName(filePath)}");
-        Log.Information($"[LibraryWatcher]   Existing CoverUrl: {existing?.CoverUrl}");
+        Log.Information("[LibraryWatcher] Processing {FileName}", Path.GetFileName(filePath));
+        Log.Information("[LibraryWatcher]   Existing CoverUrl: {CoverUrl}", existing?.CoverUrl);
         if (!string.IsNullOrWhiteSpace(existing?.CoverUrl))
         {
             var coverType = IsLocalCover(existing.CoverUrl) ? "local (_covers/)" : "external";
-            Log.Information($"[LibraryWatcher]   ✓ Existing {coverType} cover detected - will preserve");
+            Log.Information("[LibraryWatcher]   ✓ Existing {CoverType} cover detected - will preserve", coverType);
         }
 
         if (ext.Equals(".epub", StringComparison.OrdinalIgnoreCase))
@@ -544,9 +544,9 @@ public class LibraryWatcherService : BackgroundService
             WriteIndented = true
         });
 
-        Log.Information($"[LibraryWatcher]   Final CoverUrl before write: {meta["coverUrl"]}");
+        Log.Information("[LibraryWatcher]   Final CoverUrl before write: {CoverUrl}", meta["coverUrl"]);
         await File.WriteAllTextAsync(metaPath, json, token);
-        Log.Information($"[LibraryWatcher]   WROTE metadata to {metaPath}");
+        Log.Information("[LibraryWatcher]   WROTE metadata to {MetaPath}", metaPath);
 
         return true; // Enrichment was performed
     }

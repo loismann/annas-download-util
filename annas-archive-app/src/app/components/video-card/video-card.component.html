@@ -1,0 +1,77 @@
+<mat-card
+  class="video-card"
+  [class.video-card-small]="tileSize === 'small'"
+  [class.video-card-medium]="tileSize === 'medium'"
+  [class.video-card-large]="tileSize === 'large'"
+  [class.bulk-edit-selected]="bulkEditMode && isSelected"
+>
+  <!-- Checkbox overlay in upper-right corner -->
+  <div *ngIf="bulkEditMode" class="bulk-edit-checkbox-wrapper">
+    <mat-checkbox
+      [checked]="isSelected"
+      (change)="onSelectionToggle()"
+      (click)="$event.stopPropagation()"
+    >
+    </mat-checkbox>
+  </div>
+
+  <div class="thumbnail-frame" (click)="onThumbnailClick()" style="cursor: pointer;">
+    <img
+      class="thumbnail"
+      [src]="video.thumbnailUrl || placeholderUrl"
+      loading="lazy"
+      (error)="onThumbnailError($event)"
+      [alt]="video.title + ' thumbnail'"
+    />
+    <div class="duration-overlay" *ngIf="video.duration && video.duration !== 'Unknown'">
+      {{ video.duration }}
+    </div>
+  </div>
+
+  <div class="info">
+    <div class="title">{{ video.title }}</div>
+    <div class="personal-stars" aria-label="Personal rating">
+      <button
+        *ngFor="let star of starRange"
+        type="button"
+        class="star-button"
+        [class.filled]="(video.personalRating ?? 0) >= star"
+        (click)="setPersonalRating(star)"
+      >
+        &#9733;
+      </button>
+    </div>
+    <div class="channel" [class.channel-missing]="!video.channel || video.channel === 'Unknown'">
+      {{ video.channel && video.channel !== 'Unknown' ? video.channel : '' }}
+    </div>
+    <div class="meta">{{ metaLine }}</div>
+    <div class="actions-row">
+      <button
+        type="button"
+        class="bookmark-btn"
+        [class.bookmarked]="video.bookmarked"
+        (click)="onBookmarkToggle()"
+        aria-label="Toggle bookmark"
+      >
+        <mat-icon>{{ video.bookmarked ? 'bookmark' : 'bookmark_border' }}</mat-icon>
+      </button>
+      <div class="spacer"></div>
+      <button
+        type="button"
+        class="action-btn play-btn"
+        (click)="onPlayClick()"
+        aria-label="Play video"
+      >
+        <mat-icon>play_circle</mat-icon>
+      </button>
+      <button
+        type="button"
+        class="action-btn edit-btn"
+        (click)="onEditClick()"
+        aria-label="Edit video"
+      >
+        <mat-icon>edit</mat-icon>
+      </button>
+    </div>
+  </div>
+</mat-card>

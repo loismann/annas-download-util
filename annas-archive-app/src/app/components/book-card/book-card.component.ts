@@ -1,4 +1,4 @@
-import { Component, EventEmitter, Input, Output } from '@angular/core';
+import { Component, EventEmitter, Input, Output, OnInit, OnDestroy, ElementRef, ViewChild, AfterViewInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MatCardModule } from '@angular/material/card';
 import { MatButtonModule } from '@angular/material/button';
@@ -42,7 +42,7 @@ export interface LibraryBook {
   templateUrl: './book-card.component.html',
   styleUrls: ['./book-card.component.css']
 })
-export class BookCardComponent {
+export class BookCardComponent implements AfterViewInit, OnDestroy {
   @Input() book!: LibraryBook;
   @Input() tileSize: 'small' | 'medium' | 'large' = 'medium';
   @Input() bulkEditMode = false;
@@ -57,7 +57,74 @@ export class BookCardComponent {
   @Output() selectionToggle = new EventEmitter<LibraryBook>();
   @Output() coverError = new EventEmitter<Event>();
 
+  @ViewChild('coverImage') coverImageRef?: ElementRef<HTMLImageElement>;
+
   readonly starRange = [1, 2, 3, 4, 5];
+
+  /** Track if the image has been loaded via IntersectionObserver */
+  imageLoaded = false;
+
+  /** Shared IntersectionObserver for all book cards (more efficient than per-card observers) */
+  private static observer: IntersectionObserver | null = null;
+  private static observedElements = new Map<HTMLElement, BookCardComponent>();
+
+  private static getOrCreateObserver(): IntersectionObserver {
+    if (!BookCardComponent.observer) {
+      BookCardComponent.observer = new IntersectionObserver(
+        (entries) => {
+          entries.forEach(entry => {
+            if (entry.isIntersecting) {
+              const component = BookCardComponent.observedElements.get(entry.target as HTMLElement);
+              if (component && !component.imageLoaded) {
+                component.loadImage();
+                // Once loaded, stop observing
+                BookCardComponent.observer?.unobserve(entry.target);
+                BookCardComponent.observedElements.delete(entry.target as HTMLElement);
+              }
+            }
+          });
+        },
+        {
+          rootMargin: '200px 0px', // Start loading 200px before entering viewport
+          threshold: 0
+        }
+      );
+    }
+    return BookCardComponent.observer;
+  }
+
+  ngAfterViewInit(): void {
+    // If no cover URL, no need to observe
+    if (!this.book?.coverUrl || !this.coverImageRef?.nativeElement) {
+      this.imageLoaded = true; // Show placeholder immediately
+      return;
+    }
+
+    const observer = BookCardComponent.getOrCreateObserver();
+    const element = this.coverImageRef.nativeElement;
+    BookCardComponent.observedElements.set(element, this);
+    observer.observe(element);
+  }
+
+  ngOnDestroy(): void {
+    if (this.coverImageRef?.nativeElement) {
+      BookCardComponent.observer?.unobserve(this.coverImageRef.nativeElement);
+      BookCardComponent.observedElements.delete(this.coverImageRef.nativeElement);
+    }
+  }
+
+  /** Load the actual image (called by IntersectionObserver) */
+  private loadImage(): void {
+    this.imageLoaded = true;
+  }
+
+  /** Get the current image source - placeholder until visible */
+  get currentCoverUrl(): string {
+    if (!this.imageLoaded) {
+      return this.placeholderUrl;
+    }
+    return this.book?.coverUrl || this.placeholderUrl;
+  }
 
   onCoverClick(): void {
     this.coverClick.emit(this.book);

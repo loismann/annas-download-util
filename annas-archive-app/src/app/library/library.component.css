@@ -418,16 +418,22 @@
   color: #666;
 }
 
-.library-sorting-indicator {
+.library-count-indicator {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  padding: 8px 16px;
-  background: rgba(63, 81, 181, 0.1);
-  border-radius: 4px;
-  margin: 8px auto;
-  width: fit-content;
+  padding: 6px 12px;
+  color: #64748b;
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+
+.library-loading-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px 16px;
   color: #3f51b5;
   font-size: 14px;
 }

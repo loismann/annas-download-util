@@ -6,8 +6,10 @@ using System.Net.Http;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Diagnostics;
 using HtmlAgilityPack;
 using AnnasArchive.Core.Models;
+using AnnasArchive.Core.Telemetry;
 using Serilog;
 
 namespace AnnasArchive.Core.Services;
@@ -269,12 +271,12 @@ public class LibGenService
                 null
             );
 
-            // LibGen cover URLs
-            dto.CoverCandidates.AddRange(new[]
-            {
-                $"https://libgen.is/fictioncovers/{md5[0]}/{md5}.jpg",
-                $"https://libgen.rs/fictioncovers/{md5[0]}/{md5}.jpg"
-            });
+            // LibGen cover URLs — derived from the same BaseDomains used for
+            // search, so this stays in sync if the mirrors rotate again
+            // instead of drifting to a separately-hardcoded (and eventually
+            // dead) pair of domains.
+            dto.CoverCandidates.AddRange(
+                BaseDomains.Select(d => $"{d}/fictioncovers/{md5[0]}/{md5}.jpg"));
 
             return dto;
         }
@@ -354,12 +356,9 @@ public class LibGenService
                 null
             );
 
-            // LibGen cover URLs
-            dto.CoverCandidates.AddRange(new[]
-            {
-                $"https://libgen.is/covers/{md5[..^1]}/{md5}.jpg",
-                $"https://libgen.rs/covers/{md5[..^1]}/{md5}.jpg"
-            });
+            // LibGen cover URLs — same rationale as the fiction path above.
+            dto.CoverCandidates.AddRange(
+                BaseDomains.Select(d => $"{d}/covers/{md5[..^1]}/{md5}.jpg"));
 
             return dto;
         }
@@ -486,11 +485,13 @@ public class LibGenService
         Log.Information("[LibGen HTTP] Starting fallback request for: {PathAndQuery}", pathAndQuery);
         HttpResponseMessage? lastResponse = null;
         var domainIndex = 0;
+        var fallbackSw = Stopwatch.StartNew();
 
         foreach (var domain in BaseDomains)
         {
             domainIndex++;
             var uri = new Uri($"{domain}{pathAndQuery}");
+            var domainSw = Stopwatch.StartNew();
             Log.Information("[LibGen HTTP] Attempt {AttemptNumber}/{TotalDomains} - Trying: {Uri}", domainIndex, BaseDomains.Length, uri);
 
             try
@@ -501,34 +502,44 @@ public class LibGenService
                 if (resp.IsSuccessStatusCode)
                 {
                     Log.Information("[LibGen HTTP] Success! Using domain: {Domain}", domain);
+                    PerfLog.Record("LibGen.DomainFetch", domainSw.Elapsed.TotalMilliseconds, true, ("Domain", domain));
+                    PerfLog.Record("LibGen.DomainFallback", fallbackSw.Elapsed.TotalMilliseconds, true, ("WinningDomain", domain));
                     return resp;
                 }
 
                 Log.Warning("[LibGen HTTP] Non-success status {StatusCode}, trying next domain...", resp.StatusCode);
+                PerfLog.Record("LibGen.DomainFetch", domainSw.Elapsed.TotalMilliseconds, false, ("Domain", domain), ("StatusCode", (int)resp.StatusCode));
                 lastResponse?.Dispose();
                 lastResponse = resp;
             }
             catch (TaskCanceledException ex) when (ex.InnerException is TimeoutException)
             {
                 Log.Warning("[LibGen HTTP] Timeout for {Domain} - trying next domain...", domain);
+                PerfLog.Record("LibGen.DomainFetch", domainSw.Elapsed.TotalMilliseconds, false, ("Domain", domain), ("Reason", "timeout"));
             }
             catch (TaskCanceledException)
             {
                 Log.Warning("[LibGen HTTP] Request cancelled for {Domain} - trying next domain...", domain);
+                PerfLog.Record("LibGen.DomainFetch", domainSw.Elapsed.TotalMilliseconds, false, ("Domain", domain), ("Reason", "cancelled"));
             }
             catch (HttpRequestException ex)
             {
                 Log.Warning("[LibGen HTTP] HTTP error for {Domain}: {ErrorMessage}", domain, ex.Message);
+                PerfLog.Record("LibGen.DomainFetch", domainSw.Elapsed.TotalMilliseconds, false, ("Domain", domain), ("Error", ex.Message));
             }
             catch (ArgumentException ex)
             {
                 Log.Warning("[LibGen HTTP] Invalid argument for {Domain}: {ParamName}", domain, ex.ParamName);
+                PerfLog.Record("LibGen.DomainFetch", domainSw.Elapsed.TotalMilliseconds, false, ("Domain", domain), ("Error", ex.ParamName));
             }
             catch (Exception ex)
             {
                 Log.Warning("[LibGen HTTP] Unexpected error for {Domain}: {ExceptionType} - {ErrorMessage}", domain, ex.GetType().Name, ex.Message);
+                PerfLog.Record("LibGen.DomainFetch", domainSw.Elapsed.TotalMilliseconds, false, ("Domain", domain), ("Error", ex.Message));
             }
         }
+
+        PerfLog.Record("LibGen.DomainFallback", fallbackSw.Elapsed.TotalMilliseconds, false, ("Reason", "all domains failed"));
 
         if (lastResponse != null)
         {

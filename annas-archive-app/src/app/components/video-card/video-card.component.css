@@ -1,0 +1,332 @@
+.video-card {
+  display: flex;
+  flex-direction: column;
+  padding: 0 !important;
+  overflow: hidden;
+  border-radius: 10px;
+  border: 1px solid #e5e7eb;
+  height: 100%;
+  position: relative;
+  width: 100%;
+  box-sizing: border-box;
+  container-type: inline-size;
+}
+
+/* Video card in bulk edit mode */
+.bulk-edit-checkbox-wrapper {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 10;
+  background: white;
+  border-radius: 4px;
+  padding: 4px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.video-card.bulk-edit-selected {
+  border: 3px solid #3f51b5;
+  box-shadow: 0 4px 12px rgba(63, 81, 181, 0.3);
+}
+
+.thumbnail-frame {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: #1a1a1a;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  flex-shrink: 0;
+  position: relative;
+}
+
+.video-card .thumbnail {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.duration-overlay {
+  position: absolute;
+  bottom: 6px;
+  right: 6px;
+  background: rgba(0, 0, 0, 0.8);
+  color: white;
+  font-size: 0.75rem;
+  font-weight: 500;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.video-card .info {
+  padding: 10px 12px 8px;
+  min-height: 80px;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+.video-card .title {
+  font-weight: 700;
+  font-size: 0.9rem;
+  margin-bottom: 0.3rem;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  min-height: 2.4em;
+}
+
+.video-card .channel {
+  color: #666;
+  font-size: 0.8rem;
+  margin-bottom: 0.3rem;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+  overflow: hidden;
+  min-height: 1.2em;
+  visibility: visible;
+}
+
+.video-card .channel.channel-missing {
+  visibility: hidden;
+}
+
+.video-card .meta {
+  font-size: 0.75rem;
+  color: #444;
+}
+
+.actions-row {
+  margin-top: auto;
+  padding-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.bookmark-btn {
+  border: none;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  color: #94a3b8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s ease;
+}
+
+.bookmark-btn mat-icon {
+  font-size: 18px;
+  width: 18px;
+  height: 18px;
+}
+
+.bookmark-btn:hover {
+  color: #3f51b5;
+}
+
+.bookmark-btn.bookmarked {
+  color: #3f51b5;
+}
+
+.action-btn {
+  border: none;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  color: #64748b;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s ease;
+}
+
+.action-btn mat-icon {
+  font-size: 20px;
+  width: 20px;
+  height: 20px;
+}
+
+.action-btn:hover {
+  color: #3f51b5;
+}
+
+.play-btn:hover {
+  color: #22c55e;
+}
+
+.personal-stars {
+  --star-gap: 2px;
+  margin-top: 6px;
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  gap: var(--star-gap);
+  padding-inline: var(--star-gap);
+  overflow: hidden;
+}
+
+.star-button {
+  width: auto;
+  border: none;
+  background: transparent;
+  color: #cbd5f5;
+  font-size: clamp(0.7rem, 4cqw, 1.3rem);
+  padding: 0;
+  cursor: pointer;
+  line-height: 1;
+  flex-shrink: 1;
+}
+
+.star-button.filled {
+  color: #d97706;
+}
+
+.star-button:hover {
+  color: #ea580c;
+}
+
+/* Container query adjustments */
+@container (max-width: 180px) {
+  .personal-stars {
+    --star-gap: 1px;
+  }
+  .star-button {
+    font-size: 0.7rem;
+  }
+  .duration-overlay {
+    font-size: 0.65rem;
+    padding: 1px 4px;
+  }
+}
+
+@container (min-width: 181px) and (max-width: 220px) {
+  .star-button {
+    font-size: 0.85rem;
+  }
+}
+
+@container (min-width: 221px) {
+  .star-button {
+    font-size: 1.1rem;
+  }
+}
+
+/* Small Tile Size */
+.video-card-small {
+  font-size: 0.85em;
+}
+
+.video-card-small .info {
+  padding: 8px 10px 5px;
+  min-height: 64px;
+}
+
+.video-card.video-card-small .title {
+  font-size: 0.8rem;
+  -webkit-line-clamp: 2;
+  min-height: 2.2em;
+}
+
+.video-card-small .channel {
+  font-size: 0.7rem;
+  min-height: 1.1em;
+}
+
+.video-card-small .meta {
+  font-size: 0.7rem;
+}
+
+.video-card-small .actions-row {
+  padding-top: 6px;
+}
+
+.video-card-small .bookmark-btn mat-icon {
+  font-size: 16px;
+  width: 16px;
+  height: 16px;
+}
+
+.video-card-small .action-btn mat-icon {
+  font-size: 18px;
+  width: 18px;
+  height: 18px;
+}
+
+.video-card-small .personal-stars {
+  --star-size: 14px;
+  --star-gap: 2px;
+}
+
+.video-card-small .duration-overlay {
+  font-size: 0.65rem;
+  padding: 1px 4px;
+  bottom: 4px;
+  right: 4px;
+}
+
+/* Medium Tile Size (Default) */
+.video-card-medium {
+  /* Uses default video-card styles */
+}
+
+/* Large Tile Size */
+.video-card-large {
+  font-size: 1.1em;
+}
+
+.video-card-large .info {
+  padding: 14px 16px 10px;
+  min-height: 100px;
+}
+
+.video-card.video-card-large .title {
+  font-size: 1.05rem;
+  -webkit-line-clamp: 3;
+  min-height: 3.6em;
+}
+
+.video-card-large .channel {
+  font-size: 0.95rem;
+  min-height: 1.4em;
+}
+
+.video-card-large .meta {
+  font-size: 0.85rem;
+}
+
+.video-card-large .actions-row {
+  padding-top: 10px;
+}
+
+.video-card-large .bookmark-btn mat-icon {
+  font-size: 20px;
+  width: 20px;
+  height: 20px;
+}
+
+.video-card-large .action-btn mat-icon {
+  font-size: 24px;
+  width: 24px;
+  height: 24px;
+}
+
+.video-card-large .personal-stars {
+  --star-size: 20px;
+  --star-gap: 4px;
+}
+
+.video-card-large .duration-overlay {
+  font-size: 0.85rem;
+  padding: 3px 8px;
+  bottom: 8px;
+  right: 8px;
+}

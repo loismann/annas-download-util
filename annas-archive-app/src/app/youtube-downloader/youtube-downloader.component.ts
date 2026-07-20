@@ -10,13 +10,13 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatListModule } from '@angular/material/list';
 import { MatDividerModule } from '@angular/material/divider';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
-import { Subscription } from 'rxjs';
+import { Subscription, interval } from 'rxjs';
+import { switchMap, takeWhile } from 'rxjs/operators';
 import { YouTubeApiService } from './youtube-api.service';
 import {
   VideoInfo,
   VideoFormat,
   DownloadJob,
-  DownloadProgressEvent,
 } from './youtube.models';
 
 type ViewState = 'idle' | 'fetching' | 'selecting' | 'downloading' | 'error';
@@ -131,61 +131,41 @@ export class YouTubeDownloaderComponent implements OnInit, OnDestroy {
   private subscribeToProgress(jobId: string): void {
     this.progressSubscription?.unsubscribe();
 
-    // First get the initial job state
-    this.youtubeApi.getJobStatus(jobId).subscribe({
-      next: (job) => {
-        this.currentJob = job;
-      },
-    });
-
-    // Then subscribe to SSE updates
-    this.progressSubscription = this.youtubeApi
-      .streamProgress(jobId)
+    // Poll for status every second until download completes
+    // (SSE doesn't work with JWT auth since EventSource can't set headers)
+    this.progressSubscription = interval(1000)
+      .pipe(
+        switchMap(() => this.youtubeApi.getJobStatus(jobId)),
+        takeWhile(
+          (job) =>
+            job.status === 'queued' || job.status === 'downloading',
+          true // include the final emission
+        )
+      )
       .subscribe({
-        next: (event: DownloadProgressEvent) => {
-          if (this.currentJob) {
-            this.currentJob = {
-              ...this.currentJob,
-              status: event.status as DownloadJob['status'],
-              progressPercent: event.progressPercent,
-              currentSpeed: event.currentSpeed,
-              eta: event.eta,
-            };
-          }
+        next: (job) => {
+          this.currentJob = job;
 
           if (
-            event.status === 'complete' ||
-            event.status === 'failed' ||
-            event.status === 'cancelled'
+            job.status === 'complete' ||
+            job.status === 'failed' ||
+            job.status === 'cancelled'
           ) {
-            this.onDownloadComplete(event);
+            this.onDownloadComplete(job);
           }
         },
-        error: () => {
-          // SSE connection closed, poll for final status
-          this.youtubeApi.getJobStatus(jobId).subscribe({
-            next: (job) => {
-              this.currentJob = job;
-              if (
-                job.status === 'complete' ||
-                job.status === 'failed' ||
-                job.status === 'cancelled'
-              ) {
-                this.viewState = 'idle';
-                this.loadHistory();
-              }
-            },
-          });
+        error: (err) => {
+          console.error('Failed to poll status:', err);
         },
       });
   }
 
-  private onDownloadComplete(event: DownloadProgressEvent): void {
+  private onDownloadComplete(job: DownloadJob): void {
     this.viewState = 'idle';
     this.loadHistory();
 
-    if (event.status === 'failed' && event.message) {
-      this.errorMessage = event.message;
+    if (job.status === 'failed' && job.error) {
+      this.errorMessage = job.error;
     }
   }
 

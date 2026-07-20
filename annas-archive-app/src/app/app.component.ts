@@ -87,17 +87,24 @@ import { switchMap, filter } from 'rxjs/operators';
               <mat-icon>library_music</mat-icon>
               <span>Spotif-inator</span>
             </button>
-        <button *ngIf="authService.isAdmin()" mat-menu-item routerLink="/gaming">
-          <mat-icon>videogame_asset</mat-icon>
-          <span>Gaming PC</span>
-        </button>
         <button *ngIf="authService.isAdmin()" mat-menu-item routerLink="/quiz">
           <mat-icon>quiz</mat-icon>
           <span>Lucy Quiz</span>
         </button>
-        <button *ngIf="authService.isAdmin()" mat-menu-item routerLink="/youtube">
+        <button *ngIf="authService.isAdmin()" mat-menu-item [matMenuTriggerFor]="videosMenu">
           <mat-icon>video_library</mat-icon>
-          <span>YouTube Downloader</span>
+          <span>Videos</span>
+        </button>
+      </mat-menu>
+
+      <mat-menu #videosMenu="matMenu">
+        <button mat-menu-item routerLink="/videos">
+          <mat-icon>video_library</mat-icon>
+          <span>Video Library</span>
+        </button>
+        <button mat-menu-item routerLink="/videos/download">
+          <mat-icon>download</mat-icon>
+          <span>Download Videos</span>
         </button>
       </mat-menu>
 

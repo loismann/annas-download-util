@@ -22,7 +22,26 @@ public static class MiddlewareExtensions
             context.Response.Headers["X-Content-Type-Options"] = "nosniff";
             context.Response.Headers["X-Frame-Options"] = "DENY";
             context.Response.Headers["X-XSS-Protection"] = "1; mode=block";
-            context.Response.Headers["Content-Security-Policy"] = "default-src 'self'";
+            // 'unsafe-inline' on style/script is required by Angular Material's
+            // CDK, which injects inline styles at runtime for overlays,
+            // breakpoints, and component-scoped styles — there's no practical
+            // nonce-based alternative without server-side rendering, which this
+            // app doesn't use in production (it's served as a static SPA).
+            // fonts.googleapis.com/fonts.gstatic.com are explicitly allowed
+            // because index.html loads Roboto + Material Icons from Google Fonts.
+            context.Response.Headers["Content-Security-Policy"] =
+                "default-src 'self'; " +
+                "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
+                "font-src 'self' https://fonts.gstatic.com; " +
+                "script-src 'self' 'unsafe-inline'; " +
+                // Book covers come from many external, rotating domains
+                // (OpenLibrary's CDN, Google's book thumbnails, various
+                // LibGen/Anna's Archive mirrors) — an exact allowlist would
+                // need constant upkeep as those domains change. Images can't
+                // execute code, so allowing any HTTPS source here is a much
+                // lower-risk relaxation than doing the same for scripts/styles.
+                "img-src 'self' data: https:; " +
+                "connect-src 'self'";
             context.Response.Headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
             await next();
         });
@@ -76,12 +95,13 @@ public static class MiddlewareExtensions
     /// </summary>
     public static WebApplication UseAppCors(this WebApplication app)
     {
+        // The Angular build is served by this same API (same-origin) in every
+        // deployed environment, so CORS is only needed for local development
+        // where `ng serve` runs on a different port than the API.
         app.UseCors(p => p
             .WithOrigins(
-                "https://fs01pfbooks.synology.me",      // Production HTTPS
-                "http://fs01pfbooks.synology.me",       // Production HTTP (fallback)
-                "http://localhost:4200",                // Local dev
-                "https://localhost:4200"                // Local dev HTTPS
+                "http://localhost:4200",
+                "https://localhost:4200"
             )
             .AllowAnyHeader()
             .AllowAnyMethod());

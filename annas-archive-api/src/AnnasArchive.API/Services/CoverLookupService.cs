@@ -12,13 +12,16 @@ public class CoverLookupService : ICoverLookupService
 {
     private readonly IOpenLibraryService _openLibraryService;
     private readonly IGoogleBooksService _googleBooksService;
+    private readonly AnnaArchiveService _annaArchiveService;
 
     public CoverLookupService(
         IOpenLibraryService openLibraryService,
-        IGoogleBooksService googleBooksService)
+        IGoogleBooksService googleBooksService,
+        AnnaArchiveService annaArchiveService)
     {
         _openLibraryService = openLibraryService;
         _googleBooksService = googleBooksService;
+        _annaArchiveService = annaArchiveService;
     }
 
     public async Task<CoverLookupResult> GetCoverAsync(string title, string? author = null)
@@ -27,6 +30,26 @@ public class CoverLookupService : ICoverLookupService
             return new CoverLookupResult(null, null);
 
         Log.Information("[CoverLookup] Searching for cover: '{Title}' by '{Author}'", title, author ?? "unknown");
+
+        // Anna's Archive search (free thumbnail already in the listing HTML)
+        // is the primary path now — Open Library's search API has been down
+        // and Google Books' unauthenticated quota exhausted for a while, so
+        // both of the below are effectively dead ends kept only in case
+        // either recovers; they're tried after, not before, to avoid paying
+        // their latency/failure cost on every single lookup.
+        try
+        {
+            var coverUrl = await _annaArchiveService.GetCoverByTitleAuthorAsync(title, author);
+            if (!string.IsNullOrWhiteSpace(coverUrl))
+            {
+                Log.Information("[CoverLookup] Found cover from Anna's Archive");
+                return new CoverLookupResult(coverUrl, "Anna's Archive");
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warning("[CoverLookup] Anna's Archive lookup failed: {Message}", ex.Message);
+        }
 
         // 1. Try Open Library first (usually higher quality covers)
         try

@@ -76,6 +76,31 @@ export interface LibraryBooksPaginatedResponse {
   take: number;
 }
 
+export interface LibrarySearchParams {
+  q?: string;
+  genre?: string;
+  ownerTags?: string[];
+  minPersonalRating?: number;
+  minGoodreadsRating?: number;
+  bookmarked?: boolean;
+  missingAuthor?: boolean;
+  missingCover?: boolean;
+  genreCountLessThan?: number;
+  genreCountMoreThan?: number;
+  sortBy?: 'title' | 'author' | 'date' | 'series' | 'stars' | 'goodreads';
+  sortDesc?: boolean;
+  skip?: number;
+  take?: number;
+}
+
+export interface LibrarySearchResponse {
+  books: LibraryBook[];
+  totalCount: number;
+  skip: number;
+  take: number;
+  genres: string[];
+}
+
 /**
  * Service for library management operations.
  * Handles library books, metadata, covers, ratings, and reader functionality.
@@ -85,7 +110,7 @@ export class LibraryApiService {
   private readonly isLocalDev = window.location.hostname === 'localhost';
   private readonly apiHost = this.isLocalDev
     ? 'http://localhost:5001'
-    : 'https://fs01pfbooks.synology.me:5051';
+    : '';
   private readonly libraryBaseUrl = `${this.apiHost}/api/library`;
 
   // Client-side cache for library books
@@ -167,6 +192,36 @@ export class LibraryApiService {
 
     this.logger.log('[LibraryApiService] Fetching paginated books', { skip, take, sortBy, sortDesc });
     return this.http.get<LibraryBooksPaginatedResponse>(`${this.libraryBaseUrl}/books`, { params });
+  }
+
+  /**
+   * Search and filter library books with full server-side processing.
+   * This is the OPTIMIZED endpoint for large libraries - all filtering, sorting,
+   * and pagination happens on the server so clients never need to load all books.
+   * Use this with infinite scroll for best performance on large libraries.
+   */
+  searchLibraryBooks(params: LibrarySearchParams): Observable<LibrarySearchResponse> {
+    let httpParams = new HttpParams();
+
+    if (params.q) httpParams = httpParams.set('q', params.q);
+    if (params.genre) httpParams = httpParams.set('genre', params.genre);
+    if (params.ownerTags && params.ownerTags.length > 0) {
+      httpParams = httpParams.set('ownerTags', params.ownerTags.join(','));
+    }
+    if (params.minPersonalRating) httpParams = httpParams.set('minPersonalRating', params.minPersonalRating.toString());
+    if (params.minGoodreadsRating) httpParams = httpParams.set('minGoodreadsRating', params.minGoodreadsRating.toString());
+    if (params.bookmarked) httpParams = httpParams.set('bookmarked', 'true');
+    if (params.missingAuthor) httpParams = httpParams.set('missingAuthor', 'true');
+    if (params.missingCover) httpParams = httpParams.set('missingCover', 'true');
+    if (params.genreCountLessThan) httpParams = httpParams.set('genreCountLessThan', params.genreCountLessThan.toString());
+    if (params.genreCountMoreThan) httpParams = httpParams.set('genreCountMoreThan', params.genreCountMoreThan.toString());
+    if (params.sortBy) httpParams = httpParams.set('sortBy', params.sortBy);
+    if (params.sortDesc !== undefined) httpParams = httpParams.set('sortDesc', params.sortDesc.toString());
+    if (params.skip !== undefined) httpParams = httpParams.set('skip', params.skip.toString());
+    if (params.take !== undefined) httpParams = httpParams.set('take', params.take.toString());
+
+    this.logger.log('[LibraryApiService] Searching books', params);
+    return this.http.get<LibrarySearchResponse>(`${this.libraryBaseUrl}/books/search`, { params: httpParams });
   }
 
   /**

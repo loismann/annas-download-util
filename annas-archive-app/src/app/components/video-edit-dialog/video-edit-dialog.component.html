@@ -1,0 +1,115 @@
+<h2 mat-dialog-title>Edit Video</h2>
+
+<mat-dialog-content>
+  <div class="video-edit-layout">
+    <!-- Left side: Thumbnail and video info -->
+    <div class="video-preview">
+      <div class="thumbnail-container">
+        <img
+          [src]="displayThumbnailUrl"
+          (error)="onThumbnailError($event)"
+          alt="Video thumbnail"
+          class="video-thumbnail"
+        />
+        <div class="duration-badge" *ngIf="data.duration && data.duration !== 'Unknown'">
+          {{ data.duration }}
+        </div>
+      </div>
+
+      <div class="video-info">
+        <div class="info-row">
+          <span class="info-label">Resolution:</span>
+          <span class="info-value">{{ data.resolution || 'Unknown' }}</span>
+        </div>
+        <div class="info-row">
+          <span class="info-label">Format:</span>
+          <span class="info-value">{{ data.format }}</span>
+        </div>
+        <div class="info-row">
+          <span class="info-label">Size:</span>
+          <span class="info-value">{{ data.fileSize }}</span>
+        </div>
+      </div>
+
+      <div class="action-buttons">
+        <button
+          mat-raised-button
+          color="primary"
+          (click)="openOnYouTube()"
+          [disabled]="!data.youTubeId"
+        >
+          <mat-icon>play_circle</mat-icon>
+          Watch on YouTube
+        </button>
+      </div>
+    </div>
+
+    <!-- Right side: Edit fields -->
+    <div class="video-edit-fields">
+      <mat-form-field appearance="outline" class="full-width">
+        <mat-label>Title</mat-label>
+        <input matInput [(ngModel)]="title" placeholder="Video title" />
+      </mat-form-field>
+
+      <mat-form-field appearance="outline" class="full-width">
+        <mat-label>Channel</mat-label>
+        <input matInput [(ngModel)]="channel" placeholder="Channel name" />
+      </mat-form-field>
+
+      <mat-form-field appearance="outline" class="full-width">
+        <mat-label>Playlist</mat-label>
+        <input matInput [(ngModel)]="playlist" placeholder="Playlist name (optional)" />
+      </mat-form-field>
+
+      <mat-form-field appearance="outline" class="full-width" *ngIf="availableGenres.length > 0">
+        <mat-label>Add Genre</mat-label>
+        <mat-select (selectionChange)="onGenreSelected($event.value)" [value]="null">
+          <mat-option *ngFor="let genre of availableGenres" [value]="genre">
+            {{ genre }}
+          </mat-option>
+        </mat-select>
+      </mat-form-field>
+
+      <mat-form-field appearance="outline" class="full-width">
+        <mat-label>Tags</mat-label>
+        <mat-chip-grid #chipGrid>
+          <mat-chip-row *ngFor="let tag of tags" (removed)="removeTag(tag)">
+            {{ tag }}
+            <mat-icon matChipRemove>cancel</mat-icon>
+          </mat-chip-row>
+          <input
+            matInput
+            placeholder="Add tag..."
+            [matChipInputFor]="chipGrid"
+            [matChipInputSeparatorKeyCodes]="separatorKeysCodes"
+            (matChipInputTokenEnd)="addTag($event)"
+          />
+        </mat-chip-grid>
+      </mat-form-field>
+
+      <div class="description-section" *ngIf="data.description">
+        <mat-divider></mat-divider>
+        <h4>Description</h4>
+        <p class="description-text">{{ data.description }}</p>
+      </div>
+    </div>
+  </div>
+</mat-dialog-content>
+
+<mat-dialog-actions align="end">
+  <button
+    mat-button
+    color="warn"
+    (click)="confirmDelete()"
+    [disabled]="isDeleting"
+    class="delete-btn"
+  >
+    <mat-icon>delete</mat-icon>
+    {{ deleteConfirmPending ? 'Press Enter to confirm' : 'Delete' }}
+  </button>
+
+  <span class="spacer"></span>
+
+  <button mat-button (click)="onCancel()">Cancel</button>
+  <button mat-raised-button color="primary" (click)="onSave()">Save</button>
+</mat-dialog-actions>

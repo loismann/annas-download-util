@@ -1,0 +1,52 @@
+<div class="remove-from-reader-dialog">
+  <div class="info-icon">
+    <mat-icon>info</mat-icon>
+  </div>
+
+  <h2 class="dialog-title">Remove from Reader?</h2>
+
+  <div class="dialog-content">
+    <p class="explanation">
+      Remove <strong>"{{ data.bookTitle }}"</strong> from the reader list?
+    </p>
+
+    <div class="preserved-section">
+      <p class="preserved-header">
+        <mat-icon>check_circle</mat-icon>
+        <strong>Your data will be preserved:</strong>
+      </p>
+      <ul class="preserved-list">
+        <li>
+          <mat-icon>summarize</mat-icon>
+          <span>All chapter summaries</span>
+        </li>
+        <li>
+          <mat-icon>psychology</mat-icon>
+          <span>All section summaries</span>
+        </li>
+        <li>
+          <mat-icon>hub</mat-icon>
+          <span>Character relationship graph</span>
+        </li>
+        <li>
+          <mat-icon>school</mat-icon>
+          <span>Vocabulary and flashcards</span>
+        </li>
+      </ul>
+    </div>
+
+    <p class="note">
+      You can re-add this book to the reader at any time from your library. All summaries will still be available.
+    </p>
+  </div>
+
+  <div class="dialog-actions">
+    <button mat-stroked-button class="cancel-button" (click)="onCancel()">
+      Cancel
+    </button>
+    <button mat-raised-button class="remove-button" (click)="onRemove()">
+      <mat-icon>remove_circle</mat-icon>
+      Remove from Reader
+    </button>
+  </div>
+</div>

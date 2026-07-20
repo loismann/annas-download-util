@@ -6,22 +6,30 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="BCrypt.Net-Next" Version="4.0.3" />
+    <PackageReference Include="Dropbox.Api" Version="7.0.0" />
+    <PackageReference Include="HtmlAgilityPack" Version="1.11.70" />
+    <PackageReference Include="NReadabilityCore" Version="1.0.0" />
+    <PackageReference Include="MailKit" Version="4.14.0" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.0" />
+    <PackageReference Include="Serilog.AspNetCore" Version="10.0.0" />
+    <PackageReference Include="Serilog.Enrichers.Environment" Version="3.0.1" />
+    <PackageReference Include="Serilog.Enrichers.Thread" Version="4.0.0" />
+    <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
+    <PackageReference Include="Serilog.Sinks.Seq" Version="8.0.0" />
+    <PackageReference Include="VersOne.Epub" Version="3.3.4" />
     <ProjectReference Include="..\AnnasArchive.Core\AnnasArchive.Core.csproj" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.7.0" />
+    <PackageReference Include="Microsoft.Extensions.Http.Resilience" Version="8.11.0" />
+    <PackageReference Include="Microsoft.Playwright" Version="1.49.0" />
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Core Google API support -->
-    <PackageReference Include="Google.Apis" Version="1.63.0" />
-    <!-- OAuth2 credential handling -->
-    <PackageReference Include="Google.Apis.Auth" Version="1.63.0" />
-    <!-- Google Drive v3 client library -->
-    <PackageReference Include="Google.Apis.Drive.v3" Version="1.63.0.2532" />
+    <None Include="appsettings.json">
+      <CopyToOutputDirectory>IfNewer</CopyToOutputDirectory>
+    </None>
+    <None Include="quiz-data/**">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
-
-  <ItemGroup>
-  <None Include="appsettings.json">
-    <CopyToOutputDirectory>IfNewer</CopyToOutputDirectory>
-  </None>
-</ItemGroup>
 </Project>

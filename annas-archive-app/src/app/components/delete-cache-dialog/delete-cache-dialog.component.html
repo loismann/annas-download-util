@@ -1,0 +1,67 @@
+<div class="delete-cache-dialog">
+  <div class="warning-icon">
+    <mat-icon>warning</mat-icon>
+  </div>
+
+  <h2 class="dialog-title">Delete Reader Data?</h2>
+
+  <div class="dialog-content">
+    <p class="warning-text">
+      <strong>This will permanently delete all reader data for this book.</strong>
+    </p>
+
+    <p class="explanation">
+      The following data for <strong>"{{ data.bookTitle }}"</strong> will be removed:
+    </p>
+
+    <ul class="deletion-list">
+      <li>
+        <mat-icon>summarize</mat-icon>
+        <span>{{ data.summaryCount }} chapter {{ data.summaryCount === 1 ? 'summary' : 'summaries' }}</span>
+      </li>
+      <li>
+        <mat-icon>psychology</mat-icon>
+        <span>{{ data.sectionSummaryCount }} section {{ data.sectionSummaryCount === 1 ? 'summary' : 'summaries' }}</span>
+      </li>
+      <li>
+        <mat-icon>hub</mat-icon>
+        <span>Character relationship graph (if generated)</span>
+      </li>
+      <li>
+        <mat-icon>segment</mat-icon>
+        <span>{{ data.indexedChaptersCount }} indexed {{ data.indexedChaptersCount === 1 ? 'chapter' : 'chapters' }}</span>
+      </li>
+    </ul>
+
+    <div class="preserved-note">
+      <mat-icon>check_circle</mat-icon>
+      <span>The book file remains in your library and can be re-added to the reader anytime. However, all summaries will need to be regenerated.</span>
+    </div>
+
+    <div class="export-section" *ngIf="data.summaryCount > 0">
+      <p class="export-prompt">Want to save your summaries before deleting?</p>
+      <button
+        mat-stroked-button
+        class="export-button"
+        (click)="onExport()"
+        [disabled]="exporting || exported">
+        <mat-spinner *ngIf="exporting" diameter="18"></mat-spinner>
+        <mat-icon *ngIf="!exporting && !exported">download</mat-icon>
+        <mat-icon *ngIf="exported" class="success-icon">check_circle</mat-icon>
+        <span *ngIf="!exporting && !exported">Export Summaries</span>
+        <span *ngIf="exporting">Exporting...</span>
+        <span *ngIf="exported">Exported!</span>
+      </button>
+    </div>
+  </div>
+
+  <div class="dialog-actions">
+    <button mat-stroked-button class="cancel-button" (click)="onCancel()">
+      Cancel
+    </button>
+    <button mat-raised-button class="delete-button" (click)="onDelete()">
+      <mat-icon>delete_forever</mat-icon>
+      Delete Reader Data
+    </button>
+  </div>
+</div>

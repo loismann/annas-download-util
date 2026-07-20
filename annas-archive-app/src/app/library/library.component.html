@@ -1,0 +1,188 @@
+<div class="library-wrapper">
+  <!-- Mobile sidebar collapse toggle button (only visible on mobile) -->
+  <button class="mobile-sidebar-toggle"
+          mat-icon-button
+          (click)="toggleSidebar()"
+          [attr.aria-label]="sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'">
+    <mat-icon>{{ sidebarCollapsed ? 'filter_list' : 'close' }}</mat-icon>
+  </button>
+
+  <div class="library-layout">
+    <div class="sidebar-container" [class.collapsed]="sidebarCollapsed">
+      <app-library-sidebar
+        [genres]="genres"
+      [searchTerm]="searchTerm"
+      [selectedGenre]="selectedGenre"
+      [minPersonalRating]="minPersonalRating"
+      [minGoodreadsRating]="minGoodreadsRating"
+      [totalBooks]="totalCount"
+      [bulkEditMode]="bulkEditMode"
+      [selectedBooksCount]="selectedBooksForBulk.size"
+      [visibleBooksCount]="filteredBooks.length"
+      [isAdmin]="authService.isAdmin()"
+      [adminOpen]="adminOpen"
+      [filterMissingAuthor]="filterMissingAuthor"
+      [filterMissingCover]="filterMissingCover"
+      [filterGenreCountEnabled]="filterGenreCountEnabled"
+      [filterGenreCount]="filterGenreCount"
+      [filterGenreComparison]="filterGenreComparison"
+      (resetView)="resetView()"
+      (searchTermChange)="searchTerm = $event; invalidateFilterCache()"
+      (selectedGenreChange)="selectedGenre = $event; invalidateFilterCache()"
+      (minPersonalRatingChange)="minPersonalRating = $event; invalidateFilterCache()"
+      (minGoodreadsRatingChange)="minGoodreadsRating = $event; invalidateFilterCache()"
+      (bulkEditToggle)="toggleBulkEditMode()"
+      (openBulkEdit)="openBulkEditDialog()"
+      (selectAllVisible)="selectAllVisible()"
+      (bulkSend)="bulkSend($event)"
+      (adminToggle)="toggleAdmin()"
+      (filterMissingAuthorChange)="filterMissingAuthor = $event; invalidateFilterCache()"
+      (filterMissingCoverChange)="filterMissingCover = $event; invalidateFilterCache()"
+      (filterGenreCountEnabledChange)="filterGenreCountEnabled = $event; invalidateFilterCache()"
+      (filterGenreCountChange)="filterGenreCount = $event; invalidateFilterCache()"
+      (filterGenreComparisonChange)="filterGenreComparison = $event; invalidateFilterCache()"
+      (wipeGenres)="wipeAllGenres()"
+      (uploadBooks)="openUploadDialog()"
+      ></app-library-sidebar>
+    </div>
+
+    <section class="library-panel">
+      <div class="library-controls">
+        <div class="owner-filters">
+          <button
+            *ngFor="let owner of ownerTags"
+            type="button"
+            class="owner-filter"
+            [class.active]="selectedOwnerTags.has(owner)"
+            (click)="toggleOwnerTag(owner)"
+          >
+            {{ owner }}
+          </button>
+        </div>
+        <div class="tile-size-controls">
+          <button
+            mat-icon-button
+            type="button"
+            class="tile-size-btn"
+            [class.active]="tileSize === 'small'"
+            (click)="setTileSize('small')"
+            aria-label="Small tiles"
+          >
+            <mat-icon>view_comfy</mat-icon>
+          </button>
+          <button
+            mat-icon-button
+            type="button"
+            class="tile-size-btn"
+            [class.active]="tileSize === 'medium'"
+            (click)="setTileSize('medium')"
+            aria-label="Medium tiles"
+          >
+            <mat-icon>view_module</mat-icon>
+          </button>
+          <button
+            mat-icon-button
+            type="button"
+            class="tile-size-btn"
+            [class.active]="tileSize === 'large'"
+            (click)="setTileSize('large')"
+            aria-label="Large tiles"
+          >
+            <mat-icon>view_agenda</mat-icon>
+          </button>
+          <button
+            mat-icon-button
+            type="button"
+            class="bookmark-filter-btn"
+            [class.active]="filterBookmarked"
+            (click)="toggleBookmarkFilter()"
+            aria-label="Filter bookmarked books"
+          >
+            <mat-icon>{{ filterBookmarked ? 'bookmark' : 'bookmark_border' }}</mat-icon>
+          </button>
+        </div>
+        <div class="sort-combo">
+          <mat-form-field appearance="outline" class="sort-field">
+            <mat-label>Sort by</mat-label>
+            <mat-select [(ngModel)]="sortOrder" (selectionChange)="onSortChange()">
+              <mat-option value="title">Title</mat-option>
+              <mat-option value="author">Author</mat-option>
+              <mat-option value="series">Series</mat-option>
+              <mat-option value="stars">Stars</mat-option>
+              <mat-option value="goodreads">Goodreads</mat-option>
+              <mat-option value="recent">Most recent</mat-option>
+            </mat-select>
+          </mat-form-field>
+          <button
+            mat-icon-button
+            type="button"
+            class="sort-direction-toggle"
+            (click)="toggleSortDirection()"
+            aria-label="Toggle sort direction"
+          >
+            <mat-icon>{{ sortDirection === 'down' ? 'arrow_downward' : 'arrow_upward' }}</mat-icon>
+          </button>
+        </div>
+      </div>
+
+      <div *ngIf="loading" class="library-loading">
+        <mat-spinner diameter="36"></mat-spinner>
+      </div>
+
+      <!-- Book count indicator -->
+      <div *ngIf="!loading && books.length > 0" class="library-count-indicator">
+        Showing {{ books.length }} of {{ totalCount }} books
+      </div>
+
+      <div *ngIf="error" class="library-error">{{ error }}</div>
+
+      <cdk-virtual-scroll-viewport
+        *ngIf="!loading && !error"
+        [itemSize]="rowHeight"
+        class="library-grid-scroll"
+        (scrolledIndexChange)="onGridScroll()"
+      >
+        <div
+          *cdkVirtualFor="let row of bookRows; trackBy: trackByRow"
+          class="library-row"
+          [class.library-row-small]="tileSize === 'small'"
+          [class.library-row-medium]="tileSize === 'medium'"
+          [class.library-row-large]="tileSize === 'large'"
+        >
+          <app-book-card
+            *ngFor="let book of row; trackBy: trackByFileName"
+            [book]="book"
+            [tileSize]="tileSize"
+            [bulkEditMode]="bulkEditMode"
+            [isSelected]="selectedBooksForBulk.has(book.fileName)"
+            [canSendToKindle]="canSendToKindle(book)"
+            [placeholderUrl]="placeholderUrl"
+            (coverClick)="onCoverClick($event)"
+            (ratingChange)="onRatingChange($event)"
+            (bookmarkToggle)="onBookmarkToggle($event)"
+            (sendToKindle)="onSendToKindle($event)"
+            (selectionToggle)="toggleBookSelection($event)"
+          ></app-book-card>
+        </div>
+        <!-- Loading more indicator at the bottom -->
+        <div *ngIf="loadingMore" class="library-loading-more">
+          <mat-spinner diameter="24"></mat-spinner>
+          <span>Loading more books...</span>
+        </div>
+      </cdk-virtual-scroll-viewport>
+
+      <div *ngIf="!loading && !error && showAlphabetIndex" class="alphabet-index">
+        <button
+          *ngFor="let letter of alphabetIndex"
+          type="button"
+          class="alphabet-letter"
+          [class.active]="letter === activeLetter"
+          [class.disabled]="availableLetters.indexOf(letter) === -1"
+          (click)="scrollToLetter(letter)"
+        >
+          {{ letter }}
+        </button>
+      </div>
+    </section>
+  </div>
+</div>

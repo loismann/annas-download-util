@@ -11,7 +11,12 @@ export interface BookDto {
   year: number | null;
   isbn: string | null;
   coverCandidates: string[];
+  description?: string | null;
+  descriptionSource?: string | null;
 
   /* NEW – track button state in the UI */
   sendState?: 'idle' | 'sending' | 'success' | 'error';
+  libraryState?: 'idle' | 'sending' | 'success' | 'error';
+  dadsKindleState?: 'idle' | 'sending' | 'success' | 'error';
+  momsKindleState?: 'idle' | 'sending' | 'success' | 'error';
 }

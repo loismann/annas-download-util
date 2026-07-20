@@ -1,0 +1,125 @@
+<h2 mat-dialog-title>Bulk Edit Books</h2>
+
+<mat-dialog-content>
+  <div class="bulk-edit-notice">
+    <mat-icon>info</mat-icon>
+    <span>Editing {{ data.bookFileNames.length }} books</span>
+  </div>
+
+  <div class="book-list">
+    <div class="book-list-header">Books being edited:</div>
+    <div *ngFor="let title of data.bookTitles" class="book-list-item">
+      • {{ title }}
+    </div>
+  </div>
+
+  <div class="form-section">
+    <!-- Authors Input -->
+    <mat-form-field appearance="outline" class="w-100">
+      <mat-label>Author(s)</mat-label>
+      <input matInput [(ngModel)]="authorsInput" />
+    </mat-form-field>
+
+    <!-- Primary Genre -->
+    <mat-form-field appearance="outline" class="w-100">
+      <mat-label>Primary Genre</mat-label>
+      <mat-select [(ngModel)]="selectedGenre">
+        <mat-option value="">No Change</mat-option>
+        <mat-option *ngFor="let genre of genres" [value]="genre">{{ genre }}</mat-option>
+      </mat-select>
+    </mat-form-field>
+
+    <!-- Add genre as tag button -->
+    <div class="genre-actions">
+      <button
+        mat-stroked-button
+        type="button"
+        (click)="addSelectedGenreAsTag()"
+        [disabled]="!selectedGenre || selectedGenre === 'Uncategorized'"
+      >
+        + Add Selected Genre as Tag
+      </button>
+    </div>
+
+    <!-- Series Input -->
+    <mat-form-field appearance="outline" class="w-100">
+      <mat-label>Series</mat-label>
+      <input matInput [(ngModel)]="series" />
+    </mat-form-field>
+
+    <!-- Genres (was Tags) -->
+    <mat-form-field appearance="outline" class="w-100">
+      <mat-label>Genres</mat-label>
+      <mat-chip-grid #chipGrid aria-label="Book genres">
+        <mat-chip-row *ngFor="let tag of tags" (removed)="removeTag(tag)" [editable]="false">
+          {{ tag }}
+          <button matChipRemove [attr.aria-label]="'Remove ' + tag">
+            <mat-icon>cancel</mat-icon>
+          </button>
+        </mat-chip-row>
+      </mat-chip-grid>
+      <input
+        [matChipInputFor]="chipGrid"
+        [matChipInputSeparatorKeyCodes]="separatorKeysCodes"
+        (matChipInputTokenEnd)="addTag($event)"
+      />
+    </mat-form-field>
+
+    <!-- Tags Mode Toggle -->
+    <div class="tags-mode-toggle">
+      <mat-slide-toggle [(ngModel)]="appendTags" color="primary">
+        {{ appendTags ? 'Append to existing genres' : 'Replace all genres' }}
+      </mat-slide-toggle>
+      <div class="tags-mode-hint">
+        <mat-icon>info_outline</mat-icon>
+        <span *ngIf="appendTags">New genres will be added to each book's existing genres</span>
+        <span *ngIf="!appendTags">All existing genres will be replaced with these selections</span>
+      </div>
+    </div>
+
+    <!-- Disabled fields notice -->
+    <div class="disabled-fields-notice">
+      <mat-icon>block</mat-icon>
+      <span>Title and Cover cannot be edited in bulk mode</span>
+    </div>
+
+    <!-- Quick Actions -->
+    <div class="quick-actions">
+      <div class="quick-actions-header">
+        <mat-icon>bolt</mat-icon>
+        <span>Quick Actions</span>
+      </div>
+      <button
+        mat-stroked-button
+        color="primary"
+        class="bookmark-all-btn"
+        (click)="onBookmarkAll()"
+      >
+        <mat-icon>bookmark_add</mat-icon>
+        Bookmark All Selected Books
+      </button>
+    </div>
+
+    <!-- Danger Zone -->
+    <div class="danger-zone">
+      <div class="danger-zone-header">
+        <mat-icon>warning</mat-icon>
+        <span>Danger Zone</span>
+      </div>
+      <button
+        mat-raised-button
+        color="warn"
+        class="delete-all-btn"
+        (click)="onDeleteAll()"
+      >
+        <mat-icon>delete_forever</mat-icon>
+        Delete All Selected Books
+      </button>
+    </div>
+  </div>
+</mat-dialog-content>
+
+<mat-dialog-actions align="end">
+  <button mat-button (click)="onCancel()">Cancel</button>
+  <button mat-raised-button color="primary" (click)="onSave()">Update All Books</button>
+</mat-dialog-actions>

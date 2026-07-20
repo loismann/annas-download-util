@@ -1,98 +1,39 @@
 <div class="search-wrapper">
+  <!-- Mobile collapse toggle button (only visible on mobile) -->
+  <button class="mobile-collapse-toggle"
+          mat-icon-button
+          (click)="toggleSearchPanel()"
+          [attr.aria-label]="searchPanelCollapsed ? 'Expand search' : 'Collapse search'">
+    <mat-icon>{{ searchPanelCollapsed ? 'expand_more' : 'expand_less' }}</mat-icon>
+  </button>
+
   <!-- LEFT column: form + counter -->
-  <div class="search-form">
-    <form (ngSubmit)="onSearch()">
-      <!-- Book name -->
-      <mat-form-field appearance="outline" class="w-100">
-        <mat-label>Book name</mat-label>
-        <input matInput [(ngModel)]="searchTerm" name="searchTerm" required />
-      </mat-form-field>
-
-      <!-- Filters row -->
-      <div class="filter-row">
-        <mat-checkbox [(ngModel)]="exact" name="exact">Exact match</mat-checkbox>
-
-        <mat-form-field appearance="outline" class="format-filter">
-          <mat-label>Format</mat-label>
-          <mat-select [(ngModel)]="selectedFormat" name="format">
-            <mat-option value="">All</mat-option>
-            <mat-option *ngFor="let fmt of availableFormats" [value]="fmt">
-              {{ fmt }}
-            </mat-option>
-          </mat-select>
-        </mat-form-field>
-      </div>
-
-      <!-- Search button -->
-      <button
-        mat-raised-button
-        color="primary"
-        type="submit"
-        [disabled]="loading"
-      >
-        Search
-      </button>
-
-      <!-- Fast-download counter -->
-      <div *ngIf="downloadsLeft !== null" class="download-counter">
-        Downloads left today: {{ downloadsLeft }}
-      </div>
-
-      <!-- Feedback -->
-      <div *ngIf="error" class="error">{{ error }}</div>
-      <div *ngIf="loading" class="loading">Loading…</div>
-    </form>
-  </div>
+  <app-search-form
+    class="search-panel"
+    [loading]="loading"
+    [error]="error"
+    [annaDomains]="annaDomains"
+    [downloadsLeft]="downloadsLeft"
+    [downloadsPerDay]="downloadsPerDay"
+    [relatedBooksModalOpen]="relatedBooksModalOpen"
+    [collapsed]="searchPanelCollapsed"
+    (search)="onSearchFormSubmit($event)"
+    (openRelatedBooks)="onOpenRelatedBooks($event)"
+    (toggleCollapsed)="toggleSearchPanel()"
+    (formatChange)="onFormatChange($event)"
+  ></app-search-form>
 
   <!-- RIGHT column: results -->
-  <div class="search-results">
-    <div class="results-inner">
-      <ng-container *ngIf="filteredBooks.length; else maybeNoResults">
-        <mat-card *ngFor="let book of filteredBooks" class="book-card">
-          <img
-            class="cover"
-            [src]="book.coverCandidates.length ? book.coverCandidates[0] : placeholderUrl"
-            (error)="onCoverError(book, $event)"
-            [alt]="book.title + ' cover'"
-          />
-
-          <div class="info">
-            <mat-card-header>
-              <mat-card-title>{{ book.title }}</mat-card-title>
-              <mat-card-subtitle>{{ book.authors.join(', ') }}</mat-card-subtitle>
-            </mat-card-header>
-
-            <mat-card-content>
-              Format: {{ book.format }} &nbsp;|&nbsp; Size: {{ book.fileSize }}
-            </mat-card-content>
-
-            <!-- ACTION BUTTONS -->
-            <mat-card-actions>
-              <!-- existing download -->
-              <button mat-button (click)="download(book)">Download</button>
-
-              <!-- new send-to-drive -->
-              <button
-                mat-button
-                color="accent"
-                (click)="sendToDrive(book)"
-                [disabled]="book.sendState === 'sending'"
-              >
-                <ng-container [ngSwitch]="book.sendState">
-                  <span *ngSwitchCase="'sending'">Sending…</span>
-                  <span *ngSwitchCase="'success'">✔ Sent!</span>
-                  <span *ngSwitchCase="'error'">✖ Retry</span>
-                  <span *ngSwitchDefault>Send to Boox</span>
-                </ng-container>
-              </button>
-            </mat-card-actions>
-          </div>
-        </mat-card>
-      </ng-container>
-
-      <ng-template #maybeNoResults>
-        <p *ngIf="searchPerformed && !loading">No results</p>
-      </ng-template>
-    </div>
-  </div>
+  <app-search-results
+    class="results-panel"
+    [books]="filteredBooks"
+    [loading]="loading"
+    [searchPerformed]="searchPerformed"
+    [placeholderUrl]="placeholderUrl"
+    (sendToLibrary)="onResultSendToLibrary($event)"
+    (sendToDropbox)="onResultSendToDropbox($event)"
+    (sendToKindle)="onResultSendToKindle($event)"
+    (fetchDescription)="onResultFetchDescription($event)"
+    (coverError)="onResultCoverError($event)"
+  ></app-search-results>
 </div>

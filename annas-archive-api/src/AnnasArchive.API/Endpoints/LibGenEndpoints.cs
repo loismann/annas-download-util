@@ -1,0 +1,237 @@
+using System.Security.Claims;
+using System.Text.RegularExpressions;
+using AnnasArchive.API.Helpers;
+using AnnasArchive.API.Models;
+using AnnasArchive.Core.Models;
+using AnnasArchive.Core.Services;
+using Microsoft.AspNetCore.Mvc;
+using Serilog;
+
+namespace AnnasArchive.API.Endpoints;
+
+/// <summary>
+/// Extension methods for mapping LibGen-related endpoints.
+/// </summary>
+public static class LibGenEndpoints
+{
+    /// <summary>
+    /// Maps LibGen endpoints to the application.
+    /// </summary>
+    public static WebApplication MapLibGenEndpoints(this WebApplication app)
+    {
+        app.MapGet("/api/libgen/book", HandleLibGenSearch)
+            .RequireAuthorization()
+            .RequireRateLimiting("api");
+
+        app.MapPost("/api/libgen/book/{md5}/download/member", HandleLibGenDownload)
+            .RequireAuthorization()
+            .RequireRateLimiting("api");
+
+        app.MapPost("/api/libgen/book/{md5}/send-to-library", HandleLibGenSendToLibrary)
+            .RequireAuthorization()
+            .RequireRateLimiting("api");
+
+        return app;
+    }
+
+    private static string GetUserName(HttpContext context) =>
+        context.User?.FindFirst(ClaimTypes.Email)?.Value
+        ?? context.User?.FindFirst(ClaimTypes.Name)?.Value
+        ?? "unknown";
+
+    private static string GetExtensionFromContentType(string? mediaType) =>
+        mediaType switch
+        {
+            "application/pdf" => ".pdf",
+            "application/epub+zip" => ".epub",
+            "application/x-mobipocket-ebook" => ".mobi",
+            _ => ".bin"
+        };
+
+    private static string GetContentType(string ext) =>
+        ext.ToLowerInvariant() switch
+        {
+            ".epub" => "application/epub+zip",
+            ".pdf" => "application/pdf",
+            ".mobi" => "application/x-mobipocket-ebook",
+            ".azw3" => "application/vnd.amazon.ebook",
+            ".fb2" => "text/xml",
+            _ => "application/octet-stream"
+        };
+
+    private static (string safeTitle, string ext, string fileName) BuildFileInfo(
+        string? title,
+        string md5,
+        string? downloadUrl,
+        HttpResponseMessage resp)
+    {
+        var rawTitle = !string.IsNullOrWhiteSpace(title) ? title : md5;
+        var safeTitle = Regex.Replace(rawTitle, $"[{Regex.Escape(new string(Path.GetInvalidFileNameChars()))}]", "_");
+
+        var ext = !string.IsNullOrEmpty(downloadUrl)
+            ? Path.GetExtension(new Uri(downloadUrl).AbsolutePath)
+            : "";
+
+        if (string.IsNullOrEmpty(ext))
+            ext = GetExtensionFromContentType(resp.Content.Headers.ContentType?.MediaType);
+
+        return (safeTitle, ext, $"{safeTitle}{ext}");
+    }
+
+    private static async Task<IResult> HandleLibGenSearch(
+        [FromQuery] string? name,
+        LibGenService svc,
+        IValidationService validation,
+        IConfiguration cfg,
+        [FromQuery] bool exact = false)
+    {
+        Log.Information("[API LibGen Search] Received request: name='{name}', exact={exact}");
+
+        if (!validation.IsValidSearchQuery(name))
+        {
+            Log.Information("[API LibGen Search] Validation failed for query: '{name}'");
+            return Results.BadRequest(new {
+                error = "Query parameter 'name' is required and must be between 1 and 500 characters."
+            });
+        }
+
+        var searchLimit = cfg.GetValue<int>("Anna:SearchLimit", 25);
+        Log.Information("[API LibGen Search] Calling LibGenService.SearchAsync...");
+        var books = (await svc.SearchAsync(name, searchLimit, exact)).ToList();
+        Log.Information("[API LibGen Search] Service returned {books.Count} books");
+
+        if (exact)
+        {
+            var originalCount = books.Count;
+            books = books
+                .Where(b => string.Equals(b.Title?.Trim(), name.Trim(), StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            Log.Information("[API LibGen Search] After exact filter: {books.Count} books (was {originalCount})");
+        }
+
+        if (books.Any())
+        {
+            var result = books.Count == 1 ? Results.Ok(books[0]) : Results.Ok(books);
+            Log.Information("[API LibGen Search] Returning {books.Count} books");
+            return result;
+        }
+        else
+        {
+            Log.Information("[API LibGen Search] No books found, returning 404");
+            return ApiResponse.NotFound("No books found matching that name.");
+        }
+    }
+
+    private static async Task<IResult> HandleLibGenDownload(
+        [FromRoute] string md5,
+        [FromQuery] string? title,
+        [FromQuery] string? coverUrl,
+        [FromQuery] string? authors,
+        [FromQuery] string? format,
+        [FromQuery] string? fileSize,
+        [FromQuery] string? source,
+        LibGenService libgen,
+        IValidationService validation,
+        IEbookCoverService coverService,
+        IDownloadTrackingService downloadTracking,
+        HttpContext context)
+    {
+        // Use shared extended validation helper for all parameters
+        var validationError = SendToTargetHelpers.ValidateSendParametersExtended(
+            md5, title, coverUrl, authors, fileSize, description: null, validation);
+        if (validationError != null)
+            return Results.BadRequest(new { error = validationError });
+
+        var userName = GetUserName(context);
+        Log.Information("[LibGen] Downloading book {Md5} for user {UserName}...", md5, userName);
+
+        var resp = await libgen.GetDownloadResponseAsync(md5, HttpCompletionOption.ResponseHeadersRead);
+        if (resp == null || !resp.IsSuccessStatusCode)
+        {
+            var (downloadsLeft, downloadsPerDay) = downloadTracking.GetDownloadStatus();
+            Log.Warning("[LibGen] Failed to download book {Md5}", md5);
+            return Results.Ok(new { success = false, message = "Failed to download book from LibGen.", accountFastInfo = new AccountFastDownloadInfoDto(downloadsLeft, downloadsPerDay) });
+        }
+
+        var downloadUrl = await libgen.GetDownloadUrlAsync(md5);
+        var (_, ext, fileName) = BuildFileInfo(title, md5, downloadUrl, resp);
+        Log.Information("[LibGen] Downloaded: {FileName}", fileName);
+
+        downloadTracking.RecordDownload(md5, userName);
+        Log.Information("[download-libgen] Recorded download for user {UserName}, MD5: {Md5}", userName, md5);
+
+        using (resp)
+        {
+            var ebookStream = await resp.Content.ReadAsStreamAsync();
+            ebookStream = await SendToTargetHelpers.TryReplaceCoverAsync(
+                ebookStream, coverUrl, fileName, coverService, "download-libgen");
+            return Results.Stream(ebookStream, GetContentType(ext), fileName);
+        }
+    }
+
+    private static async Task<IResult> HandleLibGenSendToLibrary(
+        [FromRoute] string md5,
+        [FromQuery] string? title,
+        [FromQuery] string? coverUrl,
+        [FromQuery] string? authors,
+        [FromQuery] string? format,
+        [FromQuery] string? fileSize,
+        [FromQuery] string? source,
+        [FromQuery] string? description,
+        LibGenService libgen,
+        IValidationService validation,
+        IEbookCoverService coverService,
+        IDownloadTrackingService downloadTracking,
+        HttpContext context)
+    {
+        // Use shared extended validation helper for all parameters
+        var validationError = SendToTargetHelpers.ValidateSendParametersExtended(
+            md5, title, coverUrl, authors, fileSize, description, validation);
+        if (validationError != null)
+            return Results.BadRequest(new { error = validationError });
+
+        var userName = GetUserName(context);
+        var userTag = LibraryHelpers.ResolveUserLibraryTag(context);
+        Log.Information("[LibGen] Saving book {Md5} to library for user {UserName}...", md5, userName);
+
+        var resp = await libgen.GetDownloadResponseAsync(md5, HttpCompletionOption.ResponseHeadersRead);
+        if (resp == null || !resp.IsSuccessStatusCode)
+        {
+            var (downloadsLeft, downloadsPerDay) = downloadTracking.GetDownloadStatus();
+            Log.Warning("[LibGen] Failed to download book {Md5}", md5);
+            return Results.Ok(new { success = false, message = "Failed to download book from LibGen.", accountFastInfo = new AccountFastDownloadInfoDto(downloadsLeft, downloadsPerDay) });
+        }
+
+        var downloadUrl = await libgen.GetDownloadUrlAsync(md5);
+        var (_, ext, fileName) = BuildFileInfo(title, md5, downloadUrl, resp);
+
+        downloadTracking.RecordDownload(md5, userName);
+        Log.Information("[library-libgen] Recorded download for user {UserName}, MD5: {Md5}", userName, md5);
+
+        var (currentDownloadsLeft, currentDownloadsPerDay) = downloadTracking.GetDownloadStatus();
+        var trackingInfo = new AccountFastDownloadInfoDto(currentDownloadsLeft, currentDownloadsPerDay);
+
+        var libraryRoot = LibraryHelpers.ResolveLibraryRoot();
+        Directory.CreateDirectory(libraryRoot);
+
+        using (resp)
+        {
+            var ebookStream = await resp.Content.ReadAsStreamAsync();
+            ebookStream = await SendToTargetHelpers.TryReplaceCoverAsync(
+                ebookStream, coverUrl, fileName, coverService, "library-libgen");
+
+            var destinationPath = Path.Combine(libraryRoot, fileName);
+            if (File.Exists(destinationPath))
+            {
+                return Results.Ok(new { success = true, message = "File already exists in library.", fileName, path = destinationPath, accountFastInfo = trackingInfo });
+            }
+
+            await using var outStream = File.Create(destinationPath);
+            await ebookStream.CopyToAsync(outStream);
+
+            await LibraryHelpers.WriteLibraryMetadataAsync(libraryRoot, fileName, md5, title, authors, format, fileSize, coverUrl, source, userTag, description);
+
+            return Results.Ok(new { success = true, message = "Saved to library.", fileName, path = destinationPath, accountFastInfo = trackingInfo });
+        }
+    }
+}

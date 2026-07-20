@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<RunSettings>
+  <DataCollectionRunSettings>
+    <DataCollectors>
+      <DataCollector friendlyName="XPlat code coverage">
+        <Configuration>
+          <Format>cobertura</Format>
+          <Exclude>
+            <!-- Exclude auto-generated files -->
+            [*.Tests?]*
+            [*]*.Program
+
+            <!-- Exclude specific types that are hard to test -->
+            [AnnasArchive.Api]Program
+
+            <!-- Exclude by attribute -->
+            [*]*Attribute
+            [*]*Attributes
+
+            <!-- Exclude by file path pattern (auto-generated) -->
+          </Exclude>
+
+          <ExcludeByFile>
+            <!-- Exclude all auto-generated files -->
+            **/*.g.cs
+            **/*.designer.cs
+            **/obj/**
+            **/bin/**
+
+            <!-- Exclude Migrations if you have them -->
+            **/Migrations/**
+          </ExcludeByFile>
+
+          <Include>
+            <!-- Only measure our core business logic -->
+            [AnnasArchive.Core]*
+          </Include>
+
+          <IncludeDirectory>
+            ../src/**
+          </IncludeDirectory>
+
+        </Configuration>
+      </DataCollector>
+    </DataCollectors>
+  </DataCollectionRunSettings>
+</RunSettings>

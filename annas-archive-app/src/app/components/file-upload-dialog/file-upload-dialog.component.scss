@@ -1,0 +1,181 @@
+.drop-zone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  border: 2px dashed #cbd5e1;
+  border-radius: 12px;
+  background: #f8fafc;
+  transition: all 0.2s ease;
+  cursor: pointer;
+
+  &.drag-over {
+    border-color: #3b82f6;
+    background: #eff6ff;
+  }
+
+  .upload-icon {
+    font-size: 48px;
+    width: 48px;
+    height: 48px;
+    color: #94a3b8;
+    margin-bottom: 12px;
+  }
+
+  .drop-text {
+    font-size: 1rem;
+    color: #475569;
+    margin: 0 0 8px 0;
+  }
+
+  .drop-hint {
+    font-size: 0.875rem;
+    color: #94a3b8;
+    margin: 0 0 12px 0;
+  }
+
+  .file-select-btn {
+    display: inline-block;
+    padding: 8px 16px;
+    background: #3b82f6;
+    color: white;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: background 0.2s ease;
+
+    &:hover {
+      background: #2563eb;
+    }
+  }
+}
+
+.format-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  margin-top: 16px;
+  background: #f0f9ff;
+  border: 1px solid #bae6fd;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  color: #0369a1;
+
+  mat-icon {
+    font-size: 18px;
+    width: 18px;
+    height: 18px;
+    color: #0284c7;
+  }
+}
+
+.upload-queue {
+  margin-top: 20px;
+
+  .queue-header {
+    font-weight: 600;
+    color: #475569;
+    margin-bottom: 12px;
+    font-size: 0.9rem;
+  }
+
+  .queue-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    background: #f8fafc;
+    border-radius: 8px;
+    margin-bottom: 8px;
+    border: 1px solid #e5e7eb;
+
+    &.success {
+      background: #f0fdf4;
+      border-color: #86efac;
+
+      .file-icon {
+        color: #22c55e;
+      }
+    }
+
+    &.error {
+      background: #fef2f2;
+      border-color: #fecaca;
+
+      .file-icon {
+        color: #ef4444;
+      }
+    }
+
+    .item-info {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex: 1;
+      min-width: 0;
+
+      .file-icon {
+        font-size: 24px;
+        width: 24px;
+        height: 24px;
+        color: #64748b;
+      }
+
+      .file-details {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+
+        .file-name {
+          font-weight: 500;
+          color: #1f2937;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+
+        .file-size {
+          font-size: 0.8rem;
+          color: #64748b;
+        }
+      }
+    }
+
+    .item-status {
+      flex-shrink: 0;
+      min-width: 100px;
+
+      mat-progress-bar {
+        width: 100px;
+      }
+
+      .status-text {
+        font-size: 0.8rem;
+        color: #64748b;
+
+        &.success {
+          color: #22c55e;
+          font-weight: 500;
+        }
+
+        &.error {
+          color: #ef4444;
+          font-size: 0.75rem;
+        }
+      }
+    }
+
+    .remove-btn {
+      flex-shrink: 0;
+    }
+  }
+}
+
+mat-dialog-content {
+  min-width: 400px;
+  max-width: 600px;
+  max-height: 500px;
+  overflow-y: auto;
+}

@@ -1,20 +1,111 @@
 :host {
     display: block;
     height: calc(100vh - 64px);
+    --form-item-height: 56px;
+    --form-item-gap: 1rem;
   }
-  
-  /* 50 / 50 grid */
+
+  /* Adjust for mobile toolbar height */
+  @media (max-width: 599px) {
+    :host {
+      height: calc(100vh - 56px);
+    }
+  }
+
+  /* Anna's Archive Domain Health Status - Horizontal Row */
+  .health-status-row {
+    width: 100%;
+    max-width: 360px;
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  .health-item {
+    flex: 1 1 0;
+    box-sizing: border-box;
+    padding: 0;
+    border: 2px solid transparent;
+    border-radius: 4px;
+    text-align: center;
+    transition: all 0.3s ease;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    height: var(--form-item-height);
+  }
+
+  .health-domain {
+    font-size: 0.7rem;
+    font-weight: 600;
+    margin-bottom: 0.15rem;
+  }
+
+  .health-percent {
+    font-size: 0.85rem;
+    font-weight: 700;
+  }
+
+  /* Health color classes - applied to entire .health-item */
+  .health-item.health-green {
+    background-color: #4caf50;
+    border-color: #2e7d32;
+    color: white;
+  }
+
+  .health-item.health-yellow {
+    background-color: #fbc02d;
+    border-color: #f9a825;
+    color: #333;
+  }
+
+  .health-item.health-orange {
+    background-color: #ff9800;
+    border-color: #ef6c00;
+    color: white;
+  }
+
+  .health-item.health-red {
+    background-color: #f44336;
+    border-color: #c62828;
+    color: white;
+  }
+
+  .health-item.health-unknown {
+    background-color: #9e9e9e;
+    border-color: #616161;
+    color: white;
+  }
+
+  /* Left column gets generous centering room but is capped so the
+     results column never loses more than this fixed amount of space.
+     The results track has its own explicit floor (360px) — without one, a
+     bare "1fr" has no real minimum (browsers fall back to its min-content,
+     which can be tiny since text wraps), so the sidebar would keep hogging
+     its full width while results gets starved well before the single-column
+     breakpoint below ever kicks in. With both sides given a real floor, the
+     grid shrinks the sidebar first once space gets tight. */
   .search-wrapper {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: minmax(340px, 640px) minmax(360px, 1fr);
     height: 100%;
+    overflow: hidden;
+    position: relative;
+  }
+
+  /* Mobile collapse toggle button (hidden on desktop) */
+  .mobile-collapse-toggle {
+    display: none;
   }
   
   /* ─── LEFT column ─────────────────────────────── */
-  .search-form {
+  .search-panel {
+    height: 100%;
     display: flex;
+    flex-direction: column;
     justify-content: center;
     align-items: center;
+    overflow: hidden;
   }
   
   .search-form form {
@@ -22,28 +113,151 @@
     max-width: 360px;
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: var(--form-item-gap);
+  }
+
+  .ai-search-field textarea {
+    resize: vertical;
+  }
+
+  .ai-toggle {
+    color: #3f51b5;
   }
   
   /* Downloads‐left info window */
-  .download-counter {
-    margin: 0 auto;
-    padding: 0.5rem 1rem;
-    border: 1px solid #ccc;
-    border-radius: 4px;
-    background: #f9f9f9;
-    text-align: center;
+.download-counter {
+  margin: 0 auto;
+  padding: 0.75rem 1rem;
+  border-radius: 4px;
+  background: #e3f2fd;
+  border-left: 4px solid #2196f3;
+  text-align: center;
+  width: 100%;
+  transition: all 0.3s ease;
+}
+
+.download-counter.inline {
+  margin: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: var(--form-item-height);
+  height: var(--form-item-height);
+  padding: 0 1rem;
+}
+
+  .download-counter .counter-main {
+    font-size: 1rem;
+    color: #1976d2;
+  }
+
+  .download-counter .counter-reset {
+    margin-top: 0.25rem;
+    font-size: 0.8rem;
+    color: #666;
+    opacity: 0.85;
+  }
+
+  .download-counter .counter-warning {
+    margin-top: 0.5rem;
+    font-size: 0.9rem;
     font-weight: 500;
-    max-width: 360px;
   }
-  
-  /* filter row: checkbox + dropdown side by side */
-  .filter-row {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
+
+  .download-counter.warning-yellow {
+    background: #fffde7;
+    border-left-color: #fbc02d;
   }
-  
+
+  .download-counter.warning-yellow .counter-main {
+    color: #f9a825;
+  }
+
+  .download-counter.warning-yellow .counter-warning {
+    color: #f9a825;
+  }
+
+  .download-counter.warning-orange {
+    background: #fff3e0;
+    border-left-color: #ff9800;
+  }
+
+  .download-counter.warning-orange .counter-main {
+    color: #f57c00;
+  }
+
+  .download-counter.warning-orange .counter-warning {
+    color: #f57c00;
+  }
+
+  .download-counter.warning-red {
+    background: #ffebee;
+    border-left-color: #f44336;
+    animation: pulse 2s ease-in-out infinite;
+  }
+
+  .download-counter.warning-red .counter-main {
+    color: #c62828;
+  }
+
+  .download-counter.warning-red .counter-warning {
+    color: #c62828;
+  }
+
+  @keyframes pulse {
+    0%, 100% {
+      transform: scale(1);
+    }
+    50% {
+      transform: scale(1.02);
+    }
+  }
+
+  /* Disabled author dropdown styling */
+  :host ::ng-deep .mat-mdc-form-field.mat-form-field-disabled .mat-mdc-text-field-wrapper {
+    background-color: #f5f5f5;
+  }
+
+  :host ::ng-deep .mat-mdc-form-field.mat-form-field-disabled .mdc-notched-outline__leading,
+  :host ::ng-deep .mat-mdc-form-field.mat-form-field-disabled .mdc-notched-outline__notch,
+  :host ::ng-deep .mat-mdc-form-field.mat-form-field-disabled .mdc-notched-outline__trailing {
+    border-color: #999 !important;
+  }
+
+/* Author dropdown panel styling moved to global styles.scss */
+/* (CDK overlay panels require global styles to be styled properly) */
+
+/* source toggle row */
+.source-toggle-row {
+  width: 100%;
+  max-width: 360px;
+  margin-bottom: var(--form-item-gap);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 0;
+}
+
+.source-toggle-row mat-slide-toggle {
+  font-weight: 500;
+}
+
+/* filter row: checkbox + dropdown side by side */
+.filter-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.filter-row.split-row {
+  align-items: stretch;
+}
+
+.filter-row.split-row > * {
+  flex: 1 1 50%;
+}
+
   /* format dropdown sizing */
   .format-filter {
     flex: 1;
@@ -53,20 +267,22 @@
   /* full-width search button */
   .search-form button {
     width: 100%;
+    height: var(--form-item-height);
+  }
+
+  .search-form button.halftone {
+    opacity: 0.55;
+    filter: grayscale(0.35);
   }
   
   /* ─── RIGHT column ────────────────────────────── */
-  .search-results {
-    overflow-y: auto;
-    padding: 5rem 0;
-    display: flex;
-    justify-content: center;
+  .results-panel {
+    height: 100vh;
+    overflow: hidden;
+    container-type: inline-size;
+    container-name: results-panel;
   }
-  
-  .results-inner {
-    width: 70%;
-  }
-  
+
   /* card spacing */
   .book-card {
     margin-bottom: 1rem;
@@ -79,38 +295,126 @@
     margin-top: 1rem;
   }
   
-  /* ─── Layout override: image on left, info on right ─── */
-  :host ::ng-deep mat-card.book-card {
-    display: flex !important;
-    flex-direction: row !important;
-    overflow: hidden;
-    padding: 0;
+  /* NOTE: mat-card.book-card layout/responsive styling lives entirely in
+     search-results.component.css (the component that actually renders the
+     cards, via container queries scoped to this .results-panel). It used to
+     also be duplicated here with a separate, uncoordinated set of viewport
+     breakpoints — two competing responsive systems fighting over the same
+     global (::ng-deep) selectors, which is what caused the button layout to
+     look broken across certain window widths. Don't re-add it here. */
+
+  /* Small tablets (iPad Mini) and phones: 744px and below - Single column stacked */
+  @media (max-width: 744px) {
+    .search-wrapper {
+      grid-template-columns: 1fr;
+      grid-template-rows: auto 1fr;
+      overflow: hidden;
+    }
+
+    .health-status-row {
+      gap: 0.4rem;
+    }
+
+    .health-item {
+      padding: 0;
+      min-height: var(--form-item-height);
+    }
+
+    .health-domain {
+      font-size: 0.65rem;
+    }
+
+    .health-percent {
+      font-size: 0.8rem;
+    }
+
+    /* Show the mobile collapse toggle button */
+    .mobile-collapse-toggle {
+      display: flex;
+      position: absolute;
+      top: 4.5rem;
+      right: 1rem;
+      z-index: 100;
+      background: #3f51b5;
+      color: white;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+    }
+
+    .mobile-collapse-toggle:hover {
+      background: #303f9f;
+    }
+
+    .search-form {
+      padding: 4rem 1rem 1rem 1rem;
+      border-bottom: 1px solid #e0e0e0;
+      transition: max-height 0.3s ease-in-out, padding 0.3s ease-in-out, opacity 0.3s ease-in-out;
+      max-height: 1000px;
+      overflow: hidden;
+    }
+
+    .search-form.collapsed {
+      max-height: 0;
+      padding: 0 1rem;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .search-form form {
+      max-width: 100%;
+    }
   }
-  
-  :host ::ng-deep mat-card.book-card .cover {
-    flex: 0 0 120px;
-    width: 120px;
-    object-fit: cover;
-    border-radius: 0 !important;
-    margin: 0;
+
+  /* Mobile: 480px and below */
+  @media (max-width: 480px) {
+    .health-status-row {
+      gap: 0.3rem;
+    }
+
+    .health-item {
+      padding: 0;
+      min-height: var(--form-item-height);
+    }
+
+    .health-domain {
+      font-size: 0.6rem;
+    }
+
+    .health-percent {
+      font-size: 0.75rem;
+    }
+
+    /* Position toggle button at bottom right on small mobile - less intrusive */
+    .mobile-collapse-toggle {
+      top: auto;
+      bottom: 16px;
+      right: 16px;
+      position: fixed;
+      z-index: 1000;
+    }
+
+    .search-form {
+      padding: 0.75rem;
+    }
+
+    .search-form.collapsed {
+      padding: 0;
+      max-height: 0;
+    }
+
+    .search-form form {
+      gap: 0.75rem;
+    }
+
+    .filter-row {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 0.5rem;
+    }
+
+    .format-filter {
+      min-width: unset;
+    }
   }
-  
-  :host ::ng-deep mat-card.book-card .info {
-    display: flex;
-    flex-direction: column;
-    flex: 1 1 auto;
-  }
-  
-  :host ::ng-deep mat-card.book-card .info .mat-card-header {
-    padding: 16px 16px 0 16px;
-    align-items: start;
-  }
-  
-  :host ::ng-deep mat-card.book-card .info .mat-card-content {
-    padding: 0 16px 16px 16px;
-  }
-  
-  :host ::ng-deep mat-card.book-card .info .mat-card-actions {
-    padding: 0 16px 16px 16px;
-  }
-  

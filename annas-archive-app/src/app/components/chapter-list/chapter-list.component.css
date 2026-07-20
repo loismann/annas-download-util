@@ -1,0 +1,30 @@
+.w-100 {
+  width: 100%;
+}
+
+.chapter-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.chapter-title {
+  font-weight: 600;
+}
+
+.chapter-meta {
+  color: #6b7280;
+  font-size: 12px;
+  margin-left: 6px;
+}
+
+.cached-indicator {
+  font-size: 18px;
+  width: 18px;
+  height: 18px;
+  color: #10b981;
+}
+
+.dropdown-disabled {
+  opacity: 0.6;
+}

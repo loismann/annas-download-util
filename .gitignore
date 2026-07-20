@@ -18,6 +18,7 @@ Desktop.ini
 
 # IDEs
 .vscode/
+.vscode-extension/
 .idea/
 *.suo
 *.user
@@ -77,6 +78,28 @@ PublishProfiles/
 *.orig
 
 # --------------------------------------
+# Python (Not used in this project)
+# --------------------------------------
+# Virtual environments
+.venv/
+.venv_*/
+venv/
+env/
+ENV/
+
+# Python files
+*.py
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+*.egg-info/
+.python-version
+requirements.txt
+pyproject.toml
+setup.py
+
+# --------------------------------------
 # Node / Angular
 # --------------------------------------
 # Node modules
@@ -89,6 +112,7 @@ dist-*/
 build/
 build-*/
 wwwroot/
+deploy/
 
 # Angular CLI cache
 .angular/
@@ -98,6 +122,7 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 lerna-debug.log*
+local-logs/
 
 # Environment files
 .env
@@ -117,12 +142,32 @@ lerna-debug.log*
 
 # Coverage directory used by testing tools
 coverage/
+**/coverage/
+TestResults/
+*.coverage
+*.coveragexml
+*.cobertura.xml
+
+# Playwright and E2E test artifacts
+playwright-report/
+test-results/
+**/playwright-report/
+**/test-results/
+deploy-e2e-*.log
+**/deploy-e2e-*.log
+.playwright/
+**/.playwright/
+test-cache/
+**/test-cache/
+.auth/
+**/auth-state.json
 
 # Compiled files
 *.js
 *.js.map
 *.mjs
 *.cjs
+!annas-archive-app/scripts/*.js
 
 # --------------------------------------
 # Miscellaneous
@@ -137,3 +182,50 @@ coverage/
 *~
 
 service-account.json
+
+# --------------------------------------
+# Sensitive Files & Directories
+# --------------------------------------
+# OAuth credentials and tokens
+oauth-client.json
+oauth-token.json
+
+# Application secrets (any depth)
+appsettings.json
+appsettings.*.json
+**/appsettings.json
+**/appsettings.*.json
+
+# Build/publish output with secrets
+publish/
+**/publish/
+
+# Deployment guide with examples (optional - contains example access codes)
+# DEPLOYMENT_GUIDE.md
+
+# Deployment logs and test logs
+deployment-logs/
+test-logs/
+
+# Shell scripts are ignored by default (may contain sensitive data)
+*.sh
+
+# Personal tagging scripts (contain usernames and hostnames)
+scripts/tag_dads_books.sh
+scripts/tag_pauls_books_rest.sh
+
+# All markdown files (may contain sensitive documentation)
+*.md
+*.MD
+!README.md
+!README.MD
+!**/README.md
+!**/README.MD
+
+# Documentation folder
+DOCS/
+
+# Auto-generated version file
+**/version.ts
+
+.DS_Store

@@ -1,0 +1,759 @@
+<div class="reader-wrapper" [class.sidebar-hidden]="!showSidebar" [class.reader-fullscreen]="isReaderFullscreen">
+  <section class="controls" *ngIf="showSidebar">
+    <div class="control-header">
+      <h2>Ebook Reader</h2>
+      <button mat-icon-button color="primary" aria-label="Hide menu" (click)="toggleSidebar(false)">
+        <mat-icon>chevron_left</mat-icon>
+      </button>
+    </div>
+
+    <div class="reader-select-row">
+      <mat-form-field appearance="outline" class="w-100 reader-select">
+        <mat-label>Select library book</mat-label>
+        <mat-select
+          [disabled]="loadingBooks"
+          [value]="selectedBookFileName"
+          (selectionChange)="onBookSelected($event.value)"
+          panelClass="reader-select-panel"
+          [panelWidth]="'fit-content'">
+          <mat-option *ngFor="let book of readerBooks" [value]="book.fileName">
+            <span class="book-name">{{ book.title }}</span>
+            <span class="book-meta">
+              • {{ book.format }}
+              <ng-container *ngIf="book.authors?.length">
+                • {{ book.authors[0] }}
+              </ng-container>
+              <ng-container *ngIf="book.hasSummaries">
+                • Summary saved
+              </ng-container>
+            </span>
+          </mat-option>
+        </mat-select>
+      </mat-form-field>
+      <button mat-stroked-button color="primary" type="button" class="reader-add-button" (click)="goToLibrary()" aria-label="Add from library">
+        <mat-icon>add</mat-icon>
+      </button>
+    </div>
+
+    <div class="reader-select-row">
+      <mat-form-field
+        appearance="outline"
+        class="w-100 reader-select"
+        [class.dropdown-disabled]="!previouslyViewed.length">
+        <mat-label>Previously viewed</mat-label>
+        <mat-select
+          [disabled]="!previouslyViewed.length"
+          [value]="null"
+          (selectionChange)="onBookSelected($event.value)"
+          panelClass="reader-select-panel"
+          [panelWidth]="'fit-content'">
+          <mat-option *ngFor="let prev of previouslyViewed" [value]="prev.fileName">
+            {{ prev.title }}
+          </mat-option>
+        </mat-select>
+      </mat-form-field>
+      <button
+        mat-stroked-button
+        color="primary"
+        type="button"
+        class="reader-clear-button"
+        (click)="clearPreviouslyViewed()"
+        [disabled]="!previouslyViewed.length"
+        aria-label="Clear previously viewed">
+        <mat-icon>delete</mat-icon>
+      </button>
+    </div>
+
+    <div class="book-path" *ngIf="selectedBook">
+      <div>File: {{ selectedBook.fileName }}</div>
+      <div *ngIf="selectedBook.authors?.length">Author: {{ selectedBook.authors.join(', ') }}</div>
+    </div>
+
+    <app-chapter-list
+      [chapters]="chapters"
+      [selectedChapterId]="selectedChapterId"
+      [loadingChapters]="loadingChapters"
+      [loadingContent]="loadingContent"
+      [cachedChapterIds]="cachedChapterIds"
+      (chapterSelected)="onChapterSelected($event)"
+    ></app-chapter-list>
+
+    <div class="reading-tools-section">
+      <button mat-button class="cache-toggle settings-toggle" (click)="showReadingToolsSection = !showReadingToolsSection">
+        <mat-icon>{{ showReadingToolsSection ? 'expand_less' : 'expand_more' }}</mat-icon>
+        Reading Tools
+      </button>
+      <div class="settings-content" *ngIf="showReadingToolsSection">
+        <div class="settings-subsection reading-tools-buttons">
+          <button mat-flat-button color="accent" class="w-100 vocab-btn-main"
+            (click)="openVocabModal()">
+            <mat-icon>menu_book</mat-icon>
+            Vocab
+          </button>
+
+          <button mat-flat-button color="primary" class="w-100 character-graph-btn"
+            (click)="openCharacterGraphModal()"
+            [disabled]="!selectedBook">
+            <mat-icon>account_tree</mat-icon>
+            Characters
+          </button>
+        </div>
+
+        <div class="settings-subsection book-search-subsection" *ngIf="selectedBookPath">
+          <div class="settings-subsection-header">Search Book</div>
+          <mat-form-field appearance="outline" class="w-100">
+            <mat-label>Enter at least 10 characters</mat-label>
+            <input
+              matInput
+              [(ngModel)]="bookSearchTerm"
+              (keyup.enter)="searchWholeBook()"
+              placeholder="Search across all chapters" />
+            <button
+              mat-icon-button
+              matSuffix
+              aria-label="Run search"
+              (click)="searchWholeBook()">
+              <mat-icon>search</mat-icon>
+            </button>
+          </mat-form-field>
+          <div class="error" *ngIf="bookSearchError">{{ bookSearchError }}</div>
+
+          <mat-form-field appearance="outline" class="w-100" [class.dropdown-disabled]="!bookSearchResults.length">
+            <mat-label>Matching chapters</mat-label>
+            <mat-select (selectionChange)="goToBookMatch($event.value)" [disabled]="!bookSearchResults.length">
+              <mat-option *ngFor="let res of bookSearchResults" [value]="res">
+                <div class="chapter-line">
+                  <span class="chapter-title">{{ res.title }}</span>
+                  <span class="chapter-meta">({{ res.matchCount }} hits)</span>
+                </div>
+                <div class="snippet">{{ res.snippet }}</div>
+              </mat-option>
+            </mat-select>
+          </mat-form-field>
+        </div>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <button mat-button class="cache-toggle settings-toggle" (click)="showSettingsSection = !showSettingsSection">
+        <mat-icon>{{ showSettingsSection ? 'expand_less' : 'expand_more' }}</mat-icon>
+        Settings
+      </button>
+      <div class="settings-content" *ngIf="showSettingsSection">
+        <div class="settings-subsection" [class.dropdown-disabled]="!chapterContent">
+          <div class="settings-subsection-header">Display</div>
+          <div class="control-row font-row">
+            <span class="control-label">Font</span>
+            <div class="segmented-control" role="radiogroup" aria-label="Font family">
+              <button
+                type="button"
+                class="segmented-button"
+                [class.active]="fontFamily === 'serif'"
+                [disabled]="!chapterContent"
+                (click)="fontFamily = 'serif'">
+                Serif
+              </button>
+              <button
+                type="button"
+                class="segmented-button"
+                [class.active]="fontFamily === 'sans'"
+                [disabled]="!chapterContent"
+                (click)="fontFamily = 'sans'">
+                Sans
+              </button>
+              <button
+                type="button"
+                class="segmented-button"
+                [class.active]="fontFamily === 'mono'"
+                [disabled]="!chapterContent"
+                (click)="fontFamily = 'mono'">
+                Mono
+              </button>
+            </div>
+          </div>
+          <div class="control-row">
+            <span class="control-label">Size</span>
+            <div class="size-stepper">
+              <button mat-icon-button aria-label="Decrease font" (click)="changeFontSize(-1)" [disabled]="!chapterContent || fontSize <= 12">
+                <mat-icon>remove</mat-icon>
+              </button>
+              <span class="size-value">{{ fontSize }}</span>
+              <button mat-icon-button aria-label="Increase font" (click)="changeFontSize(1)" [disabled]="!chapterContent || fontSize >= 28">
+                <mat-icon>add</mat-icon>
+              </button>
+            </div>
+          </div>
+          <div class="control-row">
+            <span class="control-label">Theme</span>
+            <div class="segmented-control" role="radiogroup" aria-label="Reader theme">
+              <button
+                type="button"
+                class="segmented-button"
+                [class.active]="theme === 'light'"
+                [disabled]="!chapterContent"
+                (click)="theme = 'light'">
+                Light
+              </button>
+              <button
+                type="button"
+                class="segmented-button"
+                [class.active]="theme === 'sepia'"
+                [disabled]="!chapterContent"
+                (click)="theme = 'sepia'">
+                Sepia
+              </button>
+              <button
+                type="button"
+                class="segmented-button"
+                [class.active]="theme === 'dark'"
+                [disabled]="!chapterContent"
+                (click)="theme = 'dark'">
+                Dark
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-subsection" *ngIf="allUsersUsage.length > 0">
+          <div class="settings-subsection-header">AI Usage</div>
+          <div *ngFor="let user of allUsersUsage" class="user-usage-block"
+               [class.warning]="user.allowanceUsedPercent >= 70 && user.allowanceUsedPercent < 90"
+               [class.danger]="user.allowanceUsedPercent >= 90">
+            <div class="user-usage-header">
+              <span class="user-name">{{ user.displayName }}</span>
+              <span class="user-cost">${{ user.totalCostUsd | number:'1.2-2' }}</span>
+            </div>
+            <mat-progress-bar
+              mode="determinate"
+              [value]="user.allowanceUsedPercent"
+              [color]="user.isOverLimit ? 'warn' : user.allowanceUsedPercent >= 70 ? 'accent' : 'primary'">
+            </mat-progress-bar>
+            <div class="user-limit-info" *ngIf="user.isOverLimit">
+              <mat-icon class="limit-icon">block</mat-icon>
+              <span>Limit reached - Resets {{ user.resetsAtUtc | date:'MMM d' }}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-subsection" *ngIf="status">
+          <div class="settings-subsection-header">Cache</div>
+          <div class="status-row">
+            <span>Indexing: {{ status.percent }}%</span>
+            <span *ngIf="status.cachedAt">Cached: {{ status.cachedAt | date:'short' }}</span>
+          </div>
+          <mat-progress-bar
+            mode="determinate"
+            [value]="status.percent">
+          </mat-progress-bar>
+          <div class="status-row small">
+            <span>{{ status.chaptersCached }}/{{ status.chaptersTotal }} chapters cached</span>
+            <span *ngIf="status.inProgress">Building…</span>
+          </div>
+          <div class="status-row small error" *ngIf="status.error">
+            <span>Cache error</span>
+            <span>{{ status.error }}</span>
+          </div>
+          <div class="status-actions">
+            <button mat-flat-button color="primary" class="status-btn status-btn-primary"
+              (click)="startIndexing()" [disabled]="!selectedBookPath || (status && status.inProgress)">
+              Cache
+            </button>
+            <button mat-stroked-button color="primary" class="status-btn status-btn-export"
+              (click)="exportSummaries()" [disabled]="!selectedBookPath || !status?.chaptersCached">
+              <mat-icon>download</mat-icon>
+              Export
+            </button>
+            <button mat-flat-button color="warn" class="status-btn status-btn-warn"
+              (click)="deleteIndex()" [disabled]="!selectedBookPath">
+              Delete
+            </button>
+          </div>
+        </div>
+
+        <div class="settings-subsection settings-danger">
+          <button mat-stroked-button color="warn" class="w-100 reader-remove-button"
+            (click)="removeFromReader()" [disabled]="!selectedBook">
+            <mat-icon>remove_circle</mat-icon>
+            Remove book from reader
+          </button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="content">
+    <div class="state" *ngIf="loadingBooks || loadingChapters || loadingContent">Loading…</div>
+    <div class="state error" *ngIf="error">{{ error }}</div>
+
+    <div class="content-stack two-pane" #contentStack *ngIf="!error && !loadingContent && chapterContent">
+      <div
+        class="text-window"
+        [ngStyle]="readerTextStyles"
+        [ngClass]="['reader-theme-' + theme, 'reader-font-' + fontFamily]"
+        [style.flex]="leftFlex"
+        (touchstart)="onTextWindowTouchStart($event)"
+        (touchend)="onTextWindowTouchEnd($event)"
+        #textWindow>
+        <pre [innerHTML]="highlightedVisibleText"></pre>
+      </div>
+
+      <div
+        class="vertical-resize-handle"
+        (mousedown)="startHorizontalResize($event)"
+        (touchstart)="startHorizontalResizeTouch($event)">
+        <span class="handle-bar"></span>
+      </div>
+
+      <div class="text-window analysis-pane" [style.flex]="rightFlex" [ngClass]="['reader-theme-' + theme, 'reader-font-' + fontFamily]" [ngStyle]="readerTextStyles">
+        <div class="analysis-header">
+          <div class="analysis-title-row">
+            <span class="analysis-label">Analysis</span>
+          </div>
+          <div class="analysis-mode-group">
+            <div class="analysis-combo">
+            <mat-select class="analysis-mode-select"
+                        [(value)]="analysisMode"
+                        (selectionChange)="onAnalysisModeChange($event.value)"
+                        panelClass="analysis-mode-panel">
+              <mat-option value="section">Section Summary</mat-option>
+              <mat-option value="chapter">Chapter analysis</mat-option>
+            </mat-select>
+            <button class="summary-btn" mat-stroked-button color="primary"
+                    (click)="handleSummaryAction()"
+                    [disabled]="(analysisMode === 'section' ? (loadingSectionSummary || currentSectionIndex === null || !chunkBoundaries) : loadingFullChapterSummary) || !chapterContent">
+              <mat-icon>{{
+                analysisMode === 'section' && currentSectionIndex !== null && hasSectionSummary(currentSectionIndex)
+                  ? 'refresh'
+                  : (analysisMode === 'chapter' && hasFullChapterSummary() ? 'refresh' : 'summarize')
+              }}</mat-icon>
+              {{ analysisMode === 'section'
+                ? (loadingSectionSummary ? 'Generating...' : (currentSectionIndex !== null && hasSectionSummary(currentSectionIndex) ? 'Regenerate Section' : 'Generate Section'))
+                : (loadingFullChapterSummary ? 'Generating...' : (hasFullChapterSummary() ? 'Regenerate Chapter' : 'Summarize Chapter'))
+              }}
+            </button>
+          </div>
+        </div>
+        </div>
+        <div class="analysis-body">
+          <ng-container *ngIf="analysisMode === 'section'">
+            <!-- Chunk boundary detection progress -->
+            <div class="chunk-boundary-progress" *ngIf="chunkBoundariesProgress">
+              <div class="progress-header">
+                <span class="stage-label">{{
+                  chunkBoundariesProgress.stage === 'indexing' ? 'Indexing Book' :
+                  chunkBoundariesProgress.stage === 'detecting' ? 'Detecting Sections' :
+                  chunkBoundariesProgress.stage === 'complete' ? 'Complete' : 'Error'
+                }}</span>
+                <span class="step-counter">{{ chunkBoundariesProgress.currentStep }}/{{ chunkBoundariesProgress.totalSteps }}</span>
+              </div>
+              <mat-progress-bar
+                mode="determinate"
+                [value]="(chunkBoundariesProgress.currentStep / chunkBoundariesProgress.totalSteps) * 100"
+                [color]="chunkBoundariesProgress.stage === 'error' ? 'warn' : 'primary'">
+              </mat-progress-bar>
+              <div class="progress-message">
+                <mat-icon [class.success]="!chunkBoundariesProgress.error" [class.error]="!!chunkBoundariesProgress.error">
+                  {{ chunkBoundariesProgress.error ? 'error' : 'check_circle' }}
+                </mat-icon>
+                <span>{{ chunkBoundariesProgress.message }}</span>
+              </div>
+              <div class="error-detail" *ngIf="chunkBoundariesProgress.error">
+                {{ chunkBoundariesProgress.error }}
+              </div>
+            </div>
+
+            <div class="section-summary-container" *ngIf="chunkBoundaries && !chunkBoundariesProgress; else sectionPlaceholder">
+              <div class="section-selector">
+                <mat-select class="section-dropdown"
+                            [value]="currentSectionIndex"
+                            (selectionChange)="navigateToSection($event.value)"
+                            placeholder="Select section">
+                  <mat-option *ngFor="let chunk of chunkBoundaries.chunks; let i = index" [value]="i">
+                    Section {{ i + 1 }} ({{ chunk.start }}-{{ chunk.end }})
+                    <span *ngIf="hasSectionSummary(i)" class="section-checkmark">✓</span>
+                  </mat-option>
+                </mat-select>
+              </div>
+
+              <!-- Section summary generation progress -->
+              <div class="section-summary-progress" *ngIf="loadingSectionSummary">
+                <div class="progress-header">
+                  <span class="stage-label">Generating Summary</span>
+                  <mat-icon class="spinning">hourglass_empty</mat-icon>
+                </div>
+                <mat-progress-bar mode="indeterminate" color="primary"></mat-progress-bar>
+                <div class="progress-message">
+                  <mat-icon class="pulse">auto_awesome</mat-icon>
+                  <span>Analyzing section content and generating summary...</span>
+                </div>
+              </div>
+
+              <div *ngIf="currentSectionIndex !== null && sectionSummaries.has(currentSectionIndex)" class="section-summary-content">
+                <div class="section-summary-header">
+                  <h4>Section {{ currentSectionIndex + 1 }} Summary</h4>
+                </div>
+                <div class="section-summary-body markdown-content"
+                     [innerHTML]="formatSectionSummaryAsHtml(sectionSummaries.get(currentSectionIndex)?.summary ?? '')">
+                </div>
+              </div>
+
+              <div *ngIf="currentSectionIndex !== null && !sectionSummaries.has(currentSectionIndex)" class="section-summary-prompt">
+                <p>Click "Summarize Section" to generate a summary for Section {{ currentSectionIndex + 1 }}.</p>
+              </div>
+            </div>
+            <ng-template #sectionPlaceholder>
+              <div class="analysis-placeholder" *ngIf="!chunkBoundariesProgress">
+                {{ loadingChunkBoundaries ? 'Loading section boundaries...' : 'Section boundaries are being detected. This happens once per chapter.' }}
+              </div>
+            </ng-template>
+          </ng-container>
+
+          <ng-container *ngIf="analysisMode === 'page'">
+            <div *ngIf="summary && formattedSummary; else analysisPlaceholder" [innerHTML]="formattedSummary"></div>
+            <ng-template #analysisPlaceholder>
+              <div class="analysis-placeholder">Run a summary to see analysis here.</div>
+            </ng-template>
+          </ng-container>
+
+          <ng-container *ngIf="analysisMode === 'chapter'">
+            <div class="section-summary-progress" *ngIf="loadingFullChapterSummary || chapterSummaryProgress">
+              <div class="progress-header">
+                <span class="stage-label">
+                  {{ chapterSummaryProgress ? getStageLabel(chapterSummaryProgress.stage) : 'Generating Summary' }}
+                </span>
+                <mat-icon class="spinning">hourglass_empty</mat-icon>
+              </div>
+              <mat-progress-bar
+                [mode]="chapterSummaryProgress ? 'determinate' : 'indeterminate'"
+                color="primary"
+                [value]="chapterSummaryProgress ? (chapterSummaryProgress.currentStep / chapterSummaryProgress.totalSteps) * 100 : null">
+              </mat-progress-bar>
+              <div class="progress-message">
+                <mat-icon class="pulse">{{ chapterSummaryProgress?.error ? 'error' : 'auto_awesome' }}</mat-icon>
+                <span>
+                  {{ chapterSummaryProgress?.message || 'Analyzing chapter content and generating summary...' }}
+                </span>
+              </div>
+              <div class="error-detail" *ngIf="chapterSummaryProgress?.error">
+                {{ chapterSummaryProgress?.error }}
+              </div>
+            </div>
+
+            <div class="full-chapter-summary" *ngIf="fullChapterSummary; else chapterPlaceholder">
+              <div class="full-summary-header">
+                <h4>Full chapter summary</h4>
+              </div>
+              <div class="full-summary-body markdown-content" [innerHTML]="fullChapterSummaryHtml"></div>
+
+              <!-- Chapter-level vocabulary generation -->
+              <div class="chapter-vocab-actions">
+                <button
+                  mat-stroked-button
+                  color="accent"
+                  class="chapter-vocab-btn"
+                  (click)="generateChapterVocab()"
+                  [disabled]="loadingChapterVocab || !fullChapterSummary">
+                  <mat-icon *ngIf="loadingChapterVocab" class="spinning">hourglass_empty</mat-icon>
+                  <mat-icon *ngIf="!loadingChapterVocab">school</mat-icon>
+                  {{ loadingChapterVocab ? 'Generating vocab...' : 'Generate chapter vocabulary' }}
+                </button>
+              </div>
+              <div class="chapter-vocab-progress" *ngIf="loadingChapterVocab">
+                <mat-icon class="pulse">auto_awesome</mat-icon>
+                <span>Analyzing chapter for key vocabulary terms...</span>
+              </div>
+
+              <div class="dummy-summary-actions">
+                <button
+                  mat-stroked-button
+                  color="primary"
+                  class="dummy-summary-btn"
+                  (click)="handleUltraSummaryAction()"
+                  [disabled]="loadingUltraChapterSummary">
+                  <mat-icon *ngIf="loadingUltraChapterSummary" class="spinning">hourglass_empty</mat-icon>
+                  {{ ultraChapterSummary ? "Regenerate I'm a Dummy" : "I'm a Dummy" }}
+                </button>
+              </div>
+              <div class="dummy-summary-progress" *ngIf="loadingUltraChapterSummary">
+                <mat-icon class="pulse">auto_awesome</mat-icon>
+                <span>Translating this chapter into plain language...</span>
+              </div>
+              <div class="dummy-summary-container" *ngIf="ultraChapterSummary">
+                <div class="dummy-summary-header">
+                  <h4>Plain-English breakdown</h4>
+                </div>
+                <div class="dummy-summary-body markdown-content" [innerHTML]="ultraChapterSummaryHtml"></div>
+              </div>
+            </div>
+            <ng-template #chapterPlaceholder>
+              <div class="analysis-placeholder">
+                No chapter summary yet. Generate one from the analysis panel to save it for this chapter.
+              </div>
+            </ng-template>
+          </ng-container>
+          <div class="vocabulary-section" *ngIf="vocabularyWords.length > 0">
+            <h4 class="vocabulary-header">Vocabulary</h4>
+            <div class="vocabulary-cards">
+              <div *ngFor="let word of vocabularyWords" class="vocab-card">
+                <div class="vocab-card-main">
+                  <strong class="vocab-term">{{ word.term }}</strong>
+                  <div class="vocab-definition">{{ word.definition }}</div>
+                </div>
+                <div class="vocab-card-actions">
+                  <button
+                    mat-icon-button
+                    class="vocab-btn vocab-btn-known"
+                    (click)="markWordAsKnown(word)"
+                    title="I know this word">
+                    <mat-icon>check</mat-icon>
+                  </button>
+                  <button
+                    mat-icon-button
+                    class="vocab-btn vocab-btn-unknown"
+                    (click)="markWordAsUnknown(word)"
+                    title="Add to study list">
+                    <mat-icon>school</mat-icon>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div
+      class="state"
+      *ngIf="selectedBookPath && !chapterContent && !loadingContent && !error && !loadingChapters">
+      Choose a chapter to see its text.
+    </div>
+
+    <div class="state" *ngIf="!selectedBookPath && !loadingBooks && !error">
+      Pick a book from your library to start reading.
+    </div>
+
+    <div class="reader-controls" *ngIf="chapterContent">
+      <div class="reader-controls-left" *ngIf="!showSidebar">
+        <button mat-icon-button aria-label="Previous page" (click)="pageBack()" [disabled]="!canPageBack()">
+          <mat-icon>chevron_left</mat-icon>
+        </button>
+        <div class="page-indicator">
+          <span>{{ currentPage }} / {{ totalPages }}</span>
+          <span class="page-indicator-muted">{{ currentBookPage }} / {{ totalBookPages }}</span>
+          <span class="page-indicator-muted">{{ bookProgressPercent }}%</span>
+        </div>
+        <button mat-icon-button aria-label="Next page" (click)="pageForward()" [disabled]="!canPageForward()">
+          <mat-icon>chevron_right</mat-icon>
+        </button>
+        <span class="chapter-bubble" *ngIf="currentChapterLabel" [title]="currentChapterLabel">
+          {{ truncatedChapterLabel }}
+        </span>
+      </div>
+      <div class="reader-controls-right">
+        <div class="control-group">
+          <button
+            mat-icon-button
+            class="fullscreen-btn"
+            (click)="enterReaderFullscreen()"
+            aria-label="Enter fullscreen reading mode">
+            <mat-icon>fullscreen</mat-icon>
+          </button>
+        </div>
+        <div class="control-group bookmark-group">
+          <button
+            type="button"
+            class="bookmark-square"
+            [class.active]="isCurrentPageBookmarked"
+            (click)="toggleBookmark()"
+            [disabled]="!chapterContent"
+            aria-label="Toggle bookmark">
+            <mat-icon>{{ isCurrentPageBookmarked ? 'bookmark' : 'bookmark_border' }}</mat-icon>
+          </button>
+          <div class="bookmark-dropdown" (click)="$event.stopPropagation()">
+            <button
+              type="button"
+              class="bookmark-dropdown-trigger"
+              [disabled]="!visibleBookmarks.length"
+              (click)="toggleBookmarksDropdown()">
+              <span class="bookmark-dropdown-label">{{ selectedBookmarkLabel }}</span>
+              <mat-icon class="bookmark-dropdown-arrow">expand_more</mat-icon>
+            </button>
+            <div class="bookmark-dropdown-menu" *ngIf="showBookmarksDropdown">
+              <button
+                type="button"
+                class="bookmark-dropdown-item"
+                *ngFor="let bookmark of visibleBookmarks"
+                (click)="selectBookmarkFromDropdown(bookmark.id)">
+                {{ formatBookmarkLabel(bookmark) }}
+              </button>
+            </div>
+          </div>
+        </div>
+        <div class="control-group">
+          <button mat-stroked-button color="accent" class="selection-btn"
+            (click)="createVocabFromSelection()"
+            [disabled]="!selectedText || selectedText.trim().length === 0 || loadingSelectionVocab || !chapterContent">
+            <mat-icon>school</mat-icon>
+            Create Vocab
+          </button>
+        </div>
+      </div>
+    </div>
+  </section>
+  <button
+    *ngIf="!showSidebar"
+    class="sidebar-toggle collapsed"
+    aria-label="Show menu"
+    (click)="toggleSidebar(true)">
+    <mat-icon>chevron_right</mat-icon>
+  </button>
+</div>
+
+<div class="confirm-overlay" *ngIf="showChapterRegenerateConfirm">
+  <div class="confirm-modal">
+    <div class="confirm-header">
+      <h3>Regenerate chapter summary?</h3>
+    </div>
+    <p>
+      This summary uses an expensive GPT model. Regenerate only if the existing
+      summary is outdated or incorrect.
+    </p>
+    <div class="confirm-actions">
+      <button mat-stroked-button color="primary" (click)="cancelRegenerateChapterSummary()">Cancel</button>
+      <button mat-flat-button color="warn" (click)="confirmRegenerateChapterSummary()">Regenerate</button>
+    </div>
+  </div>
+</div>
+
+<div class="vocab-modal-overlay" *ngIf="showVocabModal" (click)="onModalOverlayClick($event)">
+  <div class="vocab-modal" (click)="$event.stopPropagation()">
+    <div class="vocab-modal-header">
+      <h3>Vocabulary lists</h3>
+      <button mat-icon-button aria-label="Close" (click)="closeVocabModal()">
+        <mat-icon>close</mat-icon>
+      </button>
+    </div>
+
+    <div class="vocab-modal-actions">
+      <div class="vocab-filter-row">
+        <mat-form-field appearance="outline" class="vocab-filter">
+          <mat-label>Filter by book</mat-label>
+          <mat-select
+            [value]="vocabFilter"
+            (selectionChange)="onVocabFilterChange($event.value)"
+            panelClass="vocab-select-panel"
+            [panelWidth]="'fit-content'">
+            <mat-option *ngFor="let opt of vocabFilters" [value]="opt.id">{{ opt.name }}</mat-option>
+          </mat-select>
+        </mat-form-field>
+        <button
+          mat-icon-button
+          class="vocab-clear-button"
+          (click)="deleteSelectedBook()"
+          [disabled]="!vocabFilter || vocabFilter === 'all'"
+          matTooltip="Delete all vocabulary for this book"
+          matTooltipPosition="above">
+          <mat-icon>delete</mat-icon>
+        </button>
+      </div>
+      <button mat-stroked-button color="primary" (click)="clearKnownWords()">Clear known</button>
+      <button mat-stroked-button color="accent" (click)="clearUnknownWords()">Clear study list</button>
+      <button mat-stroked-button class="clear-flashcards-btn" (click)="clearFlashcards()" [disabled]="!flashcards.length">
+        Clear flashcards
+      </button>
+      <button mat-stroked-button color="warn" (click)="clearAllVocab()">Clear all</button>
+    </div>
+
+    <div class="vocab-modal-columns">
+      <div class="vocab-modal-column">
+        <h4>Known words ({{ vocabKnownList.length }})</h4>
+        <div class="vocab-modal-list">
+          <div *ngFor="let word of vocabKnownList" class="vocab-modal-item vocab-modal-item-row">
+            <div class="vocab-modal-left">{{ word }}</div>
+            <div class="vocab-modal-right">
+              <button mat-stroked-button color="accent" (click)="moveKnownToStudy(word)">
+                Add to study
+              </button>
+            </div>
+          </div>
+          <div *ngIf="!vocabKnownList.length" class="vocab-empty">No known words yet.</div>
+        </div>
+      </div>
+
+      <div class="vocab-modal-column">
+        <h4>Study list ({{ vocabUnknownList.length }})</h4>
+        <div class="vocab-modal-list">
+          <div *ngFor="let item of vocabUnknownList" class="vocab-modal-item vocab-study-card">
+            <div class="vocab-study-content">
+              <div class="vocab-term-line">{{ item.term }}</div>
+              <div class="vocab-definition-line">{{ item.definition }}</div>
+            </div>
+            <div class="vocab-study-actions">
+              <button mat-stroked-button color="primary" (click)="learnMore(item)" [disabled]="loadingLearnMore">
+                Learn more
+              </button>
+              <button mat-stroked-button color="accent" (click)="makeFlashcard(item)" [disabled]="loadingFlashcard">
+                Make flashcard
+              </button>
+              <button mat-stroked-button color="primary" (click)="moveStudyToKnown(item.term)">
+                Mark known
+              </button>
+            </div>
+          </div>
+          <div *ngIf="!vocabUnknownList.length" class="vocab-empty">No study words yet.</div>
+        </div>
+      </div>
+
+      <div class="vocab-modal-column">
+        <h4>Flashcards ({{ flashcards.length }})</h4>
+        <div class="vocab-modal-list">
+          <div *ngFor="let card of flashcards" class="vocab-modal-item vocab-flashcard-item">
+            <div class="vocab-flashcard-content">
+              <div class="vocab-term-line">{{ card.term }}</div>
+              <div class="vocab-definition-line"><strong>Definition:</strong> {{ card.definition }}</div>
+              <div class="vocab-definition-line"><strong>Etymology:</strong> {{ card.etymology }}</div>
+              <div class="vocab-definition-line" *ngIf="card.usageExamples?.length">
+                <strong>Usage:</strong>
+                <ul>
+                  <li *ngFor="let ex of card.usageExamples">{{ ex }}</li>
+                </ul>
+              </div>
+              <div class="vocab-definition-line" *ngIf="card.notes"><strong>Notes:</strong> {{ card.notes }}</div>
+            </div>
+            <button
+              mat-icon-button
+              class="vocab-flashcard-delete"
+              (click)="deleteFlashcard(card)"
+              matTooltip="Delete flashcard"
+              matTooltipPosition="left">
+              <mat-icon>delete</mat-icon>
+            </button>
+          </div>
+          <div *ngIf="!flashcards.length" class="vocab-empty">No flashcards yet.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="vocab-modal-overlay" *ngIf="learnMoreTerm">
+  <div class="vocab-modal learn-more-modal">
+    <div class="vocab-modal-header">
+      <h3>Learn more: {{ learnMoreTerm }}</h3>
+      <button mat-icon-button aria-label="Close" (click)="closeLearnMore()">
+        <mat-icon>close</mat-icon>
+      </button>
+    </div>
+    <div class="learn-more-body">
+      <div *ngIf="loadingLearnMore" class="learn-more-text">{{ learnMoreContent }}</div>
+      <div *ngIf="!loadingLearnMore">
+        <div class="learn-more-text" [innerHTML]="learnMoreSafeContent"></div>
+        <div class="learn-more-images" *ngIf="learnMoreImages?.length">
+          <div *ngFor="let img of learnMoreImages">
+            <img [src]="img" [alt]="learnMoreTerm || 'Image'" loading="lazy" referrerpolicy="no-referrer" />
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

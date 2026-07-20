@@ -1,0 +1,144 @@
+services:
+  # Outbound VPN gateway — every byte annas-archive and seq send to the
+  # internet goes through this tunnel to PIA. Tailscale (a separate
+  # container, network_mode: host, not shown here) is completely untouched
+  # by this — inbound tailnet access still reaches the app via the same
+  # 127.0.0.1:8080 published below, it just happens to be published by this
+  # container now instead of annas-archive directly. Ships with its own
+  # built-in Docker HEALTHCHECK (queries an internal health server that
+  # actually verifies the tunnel is up, not just that the process is
+  # running) — no need to define one here.
+  gluetun:
+    image: qmcgaw/gluetun:latest
+    container_name: gluetun
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    restart: unless-stopped
+    # Watched by the autoheal container below — if the built-in healthcheck
+    # (which fails when the VPN tunnel actually drops, not just on process
+    # crash) goes unhealthy, autoheal restarts this container, Gluetun
+    # reconnects to PIA and re-verifies before anything routes through it
+    # again.
+    labels:
+      - autoheal=true
+    environment:
+      - VPN_SERVICE_PROVIDER=private internet access
+      - VPN_TYPE=openvpn
+      - OPENVPN_USER=${PIA_USER}
+      - OPENVPN_PASSWORD=${PIA_PASSWORD}
+      # Optional — comma-separated PIA region name(s), e.g. "US East". Left
+      # unset picks automatically. See .env.example.
+      - SERVER_REGIONS=${PIA_SERVER_REGIONS:-}
+    # Every port a sidecar container needs reachable from the host has to be
+    # published here — network_mode: service:gluetun (used by annas-archive
+    # and seq below) means they have no independent network stack of their
+    # own to publish a port from.
+    ports:
+      - "127.0.0.1:8080:8080"   # annas-archive
+      - "127.0.0.1:8081:80"     # seq web UI
+      - "127.0.0.1:5341:5341"   # seq ingestion API
+
+  # Watches container health and restarts anything that goes unhealthy —
+  # this is what turns "the VPN tunnel dropped" into an actual restart
+  # instead of a silently-blocked container (Gluetun's own firewall already
+  # blocks traffic on tunnel loss as a kill switch; this is the "and then
+  # recover" half of that).
+  autoheal:
+    image: willfarrell/autoheal:latest
+    container_name: autoheal
+    restart: unless-stopped
+    environment:
+      - AUTOHEAL_CONTAINER_LABEL=autoheal
+      - AUTOHEAL_INTERVAL=10
+      - AUTOHEAL_START_PERIOD=30
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
+  annas-archive:
+    build:
+      context: .
+      args:
+        BUILD_TIMESTAMP: "${BUILD_TIMESTAMP:-unknown}"
+    container_name: annas-archive
+    restart: unless-stopped
+    # Shares Gluetun's network namespace entirely — this is what forces
+    # every outbound request through the PIA tunnel with zero app-side code
+    # changes. As a consequence this container can no longer publish its own
+    # ports or resolve sibling services by compose DNS name (see
+    # Logging__SeqUrl below, now "localhost" since seq shares this same
+    # namespace too).
+    network_mode: "service:gluetun"
+    depends_on:
+      gluetun:
+        condition: service_healthy
+    labels:
+      - autoheal=true
+    environment:
+      - LIBRARY_ROOT=/data/library
+      - EPUB_CACHE_ROOT=/data/epub-cache
+      - AI_CACHE_ROOT=/data/ai-cache
+      - YouTube__DownloadRoot=/data/youtube
+      - DownloadTracking__StoragePath=/app/state/download-tracking.json
+      - Quiz__StoragePath=/app/state/quiz-data
+      - Logging__FilePath=/app/logs/annas-api-.log
+      # Was http://seq:5341 — compose's service-name DNS doesn't apply once
+      # this container has no network of its own; annas-archive and seq now
+      # share Gluetun's namespace, so they reach each other via localhost.
+      - Logging__SeqUrl=http://localhost:5341
+      - Gaming__Enabled=false
+      - API_RATE_LIMIT=300
+      - LOGIN_RATE_LIMIT=30
+    volumes:
+      # ../data lives outside this synced source directory on purpose — a
+      # repo re-sync (rsync --delete) must never be able to touch it.
+      - ../data/library:/data/library
+      - ../data/epub-cache:/data/epub-cache
+      - ../data/ai-cache:/data/ai-cache
+      - ../data/youtube:/data/youtube
+      - ../data/logs:/app/logs
+      - ../data/state:/app/state
+      # Secrets — never baked into the image. This mounts the same
+      # appsettings.json used for local dev, synced over from the Mac.
+      - ./annas-archive-api/src/AnnasArchive.API/appsettings.json:/app/appsettings.json:ro
+    healthcheck:
+      # /health/live only runs checks tagged "live" (currently just
+      # filesystem) — deliberately excludes external-dependency checks
+      # (googlebooks/openai/openlibrary), so a third-party outage (Google
+      # Books' quota has been exhausted for a while now) can't make Docker
+      # think the container itself is unhealthy and needs restarting. It
+      # also now doubles as the outbound-VPN canary from the app's side:
+      # if Gluetun's namespace goes stale after a restart, this app
+      # container's own HTTP server becomes unreachable through it and this
+      # check starts failing too, so autoheal restarts annas-archive right
+      # along with Gluetun instead of it being left stranded.
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  # Structured log server — Serilog ships logs here (in addition to the
+  # rolling file sink) so request timings/durations become queryable and
+  # chartable instead of just grep-able text. Bound to loopback only, same
+  # as the main app; reach its web UI over Tailscale, not the public LAN.
+  # Shares Gluetun's namespace too (see annas-archive above) — Seq itself
+  # doesn't need the VPN for anything, but keeping it in the same namespace
+  # as annas-archive is what lets them reach each other without extra
+  # host-gateway plumbing.
+  seq:
+    image: datalust/seq:latest
+    container_name: annas-seq
+    restart: unless-stopped
+    network_mode: "service:gluetun"
+    depends_on:
+      gluetun:
+        condition: service_healthy
+    environment:
+      - ACCEPT_EULA=Y
+      # Loopback-bound, Tailscale-only — same trust model as the main app —
+      # so skipping Seq's own login screen is fine; nothing public-facing.
+      - SEQ_FIRSTRUN_NOAUTHENTICATION=true
+    volumes:
+      - ../data/seq:/data

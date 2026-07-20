@@ -1,0 +1,343 @@
+:host {
+  display: block;
+  height: calc(100vh - 64px);
+  padding: 36px 36px 28px;
+  background: radial-gradient(circle at 10% 20%, #eef2ff 0, #f8fafc 35%, #ffffff 70%);
+  box-sizing: border-box;
+  color: #0f172a;
+}
+
+.video-library-wrapper {
+  height: 100%;
+  position: relative;
+}
+
+.mobile-sidebar-toggle {
+  display: none;
+}
+
+.video-library-layout {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  gap: 24px;
+  height: 100%;
+}
+
+.sidebar-container,
+.video-library-panel {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.06);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+}
+
+.video-library-panel {
+  overflow: hidden;
+  position: relative;
+  min-height: 0;
+}
+
+.video-library-grid-scroll {
+  flex: 1 1 auto;
+  padding-right: 16px;
+  min-height: 0;
+  margin-right: 10px;
+  overflow-x: hidden;
+}
+
+.video-library-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  padding-bottom: 1rem;
+}
+
+.video-library-row-small {
+  gap: 0.8rem;
+  padding-bottom: 0.8rem;
+}
+
+.video-library-row-large {
+  gap: 1.2rem;
+  padding-bottom: 1.2rem;
+}
+
+/* Desktop - default: 4 cards per row */
+.video-library-row app-video-card {
+  flex: 0 0 calc((100% - 3 * 1rem) / 4);
+  min-width: 0;
+}
+
+.video-library-row-small app-video-card {
+  flex: 0 0 calc((100% - 5 * 0.8rem) / 6);
+}
+
+.video-library-row-large app-video-card {
+  flex: 0 0 calc((100% - 2 * 1.2rem) / 3);
+}
+
+/* Tablet (768px - 1024px) */
+@media (max-width: 1024px) {
+  .video-library-row app-video-card {
+    flex: 0 0 calc((100% - 2 * 1rem) / 3);
+  }
+  .video-library-row-small app-video-card {
+    flex: 0 0 calc((100% - 3 * 0.8rem) / 4);
+  }
+  .video-library-row-large app-video-card {
+    flex: 0 0 calc((100% - 1 * 1.2rem) / 2);
+  }
+}
+
+/* Mobile (< 768px) */
+@media (max-width: 768px) {
+  .video-library-row app-video-card {
+    flex: 0 0 calc((100% - 1 * 1rem) / 2);
+  }
+  .video-library-row-small app-video-card {
+    flex: 0 0 calc((100% - 2 * 0.8rem) / 3);
+  }
+  .video-library-row-large app-video-card {
+    flex: 0 0 100%;
+  }
+}
+
+.video-library-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.sort-combo {
+  display: flex;
+  align-items: stretch;
+}
+
+.sort-field {
+  width: 180px;
+  margin-bottom: 0;
+  display: flex;
+  align-items: stretch;
+}
+
+.sort-combo .mat-mdc-form-field {
+  height: 56px;
+}
+
+.sort-combo .mat-mdc-text-field-wrapper,
+.sort-combo .mat-mdc-form-field-infix {
+  height: 100%;
+}
+
+.sort-direction-toggle {
+  width: 44px;
+  height: 56px;
+  align-self: stretch;
+  margin-top: 0;
+  border: 1px solid #cbd5f5;
+  border-left: none;
+  border-radius: 0 10px 10px 0;
+  color: #3f51b5;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  background: #ffffff;
+}
+
+.sort-direction-toggle:hover {
+  background: #eef2ff;
+}
+
+.sort-direction-toggle mat-icon {
+  font-size: 20px;
+  width: 20px;
+  height: 20px;
+  line-height: 20px;
+}
+
+.sort-combo .mat-mdc-form-field-subscript-wrapper {
+  display: none;
+}
+
+.sort-combo .mat-mdc-text-field-wrapper {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.tile-size-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-right: 12px;
+}
+
+.tile-size-btn {
+  width: 44px;
+  height: 56px;
+  border: 1px solid #cbd5f5;
+  border-radius: 10px;
+  color: #64748b;
+  background: #ffffff;
+  transition: all 0.15s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.tile-size-btn:hover {
+  background: #eef2ff;
+  color: #3f51b5;
+}
+
+.tile-size-btn.active {
+  background: #3f51b5;
+  color: #ffffff;
+  border-color: #3f51b5;
+}
+
+.tile-size-btn mat-icon {
+  font-size: 22px;
+  width: 22px;
+  height: 22px;
+  line-height: 22px;
+}
+
+.bookmark-filter-btn {
+  width: 44px;
+  height: 56px;
+  border: 1px solid #cbd5f5;
+  border-radius: 10px;
+  color: #64748b;
+  background: #ffffff;
+  transition: all 0.15s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 8px;
+}
+
+.bookmark-filter-btn:hover {
+  background: #eef2ff;
+  color: #3f51b5;
+}
+
+.bookmark-filter-btn.active {
+  background: #3f51b5;
+  color: #ffffff;
+  border-color: #3f51b5;
+}
+
+.bookmark-filter-btn mat-icon {
+  font-size: 22px;
+  width: 22px;
+  height: 22px;
+  line-height: 22px;
+}
+
+.video-library-loading,
+.video-library-error {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 200px;
+  color: #666;
+}
+
+.video-library-sorting-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: rgba(63, 81, 181, 0.1);
+  border-radius: 4px;
+  margin: 8px auto;
+  width: fit-content;
+  color: #3f51b5;
+  font-size: 14px;
+}
+
+/* Mobile Sidebar Collapse */
+@media (max-width: 768px) {
+  .mobile-sidebar-toggle {
+    display: flex;
+    position: fixed;
+    bottom: 16px;
+    right: 16px;
+    z-index: 1000;
+    background: #3f51b5;
+    color: white;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+  }
+
+  .mobile-sidebar-toggle:hover {
+    background: #303f9f;
+  }
+
+  .video-library-layout {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  .sidebar-container {
+    display: block;
+  }
+
+  .sidebar-container.collapsed {
+    display: none;
+  }
+
+  :host {
+    padding: 16px;
+  }
+
+  .video-library-panel {
+    height: calc(100vh - 120px);
+  }
+}
+
+@media (max-width: 900px) {
+  .video-library-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .video-library-panel {
+    height: auto;
+  }
+}
+
+@media (max-width: 600px) {
+  :host {
+    padding: 24px 20px;
+  }
+}
+
+/* Download Panel */
+.video-download-panel {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.06);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.video-download-panel app-youtube-downloader {
+  max-width: 800px;
+  margin: 0 auto;
+  width: 100%;
+}

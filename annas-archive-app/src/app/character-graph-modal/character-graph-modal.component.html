@@ -1,0 +1,72 @@
+<h2 mat-dialog-title>
+  <mat-icon>account_tree</mat-icon>
+  Character Relationships
+</h2>
+
+<mat-dialog-content>
+  <div class="graph-container-wrapper">
+    <div *ngIf="loading" class="loading-state">
+      <mat-spinner diameter="50"></mat-spinner>
+      <p>Analyzing characters and relationships...</p>
+    </div>
+
+    <div *ngIf="error && !loading" class="error-state">
+      <mat-icon color="warn">error</mat-icon>
+      <p>{{ error }}</p>
+      <button mat-raised-button color="primary" (click)="generateGraph()">
+        Try Again
+      </button>
+    </div>
+
+    <div *ngIf="!loading && !error"
+         id="character-graph-container"
+         class="graph-container"
+         [class.details-open]="detailsVisible">
+    </div>
+
+    <!-- Details Panel -->
+    <div *ngIf="!loading && !error && detailsVisible" class="details-panel">
+      <div class="details-header">
+        <h3 *ngIf="selectedNodeId">Character Details</h3>
+        <h3 *ngIf="selectedEdge">Relationship Details</h3>
+        <button mat-icon-button (click)="closeDetails()">
+          <mat-icon>close</mat-icon>
+        </button>
+      </div>
+
+      <div class="details-content">
+        <!-- Node Details -->
+        <div *ngIf="selectedNodeId && getSelectedNode() as node">
+          <h4>{{ getNodeLabel(node.id) }}</h4>
+          <p class="role">{{ node.description }}</p>
+          <div class="detailed-description" *ngIf="node.detailedDescription">
+            <strong>About:</strong>
+            <p>{{ node.detailedDescription }}</p>
+          </div>
+        </div>
+
+        <!-- Edge Details -->
+        <div *ngIf="selectedEdge && getSelectedEdge() as edge">
+          <h4>{{ edge.label }}</h4>
+          <p class="relationship-nodes">
+            Between: <strong>{{ getNodeLabel(edge.from) }}</strong> and <strong>{{ getNodeLabel(edge.to) }}</strong>
+          </p>
+          <div class="detailed-description">
+            <strong>Relationship:</strong>
+            <p>{{ edge.detailedDescription || edge.label }}</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</mat-dialog-content>
+
+<mat-dialog-actions align="end">
+  <button mat-button (click)="close()">Close</button>
+  <button mat-raised-button color="primary"
+          (click)="regenerateGraph()"
+          [disabled]="loading">
+    <mat-icon>refresh</mat-icon>
+    Regenerate
+  </button>
+</mat-dialog-actions>

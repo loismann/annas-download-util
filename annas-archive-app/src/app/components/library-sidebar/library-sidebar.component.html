@@ -1,0 +1,180 @@
+<aside class="library-sidebar">
+  <div class="sidebar-header">
+    <h2>Ebook Library</h2>
+    <p>Browse your saved books.</p>
+  </div>
+
+  <button type="button" class="reset-view-btn" (click)="onResetView()">Reset View!</button>
+
+  <mat-form-field appearance="outline" class="w-100">
+    <mat-label>Search</mat-label>
+    <input
+      matInput
+      [ngModel]="searchTerm"
+      (ngModelChange)="onSearchTermChange($event)"
+      placeholder="Title, author, series, tags"
+    />
+  </mat-form-field>
+
+  <mat-form-field appearance="outline" class="w-100">
+    <mat-label>Genre</mat-label>
+    <mat-select [ngModel]="selectedGenre" (ngModelChange)="onSelectedGenreChange($event)">
+      <mat-option value="">All Genres</mat-option>
+      <mat-option *ngFor="let genre of genres" [value]="genre">{{ genre }}</mat-option>
+    </mat-select>
+  </mat-form-field>
+
+  <div class="rating-filter">
+    <div class="rating-label">Minimum Star Rating:</div>
+    <div class="rating-control">
+      <input
+        type="range"
+        min="0"
+        max="5"
+        step="1"
+        [ngModel]="minPersonalRating"
+        (ngModelChange)="onMinPersonalRatingChange($event)"
+      />
+      <span class="rating-value">{{ minPersonalRating }}</span>
+    </div>
+  </div>
+
+  <div class="rating-filter">
+    <div class="rating-label">Minimum Goodreads Rating:</div>
+    <div class="rating-control">
+      <input
+        type="range"
+        min="0"
+        max="5"
+        step="0.1"
+        [ngModel]="minGoodreadsRating"
+        (ngModelChange)="onMinGoodreadsRatingChange($event)"
+      />
+      <span class="rating-value">{{ minGoodreadsRating | number:'1.1-1' }}</span>
+    </div>
+  </div>
+
+  <div class="sidebar-meta">
+    <div class="meta-label">Total books</div>
+    <div class="meta-value">{{ totalBooks }}</div>
+  </div>
+
+  <!-- Bulk Edit Section -->
+  <div class="bulk-edit-section">
+    <button
+      *ngIf="bulkEditMode"
+      mat-raised-button
+      color="primary"
+      (click)="onSelectAllVisible()"
+      class="select-all-visible-btn"
+    >
+      Select All Visible ({{ visibleBooksCount }})
+    </button>
+
+    <button
+      mat-raised-button
+      color="accent"
+      (click)="onBulkEditToggle()"
+      class="bulk-edit-toggle"
+    >
+      {{ bulkEditMode ? 'Exit Bulk Edit' : 'Bulk Edit' }}
+    </button>
+
+    <div *ngIf="bulkEditMode && selectedBooksCount > 0" class="bulk-edit-controls">
+      <div class="selection-counter">
+        {{ selectedBooksCount }} book{{ selectedBooksCount === 1 ? '' : 's' }} selected for bulk edit
+      </div>
+
+      <button
+        mat-raised-button
+        color="primary"
+        (click)="onOpenBulkEdit()"
+        [disabled]="selectedBooksCount === 0"
+      >
+        Edit Selected
+      </button>
+
+      <div class="bulk-send-actions">
+        <button
+          mat-button
+          (click)="onBulkSend('dropbox')"
+          [disabled]="selectedBooksCount === 0"
+        >
+          Send to Dropbox
+        </button>
+        <button
+          mat-button
+          (click)="onBulkSend('kindle-dad')"
+          [disabled]="selectedBooksCount === 0"
+        >
+          Send to Dad's Kindle
+        </button>
+        <button
+          mat-button
+          (click)="onBulkSend('kindle-mom')"
+          [disabled]="selectedBooksCount === 0"
+        >
+          Send to Mom's Kindle
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="admin-section" *ngIf="isAdmin">
+    <button type="button" class="admin-toggle" (click)="onAdminToggle()">
+      <span>Admin</span>
+      <span class="admin-caret">{{ adminOpen ? '▾' : '▸' }}</span>
+    </button>
+
+    <div class="admin-panel" *ngIf="adminOpen">
+      <button type="button" class="admin-upload" (click)="onUploadBooks()">
+        Upload Books
+      </button>
+
+      <label class="admin-row">
+        <input
+          type="checkbox"
+          [ngModel]="filterMissingAuthor"
+          (ngModelChange)="onFilterMissingAuthorChange($event)"
+        />
+        <span>Book has no author</span>
+      </label>
+
+      <label class="admin-row">
+        <input
+          type="checkbox"
+          [ngModel]="filterMissingCover"
+          (ngModelChange)="onFilterMissingCoverChange($event)"
+        />
+        <span>Book cover image is missing</span>
+      </label>
+
+      <label class="admin-row">
+        <input
+          type="checkbox"
+          [ngModel]="filterGenreCountEnabled"
+          (ngModelChange)="onFilterGenreCountEnabledChange($event)"
+        />
+        <span class="admin-label">Book has</span>
+        <select
+          [ngModel]="filterGenreComparison"
+          (ngModelChange)="onFilterGenreComparisonChange($event)"
+        >
+          <option value="less">less than</option>
+          <option value="more">more than</option>
+        </select>
+        <input
+          type="number"
+          min="0"
+          [ngModel]="filterGenreCount"
+          (ngModelChange)="onFilterGenreCountChange($event)"
+        />
+        <span>genres</span>
+      </label>
+
+      <button type="button" class="admin-danger" (click)="onWipeGenres()">
+        Wipe all genres
+      </button>
+    </div>
+  </div>
+</aside>

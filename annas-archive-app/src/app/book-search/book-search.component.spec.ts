@@ -1,0 +1,1103 @@
+import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { BookSearchComponent } from './book-search.component';
+import { AnnaArchiveApiService } from '../services/anna-archive-api.service';
+import { BookSearchApiService } from '../services/book-search-api.service';
+import { AiApiService } from '../services/ai-api.service';
+import { AuthService } from '../services/auth.service';
+import { MatDialog } from '@angular/material/dialog';
+import { of, throwError, NEVER, Subject } from 'rxjs';
+import { BookDto } from '../models/book-dto.model';
+import { NoopAnimationsModule } from '@angular/platform-browser/animations';
+import { HttpClientTestingModule } from '@angular/common/http/testing';
+
+describe('BookSearchComponent', () => {
+  let component: BookSearchComponent;
+  let fixture: ComponentFixture<BookSearchComponent>;
+  let mockApiService: jasmine.SpyObj<AnnaArchiveApiService>;
+  let mockBookSearchApiService: jasmine.SpyObj<BookSearchApiService>;
+  let mockAiApiService: jasmine.SpyObj<AiApiService>;
+  let mockAuthService: jasmine.SpyObj<AuthService>;
+  let mockDialog: jasmine.SpyObj<MatDialog>;
+
+  const createMockBook = (overrides: Partial<BookDto> = {}): BookDto => ({
+    title: 'Test Book',
+    md5: 'test-md5',
+    authors: ['Test Author'],
+    language: 'English',
+    format: 'EPUB',
+    source: 'annas-archive',
+    fileSize: '1.5 MB',
+    bookType: 'book',
+    publisher: 'Test Publisher',
+    year: 2024,
+    isbn: null,
+    coverCandidates: [],
+    sendState: 'idle',
+    libraryState: 'idle',
+    dadsKindleState: 'idle',
+    momsKindleState: 'idle',
+    ...overrides
+  });
+
+  beforeEach(async () => {
+    // AnnaArchiveApiService - core book operations (no AI methods)
+    mockApiService = jasmine.createSpyObj('AnnaArchiveApiService', [
+      'searchBooks',
+      'sendToLibrary',
+      'sendToBoox',
+      'sendToKindle',
+      'fetchCover'
+    ]);
+
+    // AiApiService - AI-related methods
+    mockAiApiService = jasmine.createSpyObj('AiApiService', [
+      'suggestAuthors',
+      'getRelatedBooks',
+      'aiBookSearch'
+    ]);
+
+    // BookSearchApiService - search, download, cover, description methods
+    mockBookSearchApiService = jasmine.createSpyObj('BookSearchApiService', [
+      'searchBooks',
+      'searchBooksLibGen',
+      'sendToBoox',
+      'sendToLibrary',
+      'sendToLibraryLibGen',
+      'sendToKindle',
+      'getDownloadStatus',
+      'getMirrorHealth',
+      'getSlumHealth',
+      'fetchCover',
+      'fetchDescriptionFromGoogleBooks',
+      'fetchDescriptionFromOpenLibrary',
+      'fetchDescriptionFromGPT4'
+    ]);
+
+    mockAuthService = jasmine.createSpyObj('AuthService', ['isAuthenticated', 'isAdmin']);
+    mockDialog = jasmine.createSpyObj('MatDialog', ['open']);
+
+    // Default mock implementations
+    mockAuthService.isAuthenticated.and.returnValue(true);
+
+    // Default mock dialog ref (can be overridden in specific tests)
+    // Use NEVER for afterClosed to prevent immediate emission
+    const defaultDialogRef = {
+      componentInstance: {
+        clearStatus: jasmine.createSpy('clearStatus'),
+        addStatus: jasmine.createSpy('addStatus'),
+        queueCoverLookups: jasmine.createSpy('queueCoverLookups'),
+        data: {}
+      },
+      afterClosed: () => NEVER
+    };
+    mockDialog.open.and.returnValue(defaultDialogRef as any);
+
+    // BookSearchApiService mock implementations
+    mockBookSearchApiService.getDownloadStatus.and.returnValue(of({
+      accountFastInfo: { downloadsLeft: 50, downloadsPerDay: 100 }
+    }));
+
+    mockBookSearchApiService.getMirrorHealth.and.returnValue(of([
+      { extension: 'gl', health: 95 },
+      { extension: 'pk', health: 92 },
+      { extension: 'gd', health: 88 }
+    ]));
+
+    mockBookSearchApiService.getSlumHealth.and.returnValue(of([
+      { name: "Anna's Archive GL", health: '95%', cert_exp: '90 days' },
+      { name: "Anna's Archive PK", health: '92%', cert_exp: '85 days' },
+      { name: "Anna's Archive GD", health: '88%', cert_exp: '80 days' }
+    ]));
+
+    await TestBed.configureTestingModule({
+      imports: [
+        BookSearchComponent,
+        NoopAnimationsModule,
+        HttpClientTestingModule
+      ],
+      providers: [
+        { provide: AnnaArchiveApiService, useValue: mockApiService },
+        { provide: BookSearchApiService, useValue: mockBookSearchApiService },
+        { provide: AiApiService, useValue: mockAiApiService },
+        { provide: AuthService, useValue: mockAuthService },
+        { provide: MatDialog, useValue: mockDialog }
+      ]
+    })
+    .overrideComponent(BookSearchComponent, {
+      set: {
+        providers: [
+          { provide: MatDialog, useValue: mockDialog }
+        ]
+      }
+    })
+    .compileComponents();
+
+    fixture = TestBed.createComponent(BookSearchComponent);
+    component = fixture.componentInstance;
+  });
+
+  describe('removeBook', () => {
+    it('should remove a book from the books array', () => {
+      // Arrange
+      const book1 = createMockBook({ title: 'Book 1', md5: 'md5-1' });
+      const book2 = createMockBook({ title: 'Book 2', md5: 'md5-2' });
+      const book3 = createMockBook({ title: 'Book 3', md5: 'md5-3' });
+      component.books = [book1, book2, book3];
+
+      // Act
+      component.removeBook(book2);
+
+      // Assert
+      expect(component.books.length).toBe(2);
+      expect(component.books).toEqual([book1, book3]);
+      expect(component.books).not.toContain(book2);
+    });
+
+    it('should remove the first book in the array', () => {
+      // Arrange
+      const book1 = createMockBook({ title: 'Book 1', md5: 'md5-1' });
+      const book2 = createMockBook({ title: 'Book 2', md5: 'md5-2' });
+      component.books = [book1, book2];
+
+      // Act
+      component.removeBook(book1);
+
+      // Assert
+      expect(component.books.length).toBe(1);
+      expect(component.books).toEqual([book2]);
+    });
+
+    it('should remove the last book in the array', () => {
+      // Arrange
+      const book1 = createMockBook({ title: 'Book 1', md5: 'md5-1' });
+      const book2 = createMockBook({ title: 'Book 2', md5: 'md5-2' });
+      component.books = [book1, book2];
+
+      // Act
+      component.removeBook(book2);
+
+      // Assert
+      expect(component.books.length).toBe(1);
+      expect(component.books).toEqual([book1]);
+    });
+
+    it('should handle removing a book that does not exist', () => {
+      // Arrange
+      const book1 = createMockBook({ title: 'Book 1', md5: 'md5-1' });
+      const book2 = createMockBook({ title: 'Book 2', md5: 'md5-2' });
+      const bookNotInArray = createMockBook({ title: 'Not in Array', md5: 'md5-99' });
+      component.books = [book1, book2];
+
+      // Act
+      component.removeBook(bookNotInArray);
+
+      // Assert - array should remain unchanged
+      expect(component.books.length).toBe(2);
+      expect(component.books).toEqual([book1, book2]);
+    });
+
+    it('should handle removing from an empty array', () => {
+      // Arrange
+      component.books = [];
+      const book = createMockBook();
+
+      // Act
+      component.removeBook(book);
+
+      // Assert
+      expect(component.books.length).toBe(0);
+    });
+
+    it('should remove only one instance when duplicate books exist', () => {
+      // Arrange
+      const book1 = createMockBook({ title: 'Book 1', md5: 'md5-1' });
+      const book2 = createMockBook({ title: 'Book 2', md5: 'md5-2' });
+      component.books = [book1, book2, book1]; // book1 appears twice
+
+      // Act
+      component.removeBook(book1);
+
+      // Assert - only first instance should be removed
+      expect(component.books.length).toBe(2);
+      expect(component.books).toEqual([book2, book1]);
+    });
+
+    it('should work correctly after removing all books one by one', () => {
+      // Arrange
+      const book1 = createMockBook({ title: 'Book 1', md5: 'md5-1' });
+      const book2 = createMockBook({ title: 'Book 2', md5: 'md5-2' });
+      const book3 = createMockBook({ title: 'Book 3', md5: 'md5-3' });
+      component.books = [book1, book2, book3];
+
+      // Act
+      component.removeBook(book1);
+      expect(component.books.length).toBe(2);
+
+      component.removeBook(book2);
+      expect(component.books.length).toBe(1);
+
+      component.removeBook(book3);
+
+      // Assert
+      expect(component.books.length).toBe(0);
+      expect(component.books).toEqual([]);
+    });
+  });
+
+  describe('filteredBooks with removed books', () => {
+    it('should not include removed books in filtered results', () => {
+      // Arrange
+      const book1 = createMockBook({ title: 'Book 1', format: 'EPUB' });
+      const book2 = createMockBook({ title: 'Book 2', format: 'PDF' });
+      const book3 = createMockBook({ title: 'Book 3', format: 'EPUB' });
+      component.books = [book1, book2, book3];
+      component.selectedFormat = 'EPUB';
+
+      // Act - remove book3
+      component.removeBook(book3);
+      const filtered = component.filteredBooks;
+
+      // Assert
+      expect(filtered.length).toBe(1);
+      expect(filtered).toEqual([book1]);
+      expect(filtered).not.toContain(book3);
+    });
+
+    it('should update filteredBooks reactively when a book is removed', () => {
+      // Arrange
+      const book1 = createMockBook({ title: 'Book 1', authors: ['Author A'] });
+      const book2 = createMockBook({ title: 'Book 2', authors: ['Author B'] });
+      component.books = [book1, book2];
+      component.selectedAuthor = '';
+
+      // Initial filter
+      let filtered = component.filteredBooks;
+      expect(filtered.length).toBe(2);
+
+      // Act - remove one book
+      component.removeBook(book1);
+      filtered = component.filteredBooks;
+
+      // Assert
+      expect(filtered.length).toBe(1);
+      expect(filtered).toEqual([book2]);
+    });
+  });
+
+  describe('Component initialization', () => {
+    it('should initialize with empty books array', () => {
+      expect(component.books).toEqual([]);
+    });
+
+    it('should initialize search term as empty string', () => {
+      expect(component.searchTerm).toBe('');
+    });
+
+    it('should initialize with no selected format', () => {
+      expect(component.selectedFormat).toBe('');
+    });
+
+    it('should initialize with no selected author', () => {
+      expect(component.selectedAuthor).toBe('');
+    });
+
+    it('should fetch download status on init', () => {
+      // Act
+      fixture.detectChanges(); // triggers ngOnInit
+
+      // Assert
+      expect(mockBookSearchApiService.getDownloadStatus).toHaveBeenCalled();
+    });
+
+    it('should fetch mirror health on init', () => {
+      // Act
+      fixture.detectChanges(); // triggers ngOnInit
+
+      // Assert
+      expect(mockBookSearchApiService.getSlumHealth).toHaveBeenCalled();
+    });
+  });
+
+  describe('Download counter', () => {
+    it('should update download counter from server response', () => {
+      // Arrange - Create fresh component with new mock values
+      mockBookSearchApiService.getDownloadStatus.and.returnValue(of({
+        accountFastInfo: { downloadsLeft: 25, downloadsPerDay: 100 }
+      }));
+
+      // Create new component instance
+      const newFixture = TestBed.createComponent(BookSearchComponent);
+      const newComponent = newFixture.componentInstance;
+
+      // Act
+      newFixture.detectChanges();
+
+      // Assert
+      expect(newComponent.downloadsLeft).toBe(25);
+      expect(newComponent.downloadsPerDay).toBe(100);
+    });
+
+    it('should calculate warning level as red when downloads left <= 10', () => {
+      // Arrange
+      component.downloadsLeft = 8;
+
+      // Act
+      const warningLevel = component.downloadWarningLevel;
+
+      // Assert
+      expect(warningLevel).toBe('red');
+    });
+
+    it('should calculate warning level as orange when downloads left <= 20', () => {
+      // Arrange
+      component.downloadsLeft = 15;
+
+      // Act
+      const warningLevel = component.downloadWarningLevel;
+
+      // Assert
+      expect(warningLevel).toBe('orange');
+    });
+
+    it('should calculate warning level as yellow when downloads left <= 30', () => {
+      // Arrange
+      component.downloadsLeft = 25;
+
+      // Act
+      const warningLevel = component.downloadWarningLevel;
+
+      // Assert
+      expect(warningLevel).toBe('yellow');
+    });
+
+    it('should calculate warning level as none when downloads left > 30', () => {
+      // Arrange
+      component.downloadsLeft = 50;
+
+      // Act
+      const warningLevel = component.downloadWarningLevel;
+
+      // Assert
+      expect(warningLevel).toBe('none');
+    });
+
+    it('should calculate warning level as none when downloadsLeft is null', () => {
+      // Arrange
+      component.downloadsLeft = null;
+
+      // Act
+      const warningLevel = component.downloadWarningLevel;
+
+      // Assert
+      expect(warningLevel).toBe('none');
+    });
+  });
+
+  describe('Format filtering', () => {
+    it('should filter books by selected format', () => {
+      // Arrange
+      const epubBook = createMockBook({ format: 'EPUB' });
+      const pdfBook = createMockBook({ format: 'PDF' });
+      const mobiBook = createMockBook({ format: 'MOBI' });
+      component.books = [epubBook, pdfBook, mobiBook];
+      component.selectedFormat = 'EPUB';
+
+      // Act
+      const filtered = component.filteredBooks;
+
+      // Assert
+      expect(filtered.length).toBe(1);
+      expect(filtered[0]).toEqual(epubBook);
+    });
+
+    it('should return all books when no format is selected', () => {
+      // Arrange
+      const book1 = createMockBook({ format: 'EPUB' });
+      const book2 = createMockBook({ format: 'PDF' });
+      component.books = [book1, book2];
+      component.selectedFormat = '';
+
+      // Act
+      const filtered = component.filteredBooks;
+
+      // Assert
+      expect(filtered.length).toBe(2);
+      expect(filtered).toEqual([book1, book2]);
+    });
+  });
+
+  describe('Author filtering', () => {
+    it('should filter books by selected author', () => {
+      // Arrange
+      const book1 = createMockBook({ authors: ['Stephen King'] });
+      const book2 = createMockBook({ authors: ['J.K. Rowling'] });
+      const book3 = createMockBook({ authors: ['Stephen King', 'Peter Straub'] });
+      component.books = [book1, book2, book3];
+      component.selectedAuthor = 'Stephen King';
+
+      // Act
+      const filtered = component.filteredBooks;
+
+      // Assert
+      expect(filtered.length).toBe(2);
+      expect(filtered).toContain(book1);
+      expect(filtered).toContain(book3);
+      expect(filtered).not.toContain(book2);
+    });
+
+    it('should return all books when no author is selected', () => {
+      // Arrange
+      const book1 = createMockBook({ authors: ['Author A'] });
+      const book2 = createMockBook({ authors: ['Author B'] });
+      component.books = [book1, book2];
+      component.selectedAuthor = '';
+
+      // Act
+      const filtered = component.filteredBooks;
+
+      // Assert
+      expect(filtered.length).toBe(2);
+    });
+  });
+
+  describe('Combined filtering', () => {
+    it('should filter by both format and author', () => {
+      // Arrange
+      const book1 = createMockBook({ format: 'EPUB', authors: ['Author A'] });
+      const book2 = createMockBook({ format: 'PDF', authors: ['Author A'] });
+      const book3 = createMockBook({ format: 'EPUB', authors: ['Author B'] });
+      component.books = [book1, book2, book3];
+      component.selectedFormat = 'EPUB';
+      component.selectedAuthor = 'Author A';
+
+      // Act
+      const filtered = component.filteredBooks;
+
+      // Assert
+      expect(filtered.length).toBe(1);
+      expect(filtered[0]).toEqual(book1);
+    });
+  });
+
+  describe('Available formats', () => {
+    it('should return static list of available formats', () => {
+      // Act
+      const formats = component.availableFormats;
+
+      // Assert
+      expect(formats).toContain('EPUB');
+      expect(formats).toContain('MOBI');
+      expect(formats).toContain('PDF');
+      expect(formats).toContain('AZW3');
+      expect(formats).toContain('FB2');
+      expect(formats).toContain('TXT');
+    });
+  });
+
+  describe('Health status', () => {
+    it('should return health-green for health >= 90', () => {
+      expect(component.getHealthColorClass(95)).toBe('health-green');
+      expect(component.getHealthColorClass(90)).toBe('health-green');
+    });
+
+    it('should return health-yellow for health >= 70 and < 90', () => {
+      expect(component.getHealthColorClass(85)).toBe('health-yellow');
+      expect(component.getHealthColorClass(70)).toBe('health-yellow');
+    });
+
+    it('should return health-orange for health >= 50 and < 70', () => {
+      expect(component.getHealthColorClass(65)).toBe('health-orange');
+      expect(component.getHealthColorClass(50)).toBe('health-orange');
+    });
+
+    it('should return health-red for health < 50', () => {
+      expect(component.getHealthColorClass(45)).toBe('health-red');
+      expect(component.getHealthColorClass(0)).toBe('health-red');
+    });
+
+    it('should return health-unknown for null health', () => {
+      expect(component.getHealthColorClass(null)).toBe('health-unknown');
+    });
+  });
+
+  describe('Format dropdown locking during matching', () => {
+    it('should have format dropdown enabled by default', () => {
+      expect(component.relatedBooksModalOpen).toBe(false);
+    });
+
+    it('should allow setting relatedBooksModalOpen to true', () => {
+      component.relatedBooksModalOpen = true;
+      expect(component.relatedBooksModalOpen).toBe(true);
+    });
+
+    it('should disable format dropdown when related books modal opens', () => {
+      // Verify initial state
+      expect(component.relatedBooksModalOpen).toBe(false);
+
+      component.searchTerm = 'Test Book';
+      component.selectedAuthor = 'Test Author';
+
+      // Setup required API mock
+      mockAiApiService.getRelatedBooks.and.returnValue(of({ sameSeries: [], otherSeries: [], seriesSummary: null }));
+
+      component.openRelatedBooksModal();
+
+      expect(mockDialog.open).toHaveBeenCalled();
+      expect(component.relatedBooksModalOpen).toBe(true);
+    });
+
+    it('should re-enable format dropdown when related books modal closes', (done) => {
+      component.searchTerm = 'Test Book';
+      component.selectedAuthor = 'Test Author';
+
+      // Create a subject to control when the dialog closes
+      const dialogCloseSubject = new Subject();
+
+      // Mock dialog that we can close manually
+      const mockDialogRef = {
+        componentInstance: {
+          clearStatus: jasmine.createSpy('clearStatus'),
+          addStatus: jasmine.createSpy('addStatus'),
+          queueCoverLookups: jasmine.createSpy('queueCoverLookups'),
+          data: {}
+        },
+        afterClosed: () => dialogCloseSubject.asObservable()
+      };
+      mockDialog.open.and.returnValue(mockDialogRef as any);
+      mockAiApiService.getRelatedBooks.and.returnValue(of({ sameSeries: [], otherSeries: [], seriesSummary: null }));
+
+      component.openRelatedBooksModal();
+      expect(component.relatedBooksModalOpen).toBe(true);
+
+      // Close the dialog
+      dialogCloseSubject.next({});
+      dialogCloseSubject.complete();
+
+      // Wait for the subscription to process
+      setTimeout(() => {
+        expect(component.relatedBooksModalOpen).toBe(false);
+        done();
+      }, 10);
+    });
+
+    it('should not open modal if searchTerm is empty', () => {
+      component.searchTerm = '';
+      component.selectedAuthor = 'Test Author';
+
+      component.openRelatedBooksModal();
+
+      expect(component.relatedBooksModalOpen).toBe(false);
+      expect(mockDialog.open).not.toHaveBeenCalled();
+    });
+
+    it('should not open modal if selectedAuthor is empty', () => {
+      component.searchTerm = 'Test Book';
+      component.selectedAuthor = '';
+
+      component.openRelatedBooksModal();
+
+      expect(component.relatedBooksModalOpen).toBe(false);
+      expect(mockDialog.open).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Boundary tests - Download counter exact thresholds', () => {
+    it('should return red at exactly 10 downloads left', () => {
+      component.downloadsLeft = 10;
+      expect(component.downloadWarningLevel).toBe('red');
+    });
+
+    it('should return orange at exactly 11 downloads left (just above red)', () => {
+      component.downloadsLeft = 11;
+      expect(component.downloadWarningLevel).toBe('orange');
+    });
+
+    it('should return orange at exactly 20 downloads left', () => {
+      component.downloadsLeft = 20;
+      expect(component.downloadWarningLevel).toBe('orange');
+    });
+
+    it('should return yellow at exactly 21 downloads left (just above orange)', () => {
+      component.downloadsLeft = 21;
+      expect(component.downloadWarningLevel).toBe('yellow');
+    });
+
+    it('should return yellow at exactly 30 downloads left', () => {
+      component.downloadsLeft = 30;
+      expect(component.downloadWarningLevel).toBe('yellow');
+    });
+
+    it('should return none at exactly 31 downloads left (just above yellow)', () => {
+      component.downloadsLeft = 31;
+      expect(component.downloadWarningLevel).toBe('none');
+    });
+
+    it('should return red at 0 downloads left', () => {
+      component.downloadsLeft = 0;
+      expect(component.downloadWarningLevel).toBe('red');
+    });
+
+    it('should return red at negative downloads (edge case)', () => {
+      component.downloadsLeft = -5;
+      expect(component.downloadWarningLevel).toBe('red');
+    });
+  });
+
+  describe('Boundary tests - Search term edge cases', () => {
+    it('should set error when search term is empty string', () => {
+      component.searchTerm = '';
+      component.aiSearchExpanded = false;
+
+      component.onSearch();
+
+      expect(component.error).toBe('Please enter a search term.');
+      expect(mockBookSearchApiService.searchBooks).not.toHaveBeenCalled();
+    });
+
+    it('should set error when search term is only whitespace', () => {
+      component.searchTerm = '   ';
+      component.aiSearchExpanded = false;
+
+      component.onSearch();
+
+      expect(component.error).toBe('Please enter a search term.');
+      expect(mockBookSearchApiService.searchBooks).not.toHaveBeenCalled();
+    });
+
+    it('should set error when search term is tabs and spaces', () => {
+      component.searchTerm = '\t  \t  ';
+      component.aiSearchExpanded = false;
+
+      component.onSearch();
+
+      expect(component.error).toBe('Please enter a search term.');
+      expect(mockBookSearchApiService.searchBooks).not.toHaveBeenCalled();
+    });
+
+    it('should trim whitespace from search term before searching', () => {
+      component.searchTerm = '  Test Book  ';
+      component.aiSearchExpanded = false;
+      mockBookSearchApiService.searchBooks.and.returnValue(of([]));
+
+      component.onSearch();
+
+      expect(mockBookSearchApiService.searchBooks).toHaveBeenCalledWith('Test Book', false);
+    });
+
+    it('should handle search term with special characters', () => {
+      component.searchTerm = "Harry Potter & the Philosopher's Stone";
+      component.aiSearchExpanded = false;
+      mockBookSearchApiService.searchBooks.and.returnValue(of([]));
+
+      component.onSearch();
+
+      expect(mockBookSearchApiService.searchBooks).toHaveBeenCalledWith("Harry Potter & the Philosopher's Stone", false);
+    });
+
+    it('should handle search term with unicode characters', () => {
+      component.searchTerm = '日本語の本 — Émile Zola';
+      component.aiSearchExpanded = false;
+      mockBookSearchApiService.searchBooks.and.returnValue(of([]));
+
+      component.onSearch();
+
+      expect(mockBookSearchApiService.searchBooks).toHaveBeenCalledWith('日本語の本 — Émile Zola', false);
+    });
+
+    it('should handle very long search term', () => {
+      component.searchTerm = 'A'.repeat(500);
+      component.aiSearchExpanded = false;
+      mockBookSearchApiService.searchBooks.and.returnValue(of([]));
+
+      component.onSearch();
+
+      expect(mockBookSearchApiService.searchBooks).toHaveBeenCalledWith('A'.repeat(500), false);
+    });
+  });
+
+  describe('Boundary tests - Author matching edge cases', () => {
+    it('should match author with case-insensitive comparison', () => {
+      const book = createMockBook({ authors: ['STEPHEN KING'] });
+      component.books = [book];
+      component.selectedAuthor = 'stephen king';
+
+      const filtered = component.filteredBooks;
+
+      expect(filtered.length).toBe(1);
+    });
+
+    it('should match author when name has extra punctuation', () => {
+      // Punctuation is stripped: "J.K. Rowling" -> "j k rowling"
+      // "J K Rowling" -> "j k rowling" (matching tokens)
+      const book = createMockBook({ authors: ['J.K. Rowling'] });
+      component.books = [book];
+      component.selectedAuthor = 'J K Rowling';
+
+      const filtered = component.filteredBooks;
+
+      expect(filtered.length).toBe(1);
+    });
+
+    it('should match author with name tokens in different order', () => {
+      const book = createMockBook({ authors: ['Rowling J.K.'] });
+      component.books = [book];
+      component.selectedAuthor = 'J K Rowling';
+
+      const filtered = component.filteredBooks;
+
+      expect(filtered.length).toBe(1);
+    });
+
+    it('should not match when author has empty string', () => {
+      const book = createMockBook({ authors: [''] });
+      component.books = [book];
+      component.selectedAuthor = 'Stephen King';
+
+      const filtered = component.filteredBooks;
+
+      expect(filtered.length).toBe(0);
+    });
+
+    it('should handle book with empty authors array', () => {
+      const book = createMockBook({ authors: [] });
+      component.books = [book];
+      component.selectedAuthor = 'Any Author';
+
+      const filtered = component.filteredBooks;
+
+      expect(filtered.length).toBe(0);
+    });
+
+    it('should return all books when selectedAuthor is empty string', () => {
+      const book1 = createMockBook({ authors: ['Author A'] });
+      const book2 = createMockBook({ authors: ['Author B'] });
+      component.books = [book1, book2];
+      component.selectedAuthor = '';
+
+      const filtered = component.filteredBooks;
+
+      expect(filtered.length).toBe(2);
+    });
+  });
+
+  describe('Boundary tests - Large result sets', () => {
+    it('should handle 100 books in results', () => {
+      const books: BookDto[] = [];
+      for (let i = 0; i < 100; i++) {
+        books.push(createMockBook({ title: `Book ${i}`, md5: `md5-${i}` }));
+      }
+      component.books = books;
+
+      expect(component.filteredBooks.length).toBe(100);
+    });
+
+    it('should correctly filter from 100 books to subset by format', () => {
+      const books: BookDto[] = [];
+      for (let i = 0; i < 50; i++) {
+        books.push(createMockBook({ title: `EPUB Book ${i}`, md5: `epub-${i}`, format: 'EPUB' }));
+      }
+      for (let i = 0; i < 50; i++) {
+        books.push(createMockBook({ title: `PDF Book ${i}`, md5: `pdf-${i}`, format: 'PDF' }));
+      }
+      component.books = books;
+      component.selectedFormat = 'PDF';
+
+      const filtered = component.filteredBooks;
+
+      expect(filtered.length).toBe(50);
+      expect(filtered.every(b => b.format === 'PDF')).toBe(true);
+    });
+
+    it('should handle removing multiple books from large result set', () => {
+      const books: BookDto[] = [];
+      for (let i = 0; i < 50; i++) {
+        books.push(createMockBook({ title: `Book ${i}`, md5: `md5-${i}` }));
+      }
+      component.books = books;
+
+      // Remove first 10 books
+      for (let i = 0; i < 10; i++) {
+        component.removeBook(component.books[0]);
+      }
+
+      expect(component.books.length).toBe(40);
+    });
+  });
+
+  describe('Boundary tests - Health status exact thresholds', () => {
+    it('should return green at exactly 90%', () => {
+      expect(component.getHealthColorClass(90)).toBe('health-green');
+    });
+
+    it('should return yellow at exactly 89% (just below green)', () => {
+      expect(component.getHealthColorClass(89)).toBe('health-yellow');
+    });
+
+    it('should return yellow at exactly 70%', () => {
+      expect(component.getHealthColorClass(70)).toBe('health-yellow');
+    });
+
+    it('should return orange at exactly 69% (just below yellow)', () => {
+      expect(component.getHealthColorClass(69)).toBe('health-orange');
+    });
+
+    it('should return orange at exactly 50%', () => {
+      expect(component.getHealthColorClass(50)).toBe('health-orange');
+    });
+
+    it('should return red at exactly 49% (just below orange)', () => {
+      expect(component.getHealthColorClass(49)).toBe('health-red');
+    });
+
+    it('should return green at exactly 100%', () => {
+      expect(component.getHealthColorClass(100)).toBe('health-green');
+    });
+  });
+
+  describe('AI Book Search - Description Source Mapping', () => {
+    beforeEach(() => {
+      mockAiApiService.aiBookSearch = jasmine.createSpy('aiBookSearch');
+    });
+
+    it('should map descriptionSource from API response to dialog data', (done) => {
+      // Arrange
+      const mockApiResponse = {
+        summary: 'AI search summary',
+        books: [
+          {
+            title: 'Book One',
+            author: 'Author One',
+            summary: 'GPT summary',
+            importance: 'High',
+            coverUrl: 'http://example.com/cover1.jpg',
+            descriptionSource: 'gpt'
+          },
+          {
+            title: 'Book Two',
+            author: 'Author Two',
+            summary: 'OpenLibrary summary',
+            importance: 'Medium',
+            coverUrl: 'http://example.com/cover2.jpg',
+            descriptionSource: 'openlibrary'
+          }
+        ]
+      };
+
+      mockAiApiService.aiBookSearch.and.returnValue(of(mockApiResponse));
+
+      const dialogRef = {
+        componentInstance: {
+          clearStatus: jasmine.createSpy('clearStatus'),
+          addStatus: jasmine.createSpy('addStatus'),
+          data: {}
+        },
+        afterClosed: () => of(null)
+      };
+      mockDialog.open.and.returnValue(dialogRef as any);
+
+      component.aiSearchExpanded = true;
+      component.aiSearchQuery = 'test query';
+
+      // Act
+      component.onSearch();
+
+      // Assert
+      setTimeout(() => {
+        expect((dialogRef.componentInstance.data as any).sameSeries).toBeDefined();
+        expect((dialogRef.componentInstance.data as any).sameSeries.length).toBe(2);
+        expect((dialogRef.componentInstance.data as any).sameSeries[0].descriptionSource).toBe('gpt');
+        expect((dialogRef.componentInstance.data as any).sameSeries[1].descriptionSource).toBe('openlibrary');
+        done();
+      }, 10);
+    });
+
+    it('should preserve descriptionSource as null when not provided', (done) => {
+      // Arrange
+      const mockApiResponse = {
+        summary: 'AI search summary',
+        books: [
+          {
+            title: 'Book One',
+            author: 'Author One',
+            summary: 'Summary without source',
+            importance: 'High',
+            coverUrl: null,
+            descriptionSource: null
+          }
+        ]
+      };
+
+      mockAiApiService.aiBookSearch.and.returnValue(of(mockApiResponse));
+
+      const dialogRef = {
+        componentInstance: {
+          clearStatus: jasmine.createSpy('clearStatus'),
+          addStatus: jasmine.createSpy('addStatus'),
+          data: {}
+        },
+        afterClosed: () => of(null)
+      };
+      mockDialog.open.and.returnValue(dialogRef as any);
+
+      component.aiSearchExpanded = true;
+      component.aiSearchQuery = 'test query';
+
+      // Act
+      component.onSearch();
+
+      // Assert
+      setTimeout(() => {
+        expect((dialogRef.componentInstance.data as any).sameSeries[0].descriptionSource).toBe(null);
+        done();
+      }, 10);
+    });
+
+    it('should handle undefined descriptionSource from API', (done) => {
+      // Arrange
+      const mockApiResponse = {
+        summary: 'AI search summary',
+        books: [
+          {
+            title: 'Book One',
+            author: 'Author One',
+            summary: 'Summary without source field',
+            importance: 'High',
+            coverUrl: null
+            // descriptionSource is undefined
+          }
+        ]
+      };
+
+      mockAiApiService.aiBookSearch.and.returnValue(of(mockApiResponse));
+
+      const dialogRef = {
+        componentInstance: {
+          clearStatus: jasmine.createSpy('clearStatus'),
+          addStatus: jasmine.createSpy('addStatus'),
+          data: {}
+        },
+        afterClosed: () => of(null)
+      };
+      mockDialog.open.and.returnValue(dialogRef as any);
+
+      component.aiSearchExpanded = true;
+      component.aiSearchQuery = 'test query';
+
+      // Act
+      component.onSearch();
+
+      // Assert
+      setTimeout(() => {
+        expect((dialogRef.componentInstance.data as any).sameSeries[0].descriptionSource).toBe(null);
+        done();
+      }, 10);
+    });
+
+    it('should handle mixed descriptionSource values in results', (done) => {
+      // Arrange
+      const mockApiResponse = {
+        summary: 'AI search summary',
+        books: [
+          {
+            title: 'Book One',
+            author: 'Author One',
+            summary: 'GPT summary',
+            importance: 'High',
+            coverUrl: null,
+            descriptionSource: 'gpt'
+          },
+          {
+            title: 'Book Two',
+            author: 'Author Two',
+            summary: 'OpenLibrary summary',
+            importance: 'Medium',
+            coverUrl: null,
+            descriptionSource: 'openlibrary'
+          },
+          {
+            title: 'Book Three',
+            author: 'Author Three',
+            summary: 'No source',
+            importance: 'Low',
+            coverUrl: null,
+            descriptionSource: null
+          }
+        ]
+      };
+
+      mockAiApiService.aiBookSearch.and.returnValue(of(mockApiResponse));
+
+      const dialogRef = {
+        componentInstance: {
+          clearStatus: jasmine.createSpy('clearStatus'),
+          addStatus: jasmine.createSpy('addStatus'),
+          data: {}
+        },
+        afterClosed: () => of(null)
+      };
+      mockDialog.open.and.returnValue(dialogRef as any);
+
+      component.aiSearchExpanded = true;
+      component.aiSearchQuery = 'test query';
+
+      // Act
+      component.onSearch();
+
+      // Assert
+      setTimeout(() => {
+        const results = (dialogRef.componentInstance.data as any).sameSeries;
+        expect(results.length).toBe(3);
+        expect(results[0].descriptionSource).toBe('gpt');
+        expect(results[1].descriptionSource).toBe('openlibrary');
+        expect(results[2].descriptionSource).toBe(null);
+        done();
+      }, 10);
+    });
+
+    it('should maintain descriptionSource through the entire mapping pipeline', (done) => {
+      // Arrange
+      const mockApiResponse = {
+        summary: 'AI search summary',
+        books: [
+          {
+            title: 'The Great Gatsby',
+            author: 'F. Scott Fitzgerald',
+            summary: 'A classic novel',
+            importance: 'Essential reading',
+            coverUrl: 'http://example.com/gatsby.jpg',
+            descriptionSource: 'openlibrary'
+          }
+        ]
+      };
+
+      mockAiApiService.aiBookSearch.and.returnValue(of(mockApiResponse));
+
+      const dialogRef = {
+        componentInstance: {
+          clearStatus: jasmine.createSpy('clearStatus'),
+          addStatus: jasmine.createSpy('addStatus'),
+          data: {}
+        },
+        afterClosed: () => of(null)
+      };
+      mockDialog.open.and.returnValue(dialogRef as any);
+
+      component.aiSearchExpanded = true;
+      component.aiSearchQuery = 'classic American novels';
+
+      // Act
+      component.onSearch();
+
+      // Assert
+      setTimeout(() => {
+        const mappedBook = (dialogRef.componentInstance.data as any).sameSeries[0];
+        expect(mappedBook.title).toBe('The Great Gatsby');
+        expect(mappedBook.order).toBe(1);
+        expect(mappedBook.description).toBe('A classic novel • Essential reading');
+        expect(mappedBook.coverUrl).toBe('http://example.com/gatsby.jpg');
+        expect(mappedBook.descriptionSource).toBe('openlibrary');
+        done();
+      }, 10);
+    });
+  });
+});

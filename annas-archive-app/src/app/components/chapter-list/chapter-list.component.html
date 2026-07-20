@@ -1,0 +1,17 @@
+<mat-form-field appearance="outline" class="w-100" [class.dropdown-disabled]="isDisabled">
+  <mat-label>Chapter</mat-label>
+  <mat-select
+    [disabled]="isDisabled"
+    [value]="selectedChapterId"
+    (selectionChange)="onSelectionChange($event.value)"
+    panelClass="reader-select-panel"
+    [panelWidth]="'fit-content'">
+    <mat-option *ngFor="let chapter of chapters" [value]="chapter.id">
+      <div class="chapter-line" [style.paddingLeft.px]="chapter.level * 12">
+        <span class="chapter-title">{{ chapter.displayLabel || chapter.title }}</span>
+        <span class="chapter-meta">({{ chapter.wordCount | number }} words)</span>
+        <mat-icon *ngIf="isCached(chapter.id)" class="cached-indicator" [matTooltip]="'Summary cached for offline access'">cloud_done</mat-icon>
+      </div>
+    </mat-option>
+  </mat-select>
+</mat-form-field>

@@ -1,0 +1,24 @@
+.git
+.gitignore
+.claude
+.vscode-extension
+.DS_Store
+
+**/node_modules
+**/bin
+**/obj
+**/dist
+annas-archive-app/.angular
+
+# Never let secrets into the build context
+**/appsettings.json
+**/appsettings.*.json
+**/.env
+**/.env.*
+
+deployment-logs
+test-logs
+test-results
+DOCS
+*.md
+*.vsix

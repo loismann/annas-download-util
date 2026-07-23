@@ -28,9 +28,11 @@ public static class LibraryHelpers
     }
 
     /// <summary>
-    /// Resolves a user-specific library tag based on the authenticated user's name.
+    /// Resolves which of the three household users ("Paul"/"Mom"/"Dad") is
+    /// currently authenticated, by matching a substring of the JWT's Name
+    /// claim — avoids storing access codes in code/config.
     /// </summary>
-    public static string? ResolveUserLibraryTag(HttpContext context)
+    public static string? ResolveUserDisplayName(HttpContext context)
     {
         var name = context.User?.FindFirst(ClaimTypes.Name)?.Value;
         if (string.IsNullOrWhiteSpace(name))
@@ -38,17 +40,25 @@ public static class LibraryHelpers
 
         var normalized = name.Trim().ToLowerInvariant();
 
-        // Map user names to tags to avoid storing access codes in code/config.
         if (normalized.Contains("paul"))
-            return "Paul's Books";
+            return "Paul";
 
         if (normalized.Contains("mom"))
-            return "Mom's Books";
+            return "Mom";
 
         if (normalized.Contains("dad"))
-            return "Dad's Books";
+            return "Dad";
 
         return null;
+    }
+
+    /// <summary>
+    /// Resolves a user-specific library tag based on the authenticated user's name.
+    /// </summary>
+    public static string? ResolveUserLibraryTag(HttpContext context)
+    {
+        var name = ResolveUserDisplayName(context);
+        return name is null ? null : $"{name}'s Books";
     }
 
     /// <summary>

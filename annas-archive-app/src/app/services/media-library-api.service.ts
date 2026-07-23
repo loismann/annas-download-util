@@ -69,4 +69,14 @@ export class MediaLibraryApiService {
   deleteMovie(movieId: number): Observable<void> {
     return this.http.delete<void>(`${this.baseUrl}/movies/${movieId}`);
   }
+
+  /** Manually (re)assigns who a downloaded show belongs to — pass null to unassign. */
+  setTvOwner(seriesId: number, owner: string | null): Observable<void> {
+    return this.http.patch<void>(`${this.baseUrl}/tv/${seriesId}/owner`, { owner });
+  }
+
+  /** Manually (re)assigns who a downloaded movie belongs to — pass null to unassign. */
+  setMovieOwner(movieId: number, owner: string | null): Observable<void> {
+    return this.http.patch<void>(`${this.baseUrl}/movies/${movieId}/owner`, { owner });
+  }
 }

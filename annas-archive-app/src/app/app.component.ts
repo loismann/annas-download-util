@@ -1,5 +1,6 @@
 import { Component, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { HttpClient } from '@angular/common/http';
 import { RouterOutlet, Router, RouterLink } from '@angular/router';
 import { MatToolbarModule } from '@angular/material/toolbar';
 import { MatButtonModule } from '@angular/material/button';
@@ -9,7 +10,6 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { StorageFooterComponent } from './components/storage-footer/storage-footer.component';
 import { AuthService, UserActivity } from './services/auth.service';
 import { LoggerService } from './services/logger.service';
-import { VERSION } from './version';
 import { Subscription, interval } from 'rxjs';
 import { switchMap, filter } from 'rxjs/operators';
 
@@ -150,7 +150,7 @@ import { switchMap, filter } from 'rxjs/operators';
   `
 })
 export class AppComponent implements OnInit, OnDestroy {
-  buildTime = VERSION.buildTime;
+  buildTime = '';
   userActivity: UserActivity[] = [];
   Math = Math; // Expose Math to template
 
@@ -159,10 +159,19 @@ export class AppComponent implements OnInit, OnDestroy {
   constructor(
     public authService: AuthService,
     private router: Router,
-    private logger: LoggerService
+    private logger: LoggerService,
+    private http: HttpClient
   ) {}
 
   ngOnInit(): void {
+    // Fetched at runtime (rather than compiled in) so the Docker image's
+    // frontend build layer can be cached when Angular source is unchanged —
+    // see version.json generation in the Dockerfile's runtime stage.
+    this.http.get<{ buildTime: string }>('/assets/version.json').subscribe({
+      next: (version) => { this.buildTime = version.buildTime; },
+      error: (err) => this.logger.error('Failed to fetch version.json', err)
+    });
+
     // Poll for user activity every 60 seconds when authenticated
     this.activitySubscription = this.authService.isAuthenticated$.pipe(
       filter(isAuth => isAuth),

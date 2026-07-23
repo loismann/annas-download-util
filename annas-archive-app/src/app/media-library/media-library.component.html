@@ -1,74 +1,195 @@
-<div class="media-library-page">
-  <div class="header-bar">
-    <h2>Video Library</h2>
-    <mat-slide-toggle [(ngModel)]="showingMovies" color="primary" (change)="toggleShowing()">
-      {{ showingMovies ? 'Movies' : 'TV Shows' }}
-    </mat-slide-toggle>
-  </div>
-
-  <div *ngIf="loading" class="loading">
-    <mat-spinner diameter="32"></mat-spinner>
-  </div>
-
-  <div *ngIf="error" class="error">{{ error }}</div>
-
-  <!-- TV -->
-  <div class="tiles-grid" *ngIf="!loading && !showingMovies && tvTiles.length">
-    <div class="tile" *ngFor="let tile of tvTiles" (click)="openSeries(tile)">
-      <button
-        mat-icon-button
-        class="delete-btn"
-        matTooltip="Delete show"
-        (click)="deleteSeries(tile, $event)"
-      >
-        <mat-icon>delete</mat-icon>
-      </button>
-      <img
-        class="poster"
-        [src]="posterUrl(tile.result)"
-        [alt]="tile.result.title"
-      />
-      <div class="tile-title">{{ tile.result.title }}</div>
-      <div class="tile-meta">{{ tile.downloadedSeasonCount }} / {{ tile.totalSeasonCount }} seasons downloaded</div>
+<div class="library-layout">
+  <aside class="library-sidebar">
+    <div class="sidebar-header">
+      <h2>Media Library</h2>
+      <p>Browse your downloaded shows &amp; movies.</p>
     </div>
-  </div>
 
-  <!-- Movies -->
-  <div class="tiles-grid" *ngIf="!loading && showingMovies && movieTiles.length">
+    <button type="button" class="reset-view-btn" (click)="resetView()">Reset View!</button>
+
+    <mat-form-field appearance="outline" class="w-100">
+      <mat-label>Search</mat-label>
+      <input matInput [(ngModel)]="searchTerm" placeholder="Title" />
+    </mat-form-field>
+
+    <mat-form-field appearance="outline" class="w-100">
+      <mat-label>Genre</mat-label>
+      <mat-select [(ngModel)]="selectedGenre">
+        <mat-option value="">All Genres</mat-option>
+        <mat-option *ngFor="let genre of genres" [value]="genre">{{ genre }}</mat-option>
+      </mat-select>
+    </mat-form-field>
+
+    <div class="sidebar-meta">
+      <div class="meta-label">Total {{ showingMovies ? 'movies' : 'shows' }}</div>
+      <div class="meta-value">{{ totalCount }}</div>
+    </div>
+  </aside>
+
+  <section class="library-panel">
+    <div class="library-controls">
+      <div class="owner-filters">
+        <button
+          *ngFor="let owner of owners"
+          type="button"
+          class="owner-filter"
+          [class.active]="selectedOwners.has(owner)"
+          (click)="toggleOwnerFilter(owner)"
+        >
+          {{ owner }}
+        </button>
+      </div>
+
+      <mat-button-toggle-group
+        class="mode-toggle"
+        [(ngModel)]="showingMovies"
+        name="showingMovies"
+        aria-label="TV shows or movies"
+        (change)="toggleShowing()"
+      >
+        <mat-button-toggle [value]="false">TV Shows</mat-button-toggle>
+        <mat-button-toggle [value]="true">Movies</mat-button-toggle>
+      </mat-button-toggle-group>
+
+      <div class="tile-size-controls">
+        <button
+          mat-icon-button
+          type="button"
+          class="tile-size-btn"
+          [class.active]="tileSize === 'small'"
+          (click)="setTileSize('small')"
+          aria-label="Small tiles"
+        >
+          <mat-icon>view_comfy</mat-icon>
+        </button>
+        <button
+          mat-icon-button
+          type="button"
+          class="tile-size-btn"
+          [class.active]="tileSize === 'medium'"
+          (click)="setTileSize('medium')"
+          aria-label="Medium tiles"
+        >
+          <mat-icon>view_module</mat-icon>
+        </button>
+        <button
+          mat-icon-button
+          type="button"
+          class="tile-size-btn"
+          [class.active]="tileSize === 'large'"
+          (click)="setTileSize('large')"
+          aria-label="Large tiles"
+        >
+          <mat-icon>view_agenda</mat-icon>
+        </button>
+      </div>
+
+      <mat-form-field appearance="outline" class="sort-field">
+        <mat-label>Sort by</mat-label>
+        <mat-select [(ngModel)]="sortOrder">
+          <mat-option value="recent">Recently added</mat-option>
+          <mat-option value="title">Title</mat-option>
+          <mat-option value="year">Year</mat-option>
+        </mat-select>
+      </mat-form-field>
+    </div>
+
+    <div *ngIf="loading" class="loading">
+      <mat-spinner diameter="32"></mat-spinner>
+    </div>
+
+    <div *ngIf="error" class="error">{{ error }}</div>
+
+    <div *ngIf="!loading && !error" class="count-indicator">
+      Showing {{ filteredCount }} of {{ totalCount }} {{ showingMovies ? 'movies' : 'shows' }}
+    </div>
+
+    <!-- TV -->
     <div
-      class="tile"
-      [class.not-ready]="!movie['hasFile']"
-      *ngFor="let movie of movieTiles"
-      (click)="playMovie(movie)"
+      class="tiles-grid"
+      [class.small]="tileSize === 'small'"
+      [class.large]="tileSize === 'large'"
+      *ngIf="!loading && !showingMovies && filteredTvTiles.length"
     >
-      <button
-        mat-icon-button
-        class="delete-btn"
-        matTooltip="Delete movie"
-        (click)="deleteMovie(movie, $event)"
-      >
-        <mat-icon>delete</mat-icon>
-      </button>
-      <img
-        class="poster"
-        [src]="posterUrl(movie)"
-        [alt]="movie.title"
-      />
-      <div class="tile-title">{{ movie.title }}</div>
-      <div class="tile-meta" *ngIf="movie['hasFile']">Ready to watch</div>
-      <div class="tile-meta pending" *ngIf="!movie['hasFile']">Still downloading…</div>
-      <mat-spinner
-        *ngIf="resolvingMovieId === movie.tmdbId"
-        diameter="24"
-        class="resolving-spinner"
-      ></mat-spinner>
+      <div class="tile" *ngFor="let tile of filteredTvTiles" (click)="openSeries(tile)">
+        <button
+          mat-icon-button
+          class="delete-btn"
+          matTooltip="Delete show"
+          (click)="deleteSeries(tile, $event)"
+        >
+          <mat-icon>delete</mat-icon>
+        </button>
+        <img class="poster" [src]="posterUrl(tile.result)" [alt]="tile.result.title" />
+        <div class="tile-title">{{ tile.result.title }}</div>
+        <div class="tile-meta">{{ tile.downloadedSeasonCount }} / {{ tile.totalSeasonCount }} seasons downloaded</div>
+        <button
+          type="button"
+          class="owner-badge"
+          [matMenuTriggerFor]="ownerMenu"
+          (click)="$event.stopPropagation()"
+        >
+          {{ tile.result.owner || 'Unassigned' }}
+        </button>
+        <mat-menu #ownerMenu="matMenu">
+          <button mat-menu-item *ngFor="let owner of ownerMenuOptions" (click)="setSeriesOwner(tile, owner, $event)">
+            {{ owner }}
+          </button>
+        </mat-menu>
+      </div>
     </div>
-  </div>
 
-  <div *ngIf="!loading && !error && !showingMovies && tvTiles.length === 0" class="empty-state">
-    Nothing downloaded yet — add shows from the Search page.
-  </div>
-  <div *ngIf="!loading && !error && showingMovies && movieTiles.length === 0" class="empty-state">
-    Nothing downloaded yet — add movies from the Search page.
-  </div>
+    <!-- Movies -->
+    <div
+      class="tiles-grid"
+      [class.small]="tileSize === 'small'"
+      [class.large]="tileSize === 'large'"
+      *ngIf="!loading && showingMovies && filteredMovieTiles.length"
+    >
+      <div
+        class="tile"
+        [class.not-ready]="!movie['hasFile']"
+        *ngFor="let movie of filteredMovieTiles"
+        (click)="playMovie(movie)"
+      >
+        <button
+          mat-icon-button
+          class="delete-btn"
+          matTooltip="Delete movie"
+          (click)="deleteMovie(movie, $event)"
+        >
+          <mat-icon>delete</mat-icon>
+        </button>
+        <img class="poster" [src]="posterUrl(movie)" [alt]="movie.title" />
+        <div class="tile-title">{{ movie.title }}</div>
+        <div class="tile-meta" *ngIf="movie['hasFile']">Ready to watch</div>
+        <div class="tile-meta pending" *ngIf="!movie['hasFile']">Still downloading…</div>
+        <mat-spinner
+          *ngIf="resolvingMovieId === movie.tmdbId"
+          diameter="24"
+          class="resolving-spinner"
+        ></mat-spinner>
+        <button
+          type="button"
+          class="owner-badge"
+          [matMenuTriggerFor]="ownerMenu"
+          (click)="$event.stopPropagation()"
+        >
+          {{ movie.owner || 'Unassigned' }}
+        </button>
+        <mat-menu #ownerMenu="matMenu">
+          <button mat-menu-item *ngFor="let owner of ownerMenuOptions" (click)="setMovieOwner(movie, owner, $event)">
+            {{ owner }}
+          </button>
+        </mat-menu>
+      </div>
+    </div>
+
+    <div *ngIf="!loading && !error && !showingMovies && filteredTvTiles.length === 0" class="empty-state">
+      {{ tvTiles.length === 0 ? 'Nothing downloaded yet — add shows from the Search page.' : 'No shows match the current filters.' }}
+    </div>
+    <div *ngIf="!loading && !error && showingMovies && filteredMovieTiles.length === 0" class="empty-state">
+      {{ movieTiles.length === 0 ? 'Nothing downloaded yet — add movies from the Search page.' : 'No movies match the current filters.' }}
+    </div>
+  </section>
 </div>

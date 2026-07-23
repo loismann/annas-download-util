@@ -79,6 +79,7 @@ services:
       - YouTube__DownloadRoot=/data/youtube
       - DownloadTracking__StoragePath=/app/state/download-tracking.json
       - Quiz__StoragePath=/app/state/quiz-data
+      - MediaOwnership__StoragePath=/app/state/media-ownership.json
       - Logging__FilePath=/app/logs/annas-api-.log
       # Seq's ingestion API — internal Docker network address, not exposed
       # to the host directly. The container talks to Seq by its service name.

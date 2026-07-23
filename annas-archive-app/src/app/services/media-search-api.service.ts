@@ -28,6 +28,10 @@ export interface MediaLookupResult {
   /** Only present after a successful add — Sonarr/Radarr's own record ID,
    * used to match this item against queue entries for progress polling. */
   id?: number;
+  /** Who requested this ("Paul"/"Mom"/"Dad") — set server-side at add-time,
+   * null/absent for items added before this feature existed or added
+   * outside the app. See MediaOwnershipService. */
+  owner?: string | null;
   [key: string]: unknown;
 }
 

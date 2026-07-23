@@ -2,11 +2,15 @@ import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
-import { MatSlideToggleModule } from '@angular/material/slide-toggle';
+import { MatFormFieldModule } from '@angular/material/form-field';
+import { MatInputModule } from '@angular/material/input';
+import { MatSelectModule } from '@angular/material/select';
+import { MatButtonToggleModule } from '@angular/material/button-toggle';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatTooltipModule } from '@angular/material/tooltip';
+import { MatMenuModule } from '@angular/material/menu';
 import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import { MediaLibraryApiService } from '../services/media-library-api.service';
 import { MediaLookupResult } from '../services/media-search-api.service';
@@ -23,7 +27,15 @@ interface LibraryTile {
   totalSeasonCount: number;
 }
 
+type SortOrder = 'title' | 'year' | 'recent';
+type TileSize = 'small' | 'medium' | 'large';
+
 const PLACEHOLDER_POSTER = '/assets/placeholder.jpg';
+/** The only three household members — mirrors the ebook library's fixed
+ * "Dad's Books"/"Mom's Books"/"Paul's Books" owner set, minus the book-specific
+ * wording since this filters both TV shows and movies. */
+const OWNERS = ['Paul', 'Mom', 'Dad'];
+const UNASSIGNED = 'Unassigned';
 
 /** Sonarr/Radarr's images array isn't guaranteed poster-first — it can lead
  * with a banner or fanart/background image instead, which is why picking
@@ -34,11 +46,23 @@ function posterUrlFor(result: MediaLookupResult): string {
   return poster?.remoteUrl || poster?.url || PLACEHOLDER_POSTER;
 }
 
+function genresOf(result: MediaLookupResult): string[] {
+  return (result['genres'] as string[] | undefined) ?? [];
+}
+
+function addedTimestamp(result: MediaLookupResult): number {
+  return Date.parse((result['added'] as string) ?? '') || 0;
+}
+
 /**
  * Browse what's actually downloaded via Sonarr/Radarr — parallel to the
- * ebook Library page, but backed by Sonarr/Radarr's own data instead of a
- * local file scan (see MediaLibraryEndpoints.cs for why: they already
- * track file-existence themselves).
+ * ebook Library page (search/genre/owner filters, tile-size + sort controls),
+ * but backed by Sonarr/Radarr's own data instead of a local file scan (see
+ * MediaLibraryEndpoints.cs for why: they already track file-existence
+ * themselves). Ownership ("who requested this") is recorded server-side by
+ * MediaOwnershipService, keyed by Sonarr/Radarr's own record ID rather than
+ * tagging the media files, since Sonarr/Radarr reorganize/rename those on
+ * import.
  */
 @Component({
   selector: 'app-media-library',
@@ -46,11 +70,15 @@ function posterUrlFor(result: MediaLookupResult): string {
   imports: [
     CommonModule,
     FormsModule,
-    MatSlideToggleModule,
+    MatFormFieldModule,
+    MatInputModule,
+    MatSelectModule,
+    MatButtonToggleModule,
     MatProgressSpinnerModule,
     MatButtonModule,
     MatIconModule,
     MatTooltipModule,
+    MatMenuModule,
     MatDialogModule
   ],
   templateUrl: './media-library.component.html',
@@ -65,6 +93,15 @@ export class MediaLibraryComponent implements OnInit {
   movieTiles: MediaLookupResult[] = [];
   /** tmdbId of the movie currently resolving a watch URL, for a per-card spinner. */
   resolvingMovieId: number | null = null;
+
+  searchTerm = '';
+  selectedGenre = '';
+  selectedOwners = new Set<string>();
+  sortOrder: SortOrder = 'recent';
+  tileSize: TileSize = 'medium';
+
+  readonly owners = OWNERS;
+  readonly ownerMenuOptions = [...OWNERS, UNASSIGNED];
 
   constructor(
     private api: MediaLibraryApiService,
@@ -116,6 +153,79 @@ export class MediaLibraryComponent implements OnInit {
     this.loading = false;
   }
 
+  get genres(): string[] {
+    const items = this.showingMovies ? this.movieTiles : this.tvTiles.map(t => t.result);
+    const set = new Set<string>();
+    items.forEach(r => genresOf(r).forEach(g => set.add(g)));
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }
+
+  get totalCount(): number {
+    return this.showingMovies ? this.movieTiles.length : this.tvTiles.length;
+  }
+
+  get filteredTvTiles(): LibraryTile[] {
+    return this.tvTiles
+      .filter(t => this.matchesFilters(t.result))
+      .sort((a, b) => this.compare(a.result, b.result));
+  }
+
+  get filteredMovieTiles(): MediaLookupResult[] {
+    return this.movieTiles
+      .filter(m => this.matchesFilters(m))
+      .sort((a, b) => this.compare(a, b));
+  }
+
+  get filteredCount(): number {
+    return this.showingMovies ? this.filteredMovieTiles.length : this.filteredTvTiles.length;
+  }
+
+  private matchesFilters(result: MediaLookupResult): boolean {
+    const term = this.searchTerm.trim().toLowerCase();
+    if (term && !(result.title || '').toLowerCase().includes(term)) return false;
+
+    if (this.selectedGenre && !genresOf(result).includes(this.selectedGenre)) return false;
+
+    if (this.selectedOwners.size > 0) {
+      const owner = result.owner || UNASSIGNED;
+      if (!this.selectedOwners.has(owner)) return false;
+    }
+
+    return true;
+  }
+
+  private compare(a: MediaLookupResult, b: MediaLookupResult): number {
+    switch (this.sortOrder) {
+      case 'title':
+        return (a.title || '').localeCompare(b.title || '');
+      case 'year':
+        return (b.year || 0) - (a.year || 0);
+      case 'recent':
+      default:
+        return addedTimestamp(b) - addedTimestamp(a);
+    }
+  }
+
+  toggleOwnerFilter(owner: string): void {
+    if (this.selectedOwners.has(owner)) {
+      this.selectedOwners.delete(owner);
+    } else {
+      this.selectedOwners.add(owner);
+    }
+  }
+
+  setTileSize(size: TileSize): void {
+    this.tileSize = size;
+  }
+
+  resetView(): void {
+    this.searchTerm = '';
+    this.selectedGenre = '';
+    this.selectedOwners.clear();
+    this.sortOrder = 'recent';
+    this.tileSize = 'medium';
+  }
+
   openSeries(tile: LibraryTile): void {
     this.router.navigate(['/media-library/series', tile.result.id]);
   }
@@ -148,6 +258,26 @@ export class MediaLibraryComponent implements OnInit {
         this.logger.error('[MediaLibraryComponent] watchMovie failed', err);
         this.error = `Jellyfin hasn't matched "${movie.title}" yet — it may still be scanning.`;
       }
+    });
+  }
+
+  setSeriesOwner(tile: LibraryTile, owner: string, event: Event): void {
+    event.stopPropagation();
+    if (tile.result.id === undefined) return;
+    const newOwner = owner === UNASSIGNED ? null : owner;
+    this.api.setTvOwner(tile.result.id, newOwner).subscribe({
+      next: () => { tile.result.owner = newOwner; },
+      error: (err) => this.logger.error('[MediaLibraryComponent] setTvOwner failed', err)
+    });
+  }
+
+  setMovieOwner(movie: MediaLookupResult, owner: string, event: Event): void {
+    event.stopPropagation();
+    if (movie.id === undefined) return;
+    const newOwner = owner === UNASSIGNED ? null : owner;
+    this.api.setMovieOwner(movie.id, newOwner).subscribe({
+      next: () => { movie.owner = newOwner; },
+      error: (err) => this.logger.error('[MediaLibraryComponent] setMovieOwner failed', err)
     });
   }
 

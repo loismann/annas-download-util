@@ -1,8 +1,12 @@
+using System.Text.Json.Nodes;
 using AnnasArchive.API.Services;
 using Microsoft.AspNetCore.Mvc;
 using Serilog;
 
 namespace AnnasArchive.API.Endpoints;
+
+/// <summary>Body for PATCH .../owner — null/blank clears the assignment.</summary>
+public record SetOwnerRequest(string? Owner);
 
 /// <summary>
 /// "What's actually downloaded, and how do I watch it" endpoints — distinct
@@ -48,14 +52,25 @@ public static class MediaLibraryEndpoints
             .RequireAuthorization()
             .RequireRateLimiting("api");
 
+        app.MapPatch("/api/media/tv/{seriesId:int}/owner", HandleSetTvOwner)
+            .RequireAuthorization()
+            .RequireRateLimiting("api");
+
+        app.MapPatch("/api/media/movies/{movieId:int}/owner", HandleSetMovieOwner)
+            .RequireAuthorization()
+            .RequireRateLimiting("api");
+
         return app;
     }
 
-    private static async Task<IResult> HandleGetDownloadedTv(ISonarrService sonarr)
+    private static readonly HashSet<string> ValidOwners = new(StringComparer.OrdinalIgnoreCase) { "Paul", "Mom", "Dad" };
+
+    private static async Task<IResult> HandleGetDownloadedTv(ISonarrService sonarr, IMediaOwnershipService ownership)
     {
         try
         {
             var series = await sonarr.GetAllSeriesAsync();
+            ApplyOwners(series, "tv", ownership);
             return Results.Ok(series);
         }
         catch (HttpRequestException ex)
@@ -96,11 +111,12 @@ public static class MediaLibraryEndpoints
         }
     }
 
-    private static async Task<IResult> HandleGetDownloadedMovies(IRadarrService radarr)
+    private static async Task<IResult> HandleGetDownloadedMovies(IRadarrService radarr, IMediaOwnershipService ownership)
     {
         try
         {
             var movies = await radarr.GetAllMoviesAsync();
+            ApplyOwners(movies, "movie", ownership);
             return Results.Ok(movies);
         }
         catch (HttpRequestException ex)
@@ -166,6 +182,37 @@ public static class MediaLibraryEndpoints
         {
             Log.Warning("[MediaLibrary] Radarr delete movie failed: {Message}", ex.Message);
             return Results.Json(new { error = "Radarr rejected the delete request" }, statusCode: StatusCodes.Status502BadGateway);
+        }
+    }
+
+    private static IResult HandleSetTvOwner([FromRoute] int seriesId, [FromBody] SetOwnerRequest request, IMediaOwnershipService ownership)
+    {
+        if (!string.IsNullOrWhiteSpace(request.Owner) && !ValidOwners.Contains(request.Owner))
+            return Results.BadRequest(new { error = "owner must be one of Paul, Mom, Dad, or null" });
+
+        ownership.SetOwner("tv", seriesId, request.Owner);
+        return Results.NoContent();
+    }
+
+    private static IResult HandleSetMovieOwner([FromRoute] int movieId, [FromBody] SetOwnerRequest request, IMediaOwnershipService ownership)
+    {
+        if (!string.IsNullOrWhiteSpace(request.Owner) && !ValidOwners.Contains(request.Owner))
+            return Results.BadRequest(new { error = "owner must be one of Paul, Mom, Dad, or null" });
+
+        ownership.SetOwner("movie", movieId, request.Owner);
+        return Results.NoContent();
+    }
+
+    /// <summary>Merges each item's recorded owner (if any) into its raw Sonarr/Radarr
+    /// JSON as an "owner" field, matched by that item's own "id".</summary>
+    private static void ApplyOwners(JsonArray items, string type, IMediaOwnershipService ownership)
+    {
+        var owners = ownership.GetAllOwners();
+        foreach (var item in items)
+        {
+            if (item is not JsonObject obj || obj["id"] is null) continue;
+            var owner = owners.GetValueOrDefault($"{type}:{obj["id"]!.GetValue<int>()}");
+            obj["owner"] = owner;
         }
     }
 }

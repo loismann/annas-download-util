@@ -376,6 +376,19 @@ public static class ServiceConfiguration
             return new DownloadTrackingService(downloadLimit, rollingHours, storagePath);
         });
 
+        // Media (Sonarr/Radarr) download ownership tracking — who requested what
+        services.AddSingleton<Services.IMediaOwnershipService>(provider =>
+        {
+            var cfg = provider.GetRequiredService<IConfiguration>();
+            var configuredPath = cfg.GetValue<string>("MediaOwnership:StoragePath");
+            var storagePath = string.IsNullOrWhiteSpace(configuredPath)
+                ? Path.Combine(Directory.GetCurrentDirectory(), "media-ownership.json")
+                : (Path.IsPathRooted(configuredPath)
+                    ? configuredPath
+                    : Path.Combine(Directory.GetCurrentDirectory(), configuredPath));
+            return new Services.MediaOwnershipService(storagePath);
+        });
+
         // AI-related services
         services.AddSingleton<IOpenAiModelHelper, OpenAiModelHelper>();
         services.AddSingleton<IAiResponseParser, AiResponseParser>();

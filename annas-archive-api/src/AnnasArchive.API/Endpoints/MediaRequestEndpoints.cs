@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using AnnasArchive.API.Helpers;
 using AnnasArchive.API.Services;
 using Microsoft.AspNetCore.Mvc;
 using Serilog;
@@ -71,11 +72,18 @@ public static class MediaRequestEndpoints
         }
     }
 
-    private static async Task<IResult> HandleTvAdd([FromBody] AddSeriesRequest request, ISonarrService sonarr)
+    private static async Task<IResult> HandleTvAdd(
+        [FromBody] AddSeriesRequest request, ISonarrService sonarr, IMediaOwnershipService ownership, HttpContext context)
     {
         try
         {
             var added = await sonarr.AddSeriesAsync(request.Series, request.SelectedSeasons);
+            if (added["id"] is not null)
+            {
+                var owner = LibraryHelpers.ResolveUserDisplayName(context);
+                if (owner is not null)
+                    ownership.SetOwner("tv", added["id"]!.GetValue<int>(), owner);
+            }
             return Results.Ok(added);
         }
         catch (InvalidOperationException ex)
@@ -138,11 +146,18 @@ public static class MediaRequestEndpoints
         }
     }
 
-    private static async Task<IResult> HandleMovieAdd([FromBody] JsonObject movie, IRadarrService radarr)
+    private static async Task<IResult> HandleMovieAdd(
+        [FromBody] JsonObject movie, IRadarrService radarr, IMediaOwnershipService ownership, HttpContext context)
     {
         try
         {
             var added = await radarr.AddMovieAsync(movie);
+            if (added["id"] is not null)
+            {
+                var owner = LibraryHelpers.ResolveUserDisplayName(context);
+                if (owner is not null)
+                    ownership.SetOwner("movie", added["id"]!.GetValue<int>(), owner);
+            }
             return Results.Ok(added);
         }
         catch (InvalidOperationException ex)

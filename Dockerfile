@@ -4,12 +4,7 @@ WORKDIR /src
 COPY annas-archive-app/package*.json ./
 RUN npm ci
 COPY annas-archive-app/ ./
-# Forces this layer to re-run on every deploy (the "Latest Version" banner is
-# stamped here via generate-version.js), regardless of whether frontend
-# source actually changed — npm ci above still caches normally since this
-# ARG is declared after it.
-ARG BUILD_TIMESTAMP=unknown
-RUN echo "Build: $BUILD_TIMESTAMP" && npm run build
+RUN npm run build
 
 # ─── Stage 2: build the .NET backend ────────────────────────────────────────
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS backend-build
@@ -47,6 +42,18 @@ RUN npx --yes playwright@1.49.0 install --with-deps chromium
 
 COPY --from=backend-build /app/publish ./
 COPY --from=frontend-build /src/dist/annas-archive-app/browser ./wwwroot
+
+# Stamps the "Latest Version" banner's timestamp as a static asset fetched at
+# runtime (see app.component.ts), instead of baking it into the compiled JS
+# bundle — that used to force the whole Angular build to re-run on every
+# deploy just to refresh this string. Cache-busting it here instead is nearly
+# free (a single RUN, not a ~60-90s `ng build`), since it sits after the two
+# expensive COPY --from stages above.
+ARG BUILD_TIMESTAMP=unknown
+RUN echo "Deploy: $BUILD_TIMESTAMP" \
+    && BUILD_TIME=$(TZ='America/Chicago' date +"%A, %B %-d, %Y at %-I:%M %p") \
+    && mkdir -p ./wwwroot/assets \
+    && printf '{"buildTime":"%s CST","timezone":"America/Chicago"}' "$BUILD_TIME" > ./wwwroot/assets/version.json
 
 # appsettings.json is never baked into the image (it's gitignored and holds
 # secrets) — it must be bind-mounted into /app at runtime via docker-compose.

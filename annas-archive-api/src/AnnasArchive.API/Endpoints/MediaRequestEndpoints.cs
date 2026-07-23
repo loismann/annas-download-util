@@ -73,7 +73,7 @@ public static class MediaRequestEndpoints
     }
 
     private static async Task<IResult> HandleTvAdd(
-        [FromBody] AddSeriesRequest request, ISonarrService sonarr, IMediaOwnershipService ownership, HttpContext context)
+        [FromBody] AddSeriesRequest request, ISonarrService sonarr, IMediaMetadataService metadata, HttpContext context)
     {
         try
         {
@@ -82,7 +82,7 @@ public static class MediaRequestEndpoints
             {
                 var owner = LibraryHelpers.ResolveUserDisplayName(context);
                 if (owner is not null)
-                    ownership.SetOwner("tv", added["id"]!.GetValue<int>(), owner);
+                    metadata.AddOwner("tv", added["id"]!.GetValue<int>(), owner);
             }
             return Results.Ok(added);
         }
@@ -147,7 +147,7 @@ public static class MediaRequestEndpoints
     }
 
     private static async Task<IResult> HandleMovieAdd(
-        [FromBody] JsonObject movie, IRadarrService radarr, IMediaOwnershipService ownership, HttpContext context)
+        [FromBody] JsonObject movie, IRadarrService radarr, IMediaMetadataService metadata, HttpContext context)
     {
         try
         {
@@ -156,7 +156,7 @@ public static class MediaRequestEndpoints
             {
                 var owner = LibraryHelpers.ResolveUserDisplayName(context);
                 if (owner is not null)
-                    ownership.SetOwner("movie", added["id"]!.GetValue<int>(), owner);
+                    metadata.AddOwner("movie", added["id"]!.GetValue<int>(), owner);
             }
             return Results.Ok(added);
         }

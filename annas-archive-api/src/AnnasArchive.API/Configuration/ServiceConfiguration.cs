@@ -376,17 +376,18 @@ public static class ServiceConfiguration
             return new DownloadTrackingService(downloadLimit, rollingHours, storagePath);
         });
 
-        // Media (Sonarr/Radarr) download ownership tracking — who requested what
-        services.AddSingleton<Services.IMediaOwnershipService>(provider =>
+        // Media (Sonarr/Radarr) owner(s) + custom genre tags — who requested
+        // what, and user-created genre tags independent of Sonarr/Radarr's own
+        services.AddSingleton<Services.IMediaMetadataService>(provider =>
         {
             var cfg = provider.GetRequiredService<IConfiguration>();
-            var configuredPath = cfg.GetValue<string>("MediaOwnership:StoragePath");
+            var configuredPath = cfg.GetValue<string>("MediaMetadata:StoragePath");
             var storagePath = string.IsNullOrWhiteSpace(configuredPath)
-                ? Path.Combine(Directory.GetCurrentDirectory(), "media-ownership.json")
+                ? Path.Combine(Directory.GetCurrentDirectory(), "media-metadata.json")
                 : (Path.IsPathRooted(configuredPath)
                     ? configuredPath
                     : Path.Combine(Directory.GetCurrentDirectory(), configuredPath));
-            return new Services.MediaOwnershipService(storagePath);
+            return new Services.MediaMetadataService(storagePath);
         });
 
         // AI-related services

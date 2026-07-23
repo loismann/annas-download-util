@@ -70,13 +70,13 @@ export class MediaLibraryApiService {
     return this.http.delete<void>(`${this.baseUrl}/movies/${movieId}`);
   }
 
-  /** Manually (re)assigns who a downloaded show belongs to — pass null to unassign. */
-  setTvOwner(seriesId: number, owner: string | null): Observable<void> {
-    return this.http.patch<void>(`${this.baseUrl}/tv/${seriesId}/owner`, { owner });
+  /** Full replace of a downloaded show's owners + genre tags. */
+  setTvMetadata(seriesId: number, owners: string[], genres: string[]): Observable<void> {
+    return this.http.patch<void>(`${this.baseUrl}/tv/${seriesId}/metadata`, { owners, genres });
   }
 
-  /** Manually (re)assigns who a downloaded movie belongs to — pass null to unassign. */
-  setMovieOwner(movieId: number, owner: string | null): Observable<void> {
-    return this.http.patch<void>(`${this.baseUrl}/movies/${movieId}/owner`, { owner });
+  /** Full replace of a downloaded movie's owners + genre tags. */
+  setMovieMetadata(movieId: number, owners: string[], genres: string[]): Observable<void> {
+    return this.http.patch<void>(`${this.baseUrl}/movies/${movieId}/metadata`, { owners, genres });
   }
 }

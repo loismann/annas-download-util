@@ -114,6 +114,14 @@
       <div class="tile" *ngFor="let tile of filteredTvTiles" (click)="openSeries(tile)">
         <button
           mat-icon-button
+          class="edit-btn"
+          matTooltip="Edit genres &amp; owners"
+          (click)="openTvEditDialog(tile, $event)"
+        >
+          <mat-icon>edit</mat-icon>
+        </button>
+        <button
+          mat-icon-button
           class="delete-btn"
           matTooltip="Delete show"
           (click)="deleteSeries(tile, $event)"
@@ -123,19 +131,7 @@
         <img class="poster" [src]="posterUrl(tile.result)" [alt]="tile.result.title" />
         <div class="tile-title">{{ tile.result.title }}</div>
         <div class="tile-meta">{{ tile.downloadedSeasonCount }} / {{ tile.totalSeasonCount }} seasons downloaded</div>
-        <button
-          type="button"
-          class="owner-badge"
-          [matMenuTriggerFor]="ownerMenu"
-          (click)="$event.stopPropagation()"
-        >
-          {{ tile.result.owner || 'Unassigned' }}
-        </button>
-        <mat-menu #ownerMenu="matMenu">
-          <button mat-menu-item *ngFor="let owner of ownerMenuOptions" (click)="setSeriesOwner(tile, owner, $event)">
-            {{ owner }}
-          </button>
-        </mat-menu>
+        <div class="owner-badge">{{ ownerLabel(tile.result) }}</div>
       </div>
     </div>
 
@@ -154,6 +150,14 @@
       >
         <button
           mat-icon-button
+          class="edit-btn"
+          matTooltip="Edit genres &amp; owners"
+          (click)="openMovieEditDialog(movie, $event)"
+        >
+          <mat-icon>edit</mat-icon>
+        </button>
+        <button
+          mat-icon-button
           class="delete-btn"
           matTooltip="Delete movie"
           (click)="deleteMovie(movie, $event)"
@@ -169,19 +173,7 @@
           diameter="24"
           class="resolving-spinner"
         ></mat-spinner>
-        <button
-          type="button"
-          class="owner-badge"
-          [matMenuTriggerFor]="ownerMenu"
-          (click)="$event.stopPropagation()"
-        >
-          {{ movie.owner || 'Unassigned' }}
-        </button>
-        <mat-menu #ownerMenu="matMenu">
-          <button mat-menu-item *ngFor="let owner of ownerMenuOptions" (click)="setMovieOwner(movie, owner, $event)">
-            {{ owner }}
-          </button>
-        </mat-menu>
+        <div class="owner-badge">{{ ownerLabel(movie) }}</div>
       </div>
     </div>
 

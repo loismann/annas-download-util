@@ -10,7 +10,6 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatTooltipModule } from '@angular/material/tooltip';
-import { MatMenuModule } from '@angular/material/menu';
 import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import { MediaLibraryApiService } from '../services/media-library-api.service';
 import { MediaLookupResult } from '../services/media-search-api.service';
@@ -19,6 +18,7 @@ import {
   JellyfinPlayerModalData
 } from '../components/jellyfin-player-modal/jellyfin-player-modal.component';
 import { ConfirmDialogComponent, ConfirmDialogData } from '../components/confirm-dialog/confirm-dialog.component';
+import { MediaEditDialogComponent, MediaEditDialogData, MediaEditDialogResult } from '../components/media-edit-dialog/media-edit-dialog.component';
 import { LoggerService } from '../services/logger.service';
 
 interface LibraryTile {
@@ -47,7 +47,7 @@ function posterUrlFor(result: MediaLookupResult): string {
 }
 
 function genresOf(result: MediaLookupResult): string[] {
-  return (result['genres'] as string[] | undefined) ?? [];
+  return result.customGenres ?? [];
 }
 
 function addedTimestamp(result: MediaLookupResult): number {
@@ -59,10 +59,10 @@ function addedTimestamp(result: MediaLookupResult): number {
  * ebook Library page (search/genre/owner filters, tile-size + sort controls),
  * but backed by Sonarr/Radarr's own data instead of a local file scan (see
  * MediaLibraryEndpoints.cs for why: they already track file-existence
- * themselves). Ownership ("who requested this") is recorded server-side by
- * MediaOwnershipService, keyed by Sonarr/Radarr's own record ID rather than
+ * themselves). Owner(s) and custom genre tags are recorded server-side by
+ * MediaMetadataService, keyed by Sonarr/Radarr's own record ID rather than
  * tagging the media files, since Sonarr/Radarr reorganize/rename those on
- * import.
+ * import — editable per show/movie via MediaEditDialogComponent.
  */
 @Component({
   selector: 'app-media-library',
@@ -78,7 +78,6 @@ function addedTimestamp(result: MediaLookupResult): number {
     MatButtonModule,
     MatIconModule,
     MatTooltipModule,
-    MatMenuModule,
     MatDialogModule
   ],
   templateUrl: './media-library.component.html',
@@ -101,7 +100,6 @@ export class MediaLibraryComponent implements OnInit {
   tileSize: TileSize = 'medium';
 
   readonly owners = OWNERS;
-  readonly ownerMenuOptions = [...OWNERS, UNASSIGNED];
 
   constructor(
     private api: MediaLibraryApiService,
@@ -187,8 +185,8 @@ export class MediaLibraryComponent implements OnInit {
     if (this.selectedGenre && !genresOf(result).includes(this.selectedGenre)) return false;
 
     if (this.selectedOwners.size > 0) {
-      const owner = result.owner || UNASSIGNED;
-      if (!this.selectedOwners.has(owner)) return false;
+      const itemOwners = result.owners ?? [];
+      if (!itemOwners.some(o => this.selectedOwners.has(o))) return false;
     }
 
     return true;
@@ -234,6 +232,10 @@ export class MediaLibraryComponent implements OnInit {
     return posterUrlFor(result);
   }
 
+  ownerLabel(result: MediaLookupResult): string {
+    return result.owners && result.owners.length > 0 ? result.owners.join(', ') : UNASSIGNED;
+  }
+
   playMovie(movie: MediaLookupResult): void {
     if (movie.tmdbId === undefined || this.resolvingMovieId !== null) return;
 
@@ -261,23 +263,61 @@ export class MediaLibraryComponent implements OnInit {
     });
   }
 
-  setSeriesOwner(tile: LibraryTile, owner: string, event: Event): void {
-    event.stopPropagation();
+  openTvEditDialog(tile: LibraryTile, event: Event): void {
+    event.stopPropagation(); // don't also trigger openSeries()
     if (tile.result.id === undefined) return;
-    const newOwner = owner === UNASSIGNED ? null : owner;
-    this.api.setTvOwner(tile.result.id, newOwner).subscribe({
-      next: () => { tile.result.owner = newOwner; },
-      error: (err) => this.logger.error('[MediaLibraryComponent] setTvOwner failed', err)
+
+    const dialogRef = this.dialog.open<MediaEditDialogComponent, MediaEditDialogData, MediaEditDialogResult>(
+      MediaEditDialogComponent,
+      {
+        width: '480px',
+        data: {
+          title: tile.result.title,
+          genres: tile.result.customGenres ?? [],
+          owners: tile.result.owners ?? [],
+          availableGenres: this.genres
+        }
+      }
+    );
+
+    dialogRef.afterClosed().subscribe(result => {
+      if (!result) return;
+      this.api.setTvMetadata(tile.result.id!, result.owners, result.genres).subscribe({
+        next: () => {
+          tile.result.owners = result.owners;
+          tile.result.customGenres = result.genres;
+        },
+        error: (err) => this.logger.error('[MediaLibraryComponent] setTvMetadata failed', err)
+      });
     });
   }
 
-  setMovieOwner(movie: MediaLookupResult, owner: string, event: Event): void {
-    event.stopPropagation();
+  openMovieEditDialog(movie: MediaLookupResult, event: Event): void {
+    event.stopPropagation(); // don't also trigger playMovie()
     if (movie.id === undefined) return;
-    const newOwner = owner === UNASSIGNED ? null : owner;
-    this.api.setMovieOwner(movie.id, newOwner).subscribe({
-      next: () => { movie.owner = newOwner; },
-      error: (err) => this.logger.error('[MediaLibraryComponent] setMovieOwner failed', err)
+
+    const dialogRef = this.dialog.open<MediaEditDialogComponent, MediaEditDialogData, MediaEditDialogResult>(
+      MediaEditDialogComponent,
+      {
+        width: '480px',
+        data: {
+          title: movie.title,
+          genres: movie.customGenres ?? [],
+          owners: movie.owners ?? [],
+          availableGenres: this.genres
+        }
+      }
+    );
+
+    dialogRef.afterClosed().subscribe(result => {
+      if (!result) return;
+      this.api.setMovieMetadata(movie.id!, result.owners, result.genres).subscribe({
+        next: () => {
+          movie.owners = result.owners;
+          movie.customGenres = result.genres;
+        },
+        error: (err) => this.logger.error('[MediaLibraryComponent] setMovieMetadata failed', err)
+      });
     });
   }
 

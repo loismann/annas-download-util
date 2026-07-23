@@ -28,10 +28,13 @@ export interface MediaLookupResult {
   /** Only present after a successful add — Sonarr/Radarr's own record ID,
    * used to match this item against queue entries for progress polling. */
   id?: number;
-  /** Who requested this ("Paul"/"Mom"/"Dad") — set server-side at add-time,
-   * null/absent for items added before this feature existed or added
-   * outside the app. See MediaOwnershipService. */
-  owner?: string | null;
+  /** Who requested this (zero or more of "Paul"/"Mom"/"Dad") — seeded
+   * server-side at add-time, editable afterward. See MediaMetadataService. */
+  owners?: string[];
+  /** User-created genre tags, independent of Sonarr/Radarr's own read-only
+   * `genres` field (which rides along untouched via the index signature
+   * below, since it's whatever TheTVDB/TMDB reports). */
+  customGenres?: string[];
   [key: string]: unknown;
 }
 

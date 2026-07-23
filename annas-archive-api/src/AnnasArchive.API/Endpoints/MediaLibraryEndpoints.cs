@@ -5,8 +5,8 @@ using Serilog;
 
 namespace AnnasArchive.API.Endpoints;
 
-/// <summary>Body for PATCH .../owner — null/blank clears the assignment.</summary>
-public record SetOwnerRequest(string? Owner);
+/// <summary>Body for PATCH .../metadata — full replace of both fields.</summary>
+public record SetMediaMetadataRequest(List<string>? Owners, List<string>? Genres);
 
 /// <summary>
 /// "What's actually downloaded, and how do I watch it" endpoints — distinct
@@ -52,11 +52,11 @@ public static class MediaLibraryEndpoints
             .RequireAuthorization()
             .RequireRateLimiting("api");
 
-        app.MapPatch("/api/media/tv/{seriesId:int}/owner", HandleSetTvOwner)
+        app.MapPatch("/api/media/tv/{seriesId:int}/metadata", HandleSetTvMetadata)
             .RequireAuthorization()
             .RequireRateLimiting("api");
 
-        app.MapPatch("/api/media/movies/{movieId:int}/owner", HandleSetMovieOwner)
+        app.MapPatch("/api/media/movies/{movieId:int}/metadata", HandleSetMovieMetadata)
             .RequireAuthorization()
             .RequireRateLimiting("api");
 
@@ -65,12 +65,12 @@ public static class MediaLibraryEndpoints
 
     private static readonly HashSet<string> ValidOwners = new(StringComparer.OrdinalIgnoreCase) { "Paul", "Mom", "Dad" };
 
-    private static async Task<IResult> HandleGetDownloadedTv(ISonarrService sonarr, IMediaOwnershipService ownership)
+    private static async Task<IResult> HandleGetDownloadedTv(ISonarrService sonarr, IMediaMetadataService metadata)
     {
         try
         {
             var series = await sonarr.GetAllSeriesAsync();
-            ApplyOwners(series, "tv", ownership);
+            ApplyMetadata(series, "tv", metadata);
             return Results.Ok(series);
         }
         catch (HttpRequestException ex)
@@ -111,12 +111,12 @@ public static class MediaLibraryEndpoints
         }
     }
 
-    private static async Task<IResult> HandleGetDownloadedMovies(IRadarrService radarr, IMediaOwnershipService ownership)
+    private static async Task<IResult> HandleGetDownloadedMovies(IRadarrService radarr, IMediaMetadataService metadata)
     {
         try
         {
             var movies = await radarr.GetAllMoviesAsync();
-            ApplyOwners(movies, "movie", ownership);
+            ApplyMetadata(movies, "movie", metadata);
             return Results.Ok(movies);
         }
         catch (HttpRequestException ex)
@@ -185,34 +185,59 @@ public static class MediaLibraryEndpoints
         }
     }
 
-    private static IResult HandleSetTvOwner([FromRoute] int seriesId, [FromBody] SetOwnerRequest request, IMediaOwnershipService ownership)
+    private static IResult HandleSetTvMetadata([FromRoute] int seriesId, [FromBody] SetMediaMetadataRequest request, IMediaMetadataService metadata)
     {
-        if (!string.IsNullOrWhiteSpace(request.Owner) && !ValidOwners.Contains(request.Owner))
-            return Results.BadRequest(new { error = "owner must be one of Paul, Mom, Dad, or null" });
+        var validated = ValidateMetadata(request);
+        if (validated is null)
+            return Results.BadRequest(new { error = "owners may only contain Paul, Mom, Dad" });
 
-        ownership.SetOwner("tv", seriesId, request.Owner);
+        metadata.Set("tv", seriesId, validated);
         return Results.NoContent();
     }
 
-    private static IResult HandleSetMovieOwner([FromRoute] int movieId, [FromBody] SetOwnerRequest request, IMediaOwnershipService ownership)
+    private static IResult HandleSetMovieMetadata([FromRoute] int movieId, [FromBody] SetMediaMetadataRequest request, IMediaMetadataService metadata)
     {
-        if (!string.IsNullOrWhiteSpace(request.Owner) && !ValidOwners.Contains(request.Owner))
-            return Results.BadRequest(new { error = "owner must be one of Paul, Mom, Dad, or null" });
+        var validated = ValidateMetadata(request);
+        if (validated is null)
+            return Results.BadRequest(new { error = "owners may only contain Paul, Mom, Dad" });
 
-        ownership.SetOwner("movie", movieId, request.Owner);
+        metadata.Set("movie", movieId, validated);
         return Results.NoContent();
     }
 
-    /// <summary>Merges each item's recorded owner (if any) into its raw Sonarr/Radarr
-    /// JSON as an "owner" field, matched by that item's own "id".</summary>
-    private static void ApplyOwners(JsonArray items, string type, IMediaOwnershipService ownership)
+    private static MediaItemMetadata? ValidateMetadata(SetMediaMetadataRequest request)
     {
-        var owners = ownership.GetAllOwners();
+        var owners = (request.Owners ?? new List<string>())
+            .Select(o => o.Trim())
+            .Where(o => o.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (owners.Any(o => !ValidOwners.Contains(o)))
+            return null;
+
+        var genres = (request.Genres ?? new List<string>())
+            .Select(g => g.Trim())
+            .Where(g => g.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        return new MediaItemMetadata(owners, genres);
+    }
+
+    /// <summary>Merges each item's recorded owners/genres (if any) into its raw
+    /// Sonarr/Radarr JSON as "owners"/"customGenres" fields, matched by that
+    /// item's own "id". Named "customGenres" (not "genres") so it doesn't
+    /// collide with Sonarr/Radarr's own read-only genre field on the same object.</summary>
+    private static void ApplyMetadata(JsonArray items, string type, IMediaMetadataService metadataService)
+    {
+        var all = metadataService.GetAll();
         foreach (var item in items)
         {
             if (item is not JsonObject obj || obj["id"] is null) continue;
-            var owner = owners.GetValueOrDefault($"{type}:{obj["id"]!.GetValue<int>()}");
-            obj["owner"] = owner;
+            var meta = all.GetValueOrDefault($"{type}:{obj["id"]!.GetValue<int>()}");
+            obj["owners"] = new JsonArray((meta?.Owners ?? new List<string>()).Select(o => (JsonNode)o).ToArray());
+            obj["customGenres"] = new JsonArray((meta?.Genres ?? new List<string>()).Select(g => (JsonNode)g).ToArray());
         }
     }
 }

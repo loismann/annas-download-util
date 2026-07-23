@@ -1,0 +1,43 @@
+.series-detail-page {
+  padding: 1.5rem;
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.loading {
+  display: flex;
+  justify-content: center;
+  padding: 2rem;
+}
+
+.error {
+  color: #f44336;
+  margin: 1rem 0;
+}
+
+mat-accordion {
+  display: block;
+  margin-top: 1rem;
+}
+
+mat-expansion-panel {
+  margin-bottom: 0.5rem;
+}
+
+.episode-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.ep-number {
+  color: #777;
+  width: 2.5rem;
+  flex: 0 0 auto;
+}
+
+.ep-title {
+  flex: 1 1 auto;
+}

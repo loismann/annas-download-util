@@ -1,0 +1,11 @@
+<div class="storage-footer" *ngIf="stats">
+  <span class="stat"><strong>{{ stats.percentFull }}%</strong> full</span>
+  <span class="divider">·</span>
+  <span class="stat">Movies: {{ formatTb(stats.moviesBytes) }}</span>
+  <span class="divider">·</span>
+  <span class="stat">TV: {{ formatTb(stats.tvBytes) }}</span>
+  <span class="divider">·</span>
+  <span class="stat">Books: {{ formatTb(stats.booksBytes) }}</span>
+  <span class="divider">·</span>
+  <span class="stat">Free: {{ formatTb(stats.freeBytes) }}</span>
+</div>

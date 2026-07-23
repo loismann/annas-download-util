@@ -81,6 +81,21 @@ public record AiBookSearchItem(
 
 public record AiBookSearchResponse(string? Summary, List<AiBookSearchItem> Books);
 
+// ─── AI TV/Movie Search ──────────────────────────────────────────────────
+public record AiMediaSearchRequest(string Query);
+
+/// <summary>Type is the model's own best judgment of whether a title is
+/// normally catalogued as a TV series or a movie (e.g. anime OVAs can go
+/// either way) — the frontend resolves each one against Sonarr or Radarr
+/// accordingly.</summary>
+public record AiMediaSearchItem(
+    string Title,
+    int? Year,
+    string Type,
+    string? Blurb);
+
+public record AiMediaSearchResponse(string? Summary, List<AiMediaSearchItem> Results);
+
 // ─── Series Book Matching ────────────────────────────────────────────────
 public record MatchSeriesBooksRequest(
     string? SeriesName,

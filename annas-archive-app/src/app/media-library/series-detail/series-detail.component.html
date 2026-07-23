@@ -1,0 +1,53 @@
+<div class="series-detail-page">
+  <button mat-button (click)="goBack()">
+    <mat-icon>arrow_back</mat-icon> Back to Library
+  </button>
+
+  <div *ngIf="loading" class="loading">
+    <mat-spinner diameter="32"></mat-spinner>
+  </div>
+
+  <div *ngIf="error" class="error">{{ error }}</div>
+
+  <div *ngIf="!loading && series">
+    <h2>{{ series.title }}</h2>
+
+    <mat-accordion>
+      <mat-expansion-panel *ngFor="let group of seasonGroups">
+        <mat-expansion-panel-header>
+          <mat-panel-title>{{ group.label }}</mat-panel-title>
+          <button
+            mat-icon-button
+            color="primary"
+            [matTooltip]="group.allDownloaded ? 'Already downloaded' : 'Download this season'"
+            [disabled]="group.allDownloaded || downloadingSeasonNumber === group.seasonNumber || requestedSeasonNumbers.has(group.seasonNumber)"
+            (click)="$event.stopPropagation(); downloadSeason(group)"
+          >
+            <mat-icon>{{ requestedSeasonNumbers.has(group.seasonNumber) ? 'check_circle' : 'download' }}</mat-icon>
+          </button>
+          <button
+            mat-icon-button
+            matTooltip="Delete this season"
+            (click)="$event.stopPropagation(); deleteSeason(group)"
+          >
+            <mat-icon>delete</mat-icon>
+          </button>
+        </mat-expansion-panel-header>
+
+        <div class="episode-row" *ngFor="let ep of group.episodes">
+          <span class="ep-number">E{{ ep.episodeNumber }}</span>
+          <span class="ep-title">{{ ep.title || 'Episode ' + ep.episodeNumber }}</span>
+          <button
+            mat-raised-button
+            color="primary"
+            [disabled]="!ep.hasFile || resolvingEpisodeId === ep.id"
+            (click)="playEpisode(ep)"
+          >
+            <mat-icon>play_arrow</mat-icon>
+            {{ ep.hasFile ? 'Play' : 'Not downloaded' }}
+          </button>
+        </div>
+      </mat-expansion-panel>
+    </mat-accordion>
+  </div>
+</div>

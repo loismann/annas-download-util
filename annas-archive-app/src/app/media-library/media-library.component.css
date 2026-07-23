@@ -1,0 +1,97 @@
+.media-library-page {
+  padding: 1.5rem;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.header-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1.5rem;
+}
+
+.loading {
+  display: flex;
+  justify-content: center;
+  padding: 2rem;
+}
+
+.error {
+  color: #f44336;
+  margin-bottom: 1rem;
+}
+
+.empty-state {
+  color: #777;
+  text-align: center;
+  padding: 2rem;
+}
+
+.tiles-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 1.25rem;
+}
+
+.tile {
+  cursor: pointer;
+  position: relative;
+}
+
+.tile.not-ready .poster {
+  opacity: 0.5;
+}
+
+.tile.not-ready {
+  cursor: default;
+}
+
+.poster {
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  object-fit: cover;
+  border-radius: 4px;
+  display: block;
+}
+
+.tile-title {
+  margin-top: 0.5rem;
+  font-weight: 500;
+  font-size: 0.95rem;
+}
+
+.tile-meta {
+  color: #4caf50;
+  font-size: 0.8rem;
+}
+
+.tile-meta.pending {
+  color: #999;
+}
+
+.resolving-spinner {
+  position: absolute;
+  top: 45%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.delete-btn {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  z-index: 1;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.tile:hover .delete-btn {
+  opacity: 1;
+}
+
+.delete-btn:hover {
+  background: rgba(211, 47, 47, 0.85);
+}

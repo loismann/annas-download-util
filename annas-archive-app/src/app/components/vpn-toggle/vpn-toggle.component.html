@@ -1,0 +1,21 @@
+<div class="vpn-toggle-row" *ngIf="loaded">
+  <mat-slide-toggle
+    [(ngModel)]="enabled"
+    (change)="onToggleChange()"
+    name="vpnEnabled"
+    color="primary"
+    [disabled]="saving">
+    {{ enabled ? 'VPN on for Anna\'s Archive' : 'VPN off' }}
+  </mat-slide-toggle>
+
+  <mat-form-field appearance="outline" class="vpn-region-select" [class.disabled-hint]="!enabled">
+    <mat-label>Region</mat-label>
+    <mat-select
+      [(ngModel)]="region"
+      name="vpnRegion"
+      [disabled]="!enabled || saving"
+      (selectionChange)="onRegionChange()">
+      <mat-option *ngFor="let r of availableRegions" [value]="r">{{ r }}</mat-option>
+    </mat-select>
+  </mat-form-field>
+</div>

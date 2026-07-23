@@ -1,0 +1,73 @@
+<div class="media-search-page">
+  <div class="search-hero">
+    <div class="search-bar">
+      <mat-form-field appearance="outline" class="search-field" [floatLabel]="aiSearchExpanded ? 'always' : 'auto'">
+        <mat-label>{{ aiSearchExpanded ? 'Ask AI' : (searchingMovies ? 'Movie title' : 'Show title') }}</mat-label>
+        <ng-container *ngIf="!aiSearchExpanded; else aiSearchInput">
+          <input
+            matInput
+            [(ngModel)]="searchTerm"
+            (keyup.enter)="onSearch()"
+            name="searchTerm"
+          />
+        </ng-container>
+        <ng-template #aiSearchInput>
+          <textarea
+            matInput
+            [(ngModel)]="aiSearchQuery"
+            name="aiSearchQuery"
+            rows="4"
+            (keydown.enter)="onAiTextareaEnter($event)"
+          ></textarea>
+        </ng-template>
+        <button
+          mat-icon-button
+          matSuffix
+          type="button"
+          (click)="toggleAiSearch()"
+          [attr.aria-label]="aiSearchExpanded ? 'Close AI search' : 'Open AI search'"
+        >
+          <mat-icon>{{ aiSearchExpanded ? 'close' : 'smart_toy' }}</mat-icon>
+        </button>
+      </mat-form-field>
+
+      <button mat-raised-button color="primary" class="search-button" [disabled]="loading" (click)="onSearch()">
+        {{ aiSearchExpanded ? 'Ask AI' : 'Search' }}
+      </button>
+    </div>
+
+    <mat-button-toggle-group
+      class="mode-toggle"
+      [(ngModel)]="searchingMovies"
+      [disabled]="aiSearchExpanded"
+      name="searchMode"
+      aria-label="What to search for"
+    >
+      <mat-button-toggle [value]="false">TV Shows</mat-button-toggle>
+      <mat-button-toggle [value]="true">Movies</mat-button-toggle>
+    </mat-button-toggle-group>
+    <div class="ai-hint" *ngIf="aiSearchExpanded">AI search can return both TV shows and movies together</div>
+  </div>
+
+  <div *ngIf="loading" class="loading">
+    <mat-spinner diameter="32"></mat-spinner>
+  </div>
+
+  <div *ngIf="error" class="error">{{ error }}</div>
+
+  <div class="results-grid" *ngIf="!loading && entries.length">
+    <app-media-result-card
+      *ngFor="let entry of entries"
+      [result]="entry.result"
+      [addState]="entry.addState"
+      [progressLabel]="entry.progressLabel"
+      [alreadyAddedSeasons]="entry.alreadyAddedSeasons"
+      [downloadedSeasons]="entry.downloadedSeasons"
+      (add)="onAdd(entry)"
+    ></app-media-result-card>
+  </div>
+
+  <div *ngIf="!loading && !error && entries.length === 0 && searchTerm" class="empty-state">
+    No results yet — try searching above.
+  </div>
+</div>

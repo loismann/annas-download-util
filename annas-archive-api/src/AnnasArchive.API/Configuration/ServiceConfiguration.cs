@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
@@ -182,7 +183,40 @@ public static class ServiceConfiguration
             c.DefaultRequestHeaders.Add("upgrade-insecure-requests", "1");
             c.DefaultRequestHeaders.Add("Cache-Control", "max-age=0");
         })
+        // Routes only Anna's Archive traffic through the Gluetun/PIA proxy
+        // (AnnaArchiveProxy:Url, e.g. http://gluetun:8888) when configured
+        // AND the live VPN toggle (IVpnSettingsService) is enabled —
+        // everything else the app calls (OpenAI, Wikipedia, LibGen, Seq)
+        // stays on a normal direct connection. DynamicVpnProxy checks the
+        // toggle on every request, not just once at startup, so flipping
+        // it in the UI takes effect on the very next request — no restart.
+        .ConfigurePrimaryHttpMessageHandler(provider =>
+        {
+            var configuration = provider.GetRequiredService<IConfiguration>();
+            var proxyUrl = configuration["AnnaArchiveProxy:Url"];
+            var handler = new HttpClientHandler();
+            if (!string.IsNullOrWhiteSpace(proxyUrl))
+            {
+                var vpnSettings = provider.GetRequiredService<Services.IVpnSettingsService>();
+                handler.Proxy = new Services.DynamicVpnProxy(vpnSettings, new Uri(proxyUrl));
+                handler.UseProxy = true;
+            }
+            return handler;
+        })
         .AddScrapingResilience("AnnasArchive");
+
+        // VPN on/off + region toggle state, and the client used to talk to
+        // Gluetun's own control API to actually change region live.
+        services.AddSingleton<Services.IVpnSettingsService, Services.VpnSettingsService>();
+        services.AddHttpClient("GluetunControl", c =>
+        {
+            var controlUrl = configuration["Gluetun:ControlUrl"];
+            if (!string.IsNullOrWhiteSpace(controlUrl))
+            {
+                c.BaseAddress = new Uri(controlUrl);
+            }
+            c.Timeout = TimeSpan.FromSeconds(15);
+        });
 
         // Anna's Archive service with Playwright integration
         services.AddScoped<AnnaArchiveService>(provider =>
@@ -261,6 +295,24 @@ public static class ServiceConfiguration
         // Spotify HTTP client (external API)
         services.AddHttpClient<ISpotifyService, SpotifyService>()
             .AddStandardResilience("Spotify");
+
+        // Sonarr/Radarr — internal Docker network calls (see docker-compose.yml),
+        // so a shorter, LAN-appropriate timeout rather than StandardApiTimeout's
+        // 30s meant for external services.
+        services.AddHttpClient<ISonarrService, SonarrService>(c =>
+        {
+            c.Timeout = HttpTimeouts.MetadataLookupTimeout;
+        }).AddStandardResilience("Sonarr");
+
+        services.AddHttpClient<IRadarrService, RadarrService>(c =>
+        {
+            c.Timeout = HttpTimeouts.MetadataLookupTimeout;
+        }).AddStandardResilience("Radarr");
+
+        services.AddHttpClient<IJellyfinService, JellyfinService>(c =>
+        {
+            c.Timeout = HttpTimeouts.MetadataLookupTimeout;
+        }).AddStandardResilience("Jellyfin");
 
         return services;
     }

@@ -1,0 +1,20 @@
+# Gluetun's HTTP control server (port 8000) auth config. This port is never
+# published to the host — only reachable by other containers on the same
+# compose network (annas-archive, in this case), which is already a trusted
+# boundary, so "none" auth is a reasonable tradeoff here rather than
+# managing a separate API key for a purely internal call.
+[[roles]]
+name = "annas-archive"
+# Confirmed against Gluetun's actual route table — /v1/openvpn/settings is
+# GET-only (a subset view), the real read-modify-write endpoint for region
+# changes is /v1/vpn/settings. Gluetun validates every route here at
+# startup and refuses to start entirely if any of them don't exist, so
+# don't add one back without confirming it's real first.
+routes = [
+  "GET /v1/vpn/settings",
+  "PUT /v1/vpn/settings",
+  "GET /v1/vpn/status",
+  "PUT /v1/vpn/status",
+  "GET /v1/publicip/ip",
+]
+auth = "none"

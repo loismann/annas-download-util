@@ -1,0 +1,25 @@
+.vpn-toggle-row {
+  width: 100%;
+  max-width: 360px;
+  margin-bottom: var(--form-item-gap, 1rem);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+}
+
+.vpn-region-select {
+  width: 160px;
+  /* Compact — this sits inline with the toggle, not a full-width field
+     like the other form fields above it. */
+  font-size: 0.85rem;
+}
+
+.vpn-region-select.disabled-hint {
+  opacity: 0.6;
+}
+
+::ng-deep .vpn-region-select .mat-mdc-text-field-wrapper {
+  height: 44px;
+}

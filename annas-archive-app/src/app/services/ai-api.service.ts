@@ -42,6 +42,21 @@ export interface AiBookSearchResult {
   books: AiBookSearchItem[];
 }
 
+/* ─────────────── AI TV/movie search response shapes ─────────────────── */
+export interface AiMediaSearchItem {
+  title: string;
+  year?: number | null;
+  /** The model's own best judgment — "tv" or "movie" — resolved against
+   * Sonarr or Radarr accordingly by the caller. */
+  type: 'tv' | 'movie';
+  blurb?: string | null;
+}
+
+export interface AiMediaSearchResult {
+  summary?: string | null;
+  results: AiMediaSearchItem[];
+}
+
 /* ─────────────── author suggestion response ─────────────────────── */
 export interface AuthorSuggestion {
   author: string;
@@ -478,6 +493,18 @@ export class AiApiService {
     return this.http.post<MatchSeriesBooksResponse>(
       `${this.aiBaseUrl}/match-series-books`,
       request
+    );
+  }
+
+  /**
+   * AI-powered TV/movie search — natural language in, a list of suggested
+   * titles (each tagged tv or movie) out. Resolving each title into a real,
+   * addable result happens client-side (see MediaSearchComponent), not here.
+   */
+  aiMediaSearch(query: string): Observable<AiMediaSearchResult> {
+    return this.http.post<AiMediaSearchResult>(
+      `${this.aiBaseUrl}/media-search`,
+      { query }
     );
   }
 }

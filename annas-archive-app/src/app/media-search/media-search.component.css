@@ -1,0 +1,76 @@
+.media-search-page {
+  padding: 1.5rem;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.search-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 40vh;
+  gap: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.search-bar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  width: 100%;
+  max-width: 640px;
+}
+
+.search-field {
+  flex: 1 1 320px;
+  min-width: 200px;
+}
+
+/* mat-form-field's outline appearance renders at 56px tall by default —
+   matching that explicitly is simpler than trying to make the button
+   stretch to whatever height the field ends up at. */
+.search-button {
+  height: 56px;
+  padding: 0 2rem;
+}
+
+.mode-toggle {
+  font-size: 1.05rem;
+}
+
+.mode-toggle ::ng-deep .mat-button-toggle-label-content {
+  padding: 0 2.5rem;
+  line-height: 48px;
+}
+
+.ai-hint {
+  color: #777;
+  font-size: 0.85rem;
+  text-align: center;
+}
+
+.loading {
+  display: flex;
+  justify-content: center;
+  padding: 2rem;
+}
+
+.error {
+  color: #f44336;
+  margin-bottom: 1rem;
+}
+
+.empty-state {
+  color: #777;
+  text-align: center;
+  padding: 2rem;
+}
+
+.results-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 1.25rem;
+}

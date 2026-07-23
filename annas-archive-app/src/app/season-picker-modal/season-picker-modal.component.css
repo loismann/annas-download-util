@@ -1,0 +1,30 @@
+.quick-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.season-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+.season-row {
+  display: flex;
+}
+
+.episode-count {
+  color: #777;
+  font-size: 0.85rem;
+  margin-left: 4px;
+}
+
+.already-added-tag {
+  color: #4caf50;
+  font-size: 0.75rem;
+  margin-left: 8px;
+  font-weight: 500;
+}

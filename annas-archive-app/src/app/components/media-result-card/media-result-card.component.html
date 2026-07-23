@@ -1,0 +1,30 @@
+<mat-card class="media-card">
+  <div class="cover-frame">
+    <img
+      class="cover"
+      [src]="posterUrl"
+      (error)="onImgError($event)"
+      [alt]="result.title + ' poster'"
+    />
+  </div>
+  <div class="info">
+    <div class="title">{{ result.title }}</div>
+    <div class="meta" *ngIf="result.year">{{ result.year }}</div>
+    <div class="overview" *ngIf="result.overview">{{ result.overview }}</div>
+    <div class="already-added-label" *ngIf="alreadyAddedLabel">{{ alreadyAddedLabel }}</div>
+  </div>
+  <div class="card-actions">
+    <button
+      mat-raised-button
+      color="primary"
+      (click)="onAddClick()"
+      [disabled]="addState === 'adding' || addState === 'added'">
+      <ng-container [ngSwitch]="addState">
+        <span *ngSwitchCase="'adding'">Adding…</span>
+        <span *ngSwitchCase="'added'">{{ progressLabel || 'Added ✔' }}</span>
+        <span *ngSwitchCase="'error'">Retry</span>
+        <span *ngSwitchDefault>{{ buttonLabel }}</span>
+      </ng-container>
+    </button>
+  </div>
+</mat-card>

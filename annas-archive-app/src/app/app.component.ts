@@ -6,6 +6,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatMenuModule } from '@angular/material/menu';
 import { MatIconModule } from '@angular/material/icon';
 import { MatTooltipModule } from '@angular/material/tooltip';
+import { StorageFooterComponent } from './components/storage-footer/storage-footer.component';
 import { AuthService, UserActivity } from './services/auth.service';
 import { LoggerService } from './services/logger.service';
 import { VERSION } from './version';
@@ -23,7 +24,8 @@ import { switchMap, filter } from 'rxjs/operators';
     MatButtonModule,
     MatMenuModule,
     MatIconModule,
-    MatTooltipModule
+    MatTooltipModule,
+    StorageFooterComponent
   ],
   styles: [`
     .user-activity-indicators {
@@ -95,6 +97,14 @@ import { switchMap, filter } from 'rxjs/operators';
           <mat-icon>video_library</mat-icon>
           <span>Videos</span>
         </button>
+        <button *ngIf="authService.isAdmin()" mat-menu-item routerLink="/media">
+          <mat-icon>live_tv</mat-icon>
+          <span>TV &amp; Movies</span>
+        </button>
+        <button *ngIf="authService.isAdmin()" mat-menu-item routerLink="/media-library">
+          <mat-icon>video_library</mat-icon>
+          <span>Video Library</span>
+        </button>
       </mat-menu>
 
       <mat-menu #videosMenu="matMenu">
@@ -133,7 +143,10 @@ import { switchMap, filter } from 'rxjs/operators';
         </div>
       </div>
     </mat-toolbar>
-    <router-outlet></router-outlet>
+    <div [style.padding-bottom.px]="(authService.isAuthenticated$ | async) ? 32 : 0">
+      <router-outlet></router-outlet>
+    </div>
+    <app-storage-footer *ngIf="authService.isAuthenticated$ | async"></app-storage-footer>
   `
 })
 export class AppComponent implements OnInit, OnDestroy {

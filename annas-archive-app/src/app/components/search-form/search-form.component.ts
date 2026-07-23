@@ -15,6 +15,7 @@ import { debounceTime, distinctUntilChanged, takeUntil } from 'rxjs/operators';
 import { AiApiService, AuthorSuggestion } from '../../services/ai-api.service';
 import { LoggerService } from '../../services/logger.service';
 import { SearchFiltersComponent } from '../search-filters/search-filters.component';
+import { VpnToggleComponent } from '../vpn-toggle/vpn-toggle.component';
 
 export interface DomainHealth {
   name: string;
@@ -45,7 +46,8 @@ export interface SearchFormSubmitEvent {
     MatIconModule,
     MatSlideToggleModule,
     MatProgressSpinnerModule,
-    SearchFiltersComponent
+    SearchFiltersComponent,
+    VpnToggleComponent
   ],
   templateUrl: './search-form.component.html',
   styleUrls: ['./search-form.component.css']

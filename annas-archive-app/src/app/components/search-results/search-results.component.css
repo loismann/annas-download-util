@@ -33,7 +33,17 @@
 :host ::ng-deep mat-card.book-card .cover {
   flex: 0 0 180px;
   width: 180px;
-  height: 270px;
+  /* aspect-ratio, not a stretched height — stretching this to match
+     whatever height the info column happens to need (via align-items:
+     stretch) fixed the old "gap below a short card" problem, but
+     object-fit: cover then crops the image's SIDES to fill whatever
+     odd aspect ratio the stretched box ends up with on a tall card. A
+     fixed 2:3 ratio keeps the actual cover art undistorted at all times;
+     align-self: flex-start anchors it to the top instead of stretching, so
+     a card taller than the cover just shows a bit of card background below
+     it rather than a warped image. */
+  aspect-ratio: 2 / 3;
+  align-self: flex-start;
   object-fit: cover;
   border-radius: 0 !important;
   margin: 0;
@@ -281,7 +291,6 @@
   :host ::ng-deep mat-card.book-card .cover {
     flex: 0 0 140px;
     width: 140px;
-    height: 210px;
   }
 
   :host ::ng-deep mat-card.book-card .info .mat-card-header {
@@ -318,7 +327,6 @@
   :host ::ng-deep mat-card.book-card .cover {
     flex: 0 0 100px;
     width: 100px;
-    height: 150px;
   }
 
   :host ::ng-deep mat-card.book-card .info .mat-card-header {

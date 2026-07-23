@@ -17,6 +17,15 @@ public static class MiddlewareExtensions
     /// </summary>
     public static WebApplication UseSecurityHeaders(this WebApplication app)
     {
+        // Same origin already used to build Jellyfin embed URLs (see
+        // JellyfinService) — reused here rather than hardcoded a second time,
+        // so the two can't drift out of sync. Empty/missing just means the
+        // embedded player feature isn't configured; frame-src simply omits it.
+        var jellyfinProxyOrigin = app.Configuration["Jellyfin:ProxyBaseUrl"];
+        var frameSrc = string.IsNullOrWhiteSpace(jellyfinProxyOrigin)
+            ? "frame-src 'none'; "
+            : $"frame-src {jellyfinProxyOrigin}; ";
+
         app.Use(async (context, next) =>
         {
             context.Response.Headers["X-Content-Type-Options"] = "nosniff";
@@ -29,6 +38,9 @@ public static class MiddlewareExtensions
             // app doesn't use in production (it's served as a static SPA).
             // fonts.googleapis.com/fonts.gstatic.com are explicitly allowed
             // because index.html loads Roboto + Material Icons from Google Fonts.
+            // frame-src explicitly (rather than relying on default-src) is what
+            // lets the embedded Jellyfin player iframe actually load — without
+            // it, the browser blocks framing anything off-origin by default.
             context.Response.Headers["Content-Security-Policy"] =
                 "default-src 'self'; " +
                 "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
@@ -41,6 +53,7 @@ public static class MiddlewareExtensions
                 // execute code, so allowing any HTTPS source here is a much
                 // lower-risk relaxation than doing the same for scripts/styles.
                 "img-src 'self' data: https:; " +
+                frameSrc +
                 "connect-src 'self'";
             context.Response.Headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
             await next();

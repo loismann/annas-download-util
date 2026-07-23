@@ -48,9 +48,12 @@ public class CloudflareBypassService : ICloudflareBypassService
     private IPlaywright? _playwright;
     private IBrowser? _browser;
     private bool _disposed;
+    private readonly string? _proxyUrl;
+    private readonly IVpnSettingsService _vpnSettings;
 
-    public CloudflareBypassService(IConfiguration configuration)
+    public CloudflareBypassService(IConfiguration configuration, IVpnSettingsService vpnSettings)
     {
+        _vpnSettings = vpnSettings;
         // Used to be a hard 1. Raising this helps only up to a point — Seq
         // data showed that going to 4 concurrent contexts against Anna's
         // Archive made EVERY fetch slower (individual fetches went from
@@ -64,6 +67,13 @@ public class CloudflareBypassService : ICloudflareBypassService
         // Playwright__MaxConcurrentContexts if this needs tuning again.
         var maxConcurrent = configuration.GetValue("Playwright:MaxConcurrentContexts", 2);
         _browserLock = new SemaphoreSlim(maxConcurrent, maxConcurrent);
+
+        // Routes this browser's traffic through the Gluetun/PIA proxy when
+        // configured (AnnaArchiveProxy:Url, e.g. http://gluetun:8888) — this
+        // is the part that actually matters for "only Anna's Archive goes
+        // through the VPN", since the real scraping traffic goes through
+        // this Playwright browser, not the plain HttpClient fallback.
+        _proxyUrl = configuration["AnnaArchiveProxy:Url"];
     }
 
     private static readonly string[] UserAgents =
@@ -108,13 +118,7 @@ public class CloudflareBypassService : ICloudflareBypassService
         {
             await EnsureBrowserInitializedAsync();
 
-            var context = await _browser!.NewContextAsync(new BrowserNewContextOptions
-            {
-                UserAgent = UserAgents[Random.Shared.Next(UserAgents.Length)],
-                ViewportSize = new ViewportSize { Width = 1920, Height = 1080 },
-                Locale = "en-US",
-                TimezoneId = "America/New_York"
-            });
+            var context = await _browser!.NewContextAsync(BuildContextOptions());
 
             try
             {
@@ -199,13 +203,7 @@ public class CloudflareBypassService : ICloudflareBypassService
         {
             await EnsureBrowserInitializedAsync();
 
-            var context = await _browser!.NewContextAsync(new BrowserNewContextOptions
-            {
-                UserAgent = UserAgents[Random.Shared.Next(UserAgents.Length)],
-                ViewportSize = new ViewportSize { Width = 1920, Height = 1080 },
-                Locale = "en-US",
-                TimezoneId = "America/New_York"
-            });
+            var context = await _browser!.NewContextAsync(BuildContextOptions());
 
             try
             {
@@ -268,7 +266,12 @@ public class CloudflareBypassService : ICloudflareBypassService
             Log.Information("[CloudflareBypass] Initializing Playwright browser...");
 
             _playwright = await Playwright.CreateAsync();
-            _browser = await _playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
+            // No Proxy set here deliberately — proxy is applied per browser
+            // CONTEXT instead (see BuildContextOptions), not at the browser
+            // level, so the VPN on/off toggle can take effect per-request
+            // on this one shared, long-lived browser instance instead of
+            // requiring the whole browser to be relaunched.
+            var launchOptions = new BrowserTypeLaunchOptions
             {
                 Headless = true,
                 Args = new[]
@@ -281,7 +284,9 @@ public class CloudflareBypassService : ICloudflareBypassService
                     "--disable-accelerated-2d-canvas",
                     "--disable-gpu"
                 }
-            });
+            };
+
+            _browser = await _playwright.Chromium.LaunchAsync(launchOptions);
 
             Log.Information("[CloudflareBypass] Browser initialized successfully");
         }
@@ -289,6 +294,29 @@ public class CloudflareBypassService : ICloudflareBypassService
         {
             _initLock.Release();
         }
+    }
+
+    /// <summary>
+    /// Checks the live VPN toggle on every call — this, not the browser
+    /// launch options, is what makes flipping the VPN on/off in the UI take
+    /// effect on the very next request instead of requiring a restart.
+    /// </summary>
+    private BrowserNewContextOptions BuildContextOptions()
+    {
+        var options = new BrowserNewContextOptions
+        {
+            UserAgent = UserAgents[Random.Shared.Next(UserAgents.Length)],
+            ViewportSize = new ViewportSize { Width = 1920, Height = 1080 },
+            Locale = "en-US",
+            TimezoneId = "America/New_York"
+        };
+
+        if (!string.IsNullOrWhiteSpace(_proxyUrl) && _vpnSettings.Current.Enabled)
+        {
+            options.Proxy = new Proxy { Server = _proxyUrl };
+        }
+
+        return options;
     }
 
     private static string NormalizeDomain(string domain)

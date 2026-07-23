@@ -1,13 +1,13 @@
 services:
-  # Outbound VPN gateway — every byte annas-archive and seq send to the
-  # internet goes through this tunnel to PIA. Tailscale (a separate
-  # container, network_mode: host, not shown here) is completely untouched
-  # by this — inbound tailnet access still reaches the app via the same
-  # 127.0.0.1:8080 published below, it just happens to be published by this
-  # container now instead of annas-archive directly. Ships with its own
-  # built-in Docker HEALTHCHECK (queries an internal health server that
-  # actually verifies the tunnel is up, not just that the process is
-  # running) — no need to define one here.
+  # Outbound VPN gateway to PIA. Unlike the first version of this setup,
+  # annas-archive and seq are NOT network-namespaced into this container
+  # anymore — instead, Gluetun exposes an internal HTTP proxy that only the
+  # Anna's Archive-specific HTTP client and Playwright browser are pointed
+  # at (see AnnaArchiveProxy__Url below). Everything else the app calls
+  # (OpenAI, Wikipedia, LibGen, Seq) makes a normal direct connection,
+  # untouched by the VPN. Ships with its own built-in Docker HEALTHCHECK
+  # (queries an internal health server that actually verifies the tunnel is
+  # up, not just that the process is running) — no need to define one here.
   gluetun:
     image: qmcgaw/gluetun:latest
     container_name: gluetun
@@ -31,14 +31,16 @@ services:
       # Optional — comma-separated PIA region name(s), e.g. "US East". Left
       # unset picks automatically. See .env.example.
       - SERVER_REGIONS=${PIA_SERVER_REGIONS:-}
-    # Every port a sidecar container needs reachable from the host has to be
-    # published here — network_mode: service:gluetun (used by annas-archive
-    # and seq below) means they have no independent network stack of their
-    # own to publish a port from.
-    ports:
-      - "127.0.0.1:8080:8080"   # annas-archive
-      - "127.0.0.1:8081:80"     # seq web UI
-      - "127.0.0.1:5341:5341"   # seq ingestion API
+      # Internal HTTP proxy — reachable by other containers on this same
+      # compose network as http://gluetun:8888. Not published to the host;
+      # nothing outside Docker needs to reach it directly.
+      - HTTPPROXY=on
+      - HTTPPROXY_LISTENING_ADDRESS=:8888
+    volumes:
+      # Lets annas-archive call Gluetun's control API (port 8000, also not
+      # published to the host) to toggle VPN on/off and switch region in
+      # real time, without restarting this container.
+      - ./gluetun-auth-config.toml:/gluetun/auth/config.toml:ro
 
   # Watches container health and restarts anything that goes unhealthy —
   # this is what turns "the VPN tunnel dropped" into an actual restart
@@ -63,18 +65,13 @@ services:
         BUILD_TIMESTAMP: "${BUILD_TIMESTAMP:-unknown}"
     container_name: annas-archive
     restart: unless-stopped
-    # Shares Gluetun's network namespace entirely — this is what forces
-    # every outbound request through the PIA tunnel with zero app-side code
-    # changes. As a consequence this container can no longer publish its own
-    # ports or resolve sibling services by compose DNS name (see
-    # Logging__SeqUrl below, now "localhost" since seq shares this same
-    # namespace too).
-    network_mode: "service:gluetun"
+    # Bound to loopback only — never exposed on the LAN. Reachable exclusively
+    # via `tailscale serve`, which proxies from the tailnet to 127.0.0.1:8080.
+    ports:
+      - "127.0.0.1:8080:8080"
     depends_on:
-      gluetun:
-        condition: service_healthy
-    labels:
-      - autoheal=true
+      - seq
+      - gluetun
     environment:
       - LIBRARY_ROOT=/data/library
       - EPUB_CACHE_ROOT=/data/epub-cache
@@ -83,10 +80,31 @@ services:
       - DownloadTracking__StoragePath=/app/state/download-tracking.json
       - Quiz__StoragePath=/app/state/quiz-data
       - Logging__FilePath=/app/logs/annas-api-.log
-      # Was http://seq:5341 — compose's service-name DNS doesn't apply once
-      # this container has no network of its own; annas-archive and seq now
-      # share Gluetun's namespace, so they reach each other via localhost.
-      - Logging__SeqUrl=http://localhost:5341
+      # Seq's ingestion API — internal Docker network address, not exposed
+      # to the host directly. The container talks to Seq by its service name.
+      - Logging__SeqUrl=http://seq:5341
+      # Only the Anna's Archive HttpClient and Playwright browser are
+      # configured to route through this — see ServiceConfiguration.cs and
+      # CloudflareBypassService.cs. Everything else in the app ignores this
+      # entirely and connects directly.
+      - AnnaArchiveProxy__Url=http://gluetun:8888
+      # Gluetun's control API — used to toggle the VPN on/off and switch
+      # region in real time (see VpnSettingsService).
+      - Gluetun__ControlUrl=http://gluetun:8000
+      - Gluetun__StateStoragePath=/app/state/vpn-settings.json
+      # Sonarr/Radarr — internal Docker network addresses (their WebUI
+      # ports, also loopback-published on the host separately above). API
+      # keys are generated by each app on first boot, not chosen up front —
+      # see .env.example.
+      - Sonarr__BaseUrl=http://sonarr:8989
+      - Sonarr__ApiKey=${SONARR_API_KEY:-}
+      - Radarr__BaseUrl=http://radarr:7878
+      - Radarr__ApiKey=${RADARR_API_KEY:-}
+      - Jellyfin__BaseUrl=http://jellyfin:8096
+      - Jellyfin__ApiKey=${JELLYFIN_API_KEY:-}
+      # The nginx proxy's externally-reachable address — this is what the
+      # embedded player's iframe src actually points at, not Jellyfin directly.
+      - Jellyfin__ProxyBaseUrl=https://${TAILSCALE_HOSTNAME}:8097
       - Gaming__Enabled=false
       - API_RATE_LIMIT=300
       - LOGIN_RATE_LIMIT=30
@@ -107,12 +125,7 @@ services:
       # filesystem) — deliberately excludes external-dependency checks
       # (googlebooks/openai/openlibrary), so a third-party outage (Google
       # Books' quota has been exhausted for a while now) can't make Docker
-      # think the container itself is unhealthy and needs restarting. It
-      # also now doubles as the outbound-VPN canary from the app's side:
-      # if Gluetun's namespace goes stale after a restart, this app
-      # container's own HTTP server becomes unreachable through it and this
-      # check starts failing too, so autoheal restarts annas-archive right
-      # along with Gluetun instead of it being left stranded.
+      # think the container itself is unhealthy and needs restarting.
       test: ["CMD", "curl", "-f", "http://localhost:8080/health/live"]
       interval: 5s
       timeout: 5s
@@ -123,22 +136,183 @@ services:
   # rolling file sink) so request timings/durations become queryable and
   # chartable instead of just grep-able text. Bound to loopback only, same
   # as the main app; reach its web UI over Tailscale, not the public LAN.
-  # Shares Gluetun's namespace too (see annas-archive above) — Seq itself
-  # doesn't need the VPN for anything, but keeping it in the same namespace
-  # as annas-archive is what lets them reach each other without extra
-  # host-gateway plumbing.
   seq:
     image: datalust/seq:latest
     container_name: annas-seq
     restart: unless-stopped
-    network_mode: "service:gluetun"
-    depends_on:
-      gluetun:
-        condition: service_healthy
     environment:
       - ACCEPT_EULA=Y
       # Loopback-bound, Tailscale-only — same trust model as the main app —
       # so skipping Seq's own login screen is fine; nothing public-facing.
       - SEQ_FIRSTRUN_NOAUTHENTICATION=true
+    ports:
+      - "127.0.0.1:8081:80"   # web UI
+      - "127.0.0.1:5341:5341" # ingestion API
     volumes:
       - ../data/seq:/data
+
+  # ─── TV/movie acquisition stack ──────────────────────────────────────────
+  # A second, independent VPN gateway dedicated to torrent traffic. Kept
+  # entirely separate from the `gluetun` service above (which only proxies
+  # Anna's Archive's HTTP traffic) because qBittorrent needs its whole network
+  # namespace tunneled — BitTorrent's peer connections/DHT can't go through a
+  # simple HTTP proxy the way scraping traffic can. Always-on by design (no
+  # live toggle here) — if this tunnel is down, qBittorrent has no network at
+  # all, which is the correct kill-switch behavior for torrent traffic.
+  gluetun-torrent:
+    image: qmcgaw/gluetun:latest
+    container_name: gluetun-torrent
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    restart: unless-stopped
+    labels:
+      - autoheal=true
+    environment:
+      - VPN_SERVICE_PROVIDER=private internet access
+      - VPN_TYPE=openvpn
+      - OPENVPN_USER=${PIA_USER}
+      - OPENVPN_PASSWORD=${PIA_PASSWORD}
+      # Independent of the Anna's Archive gluetun's region — same PIA
+      # account, a second simultaneous connection (PIA allows several).
+      - SERVER_REGIONS=${PIA_TORRENT_SERVER_REGIONS:-}
+    ports:
+      # qBittorrent has no network identity of its own (see network_mode
+      # below), so its WebUI port is published here instead. Loopback-only,
+      # same as every other admin UI in this file — reach it via
+      # `tailscale serve`, not the LAN.
+      - "127.0.0.1:8090:8090"
+
+  # BitTorrent client. network_mode ties this container's entire network
+  # stack to gluetun-torrent's — not just an HTTP proxy — so every byte in
+  # or out (including peer connections) is forced through the VPN tunnel.
+  qbittorrent:
+    image: linuxserver/qbittorrent:latest
+    container_name: qbittorrent
+    restart: unless-stopped
+    network_mode: "service:gluetun-torrent"
+    depends_on:
+      - gluetun-torrent
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Etc/UTC
+      - WEBUI_PORT=8090
+    volumes:
+      - ../data/qbittorrent:/config
+      # Same host path Sonarr/Radarr mount below, at the same internal
+      # path (/data) in every container — required so completed downloads
+      # can be hardlinked into the library instead of copied across
+      # filesystems.
+      - /home/pferrer/Media:/data
+
+  # Usenet download client — the Usenet equivalent of qBittorrent above.
+  # Deliberately NOT routed through gluetun-torrent: the Usenet provider
+  # connection is already SSL-encrypted end-to-end (that's what you're
+  # paying for), and unlike BitTorrent there's no peer swarm exposing your
+  # IP, so the usual reason to VPN-wrap this traffic doesn't apply.
+  sabnzbd:
+    image: linuxserver/sabnzbd:latest
+    container_name: sabnzbd
+    restart: unless-stopped
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Etc/UTC
+    ports:
+      - "127.0.0.1:8091:8080"
+    volumes:
+      - ../data/sabnzbd:/config
+      # Same host path as qBittorrent/Sonarr/Radarr, same internal mount
+      # point — so Sonarr/Radarr can hardlink completed grabs from either
+      # download client into the library the same way.
+      - /home/pferrer/Media:/data
+
+  # Indexer manager — configure both torrent trackers and paid Usenet
+  # indexers here once; it pushes them to both Sonarr and Radarr
+  # automatically via its "Apps" sync. Not VPN-routed: indexer search
+  # traffic is plain HTTPS to tracker/indexer sites, lower-risk than actual
+  # torrenting, so it stays out of the VPN's scope on purpose (same "only
+  # route what needs it" reasoning as the Anna's Archive proxy).
+  prowlarr:
+    image: linuxserver/prowlarr:latest
+    container_name: prowlarr
+    restart: unless-stopped
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Etc/UTC
+    ports:
+      - "127.0.0.1:9696:9696"
+    volumes:
+      - ../data/prowlarr:/config
+
+  # TV show acquisition: search/identify, watch for new episodes, hand
+  # matching releases to qBittorrent (via gluetun-torrent, see setup notes),
+  # then organize finished downloads into /data/TV.
+  sonarr:
+    image: linuxserver/sonarr:latest
+    container_name: sonarr
+    restart: unless-stopped
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Etc/UTC
+    ports:
+      - "127.0.0.1:8989:8989"
+    volumes:
+      - ../data/sonarr:/config
+      - /home/pferrer/Media:/data
+
+  # Movie acquisition — same role as Sonarr, for /data/Movies.
+  radarr:
+    image: linuxserver/radarr:latest
+    container_name: radarr
+    restart: unless-stopped
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Etc/UTC
+    ports:
+      - "127.0.0.1:7878:7878"
+    volumes:
+      - ../data/radarr:/config
+      - /home/pferrer/Media:/data
+
+  # Media server — reads the same library Sonarr/Radarr populate.
+  jellyfin:
+    image: jellyfin/jellyfin:latest
+    container_name: jellyfin
+    restart: unless-stopped
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Etc/UTC
+    ports:
+      - "127.0.0.1:8096:8096"
+    volumes:
+      - ../data/jellyfin/config:/config
+      - ../data/jellyfin/cache:/cache
+      - /home/pferrer/Media:/data
+
+  # Sits in front of Jellyfin purely to make the embedded-player feature
+  # possible — Jellyfin's own CSP blocks iframe embedding entirely with no
+  # setting to relax it, so this strips that header and substitutes a
+  # permissive one scoped to our own app's origin. See
+  # jellyfin-proxy.conf.template — mounted under /etc/nginx/templates/ (not
+  # conf.d/ directly) so the official nginx image's envsubst-on-startup
+  # behavior fills in TAILSCALE_HOSTNAME from this container's own
+  # environment, instead of that hostname being hardcoded/committed.
+  jellyfin-proxy:
+    image: nginx:alpine
+    container_name: jellyfin-proxy
+    restart: unless-stopped
+    depends_on:
+      - jellyfin
+    environment:
+      - TAILSCALE_HOSTNAME=${TAILSCALE_HOSTNAME}
+    ports:
+      - "127.0.0.1:8097:80"
+    volumes:
+      - ./jellyfin-proxy.conf.template:/etc/nginx/templates/default.conf.template:ro

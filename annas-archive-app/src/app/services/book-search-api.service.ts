@@ -36,6 +36,13 @@ export interface DescriptionLookupResponse {
   description: string | null;
 }
 
+/* ─────────────── VPN (Gluetun/PIA) settings ─────────────────────── */
+export interface VpnSettingsResponse {
+  enabled: boolean;
+  region: string;
+  availableRegions: string[];
+}
+
 /* ─────────────── Download status ─────────────────────── */
 export interface DownloadStatusResponse {
   accountFastInfo: {
@@ -56,6 +63,7 @@ export class BookSearchApiService {
     : '';
   private readonly baseUrl = `${this.apiHost}/api/anna`;
   private readonly libgenBaseUrl = `${this.apiHost}/api/libgen`;
+  private readonly vpnBaseUrl = `${this.apiHost}/api/vpn`;
 
   constructor(
     private http: HttpClient,
@@ -393,5 +401,15 @@ export class BookSearchApiService {
       `${this.baseUrl}/book/description/gpt`,
       { params }
     );
+  }
+
+  /* ─────────────── VPN (Gluetun/PIA) settings ─────────────────────── */
+
+  getVpnSettings(): Observable<VpnSettingsResponse> {
+    return this.http.get<VpnSettingsResponse>(`${this.vpnBaseUrl}/settings`);
+  }
+
+  updateVpnSettings(enabled: boolean, region: string): Observable<VpnSettingsResponse> {
+    return this.http.post<VpnSettingsResponse>(`${this.vpnBaseUrl}/settings`, { enabled, region });
   }
 }

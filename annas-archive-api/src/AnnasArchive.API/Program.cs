@@ -82,9 +82,14 @@ app.MapAiUsageEndpoints();
 app.MapAiFlashcardsEndpoints();
 app.MapAiVocabEndpoints();
 app.MapAiBookSearchEndpoints();
+app.MapAiMediaSearchEndpoints();
 app.MapAiCharacterEndpoints();
 app.MapAiSummarizeEndpoints();
 app.MapAiSectionSummaryEndpoints();
+app.MapVpnSettingsEndpoints();
+app.MapMediaRequestEndpoints();
+app.MapMediaLibraryEndpoints();
+app.MapSystemStatsEndpoints();
 app.MapDevEndpoints();
 app.MapHealthCheckEndpoints();
 

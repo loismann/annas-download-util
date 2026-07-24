@@ -533,7 +533,7 @@
     </div>
 
     <div class="reader-controls" *ngIf="chapterContent">
-      <div class="reader-controls-left" *ngIf="!showSidebar">
+      <div class="reader-controls-left">
         <button mat-icon-button aria-label="Previous page" (click)="pageBack()" [disabled]="!canPageBack()">
           <mat-icon>chevron_left</mat-icon>
         </button>

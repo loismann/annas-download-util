@@ -24,6 +24,29 @@
       <div class="meta-label">Total {{ showingMovies ? 'movies' : 'shows' }}</div>
       <div class="meta-value">{{ totalCount }}</div>
     </div>
+
+    <div class="bulk-edit-section">
+      <button
+        *ngIf="bulkEditMode"
+        mat-raised-button
+        color="primary"
+        class="select-all-visible-btn"
+        (click)="selectAllVisible()"
+      >
+        Select All Visible ({{ filteredCount }})
+      </button>
+
+      <button mat-raised-button color="accent" class="bulk-edit-toggle" (click)="toggleBulkEditMode()">
+        {{ bulkEditMode ? 'Exit Bulk Edit' : 'Bulk Edit' }}
+      </button>
+
+      <div *ngIf="bulkEditMode && selectedForBulk.size > 0" class="bulk-edit-controls">
+        <div class="selection-counter">
+          {{ selectedForBulk.size }} {{ selectedForBulk.size === 1 ? 'item' : 'items' }} selected
+        </div>
+        <button mat-raised-button color="primary" (click)="openBulkEditDialog()">Edit Selected</button>
+      </div>
+    </div>
   </aside>
 
   <section class="library-panel">
@@ -111,8 +134,21 @@
       [class.large]="tileSize === 'large'"
       *ngIf="!loading && !showingMovies && filteredTvTiles.length"
     >
-      <div class="tile" *ngFor="let tile of filteredTvTiles" (click)="openSeries(tile)">
+      <div
+        class="tile"
+        [class.bulk-selected]="bulkEditMode && tile.result.id !== undefined && selectedForBulk.has(tile.result.id)"
+        *ngFor="let tile of filteredTvTiles"
+        (click)="openSeries(tile)"
+      >
+        <div *ngIf="bulkEditMode" class="bulk-checkbox-wrapper">
+          <mat-checkbox
+            [checked]="tile.result.id !== undefined && selectedForBulk.has(tile.result.id)"
+            (change)="toggleTileSelection(tile.result.id)"
+            (click)="$event.stopPropagation()"
+          ></mat-checkbox>
+        </div>
         <button
+          *ngIf="!bulkEditMode"
           mat-icon-button
           class="edit-btn"
           matTooltip="Edit genres &amp; owners"
@@ -121,6 +157,7 @@
           <mat-icon>edit</mat-icon>
         </button>
         <button
+          *ngIf="!bulkEditMode"
           mat-icon-button
           class="delete-btn"
           matTooltip="Delete show"
@@ -130,7 +167,19 @@
         </button>
         <img class="poster" [src]="posterUrl(tile.result)" [alt]="tile.result.title" />
         <div class="tile-title">{{ tile.result.title }}</div>
-        <div class="tile-meta">{{ tile.downloadedSeasonCount }} / {{ tile.totalSeasonCount }} seasons downloaded</div>
+        <div class="tile-status">
+          <ng-container *ngIf="getProgress(tile.result.id) as progress; else seasonsFallback">
+            <div class="progress-bar-track">
+              <div class="progress-bar-fill" [style.width.%]="progress.percent"></div>
+            </div>
+            <div class="progress-label">
+              {{ progress.percent }}%<span *ngIf="progress.speedLabel"> · {{ progress.speedLabel }}</span><span *ngIf="progress.etaLabel"> · ETA {{ progress.etaLabel }}</span>
+            </div>
+          </ng-container>
+          <ng-template #seasonsFallback>
+            <div class="tile-meta">{{ tile.downloadedSeasonCount }} / {{ tile.totalSeasonCount }} seasons downloaded</div>
+          </ng-template>
+        </div>
         <div class="owner-badge">{{ ownerLabel(tile.result) }}</div>
       </div>
     </div>
@@ -145,10 +194,19 @@
       <div
         class="tile"
         [class.not-ready]="!movie['hasFile']"
+        [class.bulk-selected]="bulkEditMode && movie.id !== undefined && selectedForBulk.has(movie.id)"
         *ngFor="let movie of filteredMovieTiles"
         (click)="playMovie(movie)"
       >
+        <div *ngIf="bulkEditMode" class="bulk-checkbox-wrapper">
+          <mat-checkbox
+            [checked]="movie.id !== undefined && selectedForBulk.has(movie.id)"
+            (change)="toggleTileSelection(movie.id)"
+            (click)="$event.stopPropagation()"
+          ></mat-checkbox>
+        </div>
         <button
+          *ngIf="!bulkEditMode"
           mat-icon-button
           class="edit-btn"
           matTooltip="Edit genres &amp; owners"
@@ -157,6 +215,7 @@
           <mat-icon>edit</mat-icon>
         </button>
         <button
+          *ngIf="!bulkEditMode"
           mat-icon-button
           class="delete-btn"
           matTooltip="Delete movie"
@@ -166,8 +225,28 @@
         </button>
         <img class="poster" [src]="posterUrl(movie)" [alt]="movie.title" />
         <div class="tile-title">{{ movie.title }}</div>
-        <div class="tile-meta" *ngIf="movie['hasFile']">Ready to watch</div>
-        <div class="tile-meta pending" *ngIf="!movie['hasFile']">Still downloading…</div>
+        <div class="tile-status">
+          <div class="tile-meta" *ngIf="movie['hasFile']">Ready to watch</div>
+          <ng-container *ngIf="!movie['hasFile']">
+            <ng-container *ngIf="getProgress(movie.id) as progress; else queuedFallback">
+              <div class="progress-bar-track">
+                <div class="progress-bar-fill" [style.width.%]="progress.percent"></div>
+              </div>
+              <div class="progress-label">
+                {{ progress.percent }}%<span *ngIf="progress.speedLabel"> · {{ progress.speedLabel }}</span><span *ngIf="progress.etaLabel"> · ETA {{ progress.etaLabel }}</span>
+              </div>
+            </ng-container>
+            <ng-template #queuedFallback>
+              <button
+                type="button"
+                class="find-releases-link"
+                (click)="openMovieReleasePicker(movie, $event)"
+              >
+                No release found — search manually
+              </button>
+            </ng-template>
+          </ng-container>
+        </div>
         <mat-spinner
           *ngIf="resolvingMovieId === movie.tmdbId"
           diameter="24"

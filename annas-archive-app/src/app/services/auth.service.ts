@@ -22,6 +22,8 @@ export interface UserActivity {
   minutesAgo: number | null;
   isFullTone: boolean;   // Active within 30 min - full color
   isHalfTone: boolean;   // Active 30-60 min - half-toned
+  lastAction: string | null;       // Broad category of their last request, e.g. "Reading a book"
+  activeForMinutes: number | null; // How long their current unbroken activity streak has run
 }
 
 @Injectable({ providedIn: 'root' })

@@ -95,12 +95,53 @@ public static class MiddlewareExtensions
             {
                 var userName = context.User.FindFirst(ClaimTypes.Name)?.Value;
                 var activityService = context.RequestServices.GetRequiredService<IUserActivityService>();
-                activityService.RecordActivity(userName ?? "");
+                activityService.RecordActivity(userName ?? "", ClassifyAction(context.Request.Path));
             }
             await next();
         });
 
         return app;
+    }
+
+    /// <summary>Maps a request path to the broad, human-readable "what are they
+    /// doing" category shown next to each user's activity dot — so a deploy can
+    /// be timed around someone mid-download instead of just going by idle/active.
+    /// Order matters: more specific routes are checked before the broader
+    /// prefixes they'd otherwise fall into (a book download lives under
+    /// /api/anna/book/..., the same prefix as book search). Returns null for
+    /// anything not worth classifying (health checks, the activity poll itself,
+    /// admin-only tools) — RecordActivity keeps the previous action in that case
+    /// rather than blanking it out.</summary>
+    private static string? ClassifyAction(PathString path)
+    {
+        var p = path.Value?.ToLowerInvariant() ?? "";
+
+        if (p.Contains("/download") || p.Contains("/send-to-"))
+            return "Downloading a book";
+
+        if (p.StartsWith("/api/library/reader/epub/"))
+            return "Reading a book";
+
+        if (p.StartsWith("/api/anna/book") || p.StartsWith("/api/libgen/book") || p.StartsWith("/api/library/books/search"))
+            return "Searching for books";
+
+        if (p.StartsWith("/api/media/tv/search") || p.StartsWith("/api/media/movies/search") || p.StartsWith("/api/ai/media-search"))
+            return "Searching for TV & Movies";
+
+        if (p.StartsWith("/api/media/tv/watch") || p.StartsWith("/api/media/movies/watch") ||
+            (p.StartsWith("/api/video-library/video/") && p.EndsWith("/stream")))
+            return "Watching media";
+
+        if (p.StartsWith("/api/media/"))
+            return "Browsing TV & Movie library";
+
+        if (p.StartsWith("/api/library/"))
+            return "Browsing ebook library";
+
+        if (p.StartsWith("/api/video-library/"))
+            return "Browsing video library";
+
+        return null;
     }
 
     /// <summary>

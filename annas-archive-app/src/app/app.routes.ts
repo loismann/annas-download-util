@@ -20,9 +20,9 @@ export const routes: Routes = [
   { path: 'spotifinator', component: SpotifinatorComponent, canActivate: [authGuard, adminGuard] },
   { path: 'quiz', component: QuizComponent, canActivate: [authGuard, adminGuard] },
   { path: 'videos', component: VideoLibraryComponent, canActivate: [authGuard, adminGuard] },
-  { path: 'media', component: MediaSearchComponent, canActivate: [authGuard, adminGuard] },
-  { path: 'media-library', component: MediaLibraryComponent, canActivate: [authGuard, adminGuard] },
-  { path: 'media-library/series/:seriesId', component: SeriesDetailComponent, canActivate: [authGuard, adminGuard] },
+  { path: 'media', component: MediaSearchComponent, canActivate: [authGuard] },
+  { path: 'media-library', component: MediaLibraryComponent, canActivate: [authGuard] },
+  { path: 'media-library/series/:seriesId', component: SeriesDetailComponent, canActivate: [authGuard] },
   // Legacy routes redirect to main videos page
   { path: 'videos/download', redirectTo: '/videos', pathMatch: 'full' },
   { path: 'youtube', redirectTo: '/videos', pathMatch: 'full' },

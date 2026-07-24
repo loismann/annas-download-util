@@ -136,12 +136,9 @@ public static class AuthEndpoints
             if (userName.Equals(currentUser, StringComparison.OrdinalIgnoreCase))
                 continue;
 
-            double? minutesAgo = null;
-            var lastActivity = activityService.GetLastActivity(userName);
-            if (lastActivity.HasValue)
-            {
-                minutesAgo = (now - lastActivity.Value).TotalMinutes;
-            }
+            var activity = activityService.GetActivity(userName);
+            double? minutesAgo = activity is null ? null : (now - activity.LastSeenUtc).TotalMinutes;
+            double? activeForMinutes = activity is null ? null : (now - activity.SessionStartUtc).TotalMinutes;
 
             // Always return both users with outline, fill based on activity
             activityList.Add(new
@@ -150,7 +147,9 @@ public static class AuthEndpoints
                 userName,
                 minutesAgo = minutesAgo.HasValue ? Math.Round(minutesAgo.Value, 1) : (double?)null,
                 isFullTone = minutesAgo.HasValue && minutesAgo <= 30,     // Full color: active within 30 min
-                isHalfTone = minutesAgo.HasValue && minutesAgo > 30 && minutesAgo <= 60  // Half-toned: 30-60 min
+                isHalfTone = minutesAgo.HasValue && minutesAgo > 30 && minutesAgo <= 60,  // Half-toned: 30-60 min
+                lastAction = activity?.LastAction,
+                activeForMinutes = activeForMinutes.HasValue ? Math.Round(activeForMinutes.Value, 1) : (double?)null
             });
         }
 

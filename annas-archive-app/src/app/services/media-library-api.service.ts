@@ -16,6 +16,26 @@ export interface WatchResponse {
   embedUrl: string;
 }
 
+/** One release Radarr/Sonarr's indexers found for a movie/season — raw
+ * passthrough from their own interactive-search response, so "rejections"
+ * (why the quality profile would normally skip this one) and "rejected"
+ * ride along untouched for the picker UI to explain the choice to the user. */
+export interface ReleaseInfo {
+  guid: string;
+  indexerId: number;
+  title: string;
+  size: number;
+  indexer?: string;
+  protocol?: 'torrent' | 'usenet';
+  seeders?: number;
+  leechers?: number;
+  ageHours?: number;
+  rejected?: boolean;
+  rejections?: string[];
+  quality?: { quality?: { name?: string } };
+  [key: string]: unknown;
+}
+
 /**
  * Client for "what's downloaded, how do I watch it" — distinct from
  * MediaSearchApiService (search/add). Sonarr/Radarr are the source of truth
@@ -78,5 +98,30 @@ export class MediaLibraryApiService {
   /** Full replace of a downloaded movie's owners + genre tags. */
   setMovieMetadata(movieId: number, owners: string[], genres: string[]): Observable<void> {
     return this.http.patch<void>(`${this.baseUrl}/movies/${movieId}/metadata`, { owners, genres });
+  }
+
+  /** Radarr's own interactive search for a movie — includes releases its
+   * quality profile would normally reject (e.g. too large), so the user can
+   * grab one manually when nothing smaller is available. */
+  searchMovieReleases(movieId: number): Observable<ReleaseInfo[]> {
+    return this.http.get<ReleaseInfo[]>(`${this.baseUrl}/movies/${movieId}/releases`);
+  }
+
+  /** Force-grabs one specific release regardless of the quality profile's
+   * normal rejections — pass back the exact object from searchMovieReleases. */
+  grabMovieRelease(movieId: number, release: ReleaseInfo): Observable<void> {
+    return this.http.post<void>(`${this.baseUrl}/movies/${movieId}/releases/grab`, release);
+  }
+
+  /** Sonarr's own interactive search for a season — same rejection info as
+   * searchMovieReleases, scoped to one season rather than the whole series. */
+  searchSeasonReleases(seriesId: number, seasonNumber: number): Observable<ReleaseInfo[]> {
+    return this.http.get<ReleaseInfo[]>(`${this.baseUrl}/tv/${seriesId}/season/${seasonNumber}/releases`);
+  }
+
+  /** Force-grabs one specific season release — pass back the exact object
+   * from searchSeasonReleases. */
+  grabSeasonRelease(seriesId: number, seasonNumber: number, release: ReleaseInfo): Observable<void> {
+    return this.http.post<void>(`${this.baseUrl}/tv/${seriesId}/season/${seasonNumber}/releases/grab`, release);
   }
 }

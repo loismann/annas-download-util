@@ -97,11 +97,11 @@ import { switchMap, filter } from 'rxjs/operators';
           <mat-icon>video_library</mat-icon>
           <span>Videos</span>
         </button>
-        <button *ngIf="authService.isAdmin()" mat-menu-item routerLink="/media">
+        <button mat-menu-item routerLink="/media">
           <mat-icon>live_tv</mat-icon>
           <span>TV &amp; Movies</span>
         </button>
-        <button *ngIf="authService.isAdmin()" mat-menu-item routerLink="/media-library">
+        <button mat-menu-item routerLink="/media-library">
           <mat-icon>video_library</mat-icon>
           <span>Video Library</span>
         </button>
@@ -132,7 +132,7 @@ import { switchMap, filter } from 'rxjs/operators';
                 class="activity-dot"
                 [class.full-tone]="activity.isFullTone"
                 [class.half-tone]="activity.isHalfTone"
-                [matTooltip]="activity.userName + ' - ' + (activity.minutesAgo === null ? 'no recent activity' : activity.minutesAgo < 1 ? 'just now' : Math.round(activity.minutesAgo) + 'm ago')">
+                [matTooltip]="activityTooltip(activity)">
                 {{ activity.initial }}
               </div>
             </div>
@@ -152,7 +152,6 @@ import { switchMap, filter } from 'rxjs/operators';
 export class AppComponent implements OnInit, OnDestroy {
   buildTime = '';
   userActivity: UserActivity[] = [];
-  Math = Math; // Expose Math to template
 
   private activitySubscription?: Subscription;
 
@@ -205,5 +204,30 @@ export class AppComponent implements OnInit, OnDestroy {
   logout(): void {
     this.authService.logout();
     this.router.navigate(['/login']);
+  }
+
+  /** "Mom - Reading a book - just now (active 12m)" — what a deploy-safety
+   * glance needs: is this person active, what are they doing, and have they
+   * been going long enough that interrupting them would actually hurt. */
+  activityTooltip(activity: UserActivity): string {
+    if (activity.minutesAgo === null) {
+      return `${activity.userName} - no recent activity`;
+    }
+
+    const recency = activity.minutesAgo < 1 ? 'just now' : `${Math.round(activity.minutesAgo)}m ago`;
+    const action = activity.lastAction ?? 'Active';
+    const continuity = activity.activeForMinutes !== null && activity.activeForMinutes >= 1
+      ? ` (active ${this.formatDuration(activity.activeForMinutes)})`
+      : '';
+
+    return `${activity.userName} - ${action} - ${recency}${continuity}`;
+  }
+
+  private formatDuration(minutes: number): string {
+    const rounded = Math.round(minutes);
+    if (rounded < 60) return `${rounded}m`;
+    const hours = Math.floor(rounded / 60);
+    const mins = rounded % 60;
+    return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
   }
 }

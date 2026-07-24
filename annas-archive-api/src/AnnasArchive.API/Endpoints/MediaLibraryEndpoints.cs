@@ -60,6 +60,22 @@ public static class MediaLibraryEndpoints
             .RequireAuthorization()
             .RequireRateLimiting("api");
 
+        app.MapGet("/api/media/movies/{movieId:int}/releases", HandleSearchMovieReleases)
+            .RequireAuthorization()
+            .RequireRateLimiting("api");
+
+        app.MapPost("/api/media/movies/{movieId:int}/releases/grab", HandleGrabMovieRelease)
+            .RequireAuthorization()
+            .RequireRateLimiting("api");
+
+        app.MapGet("/api/media/tv/{seriesId:int}/season/{seasonNumber:int}/releases", HandleSearchSeasonReleases)
+            .RequireAuthorization()
+            .RequireRateLimiting("api");
+
+        app.MapPost("/api/media/tv/{seriesId:int}/season/{seasonNumber:int}/releases/grab", HandleGrabSeasonRelease)
+            .RequireAuthorization()
+            .RequireRateLimiting("api");
+
         return app;
     }
 
@@ -203,6 +219,65 @@ public static class MediaLibraryEndpoints
 
         metadata.Set("movie", movieId, validated);
         return Results.NoContent();
+    }
+
+    private static async Task<IResult> HandleSearchMovieReleases([FromRoute] int movieId, IRadarrService radarr)
+    {
+        try
+        {
+            var releases = await radarr.SearchReleasesAsync(movieId);
+            return Results.Ok(releases);
+        }
+        catch (HttpRequestException ex)
+        {
+            Log.Warning("[MediaLibrary] Radarr release search failed: {Message}", ex.Message);
+            return Results.Json(new { error = "Radarr is unavailable" }, statusCode: StatusCodes.Status503ServiceUnavailable);
+        }
+    }
+
+    private static async Task<IResult> HandleGrabMovieRelease(
+        [FromRoute] int movieId, [FromBody] JsonObject release, IRadarrService radarr)
+    {
+        try
+        {
+            await radarr.GrabReleaseAsync(release);
+            return Results.NoContent();
+        }
+        catch (HttpRequestException ex)
+        {
+            Log.Warning("[MediaLibrary] Radarr grab release failed: {Message}", ex.Message);
+            return Results.Json(new { error = "Radarr rejected the grab request" }, statusCode: StatusCodes.Status502BadGateway);
+        }
+    }
+
+    private static async Task<IResult> HandleSearchSeasonReleases(
+        [FromRoute] int seriesId, [FromRoute] int seasonNumber, ISonarrService sonarr)
+    {
+        try
+        {
+            var releases = await sonarr.SearchSeasonReleasesAsync(seriesId, seasonNumber);
+            return Results.Ok(releases);
+        }
+        catch (HttpRequestException ex)
+        {
+            Log.Warning("[MediaLibrary] Sonarr release search failed: {Message}", ex.Message);
+            return Results.Json(new { error = "Sonarr is unavailable" }, statusCode: StatusCodes.Status503ServiceUnavailable);
+        }
+    }
+
+    private static async Task<IResult> HandleGrabSeasonRelease(
+        [FromRoute] int seriesId, [FromRoute] int seasonNumber, [FromBody] JsonObject release, ISonarrService sonarr)
+    {
+        try
+        {
+            await sonarr.GrabReleaseAsync(release);
+            return Results.NoContent();
+        }
+        catch (HttpRequestException ex)
+        {
+            Log.Warning("[MediaLibrary] Sonarr grab release failed: {Message}", ex.Message);
+            return Results.Json(new { error = "Sonarr rejected the grab request" }, statusCode: StatusCodes.Status502BadGateway);
+        }
     }
 
     private static MediaItemMetadata? ValidateMetadata(SetMediaMetadataRequest request)

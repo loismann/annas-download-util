@@ -8,37 +8,32 @@ import { MatSelectModule } from '@angular/material/select';
 import { MatChipsModule, MatChipInputEvent } from '@angular/material/chips';
 import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
+import { MatSlideToggleModule } from '@angular/material/slide-toggle';
 import { COMMA, ENTER } from '@angular/cdk/keycodes';
 import { CreateGenreDialogComponent } from '../create-genre-dialog/create-genre-dialog.component';
 
-export interface MediaEditDialogData {
-  title: string;
-  genres: string[];
-  owners: string[];
-  /** Every genre tag already used anywhere in the media library, for the "Add a Genre" dropdown. */
+export interface MediaBulkEditDialogData {
+  count: number;
   availableGenres: string[];
-  /** Pre-formatted (e.g. "4.2 GB") — omitted/undefined when there's nothing on disk yet. */
-  sizeLabel?: string;
 }
 
-export interface MediaEditDialogResult {
+export interface MediaBulkEditDialogResult {
   genres: string[];
   owners: string[];
+  mode: 'append' | 'replace';
 }
 
 const OWNERS = ['Paul', 'Mom', 'Dad'];
 
 /**
- * Edit dialog for a downloaded show/movie's genre tags and owner(s) — the
- * media-library equivalent of BookEditDialogComponent, minus the book-only
- * concerns (cover picker, Kindle/Dropbox send, reader). Genres are free-form
- * user-created tags (reuses CreateGenreDialogComponent unchanged), same as
- * the ebook library; owners support multiple selections at once, unlike
- * books' single-owner tag, since more than one household member can watch
- * the same show/movie.
+ * Bulk genre/owner editor for the media library — same shape as the ebook
+ * library's BulkEditDialogComponent (append-vs-replace toggle, blank starting
+ * selections since selected items may already differ), applied to Sonarr
+ * series / Radarr movies instead of books. Deliberately doesn't offer bulk
+ * delete — that wasn't asked for, and per-item delete already exists.
  */
 @Component({
-  selector: 'app-media-edit-dialog',
+  selector: 'app-media-bulk-edit-dialog',
   standalone: true,
   imports: [
     CommonModule,
@@ -49,15 +44,15 @@ const OWNERS = ['Paul', 'Mom', 'Dad'];
     MatChipsModule,
     MatIconModule,
     MatButtonModule,
+    MatSlideToggleModule,
     MatDividerModule
   ],
   template: `
-    <div class="media-edit-dialog">
-      <h2 mat-dialog-title>{{ data.title }}</h2>
-      <div *ngIf="data.sizeLabel" class="size-label">{{ data.sizeLabel }} on disk</div>
+    <div class="media-bulk-edit-dialog">
+      <h2 mat-dialog-title>Edit {{ data.count }} selected {{ data.count === 1 ? 'item' : 'items' }}</h2>
 
       <div mat-dialog-content>
-        <div class="section-label">Owners</div>
+        <div class="section-label">Owners to apply</div>
         <div class="owner-toggles">
           <button
             type="button"
@@ -85,7 +80,7 @@ const OWNERS = ['Paul', 'Mom', 'Dad'];
         </mat-form-field>
 
         <mat-form-field appearance="outline" class="w-100">
-          <mat-label>Genres</mat-label>
+          <mat-label>Genres to apply</mat-label>
           <mat-chip-grid #chipGrid aria-label="Genres">
             <mat-chip-row *ngFor="let genre of genres" (removed)="removeGenre(genre)" [editable]="false">
               {{ genre }}
@@ -100,21 +95,20 @@ const OWNERS = ['Paul', 'Mom', 'Dad'];
             (matChipInputTokenEnd)="addGenre($event)"
           />
         </mat-form-field>
+
+        <mat-slide-toggle [(ngModel)]="appendMode" class="append-toggle">
+          {{ appendMode ? 'Append to existing owners/genres' : 'Replace existing owners/genres' }}
+        </mat-slide-toggle>
       </div>
 
       <div mat-dialog-actions align="end">
         <button mat-stroked-button (click)="onCancel()">Cancel</button>
-        <button mat-raised-button color="primary" (click)="onSave()">Save</button>
+        <button mat-raised-button color="primary" (click)="onSave()">Apply</button>
       </div>
     </div>
   `,
   styles: [`
-    .media-edit-dialog { min-width: 420px; }
-    .size-label {
-      margin: -12px 0 16px;
-      font-size: 0.8rem;
-      color: #64748b;
-    }
+    .media-bulk-edit-dialog { min-width: 420px; }
     .w-100 { width: 100%; }
     .section-label {
       font-size: 0.8rem;
@@ -147,23 +141,25 @@ const OWNERS = ['Paul', 'Mom', 'Dad'];
       align-items: center;
       gap: 6px;
     }
+    .append-toggle {
+      display: block;
+      margin-top: 12px;
+    }
   `]
 })
-export class MediaEditDialogComponent {
+export class MediaBulkEditDialogComponent {
   readonly separatorKeysCodes = [ENTER, COMMA] as const;
   readonly owners = OWNERS;
 
-  genres: string[];
-  selectedOwners: Set<string>;
+  genres: string[] = [];
+  selectedOwners = new Set<string>();
+  appendMode = true;
 
   constructor(
-    public dialogRef: MatDialogRef<MediaEditDialogComponent, MediaEditDialogResult>,
-    @Inject(MAT_DIALOG_DATA) public data: MediaEditDialogData,
+    public dialogRef: MatDialogRef<MediaBulkEditDialogComponent, MediaBulkEditDialogResult>,
+    @Inject(MAT_DIALOG_DATA) public data: MediaBulkEditDialogData,
     private dialog: MatDialog
-  ) {
-    this.genres = [...(data.genres || [])];
-    this.selectedOwners = new Set(data.owners || []);
-  }
+  ) {}
 
   get availableGenreOptions(): string[] {
     const genresLower = this.genres.map(g => g.toLowerCase());
@@ -221,7 +217,8 @@ export class MediaEditDialogComponent {
   onSave(): void {
     this.dialogRef.close({
       genres: this.genres,
-      owners: Array.from(this.selectedOwners)
+      owners: Array.from(this.selectedOwners),
+      mode: this.appendMode ? 'append' : 'replace'
     });
   }
 

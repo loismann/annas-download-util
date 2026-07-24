@@ -1228,7 +1228,7 @@ export class BookReaderComponent implements OnInit, OnDestroy {
     };
 
     // Use fetch to POST the request and get streaming response
-    const apiBase = window.location.protocol + '//' + window.location.hostname + ':5051';
+    const apiBase = window.location.hostname === 'localhost' ? 'http://localhost:5001' : '';
     const token = this.authService.getToken();
     const headers: Record<string, string> = {
       'Content-Type': 'application/json'
@@ -2754,7 +2754,7 @@ DO NOT include common words. Only create flashcards for terms that significantly
     };
 
     // Use fetch to GET with SSE support
-    const apiBase = window.location.protocol + '//' + window.location.hostname + ':5051';
+    const apiBase = window.location.hostname === 'localhost' ? 'http://localhost:5001' : '';
     const token = this.authService.getToken();
     const headers: Record<string, string> = {};
     if (token) {

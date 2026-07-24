@@ -1,5 +1,6 @@
 using System.Net.Http.Headers;
 using System.Text.Json.Nodes;
+using AnnasArchive.Core.Exceptions;
 using Serilog;
 
 namespace AnnasArchive.API.Services;
@@ -30,12 +31,30 @@ public interface ISonarrService
 
     Task<JsonObject> GetQueueAsync(CancellationToken ct = default);
 
+    /// <summary>Every release Sonarr's indexers found for this season, including
+    /// ones its own quality profile would auto-reject (e.g. too large under a
+    /// size-capped profile) — each entry carries a "rejections" list explaining
+    /// why, so the caller can make an informed judgment call Sonarr wouldn't
+    /// make on its own.</summary>
+    Task<JsonArray> SearchSeasonReleasesAsync(int seriesId, int seasonNumber, CancellationToken ct = default);
+
+    /// <summary>Force-grabs one specific release regardless of the quality
+    /// profile's normal rejections — takes the exact object returned by
+    /// SearchSeasonReleasesAsync for the chosen release, unmodified, since
+    /// Sonarr's grab endpoint expects the full release object back (same
+    /// idiom as AddSeriesAsync).</summary>
+    Task GrabReleaseAsync(JsonObject release, CancellationToken ct = default);
+
     /// <summary>Per-episode list for a series, including Sonarr's own
     /// tracked <c>hasFile</c> flag — the source of truth for "is this
     /// actually downloaded," not something Jellyfin needs to be asked.</summary>
     Task<JsonArray> GetEpisodesAsync(int seriesId, CancellationToken ct = default);
 
-    /// <summary>Removes the whole series from Sonarr and deletes all its files.</summary>
+    /// <summary>Removes the whole series from Sonarr and deletes all its files —
+    /// first cancels any in-progress queue items for this series (telling the
+    /// download client to remove the torrent/nzb job and delete its data too,
+    /// both completed and still-downloading), so nothing orphaned keeps
+    /// running after the series itself is gone.</summary>
     Task DeleteSeriesAsync(int seriesId, CancellationToken ct = default);
 
     /// <summary>Deletes just one season's files and un-monitors that season,
@@ -195,6 +214,31 @@ public class SonarrService : ISonarrService
         return node as JsonObject ?? [];
     }
 
+    public async Task<JsonArray> SearchSeasonReleasesAsync(int seriesId, int seasonNumber, CancellationToken ct = default)
+    {
+        // Sonarr's own "interactive search" scoped to a season — same one
+        // triggered by the magnifying-glass icon in Sonarr's UI — so results
+        // already include the full rejection reasoning Sonarr computed
+        // against the series' profile.
+        var response = await _http.GetAsync($"/api/v3/release?seriesId={seriesId}&seasonNumber={seasonNumber}", ct);
+        response.EnsureSuccessStatusCode();
+        var node = await response.Content.ReadFromJsonAsync<JsonNode>(cancellationToken: ct);
+        return node as JsonArray ?? [];
+    }
+
+    public async Task GrabReleaseAsync(JsonObject release, CancellationToken ct = default)
+    {
+        var response = await _http.PostAsJsonAsync("/api/v3/release", release, ct);
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = await response.Content.ReadAsStringAsync(ct);
+            Log.Warning("[Sonarr] Grab release failed ({StatusCode}): {Body}", response.StatusCode, body);
+            throw new ExternalApiException("Sonarr", ArrErrorParsing.ExtractMessage(body), response.StatusCode, isTransient: false);
+        }
+
+        Log.Information("[Sonarr] Manually grabbed release '{Title}'", release["title"]?.ToString());
+    }
+
     public async Task<JsonArray> GetEpisodesAsync(int seriesId, CancellationToken ct = default)
     {
         var response = await _http.GetAsync($"/api/v3/episode?seriesId={seriesId}", ct);
@@ -205,6 +249,13 @@ public class SonarrService : ISonarrService
 
     public async Task DeleteSeriesAsync(int seriesId, CancellationToken ct = default)
     {
+        // Deleting the series record alone doesn't touch anything already
+        // grabbed and sitting in the download client's queue — that torrent/nzb
+        // job keeps running completely independently, orphaned, forever. Clear
+        // those first so nothing keeps downloading/seeding after the series
+        // itself is gone.
+        await RemoveQueueItemsForAsync("seriesId", seriesId, ct);
+
         var response = await _http.DeleteAsync($"/api/v3/series/{seriesId}?deleteFiles=true", ct);
         if (!response.IsSuccessStatusCode)
         {
@@ -214,6 +265,43 @@ public class SonarrService : ISonarrService
         }
 
         Log.Information("[Sonarr] Deleted series {SeriesId} and its files", seriesId);
+    }
+
+    /// <summary>Finds every queue entry matching this series/movie and removes
+    /// it with removeFromClient=true — this tells qBittorrent/SABnzbd to
+    /// actually cancel the job and delete its data (both the incomplete/temp
+    /// location and, if already finished, the completed-downloads location),
+    /// not just clear Sonarr's own view of the queue. Best-effort: a queue
+    /// item that fails to remove (e.g. a race where it finished importing in
+    /// the meantime) is logged, not thrown — it shouldn't block the series
+    /// delete that's about to happen anyway.</summary>
+    private async Task RemoveQueueItemsForAsync(string idField, int id, CancellationToken ct)
+    {
+        try
+        {
+            var queue = await GetQueueAsync(ct);
+            var records = queue["records"] as JsonArray ?? [];
+            foreach (var record in records)
+            {
+                if (record is not JsonObject obj) continue;
+                if ((int?)obj[idField] != id) continue;
+
+                var queueId = (int?)obj["id"];
+                if (queueId is null) continue;
+
+                var deleteResponse = await _http.DeleteAsync(
+                    $"/api/v3/queue/{queueId}?removeFromClient=true&blocklist=false", ct);
+                if (!deleteResponse.IsSuccessStatusCode)
+                {
+                    Log.Warning("[Sonarr] Remove queue item {QueueId} for series {SeriesId} failed: {StatusCode}",
+                        queueId, id, deleteResponse.StatusCode);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warning("[Sonarr] Failed to clear queue items for series {SeriesId}: {Message}", id, ex.Message);
+        }
     }
 
     public async Task DeleteSeasonAsync(int seriesId, int seasonNumber, CancellationToken ct = default)

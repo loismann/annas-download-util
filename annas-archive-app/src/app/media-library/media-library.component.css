@@ -79,6 +79,33 @@
   font-weight: 700;
 }
 
+.bulk-edit-section {
+  margin-top: 1rem;
+  padding: 1rem;
+  background: #f8fafc;
+  border-radius: 8px;
+}
+
+.select-all-visible-btn,
+.bulk-edit-toggle {
+  width: 100%;
+  margin-bottom: 0.5rem;
+}
+
+.bulk-edit-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.selection-counter {
+  font-weight: 600;
+  color: #3f51b5;
+  font-size: 0.9rem;
+  padding: 0.5rem 0;
+  text-align: center;
+}
+
 .library-controls {
   display: flex;
   align-items: center;
@@ -202,6 +229,23 @@
   position: relative;
 }
 
+.tile.bulk-selected {
+  outline: 3px solid #3f51b5;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.bulk-checkbox-wrapper {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 10;
+  background: #ffffff;
+  border-radius: 4px;
+  padding: 4px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
 .tile.not-ready .poster {
   opacity: 0.5;
 }
@@ -222,15 +266,77 @@
   margin-top: 0.5rem;
   font-weight: 500;
   font-size: 0.95rem;
+  line-height: 1.3;
+  /* Always reserves 2 lines, even for a short one-line title, so every
+     tile's status/owner-badge row starts at the same Y position — without
+     this, a long title wrapping to 2 lines pushes everything below it down
+     relative to tiles with a shorter, single-line title in the same row. */
+  min-height: calc(1.3em * 2);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .tile-meta {
   color: #4caf50;
   font-size: 0.8rem;
+  line-height: 1.2;
+}
+
+.tile-status {
+  /* Reserves the same height whether it holds a single line of plain text
+     (e.g. "Ready to watch") or a progress bar + label — otherwise a
+     downloading tile (bar + text) would be taller than a ready one (text
+     only) in the same row, misaligning the owner badges below them. */
+  min-height: 2.3em;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+}
+
+.progress-bar-track {
+  height: 4px;
+  background: #e2e8f0;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background: #3f51b5;
+  transition: width 0.5s ease;
+}
+
+.progress-label {
+  font-size: 0.72rem;
+  color: #64748b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .tile-meta.pending {
   color: #999;
+}
+
+.find-releases-link {
+  border: none;
+  background: none;
+  padding: 0;
+  margin: 0;
+  font-size: 0.8rem;
+  color: #c2410c;
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.find-releases-link:hover {
+  text-decoration: underline;
 }
 
 .resolving-spinner {

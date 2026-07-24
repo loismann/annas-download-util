@@ -27,6 +27,13 @@
           </button>
           <button
             mat-icon-button
+            matTooltip="Find releases manually"
+            (click)="openSeasonReleasePicker(group, $event)"
+          >
+            <mat-icon>search</mat-icon>
+          </button>
+          <button
+            mat-icon-button
             matTooltip="Delete this season"
             (click)="$event.stopPropagation(); deleteSeason(group)"
           >

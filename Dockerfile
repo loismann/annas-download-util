@@ -24,6 +24,16 @@ WORKDIR /app
 
 # yt-dlp (standalone binary, no Python required) + Node.js (yt-dlp's JS runtime
 # for signature extraction) + curl for the download itself.
+#
+# Node/npm previously came from `apt-get install nodejs npm`, which is slow
+# (Debian's packages pull in a huge tree of separately-packaged JS libraries)
+# but reliable. An attempt to speed this up by copying Node's binaries from
+# the frontend-build stage instead broke `npx` at runtime ("Cannot find
+# module '../lib/cli.js'") — copying just the bin/ symlinks and
+# node_modules/ isn't enough to reproduce a fully working npm install, likely
+# due to how npm's own internals resolve paths relative to its real install
+# location. Reverted to plain apt-get: a slow-but-working build beats a fast
+# one that silently fails and leaves the old container running untouched.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl nodejs npm ca-certificates \
     && curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp \

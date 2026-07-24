@@ -15,6 +15,7 @@ import {
   JellyfinPlayerModalData
 } from '../../components/jellyfin-player-modal/jellyfin-player-modal.component';
 import { ConfirmDialogComponent, ConfirmDialogData } from '../../components/confirm-dialog/confirm-dialog.component';
+import { ReleasePickerDialogComponent, ReleasePickerDialogData } from '../../components/release-picker-dialog/release-picker-dialog.component';
 import { LoggerService } from '../../services/logger.service';
 
 interface SeasonGroup {
@@ -149,6 +150,34 @@ export class SeriesDetailComponent implements OnInit {
         this.logger.error('[SeriesDetailComponent] downloadSeason failed', err);
         this.error = `Could not request ${group.label}.`;
       }
+    });
+  }
+
+  /** Sonarr auto-rejects releases that don't fit the quality profile (e.g.
+   * too large under a size-capped profile) and just leaves episodes
+   * "missing" with no visibility into why — this opens every release its
+   * indexers found, rejected ones included, so the user can grab an
+   * oversized one themselves when nothing smaller is available. */
+  openSeasonReleasePicker(group: SeasonGroup, event: Event): void {
+    event.stopPropagation();
+    if (!this.series?.id) return;
+    const seriesId = this.series.id;
+    const seasonNumber = group.seasonNumber;
+
+    const dialogRef = this.dialog.open<ReleasePickerDialogComponent, ReleasePickerDialogData, boolean>(
+      ReleasePickerDialogComponent,
+      {
+        width: '600px',
+        data: {
+          title: `Find releases — ${this.series.title} — ${group.label}`,
+          fetch: () => this.api.searchSeasonReleases(seriesId, seasonNumber),
+          grab: (release) => this.api.grabSeasonRelease(seriesId, seasonNumber, release)
+        }
+      }
+    );
+
+    dialogRef.afterClosed().subscribe(grabbed => {
+      if (grabbed) this.requestedSeasonNumbers.add(seasonNumber);
     });
   }
 

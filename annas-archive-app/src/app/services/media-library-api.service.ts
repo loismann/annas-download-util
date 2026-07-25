@@ -100,6 +100,17 @@ export class MediaLibraryApiService {
     return this.http.patch<void>(`${this.baseUrl}/movies/${movieId}/metadata`, { owners, genres });
   }
 
+  /** Favorite/unfavorite a show on behalf of whoever's logged in — the acting owner is
+   *  resolved server-side from the session, not passed from here. */
+  setTvFavorite(seriesId: number, favorited: boolean): Observable<{ success: boolean; favorites: string[] }> {
+    return this.http.post<{ success: boolean; favorites: string[] }>(`${this.baseUrl}/tv/${seriesId}/favorite`, { favorited });
+  }
+
+  /** Favorite/unfavorite a movie on behalf of whoever's logged in — same semantics as setTvFavorite. */
+  setMovieFavorite(movieId: number, favorited: boolean): Observable<{ success: boolean; favorites: string[] }> {
+    return this.http.post<{ success: boolean; favorites: string[] }>(`${this.baseUrl}/movies/${movieId}/favorite`, { favorited });
+  }
+
   /** Radarr's own interactive search for a movie — includes releases its
    * quality profile would normally reject (e.g. too large), so the user can
    * grab one manually when nothing smaller is available. */

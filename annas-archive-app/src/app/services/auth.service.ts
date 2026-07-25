@@ -143,4 +143,23 @@ export class AuthService {
   getUserActivity(): Observable<UserActivity[]> {
     return this.http.get<UserActivity[]>(`${this.baseUrl}/user-activity`);
   }
+
+  /** Resolves the current session to one of the three household owner tags,
+   * for library pages to default-filter to "your own stuff" on load — mirrors
+   * LibraryHelpers.ResolveUserDisplayName server-side (substring match on the
+   * configured display name, e.g. "Boo! (Mom)" -> "Mom"). isAdmin is checked
+   * first as a direct shortcut for Paul, rather than relying on his display
+   * name happening to contain "paul". */
+  getOwnerName(): 'Paul' | 'Mom' | 'Dad' | null {
+    if (this.isAdmin()) return 'Paul';
+
+    const name = this.getName();
+    if (!name) return null;
+
+    const normalized = name.trim().toLowerCase();
+    if (normalized.includes('mom')) return 'Mom';
+    if (normalized.includes('dad')) return 'Dad';
+    if (normalized.includes('paul')) return 'Paul';
+    return null;
+  }
 }

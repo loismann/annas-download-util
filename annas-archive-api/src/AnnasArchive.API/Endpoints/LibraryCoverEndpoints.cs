@@ -91,7 +91,8 @@ public static class LibraryCoverEndpoints
         [FromRoute] string fileName,
         [FromBody] LibraryBookCoverUpdate update,
         HttpContext context,
-        IHttpClientFactory httpFactory)
+        IHttpClientFactory httpFactory,
+        LibraryIndexCache cache)
     {
         if (update == null || string.IsNullOrWhiteSpace(update.CoverUrl))
             return Results.BadRequest(new { error = "coverUrl is required." });
@@ -176,7 +177,8 @@ public static class LibraryCoverEndpoints
             Log.Information("[library-cover]   Serialized JSON: {updatedJson.Substring(0, Math.Min(200, updatedJson.Length))}...");
 
             await File.WriteAllTextAsync(metaPath, updatedJson);
-            Log.Information("[library-cover] WROTE metadata to {metaPath}");
+            cache.InvalidateCache();
+            Log.Information("[library-cover] WROTE metadata to {MetaPath}", metaPath);
 
             var baseUrl = $"{context.Request.Scheme}://{context.Request.Host}";
             var normalized = LibraryHelpers.NormalizeLibraryCoverUrl(updated.CoverUrl, baseUrl);
@@ -185,8 +187,7 @@ public static class LibraryCoverEndpoints
         }
         catch (Exception ex)
         {
-            Log.Information("[library] Failed to update cover metadata for {safeFileName}: {ex.Message}");
-            Log.Information("[library] Stack trace: {ex.StackTrace}");
+            Log.Warning("[library] Failed to update cover metadata for {SafeFileName}: {Message}", safeFileName, ex.Message);
             return Results.Problem("Failed to update cover metadata.");
         }
     }
@@ -194,7 +195,8 @@ public static class LibraryCoverEndpoints
     private static async Task<IResult> HandleUpdateCoverBytes(
         [FromRoute] string fileName,
         [FromBody] LibraryBookCoverBytesUpdate update,
-        HttpContext context)
+        HttpContext context,
+        LibraryIndexCache cache)
     {
         Log.Information("[library-cover-bytes] === START === Received request for {fileName}", fileName);
 
@@ -316,6 +318,7 @@ public static class LibraryCoverEndpoints
 
             Log.Information("[library-cover-bytes] Writing metadata to: {Path}", metaPath);
             await File.WriteAllTextAsync(metaPath, updatedJson);
+            cache.InvalidateCache();
             Log.Information("[library-cover-bytes] ✓ Metadata written. New CoverUrl: {NewUrl}", updated.CoverUrl);
 
             var baseUrl = $"{context.Request.Scheme}://{context.Request.Host}";

@@ -165,7 +165,7 @@ describe('BookEditDialogComponent', () => {
       component.tags = ['Science Fiction', 'updated-tag']; // Genre is now a tag
       component.series = 'Updated Series';
       component.selectedCoverUrl = 'http://example.com/new-cover.jpg';
-      component.selectedOwner = null;
+      component.selectedOwners = new Set();
 
       // Act
       component.onSave();
@@ -177,8 +177,7 @@ describe('BookEditDialogComponent', () => {
         series: 'Updated Series',
         title: 'Updated Title',
         authors: ['Updated Author'],
-        coverUrl: 'http://example.com/new-cover.jpg',
-        owner: null
+        coverUrl: 'http://example.com/new-cover.jpg'
       });
     });
 
@@ -189,7 +188,7 @@ describe('BookEditDialogComponent', () => {
       component.tags = ['non-genre-tag'];
       component.series = null;
       component.selectedCoverUrl = null;
-      component.selectedOwner = null;
+      component.selectedOwners = new Set();
 
       // Act
       component.onSave();
@@ -202,15 +201,15 @@ describe('BookEditDialogComponent', () => {
 
   describe('Owner Selection', () => {
     it('should extract owner from initial tags', () => {
-      // The test data doesn't include an owner tag, so selectedOwner should be null
-      expect(component.selectedOwner).toBeNull();
+      // The test data doesn't include an owner tag, so selectedOwners should be empty
+      expect(component.selectedOwners.size).toBe(0);
     });
 
-    it('should filter owner tag from displayed tags and set selectedOwner when present in data', () => {
-      // Create a new component with owner tag in the data
+    it('should filter owner tags from displayed tags and set selectedOwners when present in data', () => {
+      // Create a new component with owner tags in the data
       const dataWithOwner: BookEditDialogData = {
         ...testDialogData,
-        tags: ['test', "Dad's Books", 'another-tag']
+        tags: ['test', "Dad's Books", "Mom's Books", 'another-tag']
       };
 
       // We need to create a new component instance with this data
@@ -225,14 +224,14 @@ describe('BookEditDialogComponent', () => {
         mockDialog
       );
 
-      expect(testComponent.selectedOwner).toBe("Dad's Books");
+      expect(testComponent.selectedOwners).toEqual(new Set(["Dad's Books", "Mom's Books"]));
       expect(testComponent.tags).toEqual(['test', 'another-tag']);
       expect(testComponent.tags).not.toContain("Dad's Books");
     });
 
-    it('should include owner tag in saved tags when owner is selected', () => {
+    it('should include owner tags in saved tags when owners are selected', () => {
       // Arrange
-      component.selectedOwner = "Dad's Books";
+      component.selectedOwners = new Set(["Dad's Books", "Mom's Books"]);
       component.tags = ['test-tag'];
 
       // Act
@@ -241,13 +240,13 @@ describe('BookEditDialogComponent', () => {
       // Assert
       const callArgs = mockDialogRef.close.calls.mostRecent().args[0];
       expect(callArgs.tags).toContain("Dad's Books");
+      expect(callArgs.tags).toContain("Mom's Books");
       expect(callArgs.tags).toContain('test-tag');
-      expect(callArgs.owner).toBe("Dad's Books");
     });
 
-    it('should not include owner tag in saved tags when owner is null', () => {
+    it('should not include any owner tag in saved tags when no owner is selected', () => {
       // Arrange
-      component.selectedOwner = null;
+      component.selectedOwners = new Set();
       component.tags = ['test-tag'];
 
       // Act
@@ -256,7 +255,6 @@ describe('BookEditDialogComponent', () => {
       // Assert
       const callArgs = mockDialogRef.close.calls.mostRecent().args[0];
       expect(callArgs.tags).toEqual(['test-tag']);
-      expect(callArgs.owner).toBeNull();
     });
 
     it('should filter owner tags from genres list', () => {

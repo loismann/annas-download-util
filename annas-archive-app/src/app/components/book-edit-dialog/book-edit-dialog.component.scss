@@ -248,12 +248,69 @@
   min-width: 350px;
 }
 
+// Favorite toggle - prominent, above the owner field
+.favorite-toggle-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  border: 1px solid #fda4af;
+  background: #ffffff;
+  color: #e11d48;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  margin-bottom: 0.5rem;
+
+  &:hover {
+    background: #fff1f2;
+  }
+
+  &.favorited {
+    background: #e11d48;
+    color: #ffffff;
+    border-color: #e11d48;
+  }
+}
+
 // Owner Selection Field - prominent at top
 .owner-field {
   background: rgba(63, 81, 181, 0.04);
   border-radius: 8px;
-  padding: 4px 8px 0 8px;
+  padding: 8px 8px 10px 8px;
   margin-bottom: 0.25rem;
+
+  .section-label {
+    font-size: 0.75rem;
+    color: rgba(0, 0, 0, 0.6);
+    margin-bottom: 6px;
+  }
+
+  .owner-toggles {
+    display: flex;
+    gap: 8px;
+  }
+
+  .owner-toggle {
+    border: 1px solid #cbd5f5;
+    background: #ffffff;
+    color: #3f51b5;
+    padding: 6px 16px;
+    border-radius: 999px;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: all 0.15s ease;
+
+    &.active {
+      background: #3f51b5;
+      color: #ffffff;
+      border-color: #3f51b5;
+    }
+  }
 }
 
 // Add Genre Field - styled similarly to owner field

@@ -35,6 +35,8 @@ export interface MediaLookupResult {
    * `genres` field (which rides along untouched via the index signature
    * below, since it's whatever TheTVDB/TMDB reports). */
   customGenres?: string[];
+  /** Which household member(s) have favorited this item ("Paul"/"Mom"/"Dad"). See MediaMetadataService. */
+  favorites?: string[];
   [key: string]: unknown;
 }
 

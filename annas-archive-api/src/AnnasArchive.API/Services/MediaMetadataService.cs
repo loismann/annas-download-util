@@ -4,9 +4,13 @@ using Serilog;
 namespace AnnasArchive.API.Services;
 
 /// <summary>Per-item editable metadata — who requested a Sonarr series / Radarr
-/// movie, and user-created genre tags (independent of whatever genres
-/// Sonarr/Radarr themselves report from TheTVDB/TMDB).</summary>
-public record MediaItemMetadata(List<string> Owners, List<string> Genres);
+/// movie, user-created genre tags (independent of whatever genres
+/// Sonarr/Radarr themselves report from TheTVDB/TMDB), and which household
+/// member(s) have favorited it.</summary>
+public record MediaItemMetadata(List<string> Owners, List<string> Genres, List<string>? Favorites = null)
+{
+    public List<string> Favorites { get; set; } = Favorites ?? new List<string>();
+}
 
 /// <summary>
 /// Tracks owner(s) ("Paul"/"Mom"/"Dad", one or more) and free-form genre tags
@@ -20,6 +24,7 @@ public interface IMediaMetadataService
 {
     void Set(string type, int id, MediaItemMetadata metadata);
     void AddOwner(string type, int id, string owner);
+    void SetFavorite(string type, int id, string owner, bool favorited);
     MediaItemMetadata? Get(string type, int id);
     IReadOnlyDictionary<string, MediaItemMetadata> GetAll();
 }
@@ -40,7 +45,7 @@ public class MediaMetadataService : IMediaMetadataService
         lock (_fileLock)
         {
             var data = LoadUnsafe();
-            if (metadata.Owners.Count == 0 && metadata.Genres.Count == 0)
+            if (metadata.Owners.Count == 0 && metadata.Genres.Count == 0 && metadata.Favorites.Count == 0)
                 data.Remove(key);
             else
                 data[key] = metadata;
@@ -60,6 +65,33 @@ public class MediaMetadataService : IMediaMetadataService
                 existing.Owners.Add(owner);
 
             data[key] = existing;
+            SaveUnsafe(data);
+        }
+    }
+
+    public void SetFavorite(string type, int id, string owner, bool favorited)
+    {
+        var key = $"{type}:{id}";
+        lock (_fileLock)
+        {
+            var data = LoadUnsafe();
+            var existing = data.GetValueOrDefault(key) ?? new MediaItemMetadata(new List<string>(), new List<string>());
+
+            if (favorited)
+            {
+                if (!existing.Favorites.Contains(owner, StringComparer.OrdinalIgnoreCase))
+                    existing.Favorites.Add(owner);
+            }
+            else
+            {
+                existing.Favorites.RemoveAll(o => string.Equals(o, owner, StringComparison.OrdinalIgnoreCase));
+            }
+
+            if (existing.Owners.Count == 0 && existing.Genres.Count == 0 && existing.Favorites.Count == 0)
+                data.Remove(key);
+            else
+                data[key] = existing;
+
             SaveUnsafe(data);
         }
     }
@@ -98,6 +130,11 @@ public class MediaMetadataService : IMediaMetadataService
         }
     }
 
+    /// <summary>Writes the metadata file, letting any I/O failure propagate to
+    /// the caller. A swallowed write failure here previously meant a save could
+    /// report success to the client (204) while never actually landing on
+    /// disk — silently invisible until the next fetch quietly showed the old
+    /// data, looking exactly like the edit had "vanished" hours later.</summary>
     private void SaveUnsafe(Dictionary<string, MediaItemMetadata> data)
     {
         try
@@ -111,6 +148,7 @@ public class MediaMetadataService : IMediaMetadataService
         catch (Exception ex)
         {
             Log.Warning("[MediaMetadata] Failed to save {Path}: {Message}", _storagePath, ex.Message);
+            throw;
         }
     }
 }

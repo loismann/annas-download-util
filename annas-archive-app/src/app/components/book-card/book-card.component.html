@@ -44,12 +44,12 @@
     <div class="goodreads-row">
       <button
         type="button"
-        class="bookmark-btn"
-        [class.bookmarked]="book.bookmarked"
-        (click)="onBookmarkToggle()"
-        aria-label="Toggle bookmark"
+        class="favorite-btn"
+        [class.favorited]="isFavorited"
+        (click)="onFavoriteToggle()"
+        [attr.aria-label]="isFavorited ? 'Remove from favorites' : 'Add to favorites'"
       >
-        <mat-icon>{{ book.bookmarked ? 'bookmark' : 'bookmark_border' }}</mat-icon>
+        <mat-icon>{{ isFavorited ? 'favorite' : 'favorite_border' }}</mat-icon>
       </button>
       <div class="goodreads">
         Goodreads
@@ -90,6 +90,20 @@
           <span class="kindle-btn-full">Mom's Kindle</span>
           <span class="kindle-btn-compact"><mat-icon>send</mat-icon>M</span>
         </ng-container>
+      </ng-container>
+    </button>
+  </div>
+  <div class="card-actions-full" *ngIf="isAdmin">
+    <button
+      mat-raised-button
+      color="accent"
+      (click)="onSendToDropbox()"
+      [disabled]="!book.fileName || !canSendToKindle || book.dropboxState === 'sending'">
+      <ng-container [ngSwitch]="book.dropboxState">
+        <span *ngSwitchCase="'sending'">Sending…</span>
+        <span *ngSwitchCase="'success'">✔ Sent to Dropbox</span>
+        <span *ngSwitchCase="'error'">✖ Retry Dropbox</span>
+        <span *ngSwitchDefault>Dropbox</span>
       </ng-container>
     </button>
   </div>

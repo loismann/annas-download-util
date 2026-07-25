@@ -47,13 +47,71 @@ public static class LibraryMetadataEndpoints
             .RequireAuthorization()
             .RequireRateLimiting("api");
 
+        // POST /api/library/book/{fileName}/favorite - Toggle favorite for the logged-in user
+        app.MapPost("/api/library/book/{fileName}/favorite", HandleSetFavorite)
+            .RequireAuthorization()
+            .RequireRateLimiting("api");
+
         return app;
+    }
+
+    private static async Task<IResult> HandleSetFavorite(
+        [FromRoute] string fileName,
+        [FromBody] LibraryBookFavoriteUpdate update,
+        HttpContext context,
+        LibraryIndexCache cache)
+    {
+        var safeFileName = Path.GetFileName(fileName);
+        if (!string.Equals(fileName, safeFileName, StringComparison.Ordinal))
+            return Results.BadRequest(new { error = "Invalid fileName." });
+
+        // Who's favoriting is resolved from the authenticated session, not a client-supplied
+        // value — the same reasoning as the Kindle-send tag fix: never trust the client to say
+        // who they are when that identity determines what gets written.
+        var owner = LibraryHelpers.ResolveUserDisplayName(context);
+        if (owner == null)
+            return Results.BadRequest(new { error = "Could not resolve the logged-in user." });
+
+        var libraryRoot = LibraryHelpers.ResolveLibraryRoot();
+        var metaPath = Path.Combine(libraryRoot, safeFileName + ".meta.json");
+
+        if (!File.Exists(metaPath))
+            return Results.NotFound(new { error = "Metadata file not found." });
+
+        try
+        {
+            var jsonOptions = LibraryHelpers.CreateLibraryJsonOptions();
+            var json = await File.ReadAllTextAsync(metaPath);
+            var meta = JsonSerializer.Deserialize<LibraryBookMeta>(json, jsonOptions);
+
+            if (meta == null)
+                return Results.BadRequest(new { error = "Invalid metadata file." });
+
+            var favoritedBy = new HashSet<string>(meta.FavoritedBy ?? Array.Empty<string>(), StringComparer.OrdinalIgnoreCase);
+            if (update.Favorited)
+                favoritedBy.Add(owner);
+            else
+                favoritedBy.Remove(owner);
+
+            var updated = meta with { FavoritedBy = favoritedBy.ToArray() };
+            var updatedJson = JsonSerializer.Serialize(updated, jsonOptions);
+            await File.WriteAllTextAsync(metaPath, updatedJson);
+            cache.InvalidateCache();
+
+            return Results.Ok(new { success = true, favoritedBy = updated.FavoritedBy });
+        }
+        catch (Exception ex)
+        {
+            Log.Warning("[library] Failed to update favorite for {SafeFileName}: {Message}", safeFileName, ex.Message);
+            return Results.Problem("Failed to update favorite.");
+        }
     }
 
     private static async Task<IResult> HandleUpdateMetadata(
         [FromRoute] string fileName,
         [FromBody] LibraryBookMetadataUpdate update,
-        HttpContext context)
+        HttpContext context,
+        LibraryIndexCache cache)
     {
         var safeFileName = Path.GetFileName(fileName);
         if (!string.Equals(fileName, safeFileName, StringComparison.Ordinal))
@@ -86,6 +144,7 @@ public static class LibraryMetadataEndpoints
             // Save back to file
             var updatedJson = JsonSerializer.Serialize(meta, jsonOptions);
             await File.WriteAllTextAsync(metaPath, updatedJson);
+            cache.InvalidateCache();
 
             Log.Information("[library] Updated metadata for {FileName}: Genre={Genre}, Tags={Tags}, Series={Series}",
                 safeFileName, meta.PrimaryGenre, string.Join(", ", meta.Tags ?? Array.Empty<string>()), meta.Series);
@@ -106,7 +165,8 @@ public static class LibraryMetadataEndpoints
 
     private static async Task<IResult> HandleUpdateRatings(
         [FromRoute] string fileName,
-        [FromBody] LibraryBookRatingsUpdate update)
+        [FromBody] LibraryBookRatingsUpdate update,
+        LibraryIndexCache cache)
     {
         var safeFileName = Path.GetFileName(fileName);
         if (!string.Equals(fileName, safeFileName, StringComparison.Ordinal))
@@ -139,15 +199,12 @@ public static class LibraryMetadataEndpoints
                 meta.PersonalRating = pr;
             }
 
-            if (update.Bookmarked.HasValue)
-            {
-                meta.Bookmarked = update.Bookmarked.Value;
-            }
-
             var updatedJson = JsonSerializer.Serialize(meta, jsonOptions);
             await File.WriteAllTextAsync(metaPath, updatedJson);
+            cache.InvalidateCache();
 
-            Log.Information("[library] Updated ratings for {safeFileName}: Goodreads={meta.GoodreadsRating}, Personal={meta.PersonalRating}, Bookmarked={meta.Bookmarked}");
+            Log.Information("[library] Updated ratings for {FileName}: Goodreads={Goodreads}, Personal={Personal}",
+                safeFileName, meta.GoodreadsRating, meta.PersonalRating);
 
             return Results.Ok(new { success = true, message = "Ratings updated successfully." });
         }
@@ -165,7 +222,8 @@ public static class LibraryMetadataEndpoints
 
     private static async Task<IResult> HandleToggleReaderByRoute(
         [FromRoute] string fileName,
-        [FromBody] LibraryBookReaderUpdate update)
+        [FromBody] LibraryBookReaderUpdate update,
+        LibraryIndexCache cache)
     {
         var safeFileName = Path.GetFileName(fileName);
         if (!string.Equals(fileName, safeFileName, StringComparison.Ordinal))
@@ -190,19 +248,21 @@ public static class LibraryMetadataEndpoints
             var updated = meta with { ReaderEnabled = enabled };
             var updatedJson = JsonSerializer.Serialize(updated, jsonOptions);
             await File.WriteAllTextAsync(metaPath, updatedJson);
+            cache.InvalidateCache();
 
             return Results.Ok(new { success = true, enabled });
         }
         catch (Exception ex)
         {
-            Log.Information("[library] Failed to update reader flag for {safeFileName}: {ex.Message}");
+            Log.Warning("[library] Failed to update reader flag for {SafeFileName}: {Message}", safeFileName, ex.Message);
             return Results.Problem("Failed to update reader flag.");
         }
     }
 
     private static async Task<IResult> HandleToggleReaderByQuery(
         [FromQuery] string? fileName,
-        [FromBody] LibraryBookReaderUpdate update)
+        [FromBody] LibraryBookReaderUpdate update,
+        LibraryIndexCache cache)
     {
         var safeFileName = Path.GetFileName(fileName);
         if (string.IsNullOrWhiteSpace(fileName) || !string.Equals(fileName, safeFileName, StringComparison.Ordinal))
@@ -230,17 +290,18 @@ public static class LibraryMetadataEndpoints
             var updated = meta with { ReaderEnabled = enabled };
             var updatedJson = JsonSerializer.Serialize(updated, jsonOptions);
             await File.WriteAllTextAsync(metaPath, updatedJson);
+            cache.InvalidateCache();
 
             return Results.Ok(new { success = true, enabled });
         }
         catch (Exception ex)
         {
-            Log.Information("[library] Failed to update reader flag for {safeFileName}: {ex.Message}");
+            Log.Warning("[library] Failed to update reader flag for {SafeFileName}: {Message}", safeFileName, ex.Message);
             return Results.Problem("Failed to update reader flag.");
         }
     }
 
-    private static async Task<IResult> HandleWipeGenres()
+    private static async Task<IResult> HandleWipeGenres(LibraryIndexCache cache)
     {
         var libraryRoot = LibraryHelpers.ResolveLibraryRoot();
         if (!Directory.Exists(libraryRoot))
@@ -276,12 +337,17 @@ public static class LibraryMetadataEndpoints
             }
         }
 
+        if (updatedCount > 0)
+            cache.InvalidateCache();
+
         return Results.Ok(new { success = true, updated = updatedCount });
     }
 
     private static async Task<IResult> HandleGetSummary(
         [FromRoute] string fileName,
-        IDescriptionFetcherService descriptionFetcher)
+        [FromQuery] bool deep,
+        IDescriptionFetcherService descriptionFetcher,
+        LibraryIndexCache cache)
     {
         var safeFileName = Path.GetFileName(fileName);
         if (!string.Equals(fileName, safeFileName, StringComparison.Ordinal))
@@ -312,7 +378,7 @@ public static class LibraryMetadataEndpoints
             var title = meta.Title ?? Path.GetFileNameWithoutExtension(meta.FileName);
             var author = meta.Authors?.FirstOrDefault();
 
-            var result = await descriptionFetcher.FetchDescriptionAsync(title, author);
+            var result = await descriptionFetcher.FetchDescriptionAsync(title, author, useDeepModel: deep);
             var summary = result.Description;
             var source = result.Source;
 
@@ -329,7 +395,8 @@ public static class LibraryMetadataEndpoints
                         var updated = meta with { Description = summary };
                         var updatedJson = JsonSerializer.Serialize(updated, jsonOptions);
                         await File.WriteAllTextAsync(metaPath, updatedJson);
-                        Log.Information("[library-summary] Saved summary for {safeFileName} (source: {source})");
+                        cache.InvalidateCache();
+                        Log.Information("[library-summary] Saved summary for {SafeFileName} (source: {Source})", safeFileName, source);
                     }
                 }
                 catch (Exception ex)

@@ -24,7 +24,8 @@ public record LibraryBookMeta(
     int? PersonalRating,
     bool? ReaderEnabled,
     string? Description,
-    bool? Bookmarked = null)
+    string[]? FavoritedBy = null,
+    DateTime? CullReviewedAt = null)
 {
     public string? Title { get; set; } = Title;
     public string[]? Authors { get; set; } = Authors;
@@ -35,7 +36,10 @@ public record LibraryBookMeta(
     public double? GoodreadsRating { get; set; } = GoodreadsRating;
     public int? PersonalRating { get; set; } = PersonalRating;
     public bool? ReaderEnabled { get; set; } = ReaderEnabled;
-    public bool? Bookmarked { get; set; } = Bookmarked;
+    /// <summary>Names of household members ("Paul"/"Mom"/"Dad") who have favorited this book. Per-owner — replaces the old flat "Bookmarked" flag.</summary>
+    public string[]? FavoritedBy { get; set; } = FavoritedBy;
+    /// <summary>Set once Paul explicitly chooses "keep" in the daily library-review modal's cull phase. Null = not yet reviewed.</summary>
+    public DateTime? CullReviewedAt { get; set; } = CullReviewedAt;
 }
 
 public record LibraryBookMetadataUpdate(
@@ -47,8 +51,9 @@ public record LibraryBookMetadataUpdate(
 
 public record LibraryBookRatingsUpdate(
     double? GoodreadsRating,
-    int? PersonalRating,
-    bool? Bookmarked);
+    int? PersonalRating);
+
+public record LibraryBookFavoriteUpdate(bool Favorited);
 
 public record LibraryBookReaderUpdate(bool? Enabled);
 
@@ -86,4 +91,5 @@ public record LibraryBookDto(
     double? GoodreadsRating,
     int? PersonalRating,
     bool? ReaderEnabled,
-    bool? Bookmarked);
+    string[] FavoritedBy,
+    DateTime? CullReviewedAt);

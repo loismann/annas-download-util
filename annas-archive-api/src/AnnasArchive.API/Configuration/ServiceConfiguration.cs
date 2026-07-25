@@ -390,6 +390,20 @@ public static class ServiceConfiguration
             return new Services.MediaMetadataService(storagePath);
         });
 
+        // Daily library-review modal — forced cull-then-genre triage of Paul's untagged books
+        services.AddSingleton<Services.ILibraryReviewService>(provider =>
+        {
+            var cfg = provider.GetRequiredService<IConfiguration>();
+            var cache = provider.GetRequiredService<LibraryIndexCache>();
+            var configuredPath = cfg.GetValue<string>("LibraryReview:StoragePath");
+            var storagePath = string.IsNullOrWhiteSpace(configuredPath)
+                ? Path.Combine(Directory.GetCurrentDirectory(), "library-review-progress.json")
+                : (Path.IsPathRooted(configuredPath)
+                    ? configuredPath
+                    : Path.Combine(Directory.GetCurrentDirectory(), configuredPath));
+            return new Services.LibraryReviewService(cache, storagePath);
+        });
+
         // AI-related services
         services.AddSingleton<IOpenAiModelHelper, OpenAiModelHelper>();
         services.AddSingleton<IAiResponseParser, AiResponseParser>();

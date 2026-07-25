@@ -70,8 +70,8 @@
         aria-label="TV shows or movies"
         (change)="toggleShowing()"
       >
-        <mat-button-toggle [value]="false">TV Shows</mat-button-toggle>
         <mat-button-toggle [value]="true">Movies</mat-button-toggle>
+        <mat-button-toggle [value]="false">TV Shows</mat-button-toggle>
       </mat-button-toggle-group>
 
       <div class="tile-size-controls">
@@ -104,6 +104,16 @@
           aria-label="Large tiles"
         >
           <mat-icon>view_agenda</mat-icon>
+        </button>
+        <button
+          mat-icon-button
+          type="button"
+          class="favorites-filter-btn"
+          [class.active]="filterFavoritesOnly"
+          (click)="toggleFavoritesFilter()"
+          aria-label="Filter favorites"
+        >
+          <mat-icon>{{ filterFavoritesOnly ? 'favorite' : 'favorite_border' }}</mat-icon>
         </button>
       </div>
 
@@ -155,6 +165,16 @@
           (click)="openTvEditDialog(tile, $event)"
         >
           <mat-icon>edit</mat-icon>
+        </button>
+        <button
+          *ngIf="!bulkEditMode"
+          mat-icon-button
+          class="favorite-btn"
+          [class.favorited]="isFavorited(tile.result)"
+          [matTooltip]="isFavorited(tile.result) ? 'Remove from favorites' : 'Add to favorites'"
+          (click)="toggleFavorite(tile.result, $event)"
+        >
+          <mat-icon>{{ isFavorited(tile.result) ? 'favorite' : 'favorite_border' }}</mat-icon>
         </button>
         <button
           *ngIf="!bulkEditMode"
@@ -213,6 +233,16 @@
           (click)="openMovieEditDialog(movie, $event)"
         >
           <mat-icon>edit</mat-icon>
+        </button>
+        <button
+          *ngIf="!bulkEditMode"
+          mat-icon-button
+          class="favorite-btn"
+          [class.favorited]="isFavorited(movie)"
+          [matTooltip]="isFavorited(movie) ? 'Remove from favorites' : 'Add to favorites'"
+          (click)="toggleFavorite(movie, $event)"
+        >
+          <mat-icon>{{ isFavorited(movie) ? 'favorite' : 'favorite_border' }}</mat-icon>
         </button>
         <button
           *ngIf="!bulkEditMode"

@@ -23,12 +23,14 @@ public interface IDescriptionFetcherService
     /// <param name="author">The book author (optional)</param>
     /// <param name="isbn">The book ISBN (optional, improves accuracy)</param>
     /// <param name="includeAiFallback">Whether to include AI-generated description as fallback (default: true)</param>
+    /// <param name="useDeepModel">Whether the AI fallback should use the "deep" model instead of the default "fast" one (default: false)</param>
     /// <returns>A result containing the description and its source</returns>
     Task<DescriptionFetchResult> FetchDescriptionAsync(
         string title,
         string? author = null,
         string? isbn = null,
-        bool includeAiFallback = true);
+        bool includeAiFallback = true,
+        bool useDeepModel = false);
 
     /// <summary>
     /// Fetches a book description from Google Books only.
@@ -41,7 +43,7 @@ public interface IDescriptionFetcherService
     Task<DescriptionFetchResult> FetchFromOpenLibraryAsync(string title, string? author = null, string? isbn = null);
 
     /// <summary>
-    /// Generates a book description using GPT-4.
+    /// Generates a book description using AI (the "fast" model by default, or the "deep" model when requested).
     /// </summary>
-    Task<DescriptionFetchResult> FetchFromAiAsync(string title, string? author = null);
+    Task<DescriptionFetchResult> FetchFromAiAsync(string title, string? author = null, bool useDeepModel = false);
 }

@@ -95,6 +95,7 @@ app.MapLibraryKindleEndpoints();
 app.MapLibraryCoverEndpoints();
 app.MapLibraryBrowserEndpoints();
 app.MapLibraryMetadataEndpoints();
+app.MapLibraryReviewEndpoints();
 app.MapLibraryReaderEndpoints();
 app.MapLibraryUploadEndpoints();
 app.MapAiUsageEndpoints();

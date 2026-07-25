@@ -18,6 +18,7 @@ import { Router } from '@angular/router';
 import { GenreMappingService } from '../../services/genre-mapping.service';
 import { LibraryApiService } from '../../services/library-api.service';
 import { LoggerService } from '../../services/logger.service';
+import { AuthService } from '../../services/auth.service';
 import { CreateGenreDialogComponent } from '../create-genre-dialog/create-genre-dialog.component';
 
 export interface BookEditDialogData {
@@ -33,6 +34,7 @@ export interface BookEditDialogData {
   canSendToKindle?: boolean;
   readerEnabled?: boolean | null;
   summary?: string | null;
+  favoritedBy?: string[];
 }
 
 export interface BookEditDialogResult {
@@ -43,7 +45,6 @@ export interface BookEditDialogResult {
   authors?: string[];
   coverUrl?: string | null;
   deleted?: boolean;
-  owner?: string | null;
 }
 
 interface CoverCandidate {
@@ -88,7 +89,7 @@ export class BookEditDialogComponent implements OnInit, OnDestroy {
   series: string | null;
   title: string;
   authorsInput: string;
-  selectedOwner: string | null = null;
+  selectedOwners = new Set<string>();
   placeholderUrl = '/assets/placeholder.jpg';
   selectedCoverUrl: string | null = null;
   manualCoverUrl = '';
@@ -116,7 +117,8 @@ export class BookEditDialogComponent implements OnInit, OnDestroy {
     private libraryApi: LibraryApiService,
     private router: Router,
     private logger: LoggerService,
-    private dialog: MatDialog
+    private dialog: MatDialog,
+    private authService: AuthService
   ) {
     const fromLibrary = (data.availableGenres ?? []).filter(Boolean);
     // Filter out owner tags from genres list
@@ -128,9 +130,9 @@ export class BookEditDialogComponent implements OnInit, OnDestroy {
       this.genres.unshift('Uncategorized');
     }
 
-    // Extract owner from tags and filter owner tags from displayed tags
+    // Extract owner(s) from tags and filter owner tags from displayed tags
     const allTags = [...(data.tags || [])];
-    this.selectedOwner = allTags.find(tag => this.ownerTags.includes(tag)) || null;
+    this.selectedOwners = new Set(allTags.filter(tag => this.ownerTags.includes(tag)));
     this.tags = allTags.filter(tag => !this.ownerTags.includes(tag));
 
     this.series = data.series;
@@ -231,17 +233,52 @@ export class BookEditDialogComponent implements OnInit, OnDestroy {
     }
   }
 
+  toggleOwner(tag: string): void {
+    if (this.selectedOwners.has(tag)) {
+      this.selectedOwners.delete(tag);
+    } else {
+      this.selectedOwners.add(tag);
+    }
+  }
+
+  get isFavorited(): boolean {
+    const ownerName = this.authService.getOwnerName();
+    return !!ownerName && (this.data.favoritedBy ?? []).includes(ownerName);
+  }
+
+  toggleFavorite(): void {
+    if (!this.data.fileName) return;
+    const ownerName = this.authService.getOwnerName();
+    if (!ownerName) return;
+
+    const newValue = !this.isFavorited;
+    // Optimistic update
+    this.data.favoritedBy = newValue
+      ? [...(this.data.favoritedBy ?? []), ownerName]
+      : (this.data.favoritedBy ?? []).filter(o => o !== ownerName);
+
+    this.libraryApi.setLibraryBookFavorite(this.data.fileName, newValue).pipe(takeUntil(this.destroy$)).subscribe({
+      next: (resp) => {
+        this.data.favoritedBy = resp.favoritedBy;
+      },
+      error: (err) => {
+        this.logger.error('[BookEditDialog] Failed to update favorite:', err);
+        // Revert on error
+        this.data.favoritedBy = newValue
+          ? (this.data.favoritedBy ?? []).filter(o => o !== ownerName)
+          : [...(this.data.favoritedBy ?? []), ownerName];
+      }
+    });
+  }
+
   onSave(): void {
     // Always send selectedCoverUrl if user selected one - don't skip based on equality
     // The backend is idempotent and this ensures covers are persisted even if a previous
     // attempt failed silently
     const coverUrl = this.selectedCoverUrl || null;
 
-    // Merge owner tag back into tags array
-    const finalTags = [...this.tags];
-    if (this.selectedOwner) {
-      finalTags.push(this.selectedOwner);
-    }
+    // Merge owner tag(s) back into tags array
+    const finalTags = [...this.tags, ...this.selectedOwners];
 
     // Determine primary genre from tags - use first matching genre or "Uncategorized"
     const genresLower = this.genres.map(g => g.toLowerCase());
@@ -253,7 +290,7 @@ export class BookEditDialogComponent implements OnInit, OnDestroy {
       selectedCoverUrl: this.selectedCoverUrl,
       dataCoverUrl: this.data.coverUrl,
       willSendCoverUrl: coverUrl,
-      owner: this.selectedOwner,
+      owners: Array.from(this.selectedOwners),
       primaryGenre,
       tags: finalTags
     });
@@ -267,8 +304,7 @@ export class BookEditDialogComponent implements OnInit, OnDestroy {
         .split(',')
         .map(author => author.trim())
         .filter(author => author.length > 0),
-      coverUrl: coverUrl,
-      owner: this.selectedOwner
+      coverUrl: coverUrl
     } as BookEditDialogResult);
   }
 

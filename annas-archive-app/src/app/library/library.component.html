@@ -93,12 +93,12 @@
           <button
             mat-icon-button
             type="button"
-            class="bookmark-filter-btn"
-            [class.active]="filterBookmarked"
-            (click)="toggleBookmarkFilter()"
-            aria-label="Filter bookmarked books"
+            class="favorites-filter-btn"
+            [class.active]="filterFavoritesOnly"
+            (click)="toggleFavoritesFilter()"
+            aria-label="Filter favorited books"
           >
-            <mat-icon>{{ filterBookmarked ? 'bookmark' : 'bookmark_border' }}</mat-icon>
+            <mat-icon>{{ filterFavoritesOnly ? 'favorite' : 'favorite_border' }}</mat-icon>
           </button>
         </div>
         <div class="sort-combo">
@@ -156,11 +156,14 @@
             [bulkEditMode]="bulkEditMode"
             [isSelected]="selectedBooksForBulk.has(book.fileName)"
             [canSendToKindle]="canSendToKindle(book)"
+            [isAdmin]="authService.isAdmin()"
             [placeholderUrl]="placeholderUrl"
+            [currentOwnerName]="authService.getOwnerName()"
             (coverClick)="onCoverClick($event)"
             (ratingChange)="onRatingChange($event)"
-            (bookmarkToggle)="onBookmarkToggle($event)"
+            (favoriteToggle)="onFavoriteToggle($event)"
             (sendToKindle)="onSendToKindle($event)"
+            (sendToDropbox)="onSendToDropbox($event)"
             (selectionToggle)="toggleBookSelection($event)"
           ></app-book-card>
         </div>

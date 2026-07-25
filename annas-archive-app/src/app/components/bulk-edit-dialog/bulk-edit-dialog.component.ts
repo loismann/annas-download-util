@@ -25,7 +25,14 @@ export interface BookBulkEditDialogResult {
   tagsMode?: 'append' | 'replace';
   series?: string | null;
   deleted?: boolean;
-  bookmarkAll?: boolean;
+  favoriteAll?: boolean;
+  /** Empty/omitted = leave each book's existing owners untouched. Unlike
+   * genre tags, owners are always a replace when present — "set the owner to
+   * Mom" across a batch of books means "these are Mom's now," not "add Mom
+   * alongside whoever's already on each one." (Adding an owner without
+   * displacing the existing one is what the single-book edit dialog is for,
+   * where you can see and consciously keep the current owner.) */
+  owners?: string[];
 }
 
 @Component({
@@ -54,6 +61,13 @@ export class BulkEditDialogComponent {
   genres: string[] = [];
   appendTags = true; // Default to append mode
   readonly separatorKeysCodes = [ENTER, COMMA] as const;
+
+  readonly ownerOptions = [
+    { value: "Dad's Books", label: "Dad's" },
+    { value: "Mom's Books", label: "Mom's" },
+    { value: "Paul's Books", label: "Paul's" }
+  ];
+  selectedOwners = new Set<string>();
 
   constructor(
     public dialogRef: MatDialogRef<BulkEditDialogComponent>,
@@ -86,6 +100,14 @@ export class BulkEditDialogComponent {
     }
   }
 
+  toggleOwner(tag: string): void {
+    if (this.selectedOwners.has(tag)) {
+      this.selectedOwners.delete(tag);
+    } else {
+      this.selectedOwners.add(tag);
+    }
+  }
+
   onCancel(): void {
     this.dialogRef.close();
   }
@@ -113,6 +135,10 @@ export class BulkEditDialogComponent {
       result.series = this.series.trim();
     }
 
+    if (this.selectedOwners.size > 0) {
+      result.owners = Array.from(this.selectedOwners);
+    }
+
     this.dialogRef.close(result);
   }
 
@@ -133,7 +159,7 @@ export class BulkEditDialogComponent {
     this.dialogRef.close({ deleted: true });
   }
 
-  onBookmarkAll(): void {
-    this.dialogRef.close({ bookmarkAll: true });
+  onFavoriteAll(): void {
+    this.dialogRef.close({ favoriteAll: true });
   }
 }

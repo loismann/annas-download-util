@@ -24,6 +24,7 @@ import { MediaEditDialogComponent, MediaEditDialogData, MediaEditDialogResult } 
 import { MediaBulkEditDialogComponent, MediaBulkEditDialogData, MediaBulkEditDialogResult } from '../components/media-bulk-edit-dialog/media-bulk-edit-dialog.component';
 import { ReleasePickerDialogComponent, ReleasePickerDialogData } from '../components/release-picker-dialog/release-picker-dialog.component';
 import { LoggerService } from '../services/logger.service';
+import { AuthService } from '../services/auth.service';
 
 interface LibraryTile {
   result: MediaLookupResult;
@@ -124,8 +125,8 @@ function formatBytes(bytes: number): string | undefined {
   styleUrl: './media-library.component.css'
 })
 export class MediaLibraryComponent implements OnInit, OnDestroy {
-  /** false = TV, true = Movies */
-  showingMovies = false;
+  /** false = TV, true = Movies — defaults to Movies (see ngOnInit). */
+  showingMovies = true;
   loading = false;
   error: string | null = null;
   tvTiles: LibraryTile[] = [];
@@ -136,6 +137,7 @@ export class MediaLibraryComponent implements OnInit, OnDestroy {
   searchTerm = '';
   selectedGenre = '';
   selectedOwners = new Set<string>();
+  filterFavoritesOnly = false;
   sortOrder: SortOrder = 'recent';
   tileSize: TileSize = 'medium';
 
@@ -156,10 +158,20 @@ export class MediaLibraryComponent implements OnInit, OnDestroy {
     private searchApi: MediaSearchApiService,
     private dialog: MatDialog,
     private router: Router,
-    private logger: LoggerService
+    private logger: LoggerService,
+    private authService: AuthService
   ) {}
 
   ngOnInit(): void {
+    // Default to showing the current session's own movies/shows — Mom sees
+    // Mom's, Dad sees Dad's, and the admin (Paul) account sees Paul's, same
+    // as the ebook library. Still just a normal toggle after this — anyone
+    // can clear/change it from here.
+    const ownerName = this.authService.getOwnerName();
+    if (ownerName) {
+      this.selectedOwners.add(ownerName);
+    }
+
     this.load();
     this.refreshDownloadProgress();
     this.queuePollSub = interval(QUEUE_POLL_MS).subscribe(() => this.refreshDownloadProgress());
@@ -313,6 +325,15 @@ export class MediaLibraryComponent implements OnInit, OnDestroy {
       if (!itemOwners.some(o => this.selectedOwners.has(o))) return false;
     }
 
+    // Favorites filter — cross-referenced against whichever owner filter buttons are
+    // currently active, same convention as the ebook library; with no owner filter
+    // active, anything favorited by any of the three household members counts.
+    if (this.filterFavoritesOnly) {
+      const favorites = result.favorites ?? [];
+      if (favorites.length === 0) return false;
+      if (this.selectedOwners.size > 0 && !favorites.some(o => this.selectedOwners.has(o))) return false;
+    }
+
     return true;
   }
 
@@ -336,6 +357,47 @@ export class MediaLibraryComponent implements OnInit, OnDestroy {
     }
   }
 
+  toggleFavoritesFilter(): void {
+    this.filterFavoritesOnly = !this.filterFavoritesOnly;
+  }
+
+  isFavorited(result: MediaLookupResult): boolean {
+    const ownerName = this.authService.getOwnerName();
+    return !!ownerName && (result.favorites ?? []).includes(ownerName);
+  }
+
+  toggleFavorite(result: MediaLookupResult, event: Event): void {
+    event.stopPropagation(); // don't also trigger openSeries()/playMovie()
+    if (result.id === undefined) return;
+    const ownerName = this.authService.getOwnerName();
+    if (!ownerName) return;
+
+    const wasFavorited = this.isFavorited(result);
+    const newValue = !wasFavorited;
+
+    // Optimistic update
+    result.favorites = newValue
+      ? [...(result.favorites ?? []), ownerName]
+      : (result.favorites ?? []).filter(o => o !== ownerName);
+
+    const request$ = this.showingMovies
+      ? this.api.setMovieFavorite(result.id, newValue)
+      : this.api.setTvFavorite(result.id, newValue);
+
+    request$.subscribe({
+      next: (resp) => {
+        result.favorites = resp.favorites;
+      },
+      error: (err) => {
+        this.logger.error('[MediaLibraryComponent] toggleFavorite failed', err);
+        // Revert on error
+        result.favorites = wasFavorited
+          ? [...(result.favorites ?? []), ownerName]
+          : (result.favorites ?? []).filter(o => o !== ownerName);
+      }
+    });
+  }
+
   setTileSize(size: TileSize): void {
     this.tileSize = size;
   }
@@ -344,6 +406,7 @@ export class MediaLibraryComponent implements OnInit, OnDestroy {
     this.searchTerm = '';
     this.selectedGenre = '';
     this.selectedOwners.clear();
+    this.filterFavoritesOnly = false;
     this.sortOrder = 'recent';
     this.tileSize = 'medium';
     this.exitBulkEditMode();
@@ -419,6 +482,7 @@ export class MediaLibraryComponent implements OnInit, OnDestroy {
 
   private applyBulkToTv(result: MediaBulkEditDialogResult): void {
     const targets = this.tvTiles.filter(t => t.result.id !== undefined && this.selectedForBulk.has(t.result.id));
+    const failedTitles: string[] = [];
     for (const tile of targets) {
       const { owners, genres } = this.mergeBulkResult(tile.result, result);
       this.api.setTvMetadata(tile.result.id!, owners, genres).subscribe({
@@ -426,7 +490,11 @@ export class MediaLibraryComponent implements OnInit, OnDestroy {
           tile.result.owners = owners;
           tile.result.customGenres = genres;
         },
-        error: (err) => this.logger.error('[MediaLibraryComponent] bulk setTvMetadata failed', err)
+        error: (err) => {
+          this.logger.error('[MediaLibraryComponent] bulk setTvMetadata failed', err);
+          failedTitles.push(tile.result.title);
+          this.error = `Could not save changes for: ${failedTitles.join(', ')}`;
+        }
       });
     }
     this.exitBulkEditMode();
@@ -434,6 +502,7 @@ export class MediaLibraryComponent implements OnInit, OnDestroy {
 
   private applyBulkToMovies(result: MediaBulkEditDialogResult): void {
     const targets = this.movieTiles.filter(m => m.id !== undefined && this.selectedForBulk.has(m.id));
+    const failedTitles: string[] = [];
     for (const movie of targets) {
       const { owners, genres } = this.mergeBulkResult(movie, result);
       this.api.setMovieMetadata(movie.id!, owners, genres).subscribe({
@@ -441,7 +510,11 @@ export class MediaLibraryComponent implements OnInit, OnDestroy {
           movie.owners = owners;
           movie.customGenres = genres;
         },
-        error: (err) => this.logger.error('[MediaLibraryComponent] bulk setMovieMetadata failed', err)
+        error: (err) => {
+          this.logger.error('[MediaLibraryComponent] bulk setMovieMetadata failed', err);
+          failedTitles.push(movie.title);
+          this.error = `Could not save changes for: ${failedTitles.join(', ')}`;
+        }
       });
     }
     this.exitBulkEditMode();
@@ -490,28 +563,37 @@ export class MediaLibraryComponent implements OnInit, OnDestroy {
     event.stopPropagation(); // don't also trigger openSeries()
     if (tile.result.id === undefined) return;
 
+    const dialogData: MediaEditDialogData = {
+      title: tile.result.title,
+      genres: tile.result.customGenres ?? [],
+      owners: tile.result.owners ?? [],
+      availableGenres: this.genres,
+      sizeLabel: formatBytes(sizeOnDiskOf(tile.result)),
+      favoritedBy: tile.result.favorites ?? [],
+      mediaType: 'tv',
+      id: tile.result.id
+    };
+
     const dialogRef = this.dialog.open<MediaEditDialogComponent, MediaEditDialogData, MediaEditDialogResult>(
       MediaEditDialogComponent,
-      {
-        width: '480px',
-        data: {
-          title: tile.result.title,
-          genres: tile.result.customGenres ?? [],
-          owners: tile.result.owners ?? [],
-          availableGenres: this.genres,
-          sizeLabel: formatBytes(sizeOnDiskOf(tile.result))
-        }
-      }
+      { width: '480px', data: dialogData }
     );
 
     dialogRef.afterClosed().subscribe(result => {
+      // The favorite toggle inside the dialog applies immediately (its own API call) —
+      // sync whatever it ended up at back onto the tile here.
+      tile.result.favorites = dialogData.favoritedBy;
+
       if (!result) return;
       this.api.setTvMetadata(tile.result.id!, result.owners, result.genres).subscribe({
         next: () => {
           tile.result.owners = result.owners;
           tile.result.customGenres = result.genres;
         },
-        error: (err) => this.logger.error('[MediaLibraryComponent] setTvMetadata failed', err)
+        error: (err) => {
+          this.logger.error('[MediaLibraryComponent] setTvMetadata failed', err);
+          this.error = `Could not save changes for "${tile.result.title}" — please try again.`;
+        }
       });
     });
   }
@@ -520,28 +602,37 @@ export class MediaLibraryComponent implements OnInit, OnDestroy {
     event.stopPropagation(); // don't also trigger playMovie()
     if (movie.id === undefined) return;
 
+    const dialogData: MediaEditDialogData = {
+      title: movie.title,
+      genres: movie.customGenres ?? [],
+      owners: movie.owners ?? [],
+      availableGenres: this.genres,
+      sizeLabel: formatBytes(sizeOnDiskOf(movie)),
+      favoritedBy: movie.favorites ?? [],
+      mediaType: 'movie',
+      id: movie.id
+    };
+
     const dialogRef = this.dialog.open<MediaEditDialogComponent, MediaEditDialogData, MediaEditDialogResult>(
       MediaEditDialogComponent,
-      {
-        width: '480px',
-        data: {
-          title: movie.title,
-          genres: movie.customGenres ?? [],
-          owners: movie.owners ?? [],
-          availableGenres: this.genres,
-          sizeLabel: formatBytes(sizeOnDiskOf(movie))
-        }
-      }
+      { width: '480px', data: dialogData }
     );
 
     dialogRef.afterClosed().subscribe(result => {
+      // The favorite toggle inside the dialog applies immediately (its own API call) —
+      // sync whatever it ended up at back onto the movie here.
+      movie.favorites = dialogData.favoritedBy;
+
       if (!result) return;
       this.api.setMovieMetadata(movie.id!, result.owners, result.genres).subscribe({
         next: () => {
           movie.owners = result.owners;
           movie.customGenres = result.genres;
         },
-        error: (err) => this.logger.error('[MediaLibraryComponent] setMovieMetadata failed', err)
+        error: (err) => {
+          this.logger.error('[MediaLibraryComponent] setMovieMetadata failed', err);
+          this.error = `Could not save changes for "${movie.title}" — please try again.`;
+        }
       });
     });
   }

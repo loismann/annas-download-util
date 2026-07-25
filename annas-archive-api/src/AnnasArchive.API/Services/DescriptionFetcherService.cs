@@ -37,7 +37,8 @@ public class DescriptionFetcherService : IDescriptionFetcherService
         string title,
         string? author = null,
         string? isbn = null,
-        bool includeAiFallback = true)
+        bool includeAiFallback = true,
+        bool useDeepModel = false)
     {
         if (string.IsNullOrWhiteSpace(title))
             return new DescriptionFetchResult(null, null);
@@ -60,13 +61,13 @@ public class DescriptionFetcherService : IDescriptionFetcherService
             return result;
         }
 
-        // 3. Fall back to GPT-4 if enabled
+        // 3. Fall back to AI if enabled
         if (includeAiFallback)
         {
-            result = await FetchFromAiAsync(title, author);
+            result = await FetchFromAiAsync(title, author, useDeepModel);
             if (!string.IsNullOrWhiteSpace(result.Description))
             {
-                Log.Information("[DescriptionFetcher] Generated description from GPT-4");
+                Log.Information("[DescriptionFetcher] Generated description from AI ({Model})", useDeepModel ? "deep" : "fast");
                 return result;
             }
         }
@@ -109,12 +110,12 @@ public class DescriptionFetcherService : IDescriptionFetcherService
         }
     }
 
-    public async Task<DescriptionFetchResult> FetchFromAiAsync(string title, string? author = null)
+    public async Task<DescriptionFetchResult> FetchFromAiAsync(string title, string? author = null, bool useDeepModel = false)
     {
         try
         {
             using var http = _httpFactory.CreateClient("OpenAI");
-            var model = _modelSelection.GetModelFast();
+            var model = useDeepModel ? _modelSelection.GetModelDeep() : _modelSelection.GetModelFast();
 
             var description = await AiDescriptionHelpers.GenerateNoSpoilerDescriptionAsync(
                 title,
@@ -126,11 +127,11 @@ public class DescriptionFetcherService : IDescriptionFetcherService
 
             return new DescriptionFetchResult(
                 string.IsNullOrWhiteSpace(description) ? null : description,
-                string.IsNullOrWhiteSpace(description) ? null : "GPT-4");
+                string.IsNullOrWhiteSpace(description) ? null : model);
         }
         catch (Exception ex)
         {
-            Log.Warning("[DescriptionFetcher] GPT-4 generation failed: {Message}", ex.Message);
+            Log.Warning("[DescriptionFetcher] AI generation failed: {Message}", ex.Message);
             return new DescriptionFetchResult(null, null);
         }
     }

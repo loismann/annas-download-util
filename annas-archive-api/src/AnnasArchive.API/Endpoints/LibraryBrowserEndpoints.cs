@@ -94,7 +94,7 @@ public static class LibraryBrowserEndpoints
         [FromQuery] string? ownerTags = null,
         [FromQuery] int minPersonalRating = 0,
         [FromQuery] double minGoodreadsRating = 0,
-        [FromQuery] bool? bookmarked = null,
+        [FromQuery] bool favoritesOnly = false,
         [FromQuery] bool? missingAuthor = null,
         [FromQuery] bool? missingCover = null,
         [FromQuery] int? genreCountLessThan = null,
@@ -120,7 +120,7 @@ public static class LibraryBrowserEndpoints
             ownerTags: ownerTagsArray,
             minPersonalRating: minPersonalRating,
             minGoodreadsRating: minGoodreadsRating,
-            bookmarked: bookmarked,
+            favoritesOnly: favoritesOnly,
             missingAuthor: missingAuthor,
             missingCover: missingCover,
             genreCountLessThan: genreCountLessThan,
@@ -184,38 +184,17 @@ public static class LibraryBrowserEndpoints
         if (!string.Equals(fileName, safeFileName, StringComparison.Ordinal))
             return Results.BadRequest(new { error = "Invalid fileName." });
 
-        var libraryRoot = LibraryHelpers.ResolveLibraryRoot();
-        var bookPath = Path.Combine(libraryRoot, safeFileName);
-        var metaPath = Path.Combine(libraryRoot, safeFileName + ".meta.json");
-        var coverDir = Path.Combine(libraryRoot, "_covers");
-        var coverMatches = Directory.Exists(coverDir)
-            ? Directory.GetFiles(coverDir, $"{safeFileName}.cover.*")
-            : Array.Empty<string>();
-
-        if (!File.Exists(bookPath) && !File.Exists(metaPath) && coverMatches.Length == 0)
-            return Results.NotFound(new { error = "Book not found." });
-
         try
         {
-            if (File.Exists(bookPath))
-                File.Delete(bookPath);
-
-            if (File.Exists(metaPath))
-                File.Delete(metaPath);
-
-            foreach (var cover in coverMatches)
-            {
-                try { File.Delete(cover); } catch { /* ignore */ }
-            }
-
-            // Remove from cache immediately (file watcher will also catch this)
-            cache.RemoveBook(safeFileName);
+            var result = LibraryBookDeletionHelper.DeleteBookCompletely(safeFileName, cache);
+            if (!result.Found)
+                return Results.NotFound(new { error = "Book not found." });
 
             return Results.Ok(new { success = true });
         }
         catch (Exception ex)
         {
-            Log.Information("[library] Failed to delete book {safeFileName}: {ex.Message}");
+            Log.Warning("[library] Failed to delete book {SafeFileName}: {Message}", safeFileName, ex.Message);
             return Results.Problem("Failed to delete book.");
         }
     }

@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using AnnasArchive.API.Helpers;
 using AnnasArchive.API.Services;
 using Microsoft.AspNetCore.Mvc;
 using Serilog;
@@ -7,6 +8,10 @@ namespace AnnasArchive.API.Endpoints;
 
 /// <summary>Body for PATCH .../metadata — full replace of both fields.</summary>
 public record SetMediaMetadataRequest(List<string>? Owners, List<string>? Genres);
+
+/// <summary>Body for POST .../favorite — the acting owner is resolved server-side from the
+/// authenticated session, never taken from the client.</summary>
+public record SetMediaFavoriteRequest(bool Favorited);
 
 /// <summary>
 /// "What's actually downloaded, and how do I watch it" endpoints — distinct
@@ -57,6 +62,14 @@ public static class MediaLibraryEndpoints
             .RequireRateLimiting("api");
 
         app.MapPatch("/api/media/movies/{movieId:int}/metadata", HandleSetMovieMetadata)
+            .RequireAuthorization()
+            .RequireRateLimiting("api");
+
+        app.MapPost("/api/media/tv/{seriesId:int}/favorite", HandleSetTvFavorite)
+            .RequireAuthorization()
+            .RequireRateLimiting("api");
+
+        app.MapPost("/api/media/movies/{movieId:int}/favorite", HandleSetMovieFavorite)
             .RequireAuthorization()
             .RequireRateLimiting("api");
 
@@ -207,8 +220,18 @@ public static class MediaLibraryEndpoints
         if (validated is null)
             return Results.BadRequest(new { error = "owners may only contain Paul, Mom, Dad" });
 
-        metadata.Set("tv", seriesId, validated);
-        return Results.NoContent();
+        try
+        {
+            metadata.Set("tv", seriesId, validated);
+            Log.Information("[MediaLibrary] Set tv:{SeriesId} metadata: owners={Owners}, genres={Genres}",
+                seriesId, string.Join(",", validated.Owners), string.Join(",", validated.Genres));
+            return Results.NoContent();
+        }
+        catch (Exception ex)
+        {
+            Log.Warning("[MediaLibrary] Failed to save tv:{SeriesId} metadata: {Message}", seriesId, ex.Message);
+            return Results.Json(new { error = "Failed to save — please try again." }, statusCode: StatusCodes.Status500InternalServerError);
+        }
     }
 
     private static IResult HandleSetMovieMetadata([FromRoute] int movieId, [FromBody] SetMediaMetadataRequest request, IMediaMetadataService metadata)
@@ -217,8 +240,48 @@ public static class MediaLibraryEndpoints
         if (validated is null)
             return Results.BadRequest(new { error = "owners may only contain Paul, Mom, Dad" });
 
-        metadata.Set("movie", movieId, validated);
-        return Results.NoContent();
+        try
+        {
+            metadata.Set("movie", movieId, validated);
+            Log.Information("[MediaLibrary] Set movie:{MovieId} metadata: owners={Owners}, genres={Genres}",
+                movieId, string.Join(",", validated.Owners), string.Join(",", validated.Genres));
+            return Results.NoContent();
+        }
+        catch (Exception ex)
+        {
+            Log.Warning("[MediaLibrary] Failed to save movie:{MovieId} metadata: {Message}", movieId, ex.Message);
+            return Results.Json(new { error = "Failed to save — please try again." }, statusCode: StatusCodes.Status500InternalServerError);
+        }
+    }
+
+    private static IResult HandleSetTvFavorite(
+        [FromRoute] int seriesId, [FromBody] SetMediaFavoriteRequest request, HttpContext context, IMediaMetadataService metadata)
+        => HandleSetFavorite("tv", seriesId, request, context, metadata);
+
+    private static IResult HandleSetMovieFavorite(
+        [FromRoute] int movieId, [FromBody] SetMediaFavoriteRequest request, HttpContext context, IMediaMetadataService metadata)
+        => HandleSetFavorite("movie", movieId, request, context, metadata);
+
+    private static IResult HandleSetFavorite(
+        string type, int id, SetMediaFavoriteRequest request, HttpContext context, IMediaMetadataService metadata)
+    {
+        // Who's favoriting is resolved from the authenticated session, not a client-supplied
+        // value — same reasoning as the book library's favorite endpoint.
+        var owner = LibraryHelpers.ResolveUserDisplayName(context);
+        if (owner == null)
+            return Results.BadRequest(new { error = "Could not resolve the logged-in user." });
+
+        try
+        {
+            metadata.SetFavorite(type, id, owner, request.Favorited);
+            var updated = metadata.Get(type, id);
+            return Results.Ok(new { success = true, favorites = updated?.Favorites ?? new List<string>() });
+        }
+        catch (Exception ex)
+        {
+            Log.Warning("[MediaLibrary] Failed to save {Type}:{Id} favorite: {Message}", type, id, ex.Message);
+            return Results.Json(new { error = "Failed to save — please try again." }, statusCode: StatusCodes.Status500InternalServerError);
+        }
     }
 
     private static async Task<IResult> HandleSearchMovieReleases([FromRoute] int movieId, IRadarrService radarr)
@@ -313,6 +376,7 @@ public static class MediaLibraryEndpoints
             var meta = all.GetValueOrDefault($"{type}:{obj["id"]!.GetValue<int>()}");
             obj["owners"] = new JsonArray((meta?.Owners ?? new List<string>()).Select(o => (JsonNode)o).ToArray());
             obj["customGenres"] = new JsonArray((meta?.Genres ?? new List<string>()).Select(g => (JsonNode)g).ToArray());
+            obj["favorites"] = new JsonArray((meta?.Favorites ?? new List<string>()).Select(f => (JsonNode)f).ToArray());
         }
     }
 }

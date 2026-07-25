@@ -207,7 +207,7 @@ public class LibraryIndexCache : IHostedService, IDisposable
         string[]? ownerTags = null,
         int minPersonalRating = 0,
         double minGoodreadsRating = 0,
-        bool? bookmarked = null,
+        bool favoritesOnly = false,
         bool? missingAuthor = null,
         bool? missingCover = null,
         int? genreCountLessThan = null,
@@ -280,10 +280,23 @@ public class LibraryIndexCache : IHostedService, IDisposable
             filtered = filtered.Where(b => (b.GoodreadsRating ?? 0) >= minGoodreadsRating);
         }
 
-        // Bookmarked filter
-        if (bookmarked == true)
+        // Favorites filter — cross-referenced against whichever owner tags are currently
+        // active (matches the currently active owner filter buttons); if no owner filter is
+        // active, anything favorited by any of the three household members counts.
+        if (favoritesOnly)
         {
-            filtered = filtered.Where(b => b.Bookmarked == true);
+            var favoriteOwnerNames = (ownerTags ?? Array.Empty<string>())
+                .Select(OwnerTagToName)
+                .Where(n => n != null)
+                .Select(n => n!)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            filtered = filtered.Where(b =>
+            {
+                var favoritedBy = b.FavoritedBy ?? Array.Empty<string>();
+                if (favoritedBy.Length == 0) return false;
+                return favoriteOwnerNames.Count == 0 || favoritedBy.Any(favoriteOwnerNames.Contains);
+            });
         }
 
         // Missing author filter
@@ -374,6 +387,15 @@ public class LibraryIndexCache : IHostedService, IDisposable
 
         return (paginated.ToList(), totalCount, availableGenres);
     }
+
+    /// <summary>Maps a book owner tag ("Paul's Books") to the bare household-member name ("Paul") used by FavoritedBy.</summary>
+    private static string? OwnerTagToName(string tag) => tag switch
+    {
+        "Paul's Books" => "Paul",
+        "Mom's Books" => "Mom",
+        "Dad's Books" => "Dad",
+        _ => null
+    };
 
     /// <summary>
     /// Normalizes cover URLs with the actual base URL.
@@ -517,7 +539,8 @@ public class LibraryIndexCache : IHostedService, IDisposable
                         meta.GoodreadsRating,
                         meta.PersonalRating,
                         meta.ReaderEnabled,
-                        meta.Bookmarked
+                        meta.FavoritedBy ?? Array.Empty<string>(),
+                        meta.CullReviewedAt
                     ));
                 }
                 catch
@@ -562,6 +585,7 @@ public class LibraryIndexCache : IHostedService, IDisposable
                     null,
                     null,
                     null,
+                    Array.Empty<string>(),
                     null
                 ));
             }

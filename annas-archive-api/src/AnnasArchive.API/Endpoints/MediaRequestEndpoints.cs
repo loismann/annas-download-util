@@ -82,7 +82,7 @@ public static class MediaRequestEndpoints
             {
                 var owner = LibraryHelpers.ResolveUserDisplayName(context);
                 if (owner is not null)
-                    metadata.AddOwner("tv", added["id"]!.GetValue<int>(), owner);
+                    TryTagOwner(metadata, "tv", added["id"]!.GetValue<int>(), owner);
             }
             return Results.Ok(added);
         }
@@ -156,7 +156,7 @@ public static class MediaRequestEndpoints
             {
                 var owner = LibraryHelpers.ResolveUserDisplayName(context);
                 if (owner is not null)
-                    metadata.AddOwner("movie", added["id"]!.GetValue<int>(), owner);
+                    TryTagOwner(metadata, "movie", added["id"]!.GetValue<int>(), owner);
             }
             return Results.Ok(added);
         }
@@ -168,6 +168,23 @@ public static class MediaRequestEndpoints
         {
             Log.Warning("[MediaRequest] Radarr add failed: {Message}", ex.Message);
             return Results.Json(new { error = "Radarr rejected the request" }, statusCode: StatusCodes.Status502BadGateway);
+        }
+    }
+
+    /// <summary>Best-effort owner tagging right after a successful Sonarr/Radarr
+    /// add — the add itself already succeeded at this point, so a failure to
+    /// persist the owner tag (e.g. a transient disk write issue) shouldn't turn
+    /// a successful add into an apparent failure for the caller; it's logged
+    /// and otherwise swallowed instead.</summary>
+    private static void TryTagOwner(IMediaMetadataService metadata, string type, int id, string owner)
+    {
+        try
+        {
+            metadata.AddOwner(type, id, owner);
+        }
+        catch (Exception ex)
+        {
+            Log.Warning("[MediaRequest] Failed to tag {Type}:{Id} owner '{Owner}': {Message}", type, id, owner, ex.Message);
         }
     }
 

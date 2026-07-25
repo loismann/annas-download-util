@@ -24,7 +24,8 @@ export interface LibraryBook {
   series?: string | null;
   goodreadsRating?: number | null;
   personalRating?: number | null;
-  bookmarked?: boolean | null;
+  /** Names of household members who have favorited this book — per-owner, not a shared flag. */
+  favoritedBy?: string[];
   readerEnabled?: boolean;
   dateAdded?: string;
 }
@@ -40,7 +41,6 @@ export interface LibraryBookMetadata {
 export interface LibraryBookRatings {
   goodreadsRating?: number | null;
   personalRating?: number | null;
-  bookmarked?: boolean | null;
 }
 
 export interface CoverCandidatesResponse {
@@ -82,7 +82,7 @@ export interface LibrarySearchParams {
   ownerTags?: string[];
   minPersonalRating?: number;
   minGoodreadsRating?: number;
-  bookmarked?: boolean;
+  favoritesOnly?: boolean;
   missingAuthor?: boolean;
   missingCover?: boolean;
   genreCountLessThan?: number;
@@ -100,6 +100,35 @@ export interface LibrarySearchResponse {
   take: number;
   genres: string[];
 }
+
+/* ─────────────── Daily library-review modal ──────────────── */
+export interface LibraryReviewStatus {
+  phase: 'cull' | 'genre' | 'complete';
+  shouldShow: boolean;
+  remainingInPhase: number;
+  sessionInProgress: boolean;
+}
+
+export interface LibraryReviewBook {
+  fileName: string;
+  title: string;
+  authors: string[];
+  tags: string[];
+  series: string | null;
+  coverUrl: string | null;
+  format: string;
+  favoritedBy: string[];
+}
+
+export interface LibraryReviewSession {
+  phase: 'cull' | 'genre' | 'complete';
+  books: LibraryReviewBook[];
+  /** Size of the whole eligible pool for this phase, including this session's own batch —
+   *  lets the UI show overall progress, not just position within today's 20. */
+  totalRemainingInPhase: number;
+}
+
+export type LibraryReviewDecision = 'keep' | 'delete' | 'genreSet';
 
 /**
  * Service for library management operations.
@@ -210,7 +239,7 @@ export class LibraryApiService {
     }
     if (params.minPersonalRating) httpParams = httpParams.set('minPersonalRating', params.minPersonalRating.toString());
     if (params.minGoodreadsRating) httpParams = httpParams.set('minGoodreadsRating', params.minGoodreadsRating.toString());
-    if (params.bookmarked) httpParams = httpParams.set('bookmarked', 'true');
+    if (params.favoritesOnly) httpParams = httpParams.set('favoritesOnly', 'true');
     if (params.missingAuthor) httpParams = httpParams.set('missingAuthor', 'true');
     if (params.missingCover) httpParams = httpParams.set('missingCover', 'true');
     if (params.genreCountLessThan) httpParams = httpParams.set('genreCountLessThan', params.genreCountLessThan.toString());
@@ -300,6 +329,17 @@ export class LibraryApiService {
   }
 
   /**
+   * Favorite/unfavorite a book on behalf of whoever's logged in — the acting owner is
+   * resolved server-side from the session, not passed from here.
+   */
+  setLibraryBookFavorite(fileName: string, favorited: boolean): Observable<{ success: boolean; favoritedBy: string[] }> {
+    return this.http.post<{ success: boolean; favoritedBy: string[] }>(
+      `${this.libraryBaseUrl}/book/${encodeURIComponent(fileName)}/favorite`,
+      { favorited }
+    );
+  }
+
+  /**
    * Enable or disable reader for a book.
    */
   updateLibraryBookReaderEnabled(fileName: string, enabled: boolean): Observable<{ success: boolean; enabled: boolean }> {
@@ -335,11 +375,43 @@ export class LibraryApiService {
   }
 
   /**
-   * Get book summary.
+   * Get book summary. Pass `deep = true` to use the higher-quality ("deep") AI model for the
+   * fallback generation step, if neither Google Books nor Open Library has a real description.
    */
-  getLibraryBookSummary(fileName: string): Observable<LibraryBookSummaryResponse> {
+  getLibraryBookSummary(fileName: string, deep = false): Observable<LibraryBookSummaryResponse> {
+    const params = new HttpParams().set('deep', deep.toString());
     return this.http.get<LibraryBookSummaryResponse>(
-      `${this.libraryBaseUrl}/book/${encodeURIComponent(fileName)}/summary`
+      `${this.libraryBaseUrl}/book/${encodeURIComponent(fileName)}/summary`,
+      { params }
+    );
+  }
+
+  /* ══════════════════════════════════════════════════════════════
+     DAILY LIBRARY-REVIEW MODAL (admin only)
+     ══════════════════════════════════════════════════════════════ */
+
+  /**
+   * Whether the daily review modal should currently be shown, and what phase it's in.
+   */
+  getLibraryReviewStatus(): Observable<LibraryReviewStatus> {
+    return this.http.get<LibraryReviewStatus>(`${this.libraryBaseUrl}/review/status`);
+  }
+
+  /**
+   * Starts today's batch of up to 20 books, or resumes it if already in progress.
+   * Always resets the 24h "last shown" timer — used for both the automatic daily
+   * trigger and the on-demand "Review Library" button.
+   */
+  startLibraryReviewSession(): Observable<LibraryReviewSession> {
+    return this.http.post<LibraryReviewSession>(`${this.libraryBaseUrl}/review/session/start`, null);
+  }
+
+  /**
+   * Records a keep/delete/genreSet decision for one book in the current review session.
+   */
+  submitLibraryReviewDecision(fileName: string, decision: LibraryReviewDecision): Observable<{ success: boolean }> {
+    return this.http.post<{ success: boolean }>(`${this.libraryBaseUrl}/review/decision`, { fileName, decision }).pipe(
+      tap(() => this.invalidateCache())
     );
   }
 

@@ -1,0 +1,110 @@
+<h2 mat-dialog-title>
+  <ng-container *ngIf="phase === 'cull'">Review your books — keep or delete</ng-container>
+  <ng-container *ngIf="phase === 'genre'">Set a genre for each book</ng-container>
+</h2>
+
+<mat-dialog-content class="review-content">
+  <div *ngIf="state !== 'allDone'" class="progress-label">
+    <span>{{ progressLabel }}</span>
+    <span class="progress-separator">·</span>
+    <span>{{ remainingLabel }}</span>
+  </div>
+
+  <div *ngIf="error" class="error-banner">
+    <mat-icon>error_outline</mat-icon>
+    <span>{{ error }}</span>
+  </div>
+
+  <ng-container *ngIf="state !== 'allDone' && currentBook as book">
+    <div class="book-panel">
+      <div class="cover-frame">
+        <img *ngIf="book.coverUrl" [src]="book.coverUrl" [alt]="book.title + ' cover'" class="cover" />
+        <div *ngIf="!book.coverUrl" class="cover-placeholder">
+          <mat-icon>menu_book</mat-icon>
+        </div>
+      </div>
+
+      <div class="book-details">
+        <div class="title">{{ book.title }}</div>
+        <div class="authors">{{ book.authors.length ? book.authors.join(', ') : 'Unknown author' }}</div>
+        <div class="series" *ngIf="book.series">{{ book.series }}</div>
+
+        <div *ngIf="phase === 'cull'" class="summary-section">
+          <div class="summary-label">Summary</div>
+          <div *ngIf="book.summaryLoading" class="summary-loading">
+            <mat-spinner diameter="18"></mat-spinner>
+            <span>Loading summary…</span>
+          </div>
+          <div *ngIf="!book.summaryLoading && book.summary" class="summary-text">
+            {{ book.summary }}
+            <span class="summary-source" *ngIf="book.summarySource">— {{ book.summarySource }}</span>
+          </div>
+          <div *ngIf="!book.summaryLoading && !book.summary" class="summary-text summary-empty">
+            {{ book.summaryError || 'No summary available for this book.' }}
+          </div>
+        </div>
+
+        <div *ngIf="phase === 'genre'" class="genre-section">
+          <mat-form-field appearance="outline" class="genre-field">
+            <mat-label>Genre</mat-label>
+            <mat-select [(ngModel)]="selectedGenre">
+              <mat-option *ngFor="let genre of genreOptions" [value]="genre">{{ genre }}</mat-option>
+            </mat-select>
+          </mat-form-field>
+        </div>
+      </div>
+    </div>
+
+    <div *ngIf="phase === 'cull' && state === 'showingBook'" class="decision-actions">
+      <button
+        mat-stroked-button
+        type="button"
+        class="favorite-toggle-btn"
+        [class.favorited]="isCurrentBookFavorited"
+        (click)="toggleFavorite()"
+      >
+        <mat-icon>{{ isCurrentBookFavorited ? 'favorite' : 'favorite_border' }}</mat-icon>
+        {{ isCurrentBookFavorited ? 'Favorited' : 'Favorite' }}
+      </button>
+      <button mat-stroked-button color="warn" (click)="thumbsDown()">
+        <mat-icon>thumb_down</mat-icon>
+        Delete
+      </button>
+      <button mat-raised-button color="primary" (click)="thumbsUp()">
+        <mat-icon>thumb_up</mat-icon>
+        Keep
+      </button>
+    </div>
+
+    <div *ngIf="phase === 'cull' && state === 'confirmingDelete'" class="confirm-delete-panel">
+      <mat-icon>warning</mat-icon>
+      <div class="confirm-delete-text">
+        <strong>This is permanent.</strong> The file, its cover, and any cached summaries/chapters
+        will all be deleted with no way to recover them.
+      </div>
+      <div class="confirm-delete-actions">
+        <button mat-button (click)="cancelDelete()">Cancel</button>
+        <button mat-raised-button color="warn" (click)="confirmDelete()">Delete forever</button>
+      </div>
+    </div>
+
+    <div *ngIf="phase === 'genre' && state === 'showingBook'" class="decision-actions">
+      <button mat-raised-button color="primary" [disabled]="!selectedGenre" (click)="saveGenreAndNext()">
+        Save &amp; Next
+      </button>
+    </div>
+
+    <div *ngIf="state === 'submittingDecision'" class="submitting-indicator">
+      <mat-spinner diameter="20"></mat-spinner>
+    </div>
+  </ng-container>
+
+  <div *ngIf="state === 'allDone'" class="all-done-panel">
+    <mat-icon>check_circle</mat-icon>
+    <div class="all-done-text">
+      <ng-container *ngIf="books.length > 0">That's today's batch — nice work.</ng-container>
+      <ng-container *ngIf="books.length === 0">Nothing left to review right now.</ng-container>
+    </div>
+    <button mat-raised-button color="primary" (click)="close()">Close</button>
+  </div>
+</mat-dialog-content>

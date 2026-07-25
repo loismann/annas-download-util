@@ -347,7 +347,8 @@
 }
 
 .delete-btn,
-.edit-btn {
+.edit-btn,
+.favorite-btn {
   position: absolute;
   top: 4px;
   z-index: 1;
@@ -365,9 +366,18 @@
   left: 4px;
 }
 
+.favorite-btn {
+  left: 48px;
+}
+
 .tile:hover .delete-btn,
-.tile:hover .edit-btn {
+.tile:hover .edit-btn,
+.tile:hover .favorite-btn {
   opacity: 1;
+}
+
+.favorite-btn.favorited {
+  color: #f87171;
 }
 
 .delete-btn:hover {
@@ -376,6 +386,35 @@
 
 .edit-btn:hover {
   background: rgba(63, 81, 181, 0.85);
+}
+
+.favorite-btn:hover {
+  background: rgba(190, 24, 93, 0.85);
+}
+
+.favorites-filter-btn {
+  width: 40px;
+  height: 40px;
+  border: 1px solid #cbd5f5;
+  border-radius: 10px;
+  color: #64748b;
+  background: #ffffff;
+  transition: all 0.15s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.favorites-filter-btn:hover {
+  background: #eef2ff;
+  color: #3f51b5;
+}
+
+.favorites-filter-btn.active {
+  background: #3f51b5;
+  color: #ffffff;
+  border-color: #3f51b5;
 }
 
 .owner-badge {

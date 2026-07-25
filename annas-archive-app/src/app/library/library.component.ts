@@ -64,7 +64,7 @@ export class LibraryComponent implements OnInit, OnDestroy {
   filterGenreCountEnabled = false;
   filterGenreCount = 1;
   filterGenreComparison: 'less' | 'more' = 'less';
-  filterBookmarked = false;
+  filterFavoritesOnly = false;
   minPersonalRating = 0;
   minGoodreadsRating = 0;
   sortOrder: 'title' | 'author' | 'recent' | 'series' | 'stars' | 'goodreads' = 'recent';
@@ -157,6 +157,15 @@ export class LibraryComponent implements OnInit, OnDestroy {
       this.sidebarCollapsed = true;
     }
 
+    // Default to showing the current session's own books — Mom sees Mom's,
+    // Dad sees Dad's, and the admin (Paul) account sees Paul's, same as
+    // everyone else rather than an unfiltered view. Still just a normal
+    // toggle after this — anyone can clear/change it from here.
+    const ownerName = this.authService.getOwnerName();
+    if (ownerName) {
+      this.selectedOwnerTags.add(`${ownerName}'s Books`);
+    }
+
     // Set up debounced search trigger (300ms debounce for filter changes)
     this.searchTrigger$.pipe(
       debounceTime(300),
@@ -191,7 +200,7 @@ export class LibraryComponent implements OnInit, OnDestroy {
       ownerTags: this.selectedOwnerTags.size > 0 ? Array.from(this.selectedOwnerTags) : undefined,
       minPersonalRating: this.minPersonalRating > 0 ? this.minPersonalRating : undefined,
       minGoodreadsRating: this.minGoodreadsRating > 0 ? this.minGoodreadsRating : undefined,
-      bookmarked: this.filterBookmarked || undefined,
+      favoritesOnly: this.filterFavoritesOnly || undefined,
       missingAuthor: this.filterMissingAuthor || undefined,
       missingCover: this.filterMissingCover || undefined,
       genreCountLessThan: this.filterGenreCountEnabled && this.filterGenreComparison === 'less' ? this.filterGenreCount : undefined,
@@ -216,7 +225,8 @@ export class LibraryComponent implements OnInit, OnDestroy {
         const newBooks = (response.books ?? []).map(book => ({
           ...book,
           dadsKindleState: 'idle' as const,
-          momsKindleState: 'idle' as const
+          momsKindleState: 'idle' as const,
+          dropboxState: 'idle' as const
         }));
 
         if (reset) {
@@ -401,8 +411,8 @@ export class LibraryComponent implements OnInit, OnDestroy {
     setTimeout(() => this.recalculateLayout(), 0);
   }
 
-  toggleBookmarkFilter(): void {
-    this.filterBookmarked = !this.filterBookmarked;
+  toggleFavoritesFilter(): void {
+    this.filterFavoritesOnly = !this.filterFavoritesOnly;
     this.invalidateFilterCache();
   }
 
@@ -427,7 +437,7 @@ export class LibraryComponent implements OnInit, OnDestroy {
     this.filterGenreCountEnabled = false;
     this.filterGenreCount = 1;
     this.filterGenreComparison = 'less';
-    this.filterBookmarked = false;
+    this.filterFavoritesOnly = false;
 
     // Exit bulk edit mode
     this.bulkEditMode = false;
@@ -482,7 +492,8 @@ export class LibraryComponent implements OnInit, OnDestroy {
       fileName: book.fileName,
       format: book.format,
       canSendToKindle: this.canSendToKindle(book),
-      readerEnabled: book.readerEnabled ?? false
+      readerEnabled: book.readerEnabled ?? false,
+      favoritedBy: book.favoritedBy ?? []
     };
 
     const dialogRef = this.dialog.open(BookEditDialogComponent, {
@@ -494,6 +505,11 @@ export class LibraryComponent implements OnInit, OnDestroy {
     });
 
     dialogRef.afterClosed().pipe(takeUntil(this.destroy$)).subscribe((result: BookEditDialogResult | undefined) => {
+      // The favorite toggle inside the dialog applies immediately (its own API call),
+      // not deferred to Save — sync whatever it ended up at back onto the book here,
+      // since dialogData.favoritedBy is a separate object once the dialog reassigns it.
+      book.favoritedBy = dialogData.favoritedBy;
+
       if (result?.deleted) {
         this.books = this.books.filter(b => b !== book);
         this.genres = this.buildGenreList(this.books);
@@ -576,19 +592,23 @@ export class LibraryComponent implements OnInit, OnDestroy {
   sendToDropbox(book: LibraryBook): void {
     if (!book.fileName) return;
     if (!this.canSendToKindle(book)) return;
-    if (book.dadsKindleState === 'sending') return;
+    if (book.dropboxState === 'sending') return;
 
-    book.dadsKindleState = 'sending';
+    book.dropboxState = 'sending';
     this.libraryApi.sendLibraryToKindle(book.fileName, book.title, 'dad', true).pipe(takeUntil(this.destroy$)).subscribe({
       next: (resp) => {
         const success = resp?.success ?? true;
-        book.dadsKindleState = success ? 'success' : 'error';
+        book.dropboxState = success ? 'success' : 'error';
       },
       error: (err) => {
         this.logger.error('[library] send-to-dropbox failed', err);
-        book.dadsKindleState = 'error';
+        book.dropboxState = 'error';
       }
     });
+  }
+
+  onSendToDropbox(book: LibraryBook): void {
+    this.sendToDropbox(book);
   }
 
   setPersonalRating(book: LibraryBook, rating: number): void {
@@ -614,22 +634,30 @@ export class LibraryComponent implements OnInit, OnDestroy {
     this.setPersonalRating(event.book, event.rating);
   }
 
-  onBookmarkToggle(book: LibraryBook): void {
+  onFavoriteToggle(book: LibraryBook): void {
     if (!book.fileName) return;
+    const ownerName = this.authService.getOwnerName();
+    if (!ownerName) return;
 
-    const newValue = !book.bookmarked;
-    book.bookmarked = newValue;
+    const wasFavorited = (book.favoritedBy ?? []).includes(ownerName);
+    const newValue = !wasFavorited;
 
-    this.libraryApi.updateLibraryBookRatings(book.fileName, {
-      bookmarked: newValue
-    }).pipe(takeUntil(this.destroy$)).subscribe({
-      next: () => {
-        this.logger.log('[library] Updated bookmark:', book.fileName, newValue);
+    // Optimistic update
+    book.favoritedBy = newValue
+      ? [...(book.favoritedBy ?? []), ownerName]
+      : (book.favoritedBy ?? []).filter(o => o !== ownerName);
+
+    this.libraryApi.setLibraryBookFavorite(book.fileName, newValue).pipe(takeUntil(this.destroy$)).subscribe({
+      next: (resp) => {
+        book.favoritedBy = resp.favoritedBy;
+        this.logger.log('[library] Updated favorite:', book.fileName, newValue);
       },
       error: (err) => {
-        this.logger.error('[library] Failed to update bookmark:', err);
+        this.logger.error('[library] Failed to update favorite:', err);
         // Revert on error
-        book.bookmarked = !newValue;
+        book.favoritedBy = wasFavorited
+          ? [...(book.favoritedBy ?? []), ownerName]
+          : (book.favoritedBy ?? []).filter(o => o !== ownerName);
       }
     });
   }
@@ -867,9 +895,9 @@ export class LibraryComponent implements OnInit, OnDestroy {
         return;
       }
 
-      // Handle bulk bookmark
-      if (result.bookmarkAll) {
-        this.bulkBookmarkBooks(selectedBooks);
+      // Handle bulk favorite
+      if (result.favoriteAll) {
+        this.bulkFavoriteBooks(selectedBooks);
         return;
       }
 
@@ -895,6 +923,16 @@ export class LibraryComponent implements OnInit, OnDestroy {
         }
         if (result.series !== undefined) {
           book.series = result.series;
+        }
+        if (result.owners && result.owners.length > 0) {
+          // Owners live inside the same tags array as genres — always a
+          // replace (unlike genre tags' append/replace toggle): "set owner
+          // to Mom" across a batch means these books are Mom's now, not
+          // "add Mom alongside whoever's already on each one." Same fix as
+          // the Kindle-send bug: this must actually remove prior owners,
+          // not stack a new one on top.
+          const nonOwnerTags = (book.tags ?? []).filter(tag => !this.ownerTags.includes(tag));
+          book.tags = [...nonOwnerTags, ...result.owners];
         }
 
         // Update on backend
@@ -978,20 +1016,23 @@ export class LibraryComponent implements OnInit, OnDestroy {
     this.logger.log(`[library] Bulk delete complete: ${successCount} deleted, ${failCount} failed`);
   }
 
-  private async bulkBookmarkBooks(selectedBooks: LibraryBook[]): Promise<void> {
+  private async bulkFavoriteBooks(selectedBooks: LibraryBook[]): Promise<void> {
+    const ownerName = this.authService.getOwnerName();
+    if (!ownerName) return;
+
     let successCount = 0;
     let failCount = 0;
 
     for (const book of selectedBooks) {
       try {
-        await this.libraryApi.updateLibraryBookRatings(book.fileName, { bookmarked: true }).toPromise();
+        const resp = await this.libraryApi.setLibraryBookFavorite(book.fileName, true).toPromise();
         // Update local state
-        book.bookmarked = true;
+        book.favoritedBy = resp?.favoritedBy ?? [...(book.favoritedBy ?? []), ownerName];
         successCount++;
-        this.logger.log('[library] Bookmarked book:', book.fileName);
+        this.logger.log('[library] Favorited book:', book.fileName);
       } catch (err) {
         failCount++;
-        this.logger.error('[library] Failed to bookmark book:', book.fileName, err);
+        this.logger.error('[library] Failed to favorite book:', book.fileName, err);
       }
     }
 
@@ -1000,7 +1041,7 @@ export class LibraryComponent implements OnInit, OnDestroy {
     this.selectedBooksForBulk.clear();
 
     // Log summary
-    this.logger.log(`[library] Bulk bookmark complete: ${successCount} bookmarked, ${failCount} failed`);
+    this.logger.log(`[library] Bulk favorite complete: ${successCount} favorited, ${failCount} failed`);
   }
 
   private delay(ms: number): Promise<void> {
@@ -1022,7 +1063,8 @@ export class LibraryComponent implements OnInit, OnDestroy {
             this.books = (books ?? []).map(book => ({
               ...book,
               dadsKindleState: 'idle',
-              momsKindleState: 'idle'
+              momsKindleState: 'idle',
+              dropboxState: 'idle'
             }));
             this.genres = this.buildGenreList(this.books);
             this.loading = false;

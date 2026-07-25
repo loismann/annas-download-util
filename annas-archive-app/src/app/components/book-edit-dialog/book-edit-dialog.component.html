@@ -110,16 +110,32 @@
 
     <!-- Right Column: Edit Form -->
     <div class="form-section">
+      <!-- Favorite -->
+      <button
+        type="button"
+        class="favorite-toggle-btn"
+        [class.favorited]="isFavorited"
+        (click)="toggleFavorite()"
+      >
+        <mat-icon>{{ isFavorited ? 'favorite' : 'favorite_border' }}</mat-icon>
+        {{ isFavorited ? 'Favorited' : 'Add to Favorites' }}
+      </button>
+
       <!-- Owner Selection -->
-      <mat-form-field appearance="outline" class="w-100 owner-field">
-        <mat-label>Who's book is this?</mat-label>
-        <mat-select [(ngModel)]="selectedOwner" name="owner">
-          <mat-option [value]="null">-- Not assigned --</mat-option>
-          <mat-option *ngFor="let opt of ownerOptions" [value]="opt.value">
+      <div class="owner-field">
+        <div class="section-label">Who's book is this?</div>
+        <div class="owner-toggles">
+          <button
+            type="button"
+            *ngFor="let opt of ownerOptions"
+            class="owner-toggle"
+            [class.active]="selectedOwners.has(opt.value)"
+            (click)="toggleOwner(opt.value)"
+          >
             {{ opt.label }}
-          </mat-option>
-        </mat-select>
-      </mat-form-field>
+          </button>
+        </div>
+      </div>
 
       <!-- Title -->
       <mat-form-field appearance="outline" class="w-100">

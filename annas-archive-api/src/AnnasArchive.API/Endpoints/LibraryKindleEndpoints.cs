@@ -1,4 +1,5 @@
 using AnnasArchive.API.Helpers;
+using AnnasArchive.API.Services;
 using AnnasArchive.Core.Services;
 using Dropbox.Api;
 using Dropbox.Api.Files;
@@ -33,7 +34,7 @@ public static class LibraryKindleEndpoints
         IEmailService emailService,
         DropboxClient dropbox,
         IConfiguration cfg,
-        HttpContext context)
+        LibraryIndexCache cache)
     {
         Log.Information("[library-send] Request fileName='{fileName}' target='{target}' toDropbox={toDropbox}", fileName, target, toDropbox);
 
@@ -91,11 +92,14 @@ public static class LibraryKindleEndpoints
                 return Results.Ok(new { success = false, message = "Failed to upload file to Dropbox." });
             }
 
-            // Add Kindle target tag to library book metadata
-            var userTag = LibraryHelpers.ResolveUserLibraryTag(context);
+            // Tag the book with its Kindle recipient — NOT with whoever
+            // happens to be logged in and triggered the send. This book may
+            // already have a real owner tag from whoever downloaded it;
+            // adding the acting user's own tag on top would falsely make
+            // them look like a co-owner (see HandleSendToKindle's other
+            // branch below for the same fix).
             var kindleTargetTag = LibraryHelpers.GetKindleTargetTag(target);
-            var tagsToAdd = new[] { userTag, kindleTargetTag }.OfType<string>().ToArray();
-            await LibraryHelpers.AddTagsToLibraryBookAsync(libraryRoot, safeFileName, tagsToAdd);
+            await LibraryHelpers.AddTagsToLibraryBookAsync(libraryRoot, safeFileName, kindleTargetTag);
         }
         else
         {
@@ -113,13 +117,15 @@ public static class LibraryKindleEndpoints
                 return Results.Ok(new { success = false, message = "Failed to send email to Kindle." });
             }
 
-            // Add Kindle target tag to library book metadata
-            var userTag = LibraryHelpers.ResolveUserLibraryTag(context);
+            // Tag the book with its Kindle recipient — see the Dropbox
+            // branch above for why the acting user's own tag isn't added
+            // here anymore (it was falsely making them look like a co-owner
+            // of books they didn't actually download).
             var kindleTargetTag = LibraryHelpers.GetKindleTargetTag(target);
-            var tagsToAdd = new[] { userTag, kindleTargetTag }.OfType<string>().ToArray();
-            await LibraryHelpers.AddTagsToLibraryBookAsync(libraryRoot, safeFileName, tagsToAdd);
+            await LibraryHelpers.AddTagsToLibraryBookAsync(libraryRoot, safeFileName, kindleTargetTag);
         }
 
+        cache.InvalidateCache();
         return Results.Ok(new { success = true, message = toDropbox ? "Sent to Dropbox." : "Sent to Kindle." });
     }
 }

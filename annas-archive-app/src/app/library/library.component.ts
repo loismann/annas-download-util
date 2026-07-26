@@ -20,6 +20,7 @@ import { FileUploadDialogComponent } from '../components/file-upload-dialog/file
 import { BookCardComponent, LibraryBook } from '../components/book-card/book-card.component';
 import { LibrarySidebarComponent } from '../components/library-sidebar/library-sidebar.component';
 import { AuthService } from '../services/auth.service';
+import { LibraryReviewTriggerService } from '../services/library-review-trigger.service';
 import { LoggerService } from '../services/logger.service';
 import { BATCH_DELAY_MS } from '../constants/timeouts';
 import { TileSizeControlsComponent } from '../components/shared/tile-size-controls/tile-size-controls.component';
@@ -97,12 +98,19 @@ export class LibraryComponent implements OnInit, OnDestroy {
     public authService: AuthService,
     private zone: NgZone,
     private cdr: ChangeDetectorRef,
-    private logger: LoggerService
+    private logger: LoggerService,
+    private libraryReviewTrigger: LibraryReviewTriggerService
   ) {}
 
   ngOnDestroy(): void {
     this.destroy$.next();
     this.destroy$.complete();
+  }
+
+  /** Sidebar "Review Library" button — same modal as the nav-menu trigger and the
+   *  automatic once-a-day prompt, just callable on demand for extra rounds of 20. */
+  openLibraryReview(): void {
+    this.libraryReviewTrigger.open();
   }
 
   /** Row height for virtual scrolling - varies by tile size */

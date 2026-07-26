@@ -67,7 +67,20 @@ public class LibraryReviewService : ILibraryReviewService
 
             bool IsEligible(LibraryBookDto b) => phase == "cull" ? IsCullEligible(b) : IsGenreEligible(b);
 
-            if (state.ActiveSessionPhase == phase && state.ActiveSessionFileNames.Count > 0)
+            if (state.ActiveSessionPhase != phase)
+            {
+                // Phase changed since the last session (e.g. cull just finished, now on
+                // genre) — start that phase's "already decided" tracking fresh. A book's
+                // filename decided under the old phase is irrelevant to this one.
+                state.ActiveSessionPhase = phase;
+                state.ActiveSessionDecidedFileNames = new List<string>();
+                state.ActiveSessionFileNames = new List<string>();
+            }
+
+            var hasUndecidedInCurrentBatch = state.ActiveSessionFileNames
+                .Any(fn => !state.ActiveSessionDecidedFileNames.Contains(fn, StringComparer.OrdinalIgnoreCase));
+
+            if (hasUndecidedInCurrentBatch)
             {
                 // Resume today's batch — but first drop anything that fell out of eligibility
                 // since it was drawn (deleted elsewhere, or its genre already got fixed through
@@ -82,11 +95,24 @@ public class LibraryReviewService : ILibraryReviewService
             }
             else
             {
-                var pool = books.Where(IsEligible).Select(b => b.FileName).ToList();
+                // No batch yet today, or the last one was fully decided — draw a fresh batch
+                // of up to BatchSize more from whatever's still eligible. This is what makes
+                // triggering the exercise again the same day (nav menu, sidebar button) advance
+                // instead of re-showing an empty, already-finished batch: previously
+                // ActiveSessionFileNames was never reset once exhausted, so a second trigger
+                // the same day just returned zero undecided books forever, looking "all done"
+                // no matter how many thousands of books were still untouched.
+                //
+                // ActiveSessionDecidedFileNames is NOT reset here — it's the running "already
+                // reviewed today in this phase" record across every round, so a fresh draw can
+                // never re-select a book decided in an earlier round today even if the index
+                // hasn't caught up yet.
+                var alreadySeenToday = new HashSet<string>(state.ActiveSessionDecidedFileNames, StringComparer.OrdinalIgnoreCase);
+                var pool = books.Where(b => IsEligible(b) && !alreadySeenToday.Contains(b.FileName))
+                    .Select(b => b.FileName)
+                    .ToList();
                 Shuffle(pool);
-                state.ActiveSessionPhase = phase;
                 state.ActiveSessionFileNames = pool.Take(BatchSize).ToList();
-                state.ActiveSessionDecidedFileNames = new List<string>();
             }
 
             state.LastShownUtc = DateTime.UtcNow;

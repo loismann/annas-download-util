@@ -131,6 +131,13 @@
         Upload Books
       </button>
 
+      <!-- Bypasses the once-a-day auto-prompt gate; each click hands back the next batch
+           of up to 20 books still needing a decision, so you can run through more than
+           one round in a day if you want. -->
+      <button type="button" class="admin-upload" (click)="onReviewLibrary()">
+        Review Library
+      </button>
+
       <label class="admin-row">
         <input
           type="checkbox"

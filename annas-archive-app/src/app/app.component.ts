@@ -7,11 +7,9 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatMenuModule } from '@angular/material/menu';
 import { MatIconModule } from '@angular/material/icon';
 import { MatTooltipModule } from '@angular/material/tooltip';
-import { MatDialog, MatDialogRef } from '@angular/material/dialog';
 import { StorageFooterComponent } from './components/storage-footer/storage-footer.component';
-import { LibraryReviewModalComponent } from './components/library-review-modal/library-review-modal.component';
 import { AuthService, UserActivity } from './services/auth.service';
-import { LibraryApiService } from './services/library-api.service';
+import { LibraryReviewTriggerService } from './services/library-review-trigger.service';
 import { LoggerService } from './services/logger.service';
 import { Subscription, interval } from 'rxjs';
 import { switchMap, filter } from 'rxjs/operators';
@@ -166,15 +164,13 @@ export class AppComponent implements OnInit, OnDestroy {
 
   private activitySubscription?: Subscription;
   private reviewCheckSubscription?: Subscription;
-  private reviewDialogRef?: MatDialogRef<LibraryReviewModalComponent>;
 
   constructor(
     public authService: AuthService,
     private router: Router,
     private logger: LoggerService,
     private http: HttpClient,
-    private dialog: MatDialog,
-    private libraryApi: LibraryApiService
+    private libraryReviewTrigger: LibraryReviewTriggerService
   ) {}
 
   ngOnInit(): void {
@@ -204,7 +200,7 @@ export class AppComponent implements OnInit, OnDestroy {
     // a pointless request).
     this.reviewCheckSubscription = this.authService.isAuthenticated$.pipe(
       filter(isAuth => isAuth && this.authService.isAdmin())
-    ).subscribe(() => this.checkLibraryReview());
+    ).subscribe(() => this.libraryReviewTrigger.checkAndMaybeShow());
   }
 
   ngOnDestroy(): void {
@@ -212,41 +208,9 @@ export class AppComponent implements OnInit, OnDestroy {
     this.reviewCheckSubscription?.unsubscribe();
   }
 
-  private checkLibraryReview(): void {
-    this.libraryApi.getLibraryReviewStatus().subscribe({
-      next: (status) => {
-        if (status.shouldShow) {
-          this.openLibraryReviewSession();
-        }
-      },
-      error: (err) => this.logger.error('Failed to check library review status', err)
-    });
-  }
-
-  /** On-demand trigger for the "Review Library" nav button — bypasses the 24h gate,
-   *  but still bumps the "last shown" timestamp like the automatic trigger does. */
+  /** On-demand trigger for the "Review Library" nav button — bypasses the once-a-day gate. */
   openLibraryReview(): void {
-    this.openLibraryReviewSession();
-  }
-
-  private openLibraryReviewSession(): void {
-    if (this.reviewDialogRef) return; // already open — never stack a second one
-
-    this.libraryApi.startLibraryReviewSession().subscribe({
-      next: (session) => {
-        if (this.reviewDialogRef) return;
-        this.reviewDialogRef = this.dialog.open(LibraryReviewModalComponent, {
-          data: session,
-          disableClose: true,
-          width: '640px',
-          maxWidth: '95vw'
-        });
-        this.reviewDialogRef.afterClosed().subscribe(() => {
-          this.reviewDialogRef = undefined;
-        });
-      },
-      error: (err) => this.logger.error('Failed to start library review session', err)
-    });
+    this.libraryReviewTrigger.open();
   }
 
   private fetchUserActivity(): void {

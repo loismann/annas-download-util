@@ -75,6 +75,7 @@ export class LibrarySidebarComponent {
   @Output() filterGenreComparisonChange = new EventEmitter<'less' | 'more'>();
   @Output() wipeGenres = new EventEmitter<void>();
   @Output() uploadBooks = new EventEmitter<void>();
+  @Output() reviewLibrary = new EventEmitter<void>();
 
   onResetView(): void {
     this.resetView.emit();
@@ -142,5 +143,9 @@ export class LibrarySidebarComponent {
 
   onUploadBooks(): void {
     this.uploadBooks.emit();
+  }
+
+  onReviewLibrary(): void {
+    this.reviewLibrary.emit();
   }
 }

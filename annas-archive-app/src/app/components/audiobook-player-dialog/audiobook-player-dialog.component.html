@@ -49,7 +49,7 @@
   </div>
 
   <div class="transport-row">
-    <button mat-icon-button class="play-btn" (click)="togglePlay()" [attr.aria-label]="playing ? 'Pause' : 'Play'">
+    <button type="button" class="play-btn" (click)="togglePlay()" [attr.aria-label]="playing ? 'Pause' : 'Play'">
       <mat-icon>{{ playing ? 'pause_circle' : 'play_circle' }}</mat-icon>
     </button>
 

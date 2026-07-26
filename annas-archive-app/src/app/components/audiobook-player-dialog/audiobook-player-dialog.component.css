@@ -118,17 +118,38 @@
 }
 
 .play-btn {
+  /* Plain button, not mat-icon-button: MDC's ripple/state-layer sizing for
+     icon-buttons is calc()'d off Material's own default touch target and
+     kept fighting our custom 56px size — even with the size token set, the
+     hover halo rendered visibly larger than the button (a translucent
+     circle noticeably bigger than the play icon). A hand-rolled circular
+     hover background sidesteps that MDC internals entirely. */
   width: 56px;
   height: 56px;
-  /* mat-icon-button's hover/focus state layer is sized independently of the
-     button's own box via this token — without it, the state layer stays at
-     Material's default size and renders larger than our resized button. */
-  --mdc-icon-button-state-layer-size: 56px;
+  border: none;
+  background: none;
+  border-radius: 50%;
+  padding: 0;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.15s ease;
   /* Aligns with the mat-form-field's visible outlined-box bottom edge —
      align-items: center would instead center against its shrunken flex
      height (the subscript-wrapper is collapsed via negative margin below,
      which offsets center-based alignment but not end-based). */
   margin-bottom: 4px;
+}
+
+.play-btn:hover,
+.play-btn:focus-visible {
+  background: rgba(63, 81, 181, 0.08);
+}
+
+.play-btn:focus-visible {
+  outline: 2px solid #3f51b5;
+  outline-offset: 2px;
 }
 
 .play-btn mat-icon {

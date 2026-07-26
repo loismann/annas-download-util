@@ -3,20 +3,14 @@ namespace AnnasArchive.API.Services.Library;
 /// <summary>
 /// Service for classifying books into standard genres based on subject keywords.
 /// Uses a keyword scoring system to match subjects to standard genres.
+///
+/// This is the single home of classification; the UI's genre dropdown list lives
+/// in the frontend's constants/book-genres.ts. The keys of the keyword map below
+/// (plus "Uncategorized") must stay within that list — when adding a genre,
+/// update both files.
 /// </summary>
 public class GenreClassificationService : IGenreClassificationService
 {
-    private static readonly string[] StandardGenres =
-    {
-        "Science Fiction", "Fantasy", "Mystery & Detective", "Thriller", "Romance",
-        "Historical Fiction", "Literary Fiction", "Horror", "Adventure", "Young Adult",
-        "Children's", "Graphic Novel", "Short Stories", "Classics", "Biography & Memoir",
-        "History", "Science & Technology", "Philosophy", "Self-Help", "Business & Economics",
-        "Travel", "True Crime", "Essays", "Politics & Current Events", "Religion & Spirituality",
-        "Art & Photography", "Cooking & Food", "Health & Fitness", "Poetry", "Drama",
-        "Reference", "Uncategorized"
-    };
-
     private static readonly Dictionary<string, string[]> GenreKeywordMap = new()
     {
         ["Science Fiction"] = new[] { "science fiction", "sci-fi", "scifi", "space opera", "cyberpunk", "dystopia", "dystopian", "time travel", "space", "aliens", "future", "robots", "artificial intelligence" },

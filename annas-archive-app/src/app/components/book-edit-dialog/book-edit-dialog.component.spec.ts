@@ -1,7 +1,6 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { BookEditDialogComponent, BookEditDialogData } from './book-edit-dialog.component';
 import { MAT_DIALOG_DATA, MatDialog, MatDialogRef } from '@angular/material/dialog';
-import { GenreMappingService } from '../../services/genre-mapping.service';
 import { LibraryApiService } from '../../services/library-api.service';
 import { Router } from '@angular/router';
 import { of, throwError } from 'rxjs';
@@ -11,7 +10,6 @@ describe('BookEditDialogComponent', () => {
   let component: BookEditDialogComponent;
   let fixture: ComponentFixture<BookEditDialogComponent>;
   let mockDialogRef: jasmine.SpyObj<MatDialogRef<BookEditDialogComponent>>;
-  let mockGenreMappingService: jasmine.SpyObj<GenreMappingService>;
   let mockLibraryApiService: jasmine.SpyObj<LibraryApiService>;
   let mockRouter: jasmine.SpyObj<Router>;
 
@@ -31,7 +29,6 @@ describe('BookEditDialogComponent', () => {
 
   beforeEach(async () => {
     mockDialogRef = jasmine.createSpyObj('MatDialogRef', ['close']);
-    mockGenreMappingService = jasmine.createSpyObj('GenreMappingService', ['getStandardGenres']);
     mockLibraryApiService = jasmine.createSpyObj('LibraryApiService', [
       'deleteLibraryBook',
       'sendLibraryToKindle',
@@ -41,18 +38,11 @@ describe('BookEditDialogComponent', () => {
     mockLibraryApiService.getLibraryBookSummary.and.returnValue(of({ summary: null, source: null }));
     mockRouter = jasmine.createSpyObj('Router', ['navigate']);
 
-    mockGenreMappingService.getStandardGenres.and.returnValue([
-      'Science Fiction',
-      'Fantasy',
-      'Mystery & Detective'
-    ]);
-
     await TestBed.configureTestingModule({
       imports: [BookEditDialogComponent, BrowserAnimationsModule],
       providers: [
         { provide: MatDialogRef, useValue: mockDialogRef },
         { provide: MAT_DIALOG_DATA, useValue: testDialogData },
-        { provide: GenreMappingService, useValue: mockGenreMappingService },
         { provide: LibraryApiService, useValue: mockLibraryApiService },
         { provide: Router, useValue: mockRouter }
       ]
@@ -217,11 +207,11 @@ describe('BookEditDialogComponent', () => {
       const testComponent = new BookEditDialogComponent(
         mockDialogRef,
         dataWithOwner,
-        mockGenreMappingService,
         mockLibraryApiService,
         mockRouter,
         { log: () => {}, error: () => {}, warn: () => {} } as any, // mock logger
-        mockDialog
+        mockDialog,
+        { getOwnerName: () => null } as any // mock auth
       );
 
       expect(testComponent.selectedOwners).toEqual(new Set(["Dad's Books", "Mom's Books"]));

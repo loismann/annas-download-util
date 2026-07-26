@@ -15,7 +15,7 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { COMMA, ENTER } from '@angular/cdk/keycodes';
 import { MatChipInputEvent } from '@angular/material/chips';
 import { Router } from '@angular/router';
-import { GenreMappingService } from '../../services/genre-mapping.service';
+import { STANDARD_GENRES } from '../../constants/book-genres';
 import { LibraryApiService } from '../../services/library-api.service';
 import { LoggerService } from '../../services/logger.service';
 import { AuthService } from '../../services/auth.service';
@@ -116,7 +116,6 @@ export class BookEditDialogComponent implements OnInit, OnDestroy {
   constructor(
     public dialogRef: MatDialogRef<BookEditDialogComponent>,
     @Inject(MAT_DIALOG_DATA) public data: BookEditDialogData,
-    private genreMappingService: GenreMappingService,
     private libraryApi: LibraryApiService,
     private router: Router,
     private logger: LoggerService,
@@ -127,7 +126,7 @@ export class BookEditDialogComponent implements OnInit, OnDestroy {
     // Filter out owner tags from genres list
     this.genres = (fromLibrary.length > 0
       ? [...fromLibrary]
-      : [...genreMappingService.getStandardGenres()]
+      : [...STANDARD_GENRES]
     ).filter(g => !this.ownerTags.includes(g));
     if (!this.genres.includes('Uncategorized')) {
       this.genres.unshift('Uncategorized');

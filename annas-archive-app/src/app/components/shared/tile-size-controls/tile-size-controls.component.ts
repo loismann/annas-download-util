@@ -123,6 +123,11 @@ export type TileSize = 'small' | 'medium' | 'large';
       width: 22px;
       height: 22px;
       line-height: 22px;
+      /* Material's own .mat-icon base CSS sets overflow: hidden, clipping any
+         glyph whose actual rendered metrics exceed this forced box (the outline
+         heart in particular sits right at that edge) — override it explicitly
+         rather than relying on the box being exactly the right size. */
+      overflow: visible;
     }
 
     /* 40x40 flavor (media-library / audiobooks toolbars) */
@@ -146,6 +151,7 @@ export type TileSize = 'small' | 'medium' | 'large';
       width: 24px;
       height: 24px;
       line-height: 24px;
+      overflow: visible;
     }
   `]
 })

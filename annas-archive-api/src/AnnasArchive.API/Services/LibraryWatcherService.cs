@@ -1397,18 +1397,7 @@ Return JSON with:
             Authors.Length > 0;
     }
 
-    private static string ResolveLibraryRoot()
-    {
-        var envRoot = Environment.GetEnvironmentVariable("LIBRARY_ROOT");
-        if (!string.IsNullOrWhiteSpace(envRoot))
-            return envRoot;
-
-        const string synologyDefault = "/volume1/books/Library";
-        if (Directory.Exists(synologyDefault))
-            return synologyDefault;
-
-        return Path.Combine(AppContext.BaseDirectory, "library");
-    }
+    private static string ResolveLibraryRoot() => Helpers.StoragePaths.LibraryRoot();
 
     private static string FormatFileSize(long bytes)
     {

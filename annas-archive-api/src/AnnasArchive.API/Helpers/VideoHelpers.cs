@@ -14,24 +14,7 @@ public static class VideoHelpers
     /// Resolves the root directory path for the video library.
     /// Checks YOUTUBE_DOWNLOAD_ROOT env var, then Synology default.
     /// </summary>
-    public static string ResolveVideoRoot()
-    {
-        // docker-compose sets the .NET-config-style YouTube__DownloadRoot (the same key
-        // YouTubeDownloadService reads via IConfiguration), not YOUTUBE_DOWNLOAD_ROOT —
-        // checking only the latter made this resolve to the ephemeral /app/videos in the
-        // container while yt-dlp wrote to /data/youtube. Both spellings accepted so the
-        // browse/metadata side and the download side always agree on the root.
-        var envRoot = Environment.GetEnvironmentVariable("YOUTUBE_DOWNLOAD_ROOT")
-            ?? Environment.GetEnvironmentVariable("YouTube__DownloadRoot");
-        if (!string.IsNullOrWhiteSpace(envRoot))
-            return envRoot;
-
-        const string synologyDefault = "/volume1/media/YouTube";
-        if (Directory.Exists(synologyDefault))
-            return synologyDefault;
-
-        return Path.Combine(AppContext.BaseDirectory, "videos");
-    }
+    public static string ResolveVideoRoot() => StoragePaths.VideoRoot();
 
     /// <summary>
     /// Creates JSON serializer options for video metadata files.

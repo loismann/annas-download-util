@@ -14,18 +14,7 @@ public static class LibraryHelpers
     /// Resolves the root directory path for the book library.
     /// Checks LIBRARY_ROOT env var, then Synology default, then app directory.
     /// </summary>
-    public static string ResolveLibraryRoot()
-    {
-        var envRoot = Environment.GetEnvironmentVariable("LIBRARY_ROOT");
-        if (!string.IsNullOrWhiteSpace(envRoot))
-            return envRoot;
-
-        const string synologyDefault = "/volume1/books/Library";
-        if (Directory.Exists(synologyDefault))
-            return synologyDefault;
-
-        return Path.Combine(AppContext.BaseDirectory, "library");
-    }
+    public static string ResolveLibraryRoot() => StoragePaths.LibraryRoot();
 
     /// <summary>
     /// Resolves which of the three household users ("Paul"/"Mom"/"Dad") is

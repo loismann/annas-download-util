@@ -158,13 +158,5 @@ public static class AudiobookEnrichmentEndpoints
         }
     }
 
-    private static string ResolveAudiobooksRoot()
-    {
-        var envRoot = Environment.GetEnvironmentVariable("AUDIOBOOKS_ROOT");
-        if (!string.IsNullOrWhiteSpace(envRoot))
-            return envRoot;
-
-        const string dockerDefault = "/audiobooks";
-        return Directory.Exists(dockerDefault) ? dockerDefault : Path.Combine(AppContext.BaseDirectory, "audiobooks");
-    }
+    private static string ResolveAudiobooksRoot() => Helpers.StoragePaths.AudiobooksRoot();
 }

@@ -1,0 +1,71 @@
+namespace AnnasArchive.API.Helpers;
+
+/// <summary>
+/// Single source for resolving every content-root directory. These were
+/// previously duplicated verbatim across helpers, services, and endpoints
+/// (library root ×2, audiobooks root ×2, EPUB cache root ×2) — a change to
+/// one resolution rule silently missed its twin.
+///
+/// Resolution order is always: env var → known deployment default → local
+/// fallback. The env vars are what docker-compose sets; the Synology/docker
+/// defaults keep old deployments working; the local fallbacks keep `dotnet
+/// run` on a dev machine functional.
+/// </summary>
+public static class StoragePaths
+{
+    public static string LibraryRoot()
+    {
+        var envRoot = Environment.GetEnvironmentVariable("LIBRARY_ROOT");
+        if (!string.IsNullOrWhiteSpace(envRoot))
+            return envRoot;
+
+        const string synologyDefault = "/volume1/books/Library";
+        if (Directory.Exists(synologyDefault))
+            return synologyDefault;
+
+        return Path.Combine(AppContext.BaseDirectory, "library");
+    }
+
+    public static string VideoRoot()
+    {
+        // docker-compose sets the .NET-config-style YouTube__DownloadRoot (the same key
+        // YouTubeDownloadService reads via IConfiguration), not YOUTUBE_DOWNLOAD_ROOT —
+        // both spellings accepted so the browse/metadata side and the download side
+        // always agree on the root.
+        var envRoot = Environment.GetEnvironmentVariable("YOUTUBE_DOWNLOAD_ROOT")
+            ?? Environment.GetEnvironmentVariable("YouTube__DownloadRoot");
+        if (!string.IsNullOrWhiteSpace(envRoot))
+            return envRoot;
+
+        const string synologyDefault = "/volume1/media/YouTube";
+        if (Directory.Exists(synologyDefault))
+            return synologyDefault;
+
+        return Path.Combine(AppContext.BaseDirectory, "videos");
+    }
+
+    public static string AudiobooksRoot()
+    {
+        var envRoot = Environment.GetEnvironmentVariable("AUDIOBOOKS_ROOT");
+        if (!string.IsNullOrWhiteSpace(envRoot))
+            return envRoot;
+
+        const string dockerDefault = "/audiobooks";
+        return Directory.Exists(dockerDefault) ? dockerDefault : Path.Combine(AppContext.BaseDirectory, "audiobooks");
+    }
+
+    public static string EpubCacheRoot()
+    {
+        var env = Environment.GetEnvironmentVariable("EPUB_CACHE_ROOT");
+        if (!string.IsNullOrWhiteSpace(env))
+        {
+            Directory.CreateDirectory(env);
+            return env;
+        }
+
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var fallback = Path.Combine(home, ".annas-archive", "epub-cache");
+        Directory.CreateDirectory(fallback);
+        return fallback;
+    }
+}

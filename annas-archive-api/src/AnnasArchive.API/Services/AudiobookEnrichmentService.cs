@@ -874,16 +874,5 @@ Confidence rubric — use the actual scale, don't default to round numbers:
         await File.WriteAllTextAsync(sidecarPath, json, token);
     }
 
-    private static string ResolveAudiobooksRoot()
-    {
-        var envRoot = Environment.GetEnvironmentVariable("AUDIOBOOKS_ROOT");
-        if (!string.IsNullOrWhiteSpace(envRoot))
-            return envRoot;
-
-        const string dockerDefault = "/audiobooks";
-        if (Directory.Exists(dockerDefault))
-            return dockerDefault;
-
-        return Path.Combine(AppContext.BaseDirectory, "audiobooks");
-    }
+    private static string ResolveAudiobooksRoot() => Helpers.StoragePaths.AudiobooksRoot();
 }

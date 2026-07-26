@@ -33,20 +33,7 @@ static class LibraryEpubCache
         WriteIndented = false
     };
 
-    private static string ResolveCacheRoot()
-    {
-        var env = Environment.GetEnvironmentVariable("EPUB_CACHE_ROOT");
-        if (!string.IsNullOrWhiteSpace(env))
-        {
-            Directory.CreateDirectory(env);
-            return env;
-        }
-
-        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        var fallback = Path.Combine(home, ".annas-archive", "epub-cache");
-        Directory.CreateDirectory(fallback);
-        return fallback;
-    }
+    private static string ResolveCacheRoot() => StoragePaths.EpubCacheRoot();
 
     public static async Task<(CachedChapterIndex Index, string CacheDir)> GetOrBuildChapterIndexAsync(
         string filePath,

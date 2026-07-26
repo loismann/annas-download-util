@@ -6,8 +6,11 @@ using Serilog;
 
 namespace AnnasArchive.API.Endpoints;
 
-/// <summary>Body for PATCH .../metadata — full replace of both fields.</summary>
-public record SetMediaMetadataRequest(List<string>? Owners, List<string>? Genres);
+/// <summary>Body for PATCH .../metadata — full replace of Owners/Genres. Title is
+/// audiobooks-only (see AudiobookLibraryEndpoints.ValidateMetadata) — TV/movie
+/// titles come from Sonarr/Radarr's own matching and are never user-editable,
+/// so MediaLibraryEndpoints.ValidateMetadata below just never reads it.</summary>
+public record SetMediaMetadataRequest(List<string>? Owners, List<string>? Genres, string? Title = null);
 
 /// <summary>Body for POST .../favorite — the acting owner is resolved server-side from the
 /// authenticated session, never taken from the client.</summary>

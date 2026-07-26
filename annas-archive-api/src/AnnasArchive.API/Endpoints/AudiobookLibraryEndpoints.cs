@@ -131,6 +131,9 @@ public static class AudiobookLibraryEndpoints
         var safeId = SanitizeId(id);
         if (safeId is null) return Results.BadRequest(new { error = "Invalid id." });
 
+        var titleValidation = ValidationHelpers.ValidateStringLength(request.Title, "title", 500);
+        if (titleValidation != null) return titleValidation;
+
         var validated = ValidateMetadata(request);
         if (validated is null)
             return Results.BadRequest(new { error = "owners may only contain Paul, Mom, Dad" });
@@ -403,6 +406,13 @@ public static class AudiobookLibraryEndpoints
             // Tells the frontend a cover override exists (served by HandleGetCover in
             // place of the Audiobookshelf proxy) even for items ABS itself has no cover for.
             obj["hasCustomCover"] = JsonValue.Create(meta?.CoverUrl != null);
+            // Overwrite the nested title Audiobookshelf reports, in place, so titleOf()
+            // on the frontend picks up the override transparently — never written back
+            // into Audiobookshelf's own metadata.
+            if (!string.IsNullOrEmpty(meta?.Title) && obj["media"] is JsonObject mediaObj && mediaObj["metadata"] is JsonObject metadataObj)
+            {
+                metadataObj["title"] = meta.Title;
+            }
             if (meta?.Progress is { Count: > 0 })
             {
                 var progressObj = new JsonObject();
@@ -430,7 +440,13 @@ public static class AudiobookLibraryEndpoints
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        return new MediaItemMetadata(owners, genres);
+        // null/empty means "not part of this save" — MediaMetadataService.Set() merges
+        // it forward from whatever title override (if any) already existed, rather than
+        // clearing it. There's no way to explicitly revert to Audiobookshelf's own title
+        // once overridden; not needed yet, same tradeoff as the cover override.
+        var title = request.Title?.Trim();
+
+        return new MediaItemMetadata(owners, genres, Title: string.IsNullOrEmpty(title) ? null : title);
     }
 
     /// <summary>True for the failure shapes an unreachable/slow Audiobookshelf

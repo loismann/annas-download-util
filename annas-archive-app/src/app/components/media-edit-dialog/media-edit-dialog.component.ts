@@ -1,7 +1,10 @@
 import { Component, Inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { MatDialogModule, MatDialogRef, MAT_DIALOG_DATA } from '@angular/material/dialog';
 import { MatButtonModule } from '@angular/material/button';
+import { MatFormFieldModule } from '@angular/material/form-field';
+import { MatInputModule } from '@angular/material/input';
 import { MediaLibraryApiService } from '../../services/media-library-api.service';
 import { AudiobookApiService } from '../../services/audiobook-api.service';
 import { AuthService } from '../../services/auth.service';
@@ -35,6 +38,10 @@ export interface MediaEditDialogResult {
   owners: string[];
   /** Audiobooks only — set when the user picked a new cover in this session. */
   coverUrl?: string;
+  /** Audiobooks only — set when the user actually changed the title from what
+   * Audiobookshelf reports. Omitted (not just empty) when unedited, so an
+   * owners/genres-only save never touches a previously-set title override. */
+  title?: string;
 }
 
 /**
@@ -49,8 +56,11 @@ export interface MediaEditDialogResult {
   standalone: true,
   imports: [
     CommonModule,
+    FormsModule,
     MatDialogModule,
     MatButtonModule,
+    MatFormFieldModule,
+    MatInputModule,
     FavoriteToggleComponent,
     OwnerPickerComponent,
     GenreChipsEditorComponent,
@@ -58,7 +68,7 @@ export interface MediaEditDialogResult {
   ],
   template: `
     <div class="media-edit-dialog">
-      <h2 mat-dialog-title>{{ data.title }}</h2>
+      <h2 mat-dialog-title>{{ data.mediaType === 'audiobook' ? titleInput : data.title }}</h2>
       <div *ngIf="data.sizeLabel" class="size-label">{{ data.sizeLabel }} on disk</div>
 
       <div mat-dialog-content>
@@ -69,6 +79,11 @@ export interface MediaEditDialogResult {
           [currentCoverUrl]="data.coverUrl ?? null"
           (coverSelected)="selectedCoverUrl = $event"
         ></app-cover-picker>
+
+        <mat-form-field *ngIf="data.mediaType === 'audiobook'" appearance="outline" class="title-field">
+          <mat-label>Title</mat-label>
+          <input matInput [(ngModel)]="titleInput" maxlength="500" />
+        </mat-form-field>
 
         <app-favorite-toggle
           [favorited]="isFavorited"
@@ -100,12 +115,16 @@ export interface MediaEditDialogResult {
       font-size: 0.8rem;
       color: #64748b;
     }
+    .title-field {
+      width: 100%;
+    }
   `]
 })
 export class MediaEditDialogComponent {
   genres: string[];
   selectedOwners: string[];
   selectedCoverUrl: string | undefined;
+  titleInput: string;
 
   constructor(
     public dialogRef: MatDialogRef<MediaEditDialogComponent, MediaEditDialogResult>,
@@ -117,6 +136,7 @@ export class MediaEditDialogComponent {
   ) {
     this.genres = [...(data.genres || [])];
     this.selectedOwners = [...(data.owners || [])];
+    this.titleInput = data.title;
   }
 
   get isFavorited(): boolean {
@@ -154,10 +174,16 @@ export class MediaEditDialogComponent {
   }
 
   onSave(): void {
+    const trimmedTitle = this.titleInput?.trim();
+    const titleChanged = this.data.mediaType === 'audiobook' &&
+      !!trimmedTitle &&
+      trimmedTitle !== this.data.title;
+
     this.dialogRef.close({
       genres: this.genres,
       owners: this.selectedOwners,
-      coverUrl: this.selectedCoverUrl
+      coverUrl: this.selectedCoverUrl,
+      title: titleChanged ? trimmedTitle : undefined
     });
   }
 

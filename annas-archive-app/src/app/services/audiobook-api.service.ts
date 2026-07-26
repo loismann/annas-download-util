@@ -86,9 +86,12 @@ export class AudiobookApiService {
     return this.http.get<AudiobookItem>(`${this.baseUrl}/${encodeURIComponent(id)}`);
   }
 
-  /** Full replace of an audiobook's owners + genre tags. */
-  setMetadata(id: string, owners: string[], genres: string[]): Observable<void> {
-    return this.http.patch<void>(`${this.baseUrl}/${encodeURIComponent(id)}/metadata`, { owners, genres });
+  /** Full replace of an audiobook's owners + genre tags; title is optional and only
+   *  applied when provided (a title override, distinct from Audiobookshelf's own —
+   *  see AudiobookLibraryEndpoints.ApplyMetadata). Omitting it leaves any existing
+   *  title override untouched, it does not clear one. */
+  setMetadata(id: string, owners: string[], genres: string[], title?: string): Observable<void> {
+    return this.http.patch<void>(`${this.baseUrl}/${encodeURIComponent(id)}/metadata`, { owners, genres, title });
   }
 
   /** Favorite/unfavorite on behalf of whoever's logged in — the acting owner

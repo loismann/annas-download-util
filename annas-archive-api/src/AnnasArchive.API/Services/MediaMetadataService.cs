@@ -14,12 +14,15 @@ public record AudiobookProgress(double PositionSeconds, DateTime UpdatedAt);
 /// <param name="CoverUrl">(Audiobooks only) filename of a user-picked cover override,
 /// relative to StoragePaths.AudiobookCoverOverrideRoot() — null means show whatever
 /// the owning tool (Audiobookshelf) reports.</param>
+/// <param name="Title">(Audiobooks only) a user-picked title override — null means
+/// show whatever Audiobookshelf reports. TV/movie titles are never overridable.</param>
 public record MediaItemMetadata(
     List<string> Owners,
     List<string> Genres,
     List<string>? Favorites = null,
     Dictionary<string, AudiobookProgress>? Progress = null,
-    string? CoverUrl = null)
+    string? CoverUrl = null,
+    string? Title = null)
 {
     public List<string> Favorites { get; set; } = Favorites ?? new List<string>();
     public Dictionary<string, AudiobookProgress> Progress { get; set; } = Progress ?? new Dictionary<string, AudiobookProgress>();
@@ -70,16 +73,32 @@ public class MediaMetadataService : IMediaMetadataService
         _legacyFilePath = legacyFilePath;
     }
 
+    /// <summary>Full replace of Owners/Genres (e.g. removing a genre by omitting it
+    /// genuinely clears it) — but Favorites/Progress/CoverUrl/Title are each managed
+    /// independently by their own Set*/cover-endpoint calls, and every caller here
+    /// only ever constructs `metadata` from Owners/Genres, leaving those at their
+    /// default empty/null. A plain overwrite would therefore silently erase whatever
+    /// was already there — e.g. saving a genre edit on a favorited show would wipe
+    /// the favorite. Merge them forward from the existing record instead.</summary>
     public void Set(string type, string id, MediaItemMetadata metadata)
     {
         var key = $"{type}:{id}";
         lock (_fileLock)
         {
             var data = LoadUnsafe();
-            if (IsEmpty(metadata))
+            var existing = data.GetValueOrDefault(key);
+            var merged = metadata with
+            {
+                Favorites = existing?.Favorites ?? metadata.Favorites,
+                Progress = existing?.Progress ?? metadata.Progress,
+                CoverUrl = metadata.CoverUrl ?? existing?.CoverUrl,
+                Title = metadata.Title ?? existing?.Title
+            };
+
+            if (IsEmpty(merged))
                 data.Remove(key);
             else
-                data[key] = metadata;
+                data[key] = merged;
 
             SaveUnsafe(data);
         }
@@ -172,7 +191,7 @@ public class MediaMetadataService : IMediaMetadataService
     private static bool IsEmpty(MediaItemMetadata metadata) =>
         metadata.Owners.Count == 0 && metadata.Genres.Count == 0 &&
         metadata.Favorites.Count == 0 && metadata.Progress.Count == 0 &&
-        string.IsNullOrEmpty(metadata.CoverUrl);
+        string.IsNullOrEmpty(metadata.CoverUrl) && string.IsNullOrEmpty(metadata.Title);
 
     public IReadOnlyDictionary<string, MediaItemMetadata> GetAll()
     {

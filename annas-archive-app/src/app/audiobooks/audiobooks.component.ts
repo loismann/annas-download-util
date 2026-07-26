@@ -429,10 +429,13 @@ export class AudiobooksComponent implements OnInit {
       item.favorites = dialogData.favoritedBy;
 
       if (!result) return;
-      this.api.setMetadata(item.id, result.owners, result.genres).subscribe({
+      this.api.setMetadata(item.id, result.owners, result.genres, result.title).subscribe({
         next: () => {
           item.owners = result.owners;
           item.customGenres = result.genres;
+          if (result.title && item.media?.metadata) {
+            item.media.metadata.title = result.title;
+          }
         },
         error: (err) => {
           this.logger.error('[AudiobooksComponent] setMetadata failed', err);

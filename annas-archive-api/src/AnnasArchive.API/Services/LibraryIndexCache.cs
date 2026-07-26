@@ -2,159 +2,47 @@ using System.Collections.Concurrent;
 using System.Text.Json;
 using AnnasArchive.API.Helpers;
 using AnnasArchive.API.Models;
-using Microsoft.Extensions.Hosting;
 using Serilog;
 
 namespace AnnasArchive.API.Services;
 
 /// <summary>
 /// Caches the library book index in memory to avoid reading thousands of files on each request.
-/// Implements IHostedService to warm the cache on application startup.
-/// Uses FileSystemWatcher to invalidate cache when files change.
+/// Caching/watcher scaffolding lives in <see cref="MetaIndexCache{TDto}"/>; this class owns
+/// the book-specific index build (including the personalization-overlay merge), cover URL
+/// normalization, and server-side search.
 /// </summary>
-public class LibraryIndexCache : IHostedService, IDisposable
+public class LibraryIndexCache : MetaIndexCache<LibraryBookDto>
 {
-    private readonly object _lock = new();
-    private List<LibraryBookDto>? _cachedBooks;
-    private DateTime _lastBuildTime = DateTime.MinValue;
-    private FileSystemWatcher? _watcher;
-    private readonly ConcurrentQueue<string> _pendingChanges = new();
-    private Timer? _debounceTimer;
-    private bool _isRebuilding;
-    private readonly TimeSpan _debounceDelay = TimeSpan.FromSeconds(2);
     private readonly Data.BookPersonalizationStore? _personalization;
 
     // The personalization store is optional only so tests can construct the cache
     // without a database; in the real app DI always supplies it.
     public LibraryIndexCache(Data.BookPersonalizationStore? personalization = null)
+        : base("LibraryIndexCache", LibraryHelpers.ResolveLibraryRoot())
     {
         _personalization = personalization;
-        InitializeWatcher();
-    }
-
-    /// <summary>
-    /// Warm the cache on application startup.
-    /// </summary>
-    public Task StartAsync(CancellationToken cancellationToken)
-    {
-        // Build cache in background so startup isn't blocked
-        _ = Task.Run(() =>
-        {
-            try
-            {
-                Log.Information("[LibraryIndexCache] Warming cache on startup...");
-                var sw = System.Diagnostics.Stopwatch.StartNew();
-
-                // Build with empty baseUrl - URLs will be normalized on retrieval
-                var books = BuildLibraryIndex(baseUrl: null);
-
-                lock (_lock)
-                {
-                    _cachedBooks = books;
-                    _lastBuildTime = DateTime.UtcNow;
-                }
-
-                sw.Stop();
-                Log.Information("[LibraryIndexCache] Cache warmed on startup in {ElapsedMs}ms with {Count} books",
-                    sw.ElapsedMilliseconds, books.Count);
-            }
-            catch (Exception ex)
-            {
-                Log.Error(ex, "[LibraryIndexCache] Failed to warm cache on startup");
-            }
-        }, cancellationToken);
-
-        return Task.CompletedTask;
-    }
-
-    public Task StopAsync(CancellationToken cancellationToken)
-    {
-        return Task.CompletedTask;
-    }
-
-    private void InitializeWatcher()
-    {
-        try
-        {
-            var libraryRoot = LibraryHelpers.ResolveLibraryRoot();
-            if (!Directory.Exists(libraryRoot))
-            {
-                Log.Warning("[LibraryIndexCache] Library root does not exist: {LibraryRoot}", libraryRoot);
-                return;
-            }
-
-            _watcher = new FileSystemWatcher(libraryRoot)
-            {
-                NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.CreationTime,
-                Filter = "*.meta.json",
-                EnableRaisingEvents = true,
-                IncludeSubdirectories = false
-            };
-
-            _watcher.Created += OnFileChanged;
-            _watcher.Changed += OnFileChanged;
-            _watcher.Deleted += OnFileChanged;
-            _watcher.Renamed += OnFileRenamed;
-
-            Log.Information("[LibraryIndexCache] FileSystemWatcher initialized for {LibraryRoot}", libraryRoot);
-        }
-        catch (Exception ex)
-        {
-            Log.Error(ex, "[LibraryIndexCache] Failed to initialize FileSystemWatcher");
-        }
-    }
-
-    private void OnFileChanged(object sender, FileSystemEventArgs e)
-    {
-        _pendingChanges.Enqueue(e.FullPath);
-        ScheduleRebuild();
-    }
-
-    private void OnFileRenamed(object sender, RenamedEventArgs e)
-    {
-        _pendingChanges.Enqueue(e.FullPath);
-        ScheduleRebuild();
-    }
-
-    private void ScheduleRebuild()
-    {
-        lock (_lock)
-        {
-            _debounceTimer?.Dispose();
-            _debounceTimer = new Timer(_ =>
-            {
-                InvalidateCache();
-            }, null, _debounceDelay, Timeout.InfiniteTimeSpan);
-        }
-    }
-
-    public void InvalidateCache()
-    {
-        lock (_lock)
-        {
-            _cachedBooks = null;
-            while (_pendingChanges.TryDequeue(out _)) { }
-            Log.Information("[LibraryIndexCache] Cache invalidated");
-        }
     }
 
     /// <summary>
     /// Gets the cached library books, rebuilding the cache if necessary.
     /// </summary>
-    public List<LibraryBookDto> GetBooks(string baseUrl)
-    {
-        lock (_lock)
-        {
-            if (_cachedBooks != null)
-            {
-                // Normalize cover URLs with the actual base URL
-                return NormalizeCoverUrls(_cachedBooks, baseUrl);
-            }
-        }
+    public List<LibraryBookDto> GetBooks(string baseUrl) => GetItems(baseUrl);
 
-        // Build outside the lock to allow concurrent reads during rebuild
-        return RebuildCache(baseUrl);
-    }
+    /// <summary>
+    /// Updates a single book in the cache without full rebuild.
+    /// </summary>
+    public void UpdateBook(LibraryBookDto updatedBook) => UpdateItem(updatedBook);
+
+    /// <summary>
+    /// Removes a book from the cache without full rebuild.
+    /// </summary>
+    public void RemoveBook(string fileName) => RemoveItem(fileName);
+
+    protected override string KeyOf(LibraryBookDto item) => item.FileName;
+
+    protected override List<LibraryBookDto> SortIndex(IEnumerable<LibraryBookDto> items) =>
+        items.OrderBy(b => b.Title, StringComparer.OrdinalIgnoreCase).ToList();
 
     /// <summary>
     /// Gets a paginated list of library books.
@@ -399,14 +287,14 @@ public class LibraryIndexCache : IHostedService, IDisposable
     /// Normalizes cover URLs with the actual base URL.
     /// This is needed because the cache may be built before we know the base URL.
     /// </summary>
-    private static List<LibraryBookDto> NormalizeCoverUrls(List<LibraryBookDto> books, string baseUrl)
+    protected override List<LibraryBookDto> NormalizeUrls(List<LibraryBookDto> items, string baseUrl)
     {
         if (string.IsNullOrEmpty(baseUrl))
-            return books;
+            return items;
 
         var libraryRoot = LibraryHelpers.ResolveLibraryRoot();
 
-        return books.Select(book =>
+        return items.Select(book =>
         {
             // If cover URL is already absolute, return as-is
             if (book.CoverUrl?.StartsWith("http", StringComparison.OrdinalIgnoreCase) == true)
@@ -431,57 +319,7 @@ public class LibraryIndexCache : IHostedService, IDisposable
         }).ToList();
     }
 
-    private List<LibraryBookDto> RebuildCache(string baseUrl)
-    {
-        lock (_lock)
-        {
-            // Double-check after acquiring lock
-            if (_cachedBooks != null)
-            {
-                return _cachedBooks;
-            }
-
-            if (_isRebuilding)
-            {
-                // Return empty while rebuilding to avoid blocking
-                return new List<LibraryBookDto>();
-            }
-
-            _isRebuilding = true;
-        }
-
-        var sw = System.Diagnostics.Stopwatch.StartNew();
-        Log.Information("[LibraryIndexCache] Starting cache rebuild...");
-
-        try
-        {
-            var books = BuildLibraryIndex(baseUrl);
-
-            lock (_lock)
-            {
-                _cachedBooks = books;
-                _lastBuildTime = DateTime.UtcNow;
-                _isRebuilding = false;
-            }
-
-            sw.Stop();
-            Log.Information("[LibraryIndexCache] Cache rebuilt in {ElapsedMs}ms with {Count} books",
-                sw.ElapsedMilliseconds, books.Count);
-
-            return books;
-        }
-        catch (Exception ex)
-        {
-            Log.Error(ex, "[LibraryIndexCache] Failed to rebuild cache");
-            lock (_lock)
-            {
-                _isRebuilding = false;
-            }
-            return new List<LibraryBookDto>();
-        }
-    }
-
-    private List<LibraryBookDto> BuildLibraryIndex(string? baseUrl)
+    protected override List<LibraryBookDto> BuildIndex(string? baseUrl)
     {
         var libraryRoot = LibraryHelpers.ResolveLibraryRoot();
         if (!Directory.Exists(libraryRoot))
@@ -513,13 +351,6 @@ public class LibraryIndexCache : IHostedService, IDisposable
                     metaLookup.TryAdd(meta.FileName, true);
                     var coverUrl = LibraryHelpers.NormalizeLibraryCoverUrl(meta.CoverUrl, baseUrl)
                         ?? LibraryHelpers.FindLocalCoverUrl(libraryRoot, meta.FileName, baseUrl);
-
-                    // Log first few cover URLs for debugging
-                    if (books.Count < 5 && !string.IsNullOrEmpty(coverUrl))
-                    {
-                        Log.Information("[LibraryIndexCache] Sample coverUrl: meta.CoverUrl={MetaCoverUrl}, normalized={NormalizedUrl}",
-                            meta.CoverUrl, coverUrl);
-                    }
 
                     var p = overlays.GetValueOrDefault(meta.FileName);
                     var genres = meta.Genres ?? Array.Empty<string>();
@@ -604,60 +435,6 @@ public class LibraryIndexCache : IHostedService, IDisposable
             }
         }
 
-        return books
-            .OrderBy(b => b.Title, StringComparer.OrdinalIgnoreCase)
-            .ToList();
-    }
-
-    /// <summary>
-    /// Updates a single book in the cache without full rebuild.
-    /// </summary>
-    public void UpdateBook(LibraryBookDto updatedBook)
-    {
-        lock (_lock)
-        {
-            if (_cachedBooks == null)
-                return;
-
-            var index = _cachedBooks.FindIndex(b =>
-                string.Equals(b.FileName, updatedBook.FileName, StringComparison.OrdinalIgnoreCase));
-
-            if (index >= 0)
-            {
-                _cachedBooks[index] = updatedBook;
-            }
-            else
-            {
-                _cachedBooks.Add(updatedBook);
-                _cachedBooks = _cachedBooks
-                    .OrderBy(b => b.Title, StringComparer.OrdinalIgnoreCase)
-                    .ToList();
-            }
-        }
-    }
-
-    /// <summary>
-    /// Removes a book from the cache without full rebuild.
-    /// </summary>
-    public void RemoveBook(string fileName)
-    {
-        lock (_lock)
-        {
-            if (_cachedBooks == null)
-                return;
-
-            _cachedBooks.RemoveAll(b =>
-                string.Equals(b.FileName, fileName, StringComparison.OrdinalIgnoreCase));
-        }
-    }
-
-    public DateTime LastBuildTime => _lastBuildTime;
-    public int CachedBookCount => _cachedBooks?.Count ?? 0;
-    public bool IsCached => _cachedBooks != null;
-
-    public void Dispose()
-    {
-        _watcher?.Dispose();
-        _debounceTimer?.Dispose();
+        return SortIndex(books);
     }
 }

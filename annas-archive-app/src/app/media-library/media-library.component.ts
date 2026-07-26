@@ -563,6 +563,16 @@ export class MediaLibraryComponent implements OnInit, OnDestroy {
     });
   }
 
+  /** Opens Jellyfin's proxied file download in a new tab — the browser handles
+   * the actual save via the response's Content-Disposition: attachment header,
+   * this just needs to not navigate the SPA away from itself. */
+  downloadMovie(movie: MediaLookupResult, event: Event): void {
+    event.stopPropagation(); // don't also trigger playMovie()
+    if (movie.tmdbId === undefined) return;
+
+    window.open(this.api.getMovieDownloadUrl(movie.tmdbId), '_blank');
+  }
+
   openTvEditDialog(tile: LibraryTile, event: Event): void {
     event.stopPropagation(); // don't also trigger openSeries()
     if (tile.result.id === undefined) return;

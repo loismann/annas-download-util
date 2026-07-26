@@ -136,6 +136,19 @@ export class SeriesDetailComponent implements OnInit {
     });
   }
 
+  /** Opens Jellyfin's proxied file download in a new tab — not to be confused
+   * with downloadSeason() below, which triggers a Sonarr *acquisition* (grabbing
+   * a release from an indexer). This downloads the file already on disk to the
+   * user's own device. */
+  downloadEpisode(episode: EpisodeInfo): void {
+    if (!this.series?.tvdbId || !episode.hasFile) return;
+
+    window.open(
+      this.api.getEpisodeDownloadUrl(this.series.tvdbId, episode.seasonNumber, episode.episodeNumber),
+      '_blank'
+    );
+  }
+
   downloadSeason(group: SeasonGroup): void {
     if (!this.series?.id || group.allDownloaded || this.downloadingSeasonNumber !== null) return;
 

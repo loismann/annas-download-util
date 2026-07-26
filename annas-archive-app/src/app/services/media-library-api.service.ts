@@ -3,6 +3,7 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { MediaLookupResult } from './media-search-api.service';
 import { apiBase } from './api-base';
+import { AuthService } from './auth.service';
 
 export interface EpisodeInfo {
   id: number;
@@ -48,7 +49,7 @@ export class MediaLibraryApiService {
   private readonly apiHost = apiBase();
   private readonly baseUrl = `${this.apiHost}/api/media`;
 
-  constructor(private http: HttpClient) {}
+  constructor(private http: HttpClient, private authService: AuthService) {}
 
   getDownloadedTv(): Observable<MediaLookupResult[]> {
     return this.http.get<MediaLookupResult[]>(`${this.baseUrl}/tv/downloaded`);
@@ -73,6 +74,22 @@ export class MediaLibraryApiService {
   watchMovie(tmdbId: number): Observable<WatchResponse> {
     const params = new HttpParams().set('tmdbId', tmdbId.toString());
     return this.http.get<WatchResponse>(`${this.baseUrl}/movies/watch`, { params });
+  }
+
+  /** Same-origin download URL for a plain <a href>/window.location navigation —
+   *  a real download can't carry an Authorization header, so auth rides along
+   *  as ?access_token= (see the OnMessageReceived allowlist in
+   *  ServiceConfiguration.cs). Proxies the file straight from Jellyfin; a 404
+   *  means Jellyfin hasn't matched it yet, a 502 means its "Allow media
+   *  downloading" permission is probably off for the configured API key. */
+  getMovieDownloadUrl(tmdbId: number): string {
+    const token = this.authService.getToken() ?? '';
+    return `${this.baseUrl}/movies/download?tmdbId=${tmdbId}&access_token=${encodeURIComponent(token)}`;
+  }
+
+  getEpisodeDownloadUrl(tvdbId: number, season: number, episode: number): string {
+    const token = this.authService.getToken() ?? '';
+    return `${this.baseUrl}/tv/download?tvdbId=${tvdbId}&season=${season}&episode=${episode}&access_token=${encodeURIComponent(token)}`;
   }
 
   /** Removes the whole series from Sonarr and deletes all its files. */

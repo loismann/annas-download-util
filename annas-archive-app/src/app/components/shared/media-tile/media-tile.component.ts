@@ -65,6 +65,15 @@ import { MatTooltipModule } from '@angular/material/tooltip';
     >
       <mat-icon>delete</mat-icon>
     </button>
+    <button
+      *ngIf="!bulkMode && showDownload"
+      mat-icon-button
+      class="download-btn"
+      [matTooltip]="downloadTooltip"
+      (click)="emitStopped(download, $event)"
+    >
+      <mat-icon>download</mat-icon>
+    </button>
     <!-- loading="lazy": grids can hold hundreds of tiles (991 audiobooks) and
          eagerly fetching every proxied cover at once stampedes the backend —
          the browser only fetches covers as they near the viewport. -->
@@ -142,7 +151,8 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 
     app-media-tile .delete-btn,
     app-media-tile .edit-btn,
-    app-media-tile .favorite-btn {
+    app-media-tile .favorite-btn,
+    app-media-tile .download-btn {
       position: absolute;
       top: 4px;
       z-index: 1;
@@ -156,6 +166,10 @@ import { MatTooltipModule } from '@angular/material/tooltip';
       right: 4px;
     }
 
+    app-media-tile .download-btn {
+      right: 48px;
+    }
+
     app-media-tile .edit-btn {
       left: 4px;
     }
@@ -166,7 +180,8 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 
     app-media-tile:hover .delete-btn,
     app-media-tile:hover .edit-btn,
-    app-media-tile:hover .favorite-btn {
+    app-media-tile:hover .favorite-btn,
+    app-media-tile:hover .download-btn {
       opacity: 1;
     }
 
@@ -184,6 +199,10 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 
     app-media-tile .favorite-btn:hover {
       background: rgba(190, 24, 93, 0.85);
+    }
+
+    app-media-tile .download-btn:hover {
+      background: rgba(63, 81, 181, 0.85);
     }
 
     app-media-tile .owner-badge {
@@ -206,6 +225,8 @@ export class MediaTileComponent {
   @Input() showFavorite = true;
   @Input() showDelete = false;
   @Input() deleteTooltip = 'Delete';
+  @Input() showDownload = false;
+  @Input() downloadTooltip = 'Download';
   @Input() bulkMode = false;
   @Input() bulkSelected = false;
   /** Rendered as the corner badge when non-empty; pass null/'' to omit. */
@@ -214,6 +235,7 @@ export class MediaTileComponent {
   @Output() edit = new EventEmitter<Event>();
   @Output() favoriteToggle = new EventEmitter<Event>();
   @Output() remove = new EventEmitter<Event>();
+  @Output() download = new EventEmitter<Event>();
   @Output() bulkToggle = new EventEmitter<void>();
 
   /** Overlay buttons must never trigger the tile's own click (open/play). */

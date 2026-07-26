@@ -40,6 +40,15 @@ public static class MediaLibraryEndpoints
             .RequireAuthorization()
             .RequireRateLimiting("api");
 
+        // Proxies the actual file down from Jellyfin (see JellyfinService.DownloadEpisodeAsync).
+        // Rate-limited under "media" (large-file proxy), same convention as audiobook
+        // stream/cover. Auth arrives via ?access_token= — see the OnMessageReceived
+        // allowlist in ServiceConfiguration.cs — since this is a plain browser
+        // navigation, not an XHR that could carry an Authorization header.
+        app.MapGet("/api/media/tv/download", HandleDownloadTv)
+            .RequireAuthorization()
+            .RequireRateLimiting("media");
+
         app.MapGet("/api/media/movies/downloaded", HandleGetDownloadedMovies)
             .RequireAuthorization()
             .RequireRateLimiting("api");
@@ -47,6 +56,10 @@ public static class MediaLibraryEndpoints
         app.MapGet("/api/media/movies/watch", HandleWatchMovie)
             .RequireAuthorization()
             .RequireRateLimiting("api");
+
+        app.MapGet("/api/media/movies/download", HandleDownloadMovie)
+            .RequireAuthorization()
+            .RequireRateLimiting("media");
 
         app.MapDelete("/api/media/tv/{seriesId:int}", HandleDeleteSeries)
             .RequireAuthorization()
@@ -143,6 +156,31 @@ public static class MediaLibraryEndpoints
         }
     }
 
+    private static async Task HandleDownloadTv(
+        HttpContext context, [FromQuery] int tvdbId, [FromQuery] int season, [FromQuery] int episode, IJellyfinService jellyfin)
+    {
+        try
+        {
+            var result = await jellyfin.DownloadEpisodeAsync(tvdbId, season, episode, context.RequestAborted);
+            if (result is null)
+            {
+                context.Response.StatusCode = 404;
+                return;
+            }
+            await RelayDownloadAsync(context, result);
+        }
+        catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
+        {
+            // Browser canceled the download (closed the tab, hit stop) — routine.
+        }
+        catch (HttpRequestException ex)
+        {
+            Log.Warning("[MediaLibrary] Jellyfin episode download failed: {Message}", ex.Message);
+            if (!context.Response.HasStarted)
+                context.Response.StatusCode = 502;
+        }
+    }
+
     private static async Task<IResult> HandleGetDownloadedMovies(IRadarrService radarr, IMediaMetadataService metadata)
     {
         try
@@ -171,6 +209,48 @@ public static class MediaLibraryEndpoints
         {
             Log.Warning("[MediaLibrary] Jellyfin lookup failed: {Message}", ex.Message);
             return Results.Json(new { error = "Jellyfin is unavailable" }, statusCode: StatusCodes.Status503ServiceUnavailable);
+        }
+    }
+
+    private static async Task HandleDownloadMovie(HttpContext context, [FromQuery] int tmdbId, IJellyfinService jellyfin)
+    {
+        try
+        {
+            var result = await jellyfin.DownloadMovieAsync(tmdbId, context.RequestAborted);
+            if (result is null)
+            {
+                context.Response.StatusCode = 404;
+                return;
+            }
+            await RelayDownloadAsync(context, result);
+        }
+        catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
+        {
+            // Browser canceled the download (closed the tab, hit stop) — routine.
+        }
+        catch (HttpRequestException ex)
+        {
+            Log.Warning("[MediaLibrary] Jellyfin movie download failed: {Message}", ex.Message);
+            if (!context.Response.HasStarted)
+                context.Response.StatusCode = 502;
+        }
+    }
+
+    /// <summary>Relays a Jellyfin file download straight through to the browser as
+    /// a real download (Content-Disposition: attachment), streaming rather than
+    /// buffering — movie files can be several GB.</summary>
+    private static async Task RelayDownloadAsync(HttpContext context, JellyfinDownloadResult result)
+    {
+        context.Response.ContentType = result.ContentType;
+        if (result.ContentLength is not null)
+            context.Response.ContentLength = result.ContentLength;
+
+        var fileName = string.IsNullOrWhiteSpace(result.FileName) ? "download" : result.FileName;
+        context.Response.Headers.ContentDisposition = $"attachment; filename=\"{fileName}\"";
+
+        await using (result.Body)
+        {
+            await result.Body.CopyToAsync(context.Response.Body, context.RequestAborted);
         }
     }
 

@@ -53,6 +53,14 @@
             <mat-icon>play_arrow</mat-icon>
             {{ ep.hasFile ? 'Play' : 'Not downloaded' }}
           </button>
+          <button
+            mat-icon-button
+            matTooltip="Download from Jellyfin"
+            [disabled]="!ep.hasFile"
+            (click)="downloadEpisode(ep)"
+          >
+            <mat-icon>download</mat-icon>
+          </button>
         </div>
       </mat-expansion-panel>
     </mat-accordion>

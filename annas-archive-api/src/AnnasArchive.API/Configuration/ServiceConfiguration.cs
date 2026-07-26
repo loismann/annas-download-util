@@ -88,12 +88,12 @@ public static class ServiceConfiguration
                 ClockSkew = TimeSpan.Zero
             };
 
-            // Native <audio>/<img> elements can't attach an Authorization
-            // header (unlike HttpClient requests, which get it from
-            // auth.interceptor.ts on the frontend), so the audiobook
-            // stream/cover routes accept the token via ?access_token= as a
-            // scoped fallback. Everything else still requires the header —
-            // this only fires for those two specific route shapes.
+            // Native <audio>/<img> elements can't attach an Authorization header
+            // (unlike HttpClient requests, which get it from auth.interceptor.ts
+            // on the frontend), and a movie/episode download is a plain browser
+            // navigation (window.location), same limitation — so these route
+            // shapes accept the token via ?access_token= as a scoped fallback.
+            // Everything else still requires the header.
             options.Events = new JwtBearerEvents
             {
                 OnMessageReceived = context =>
@@ -103,8 +103,11 @@ public static class ServiceConfiguration
                         path.StartsWith("/api/audiobooks/", StringComparison.OrdinalIgnoreCase) &&
                         (path.Contains("/stream/", StringComparison.OrdinalIgnoreCase) ||
                          path.EndsWith("/cover", StringComparison.OrdinalIgnoreCase));
+                    var isMediaDownload =
+                        path.Equals("/api/media/movies/download", StringComparison.OrdinalIgnoreCase) ||
+                        path.Equals("/api/media/tv/download", StringComparison.OrdinalIgnoreCase);
 
-                    if (isAudiobookStreamOrCover)
+                    if (isAudiobookStreamOrCover || isMediaDownload)
                     {
                         var token = context.Request.Query["access_token"];
                         if (!string.IsNullOrEmpty(token))
@@ -351,10 +354,16 @@ public static class ServiceConfiguration
             c.Timeout = HttpTimeouts.MetadataLookupTimeout;
         }).AddStandardResilience("Radarr");
 
+        // Catalog/matching calls are quick, but this same typed client also
+        // proxies movie/episode file downloads (MediaLibraryEndpoints' download
+        // routes), which needs a much longer timeout since HttpClient.Timeout
+        // covers the whole request including reading the response body — same
+        // reasoning, and same no-circuit-breaker media-proxy profile, as
+        // AudiobookshelfService below.
         services.AddHttpClient<IJellyfinService, JellyfinService>(c =>
         {
-            c.Timeout = HttpTimeouts.MetadataLookupTimeout;
-        }).AddStandardResilience("Jellyfin");
+            c.Timeout = HttpTimeouts.MediaStreamingTimeout;
+        }).AddMediaProxyResilience("Jellyfin");
 
         // Audiobookshelf — catalog/metadata calls are quick like the above,
         // but this same typed client also proxies audio file/cover streaming

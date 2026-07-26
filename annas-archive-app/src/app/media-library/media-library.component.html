@@ -160,12 +160,15 @@
         [favorited]="isFavorited(movie)"
         [showDelete]="true"
         deleteTooltip="Delete movie"
+        [showDownload]="!!movie['hasFile']"
+        downloadTooltip="Download from Jellyfin"
         [bulkMode]="bulkEditMode"
         [bulkSelected]="movie.id !== undefined && selectedForBulk.has(movie.id)"
         [ownerLabel]="ownerLabel(movie)"
         (edit)="openMovieEditDialog(movie, $event)"
         (favoriteToggle)="toggleFavorite(movie, $event)"
         (remove)="deleteMovie(movie, $event)"
+        (download)="downloadMovie(movie, $event)"
         (bulkToggle)="toggleTileSelection(movie.id)"
       >
         <div class="tile-meta" *ngIf="movie['hasFile']">Ready to watch</div>

@@ -3,6 +3,11 @@ using Serilog;
 
 namespace AnnasArchive.API.Services;
 
+/// <summary>Just enough of Jellyfin's file-download response for the endpoint
+/// layer to relay it back to the browser as a real download (Content-Type,
+/// a filename for Content-Disposition, and length for a progress bar).</summary>
+public record JellyfinDownloadResult(Stream Body, string ContentType, string? FileName, long? ContentLength);
+
 public interface IJellyfinService
 {
     /// <summary>Resolves a Sonarr/Radarr-identified show/movie to Jellyfin's own
@@ -13,6 +18,15 @@ public interface IJellyfinService
     Task<string?> GetTvEmbedUrlAsync(int tvdbId, int season, int episode, CancellationToken ct = default);
 
     Task<string?> GetMovieEmbedUrlAsync(int tmdbId, CancellationToken ct = default);
+
+    /// <summary>Proxies the movie's file down from Jellyfin's /Download endpoint —
+    /// requires the configured API key to carry Jellyfin's "Allow media
+    /// downloading" permission (unverified against the deployed instance; a 403
+    /// here means that's off). Returns null if Jellyfin hasn't matched the movie.</summary>
+    Task<JellyfinDownloadResult?> DownloadMovieAsync(int tmdbId, CancellationToken ct = default);
+
+    /// <summary>Same as DownloadMovieAsync, for a single episode.</summary>
+    Task<JellyfinDownloadResult?> DownloadEpisodeAsync(int tvdbId, int season, int episode, CancellationToken ct = default);
 }
 
 /// <summary>
@@ -48,6 +62,44 @@ public class JellyfinService : IJellyfinService
 
     public async Task<string?> GetTvEmbedUrlAsync(int tvdbId, int season, int episode, CancellationToken ct = default)
     {
+        var episodeItemId = await ResolveEpisodeItemIdAsync(tvdbId, season, episode, ct);
+        if (episodeItemId is null) return null;
+
+        var serverId = await GetServerIdAsync(ct);
+        return BuildEmbedUrl(episodeItemId, serverId);
+    }
+
+    public async Task<string?> GetMovieEmbedUrlAsync(int tmdbId, CancellationToken ct = default)
+    {
+        var movieId = await ResolveMovieItemIdAsync(tmdbId, ct);
+        if (movieId is null) return null;
+
+        var serverId = await GetServerIdAsync(ct);
+        return BuildEmbedUrl(movieId, serverId);
+    }
+
+    public async Task<JellyfinDownloadResult?> DownloadMovieAsync(int tmdbId, CancellationToken ct = default)
+    {
+        var movieId = await ResolveMovieItemIdAsync(tmdbId, ct);
+        return movieId is null ? null : await FetchDownloadAsync(movieId, ct);
+    }
+
+    public async Task<JellyfinDownloadResult?> DownloadEpisodeAsync(int tvdbId, int season, int episode, CancellationToken ct = default)
+    {
+        var episodeItemId = await ResolveEpisodeItemIdAsync(tvdbId, season, episode, ct);
+        return episodeItemId is null ? null : await FetchDownloadAsync(episodeItemId, ct);
+    }
+
+    private async Task<string?> ResolveMovieItemIdAsync(int tmdbId, CancellationToken ct)
+    {
+        var movieId = await FindItemIdByProviderAsync("Movie", "hasTmdbId", "Tmdb", tmdbId.ToString(), ct);
+        if (movieId is null)
+            Log.Information("[Jellyfin] No movie found matching TMDB id {TmdbId}", tmdbId);
+        return movieId;
+    }
+
+    private async Task<string?> ResolveEpisodeItemIdAsync(int tvdbId, int season, int episode, CancellationToken ct)
+    {
         var seriesId = await FindItemIdByProviderAsync("Series", "hasTvdbId", "Tvdb", tvdbId.ToString(), ct);
         if (seriesId is null)
         {
@@ -67,26 +119,26 @@ public class JellyfinService : IJellyfinService
 
         var episodeItemId = (episodeItem as JsonObject)?["Id"]?.ToString();
         if (episodeItemId is null)
-        {
             Log.Information("[Jellyfin] Series {SeriesId} found but no matching S{Season}E{Episode}", seriesId, season, episode);
-            return null;
-        }
 
-        var serverId = await GetServerIdAsync(ct);
-        return BuildEmbedUrl(episodeItemId, serverId);
+        return episodeItemId;
     }
 
-    public async Task<string?> GetMovieEmbedUrlAsync(int tmdbId, CancellationToken ct = default)
+    private async Task<JellyfinDownloadResult> FetchDownloadAsync(string itemId, CancellationToken ct)
     {
-        var movieId = await FindItemIdByProviderAsync("Movie", "hasTmdbId", "Tmdb", tmdbId.ToString(), ct);
-        if (movieId is null)
-        {
-            Log.Information("[Jellyfin] No movie found matching TMDB id {TmdbId}", tmdbId);
-            return null;
-        }
+        var response = await _http.GetAsync(
+            $"/Items/{itemId}/Download", HttpCompletionOption.ResponseHeadersRead, ct);
+        response.EnsureSuccessStatusCode();
 
-        var serverId = await GetServerIdAsync(ct);
-        return BuildEmbedUrl(movieId, serverId);
+        var fileName = response.Content.Headers.ContentDisposition?.FileNameStar
+            ?? response.Content.Headers.ContentDisposition?.FileName;
+        var body = await response.Content.ReadAsStreamAsync(ct);
+
+        return new JellyfinDownloadResult(
+            body,
+            response.Content.Headers.ContentType?.ToString() ?? "application/octet-stream",
+            fileName?.Trim('"'),
+            response.Content.Headers.ContentLength);
     }
 
     // Jellyfin has no "give me the item with exactly this external ID" query

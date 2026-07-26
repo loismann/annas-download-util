@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using AnnasArchive.API.Constants;
 using AnnasArchive.API.Helpers;
 using AnnasArchive.API.Services;
 using Microsoft.AspNetCore.Mvc;
@@ -8,6 +9,11 @@ namespace AnnasArchive.API.Endpoints;
 
 /// <summary>Body for POST .../progress — resume-position save.</summary>
 public record SetAudiobookProgressRequest(double PositionSeconds);
+
+/// <summary>Body for POST .../cover — an http(s) URL to download and use as
+/// this audiobook's cover override (candidate picked from search, or pasted
+/// manually).</summary>
+public record SetAudiobookCoverRequest(string CoverUrl);
 
 /// <summary>
 /// Audiobook library endpoints — same "query the specialized tool's API,
@@ -54,6 +60,13 @@ public static class AudiobookLibraryEndpoints
             .RequireRateLimiting("api");
 
         app.MapPost("/api/audiobooks/{id}/progress", HandleSetProgress)
+            .RequireAuthorization()
+            .RequireRateLimiting("api");
+
+        // Cover override — downloads and stores a user-picked cover locally (see
+        // StoragePaths.AudiobookCoverOverrideRoot); never writes to Audiobookshelf's
+        // own storage. HandleGetCover below serves it in place of the ABS proxy once set.
+        app.MapPost("/api/audiobooks/{id}/cover", HandleSetCover)
             .RequireAuthorization()
             .RequireRateLimiting("api");
 
@@ -184,12 +197,24 @@ public static class AudiobookLibraryEndpoints
         }
     }
 
-    private static async Task HandleGetCover(HttpContext context, [FromRoute] string id, IAudiobookshelfService abs)
+    private static async Task HandleGetCover(HttpContext context, [FromRoute] string id, IAudiobookshelfService abs, IMediaMetadataService metadata)
     {
         var safeId = SanitizeId(id);
         if (safeId is null)
         {
             context.Response.StatusCode = 400;
+            return;
+        }
+
+        // A user-picked cover override takes priority over whatever Audiobookshelf
+        // itself reports — same URL either way, so the frontend never needs to know
+        // which source served it. Never writes back to Audiobookshelf.
+        var overridePath = ResolveCoverOverridePath(safeId, metadata);
+        if (overridePath is not null)
+        {
+            context.Response.Headers.CacheControl = "private, max-age=86400";
+            context.Response.ContentType = ContentTypeForCoverFile(overridePath);
+            await context.Response.SendFileAsync(overridePath, context.RequestAborted);
             return;
         }
 
@@ -221,6 +246,95 @@ public static class AudiobookLibraryEndpoints
                 context.Response.StatusCode = 502;
         }
     }
+
+    /// <summary>Downloads the given URL and stores it as this audiobook's cover
+    /// override — same download/validate approach as the ebook library's
+    /// cover-from-URL endpoint (LibraryCoverEndpoints.HandleUpdateCover), minus
+    /// the meta.json bits, since audiobook state lives in MediaMetadataService.</summary>
+    private static async Task<IResult> HandleSetCover(
+        [FromRoute] string id,
+        [FromBody] SetAudiobookCoverRequest request,
+        HttpContext context,
+        IHttpClientFactory httpFactory,
+        IMediaMetadataService metadata)
+    {
+        var safeId = SanitizeId(id);
+        if (safeId is null) return Results.BadRequest(new { error = "Invalid id." });
+
+        if (request is null || string.IsNullOrWhiteSpace(request.CoverUrl))
+            return Results.BadRequest(new { error = "coverUrl is required." });
+
+        if (!Uri.TryCreate(request.CoverUrl, UriKind.Absolute, out var coverUri) ||
+            (coverUri.Scheme != Uri.UriSchemeHttp && coverUri.Scheme != Uri.UriSchemeHttps))
+            return Results.BadRequest(new { error = "coverUrl must be an http(s) URL." });
+
+        byte[] coverBytes;
+        try
+        {
+            using var http = httpFactory.CreateClient();
+            http.Timeout = HttpTimeouts.LibraryHttpOperation;
+            using var httpRequest = new HttpRequestMessage(HttpMethod.Get, coverUri);
+            httpRequest.Headers.UserAgent.ParseAdd("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36");
+            httpRequest.Headers.Accept.ParseAdd("image/avif,image/webp,image/apng,image/*,*/*;q=0.8");
+            httpRequest.Headers.AcceptLanguage.ParseAdd("en-US,en;q=0.9");
+            httpRequest.Headers.Referrer = new Uri(coverUri.GetLeftPart(UriPartial.Authority));
+
+            using var response = await http.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, context.RequestAborted);
+            response.EnsureSuccessStatusCode();
+            coverBytes = await response.Content.ReadAsByteArrayAsync(context.RequestAborted);
+        }
+        catch (Exception ex)
+        {
+            Log.Information("[Audiobooks] Failed to download cover for {Id}: {Message}", safeId, ex.Message);
+            return Results.Problem("Failed to download cover image.");
+        }
+
+        if (!CoverLookupHelpers.TryGetImageSize(coverBytes, out var width, out var height))
+            return Results.BadRequest(new { error = "Unsupported cover image format." });
+
+        if (!CoverLookupHelpers.IsCoverSizeValid(width, height))
+            return Results.BadRequest(new { error = "Cover image must be at least 100x100 pixels." });
+
+        var coverExt = CoverLookupHelpers.DetermineImageExtension(coverUri.ToString(), coverBytes);
+        var coverDir = StoragePaths.AudiobookCoverOverrideRoot();
+        Directory.CreateDirectory(coverDir);
+
+        foreach (var existing in Directory.GetFiles(coverDir, $"{safeId}.*"))
+        {
+            try { File.Delete(existing); } catch { /* ignore */ }
+        }
+
+        var coverFileName = $"{safeId}{coverExt}";
+        await File.WriteAllBytesAsync(Path.Combine(coverDir, coverFileName), coverBytes, context.RequestAborted);
+
+        metadata.SetCoverUrl("audiobook", safeId, coverFileName);
+        Log.Information("[Audiobooks] Set custom cover for audiobook:{Id}", safeId);
+
+        return Results.Ok(new { success = true });
+    }
+
+    private static string? ResolveCoverOverridePath(string safeId, IMediaMetadataService metadata)
+    {
+        var relative = metadata.Get("audiobook", safeId)?.CoverUrl;
+        if (string.IsNullOrWhiteSpace(relative)) return null;
+
+        var root = Path.GetFullPath(StoragePaths.AudiobookCoverOverrideRoot());
+        var fullPath = Path.GetFullPath(Path.Combine(root, relative));
+        if (!fullPath.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+            return null;
+
+        return File.Exists(fullPath) ? fullPath : null;
+    }
+
+    private static string ContentTypeForCoverFile(string path) =>
+        Path.GetExtension(path).ToLowerInvariant() switch
+        {
+            ".jpg" or ".jpeg" => "image/jpeg",
+            ".png" => "image/png",
+            ".gif" => "image/gif",
+            ".webp" => "image/webp",
+            _ => "application/octet-stream"
+        };
 
     private static async Task HandleStream(HttpContext context, [FromRoute] string id, [FromRoute] string ino, IAudiobookshelfService abs)
     {
@@ -286,6 +400,9 @@ public static class AudiobookLibraryEndpoints
             obj["owners"] = new JsonArray((meta?.Owners ?? new List<string>()).Select(o => (JsonNode)o).ToArray());
             obj["customGenres"] = new JsonArray((meta?.Genres ?? new List<string>()).Select(g => (JsonNode)g).ToArray());
             obj["favorites"] = new JsonArray((meta?.Favorites ?? new List<string>()).Select(f => (JsonNode)f).ToArray());
+            // Tells the frontend a cover override exists (served by HandleGetCover in
+            // place of the Audiobookshelf proxy) even for items ABS itself has no cover for.
+            obj["hasCustomCover"] = JsonValue.Create(meta?.CoverUrl != null);
             if (meta?.Progress is { Count: > 0 })
             {
                 var progressObj = new JsonObject();

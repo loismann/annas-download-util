@@ -58,6 +58,8 @@ export interface AudiobookItem {
   customGenres: string[];
   favorites: string[];
   progress?: Record<string, number>;
+  /** True when a user-picked cover override exists — see AudiobookLibraryEndpoints.ApplyMetadata. */
+  hasCustomCover?: boolean;
   [key: string]: unknown;
 }
 
@@ -110,9 +112,19 @@ export class AudiobookApiService {
     return `${this.baseUrl}/${encodeURIComponent(id)}/stream/${encodeURIComponent(ino)}?access_token=${encodeURIComponent(token)}`;
   }
 
-  /** Same-origin cover URL for a plain <img src>, same token-param reasoning as getStreamUrl. */
-  getCoverUrl(id: string): string {
+  /** Same-origin cover URL for a plain <img src>, same token-param reasoning as
+   *  getStreamUrl. cacheBustVersion should change after a cover override is saved —
+   *  cover responses carry a 1-day Cache-Control (see the cover-stampede fix), so
+   *  without a differing URL the browser would keep showing the stale cached image. */
+  getCoverUrl(id: string, cacheBustVersion?: number): string {
     const token = this.authService.getToken() ?? '';
-    return `${this.baseUrl}/${encodeURIComponent(id)}/cover?access_token=${encodeURIComponent(token)}`;
+    const version = cacheBustVersion ? `&v=${cacheBustVersion}` : '';
+    return `${this.baseUrl}/${encodeURIComponent(id)}/cover?access_token=${encodeURIComponent(token)}${version}`;
+  }
+
+  /** Downloads the given URL and stores it as this audiobook's cover override —
+   *  never touches Audiobookshelf's own cover storage; see AudiobookLibraryEndpoints.cs. */
+  setCoverUrl(id: string, coverUrl: string): Observable<{ success: boolean }> {
+    return this.http.post<{ success: boolean }>(`${this.baseUrl}/${encodeURIComponent(id)}/cover`, { coverUrl });
   }
 }

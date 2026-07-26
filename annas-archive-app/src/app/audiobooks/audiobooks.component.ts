@@ -57,7 +57,7 @@ function durationOf(item: AudiobookItem): number | undefined {
 }
 
 function hasCover(item: AudiobookItem): boolean {
-  return !!item.media?.coverPath;
+  return !!item.media?.coverPath || !!item.hasCustomCover;
 }
 
 function addedTimestamp(item: AudiobookItem): number {
@@ -121,6 +121,11 @@ export class AudiobooksComponent implements OnInit {
   /** Bulk genre/owner editing — keyed by Audiobookshelf's string item id. */
   bulkEditMode = false;
   selectedForBulk = new Set<string>();
+
+  /** Bumped after a cover override save so coverUrl()'s cache-busting query
+   * param changes — cover responses carry a 1-day Cache-Control, so without
+   * this the browser would keep showing the pre-edit cached image. */
+  private coverVersions = new Map<string, number>();
 
   readonly owners = OWNERS;
 
@@ -353,7 +358,7 @@ export class AudiobooksComponent implements OnInit {
   }
 
   coverUrl(item: AudiobookItem): string {
-    return item.id && hasCover(item) ? this.api.getCoverUrl(item.id) : PLACEHOLDER_COVER;
+    return item.id && hasCover(item) ? this.api.getCoverUrl(item.id, this.coverVersions.get(item.id)) : PLACEHOLDER_COVER;
   }
 
   durationLabel(item: AudiobookItem): string | undefined {
@@ -408,7 +413,9 @@ export class AudiobooksComponent implements OnInit {
       availableGenres: this.genres,
       favoritedBy: item.favorites ?? [],
       mediaType: 'audiobook',
-      id: item.id
+      id: item.id,
+      coverUrl: this.coverUrl(item),
+      author: authorOf(item) ?? null
     };
 
     const dialogRef = this.dialog.open<MediaEditDialogComponent, MediaEditDialogData, MediaEditDialogResult>(
@@ -432,6 +439,19 @@ export class AudiobooksComponent implements OnInit {
           this.error = `Could not save changes for "${titleOf(item)}" — please try again.`;
         }
       });
+
+      if (result.coverUrl) {
+        this.api.setCoverUrl(item.id, result.coverUrl).subscribe({
+          next: () => {
+            item.hasCustomCover = true;
+            this.coverVersions.set(item.id, (this.coverVersions.get(item.id) ?? 0) + 1);
+          },
+          error: (err) => {
+            this.logger.error('[AudiobooksComponent] setCoverUrl failed', err);
+            this.error = `Could not save the new cover for "${titleOf(item)}" — please try again.`;
+          }
+        });
+      }
     });
   }
 }

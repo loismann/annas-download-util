@@ -11,7 +11,15 @@ public record AudiobookProgress(double PositionSeconds, DateTime UpdatedAt);
 /// Sonarr/Radarr themselves report from TheTVDB/TMDB), which household
 /// member(s) have favorited it, and (audiobooks only) each member's resume
 /// position.</summary>
-public record MediaItemMetadata(List<string> Owners, List<string> Genres, List<string>? Favorites = null, Dictionary<string, AudiobookProgress>? Progress = null)
+/// <param name="CoverUrl">(Audiobooks only) filename of a user-picked cover override,
+/// relative to StoragePaths.AudiobookCoverOverrideRoot() — null means show whatever
+/// the owning tool (Audiobookshelf) reports.</param>
+public record MediaItemMetadata(
+    List<string> Owners,
+    List<string> Genres,
+    List<string>? Favorites = null,
+    Dictionary<string, AudiobookProgress>? Progress = null,
+    string? CoverUrl = null)
 {
     public List<string> Favorites { get; set; } = Favorites ?? new List<string>();
     public Dictionary<string, AudiobookProgress> Progress { get; set; } = Progress ?? new Dictionary<string, AudiobookProgress>();
@@ -37,6 +45,7 @@ public interface IMediaMetadataService
     void AddOwner(string type, string id, string owner);
     void SetFavorite(string type, string id, string owner, bool favorited);
     void SetProgress(string type, string id, string owner, double positionSeconds);
+    void SetCoverUrl(string type, string id, string? relativeCoverPath);
     MediaItemMetadata? Get(string type, string id);
     IReadOnlyDictionary<string, MediaItemMetadata> GetAll();
 }
@@ -134,6 +143,24 @@ public class MediaMetadataService : IMediaMetadataService
         }
     }
 
+    public void SetCoverUrl(string type, string id, string? relativeCoverPath)
+    {
+        var key = $"{type}:{id}";
+        lock (_fileLock)
+        {
+            var data = LoadUnsafe();
+            var existing = data.GetValueOrDefault(key) ?? new MediaItemMetadata(new List<string>(), new List<string>());
+            existing = existing with { CoverUrl = relativeCoverPath };
+
+            if (IsEmpty(existing))
+                data.Remove(key);
+            else
+                data[key] = existing;
+
+            SaveUnsafe(data);
+        }
+    }
+
     public MediaItemMetadata? Get(string type, string id)
     {
         lock (_fileLock)
@@ -144,7 +171,8 @@ public class MediaMetadataService : IMediaMetadataService
 
     private static bool IsEmpty(MediaItemMetadata metadata) =>
         metadata.Owners.Count == 0 && metadata.Genres.Count == 0 &&
-        metadata.Favorites.Count == 0 && metadata.Progress.Count == 0;
+        metadata.Favorites.Count == 0 && metadata.Progress.Count == 0 &&
+        string.IsNullOrEmpty(metadata.CoverUrl);
 
     public IReadOnlyDictionary<string, MediaItemMetadata> GetAll()
     {

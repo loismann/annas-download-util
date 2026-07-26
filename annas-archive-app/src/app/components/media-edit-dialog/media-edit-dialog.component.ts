@@ -9,6 +9,7 @@ import { LoggerService } from '../../services/logger.service';
 import { FavoriteToggleComponent } from '../shared/favorite-toggle/favorite-toggle.component';
 import { OwnerPickerComponent } from '../shared/owner-picker/owner-picker.component';
 import { GenreChipsEditorComponent } from '../shared/genre-chips-editor/genre-chips-editor.component';
+import { CoverPickerComponent } from '../shared/cover-picker/cover-picker.component';
 
 export interface MediaEditDialogData {
   title: string;
@@ -22,11 +23,18 @@ export interface MediaEditDialogData {
   mediaType: 'tv' | 'movie' | 'audiobook';
   /** Sonarr/Radarr ids are integers; Audiobookshelf ids are string UUIDs. */
   id: number | string;
+  /** Audiobooks only — current cover (for the picker's preview) and author
+   * (improves cover-search relevance). TV/movie posters come from Sonarr/Radarr
+   * themselves, so there's nothing to override for those types. */
+  coverUrl?: string | null;
+  author?: string | null;
 }
 
 export interface MediaEditDialogResult {
   genres: string[];
   owners: string[];
+  /** Audiobooks only — set when the user picked a new cover in this session. */
+  coverUrl?: string;
 }
 
 /**
@@ -45,7 +53,8 @@ export interface MediaEditDialogResult {
     MatButtonModule,
     FavoriteToggleComponent,
     OwnerPickerComponent,
-    GenreChipsEditorComponent
+    GenreChipsEditorComponent,
+    CoverPickerComponent
   ],
   template: `
     <div class="media-edit-dialog">
@@ -53,6 +62,14 @@ export interface MediaEditDialogResult {
       <div *ngIf="data.sizeLabel" class="size-label">{{ data.sizeLabel }} on disk</div>
 
       <div mat-dialog-content>
+        <app-cover-picker
+          *ngIf="data.mediaType === 'audiobook'"
+          [title]="data.title"
+          [author]="data.author ?? null"
+          [currentCoverUrl]="data.coverUrl ?? null"
+          (coverSelected)="selectedCoverUrl = $event"
+        ></app-cover-picker>
+
         <app-favorite-toggle
           [favorited]="isFavorited"
           (toggled)="toggleFavorite($event)"
@@ -88,6 +105,7 @@ export interface MediaEditDialogResult {
 export class MediaEditDialogComponent {
   genres: string[];
   selectedOwners: string[];
+  selectedCoverUrl: string | undefined;
 
   constructor(
     public dialogRef: MatDialogRef<MediaEditDialogComponent, MediaEditDialogResult>,
@@ -138,7 +156,8 @@ export class MediaEditDialogComponent {
   onSave(): void {
     this.dialogRef.close({
       genres: this.genres,
-      owners: this.selectedOwners
+      owners: this.selectedOwners,
+      coverUrl: this.selectedCoverUrl
     });
   }
 

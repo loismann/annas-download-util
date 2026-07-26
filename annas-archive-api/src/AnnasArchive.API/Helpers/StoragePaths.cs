@@ -54,6 +54,24 @@ public static class StoragePaths
         return Directory.Exists(dockerDefault) ? dockerDefault : Path.Combine(AppContext.BaseDirectory, "audiobooks");
     }
 
+    /// <summary>Where user-picked audiobook cover overrides are saved (see
+    /// AudiobookLibraryEndpoints' cover endpoints). Deliberately NOT under
+    /// AudiobooksRoot() — that path is the enrichment/rename service's staging
+    /// folder for files Audiobookshelf will later scan, and dropping unrelated
+    /// image files into it risks confusing that pipeline. This lives under the
+    /// same persistent /app/state mount as the SQLite database instead, fully
+    /// separate from both Audiobookshelf's and the enrichment service's files.</summary>
+    public static string AudiobookCoverOverrideRoot()
+    {
+        var envRoot = Environment.GetEnvironmentVariable("AUDIOBOOK_COVERS_ROOT");
+        if (!string.IsNullOrWhiteSpace(envRoot))
+            return envRoot;
+
+        return Directory.Exists("/app/state")
+            ? "/app/state/audiobook-covers"
+            : Path.Combine(AppContext.BaseDirectory, "state", "audiobook-covers");
+    }
+
     public static string EpubCacheRoot()
     {
         var env = Environment.GetEnvironmentVariable("EPUB_CACHE_ROOT");

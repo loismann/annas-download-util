@@ -10,6 +10,7 @@ import {
   DropboxBookSearchResult,
   LibraryReaderBook
 } from '../models/dropbox-epub.model';
+import { apiBase } from './api-base';
 
 /* ─────────────── Library book response shapes ──────────────── */
 export interface LibraryBook {
@@ -137,9 +138,7 @@ export type LibraryReviewDecision = 'keep' | 'delete' | 'genreSet';
 @Injectable({ providedIn: 'root' })
 export class LibraryApiService {
   private readonly isLocalDev = window.location.hostname === 'localhost';
-  private readonly apiHost = this.isLocalDev
-    ? 'http://localhost:5001'
-    : '';
+  private readonly apiHost = apiBase();
   private readonly libraryBaseUrl = `${this.apiHost}/api/library`;
 
   // Client-side cache for library books

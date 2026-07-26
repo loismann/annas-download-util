@@ -3,6 +3,7 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable, BehaviorSubject, of } from 'rxjs';
 import { tap } from 'rxjs/operators';
 import { LoggerService } from './logger.service';
+import { apiBase } from './api-base';
 
 /* ─────────────── Video library response shapes ──────────────── */
 export interface VideoDto {
@@ -53,9 +54,7 @@ export interface VideosPaginatedResponse {
 @Injectable({ providedIn: 'root' })
 export class VideoLibraryApiService {
   private readonly isLocalDev = window.location.hostname === 'localhost';
-  private readonly apiHost = this.isLocalDev
-    ? 'http://localhost:5001'
-    : '';
+  private readonly apiHost = apiBase();
   private readonly baseUrl = `${this.apiHost}/api/video-library`;
 
   // Client-side cache for videos

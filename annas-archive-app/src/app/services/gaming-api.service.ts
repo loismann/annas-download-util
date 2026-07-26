@@ -2,6 +2,7 @@ import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { LoggerService } from './logger.service';
+import { apiBase } from './api-base';
 
 /* ─────────────── gaming PC control response ─────────────────────── */
 export interface GamingToggleResponse {
@@ -27,9 +28,7 @@ export interface GamingStatusResponse {
 @Injectable({ providedIn: 'root' })
 export class GamingApiService {
   private readonly isLocalDev = window.location.hostname === 'localhost';
-  private readonly apiHost = this.isLocalDev
-    ? 'http://localhost:5001'
-    : '';
+  private readonly apiHost = apiBase();
   private readonly gamingBaseUrl = `${this.apiHost}/api/gaming`;
 
   constructor(

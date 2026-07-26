@@ -2,6 +2,7 @@ import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { AuthService } from './auth.service';
+import { apiBase } from './api-base';
 
 export interface AudiobookChapter {
   id: number;
@@ -70,8 +71,7 @@ export interface AudiobookItem {
  */
 @Injectable({ providedIn: 'root' })
 export class AudiobookApiService {
-  private readonly isLocalDev = window.location.hostname === 'localhost';
-  private readonly apiHost = this.isLocalDev ? 'http://localhost:5001' : '';
+  private readonly apiHost = apiBase();
   private readonly baseUrl = `${this.apiHost}/api/audiobooks`;
 
   constructor(private http: HttpClient, private authService: AuthService) {}

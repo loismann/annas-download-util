@@ -2,6 +2,7 @@ import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { LoggerService } from './logger.service';
+import { apiBase } from './api-base';
 
 /**
  * A Sonarr/Radarr lookup result, passed through from their APIs mostly
@@ -63,8 +64,7 @@ export interface MediaQueueResponse {
  */
 @Injectable({ providedIn: 'root' })
 export class MediaSearchApiService {
-  private readonly isLocalDev = window.location.hostname === 'localhost';
-  private readonly apiHost = this.isLocalDev ? 'http://localhost:5001' : '';
+  private readonly apiHost = apiBase();
   private readonly baseUrl = `${this.apiHost}/api/media`;
 
   constructor(

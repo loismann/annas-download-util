@@ -52,6 +52,7 @@ import { marked } from 'marked';
 import { Subject } from 'rxjs';
 import { PROGRESS_MESSAGE_DURATION_MS, SUCCESS_MESSAGE_DURATION_MS } from '../constants/timeouts';
 import { takeUntil } from 'rxjs/operators';
+import { apiBase as resolveApiBase } from '../services/api-base';
 import {
   ReaderStateService,
   ReaderTextUtilsService,
@@ -1228,7 +1229,7 @@ export class BookReaderComponent implements OnInit, OnDestroy {
     };
 
     // Use fetch to POST the request and get streaming response
-    const apiBase = window.location.hostname === 'localhost' ? 'http://localhost:5001' : '';
+    const apiBase = resolveApiBase();
     const token = this.authService.getToken();
     const headers: Record<string, string> = {
       'Content-Type': 'application/json'
@@ -2754,7 +2755,7 @@ DO NOT include common words. Only create flashcards for terms that significantly
     };
 
     // Use fetch to GET with SSE support
-    const apiBase = window.location.hostname === 'localhost' ? 'http://localhost:5001' : '';
+    const apiBase = resolveApiBase();
     const token = this.authService.getToken();
     const headers: Record<string, string> = {};
     if (token) {

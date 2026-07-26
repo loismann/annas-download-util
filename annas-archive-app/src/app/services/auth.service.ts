@@ -4,6 +4,7 @@ import { HttpClient } from '@angular/common/http';
 import { BehaviorSubject, Observable } from 'rxjs';
 import { tap } from 'rxjs/operators';
 import { LoggerService } from './logger.service';
+import { apiBase } from './api-base';
 
 export interface LoginRequest {
   code: string;
@@ -28,10 +29,7 @@ export interface UserActivity {
 
 @Injectable({ providedIn: 'root' })
 export class AuthService {
-  private readonly isLocalDev = typeof window !== 'undefined' && window.location.hostname === 'localhost';
-  private readonly baseUrl = this.isLocalDev
-    ? 'http://localhost:5050/api/auth'
-    : '/api/auth';
+  private readonly baseUrl = apiBase(5050) + '/api/auth';
   private readonly TOKEN_KEY = 'auth_token';
   private readonly NAME_KEY = 'auth_name';
   private readonly ADMIN_KEY = 'auth_admin';

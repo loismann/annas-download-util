@@ -2,13 +2,11 @@ import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { QuizIndex, QuizSubject, InvalidQuestionsFile } from './quiz.models';
+import { apiBase } from '../services/api-base';
 
 @Injectable({ providedIn: 'root' })
 export class QuizApiService {
-  private readonly isLocalDev = window.location.hostname === 'localhost';
-  private readonly apiHost = this.isLocalDev
-    ? 'http://localhost:5001'
-    : '';
+  private readonly apiHost = apiBase();
   private readonly baseUrl = `${this.apiHost}/api/quiz`;
 
   constructor(private http: HttpClient) {}

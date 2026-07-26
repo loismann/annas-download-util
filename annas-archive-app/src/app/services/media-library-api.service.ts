@@ -2,6 +2,7 @@ import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { MediaLookupResult } from './media-search-api.service';
+import { apiBase } from './api-base';
 
 export interface EpisodeInfo {
   id: number;
@@ -44,8 +45,7 @@ export interface ReleaseInfo {
  */
 @Injectable({ providedIn: 'root' })
 export class MediaLibraryApiService {
-  private readonly isLocalDev = window.location.hostname === 'localhost';
-  private readonly apiHost = this.isLocalDev ? 'http://localhost:5001' : '';
+  private readonly apiHost = apiBase();
   private readonly baseUrl = `${this.apiHost}/api/media`;
 
   constructor(private http: HttpClient) {}

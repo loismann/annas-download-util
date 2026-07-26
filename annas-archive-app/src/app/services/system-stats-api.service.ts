@@ -1,6 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
+import { apiBase } from './api-base';
 
 export interface StorageStats {
   totalBytes: number;
@@ -14,8 +15,7 @@ export interface StorageStats {
 
 @Injectable({ providedIn: 'root' })
 export class SystemStatsApiService {
-  private readonly isLocalDev = window.location.hostname === 'localhost';
-  private readonly apiHost = this.isLocalDev ? 'http://localhost:5001' : '';
+  private readonly apiHost = apiBase();
 
   constructor(private http: HttpClient) {}
 

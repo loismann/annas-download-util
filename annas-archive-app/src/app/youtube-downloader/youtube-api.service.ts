@@ -7,13 +7,11 @@ import {
   DownloadJob,
   DownloadProgressEvent,
 } from './youtube.models';
+import { apiBase } from '../services/api-base';
 
 @Injectable({ providedIn: 'root' })
 export class YouTubeApiService {
-  private readonly isLocalDev = window.location.hostname === 'localhost';
-  private readonly apiHost = this.isLocalDev
-    ? 'http://localhost:5001'
-    : '';
+  private readonly apiHost = apiBase();
   private readonly baseUrl = `${this.apiHost}/api/youtube`;
 
   constructor(private http: HttpClient) {}

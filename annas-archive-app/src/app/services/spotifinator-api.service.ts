@@ -8,13 +8,11 @@ import {
   SpotifyPlaylist,
   CommandResponse
 } from '../spotifinator/spotifinator.models';
+import { apiBase } from './api-base';
 
 @Injectable({ providedIn: 'root' })
 export class SpotifinatorApiService {
-  private readonly isLocalDev = window.location.hostname === 'localhost';
-  private readonly apiHost = this.isLocalDev
-    ? 'http://localhost:5001'
-    : '';
+  private readonly apiHost = apiBase();
   private readonly baseUrl = `${this.apiHost}/api/spotify`;
 
   constructor(

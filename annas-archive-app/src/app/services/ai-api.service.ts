@@ -26,6 +26,7 @@ import {
   CharacterGraphRequest,
   CharacterGraphUpdateRequest
 } from '../models/dropbox-epub.model';
+import { apiBase } from './api-base';
 
 /* ─────────────── AI book search response shapes ─────────────────────── */
 export interface AiBookSearchItem {
@@ -133,9 +134,7 @@ export interface MatchSeriesBooksResponse {
 @Injectable({ providedIn: 'root' })
 export class AiApiService {
   private readonly isLocalDev = window.location.hostname === 'localhost';
-  private readonly apiHost = this.isLocalDev
-    ? 'http://localhost:5001'
-    : '';
+  private readonly apiHost = apiBase();
   private readonly aiBaseUrl = `${this.apiHost}/api/ai`;
   private readonly vocabBaseUrl = `${this.apiHost}/api/vocab`;
 

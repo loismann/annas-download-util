@@ -6,6 +6,7 @@ import { LoggerService } from './logger.service';
 import { BookDto } from '../models/book-dto.model';
 import { SlumHealthResponse, MirrorHealthResponse } from '../models/health-check.model';
 import { SEARCH_TIMEOUT_MS, LOG_SAMPLE_SIZE } from '../constants';
+import { apiBase } from './api-base';
 
 /* ─────────────── Download response shapes ──────────────── */
 export interface DownloadMemberResponse {
@@ -58,9 +59,7 @@ export interface DownloadStatusResponse {
 @Injectable({ providedIn: 'root' })
 export class BookSearchApiService {
   private readonly isLocalDev = window.location.hostname === 'localhost';
-  private readonly apiHost = this.isLocalDev
-    ? 'http://localhost:5001'
-    : '';
+  private readonly apiHost = apiBase();
   private readonly baseUrl = `${this.apiHost}/api/anna`;
   private readonly libgenBaseUrl = `${this.apiHost}/api/libgen`;
   private readonly vpnBaseUrl = `${this.apiHost}/api/vpn`;

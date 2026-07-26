@@ -16,6 +16,7 @@ import { COMMA, ENTER } from '@angular/cdk/keycodes';
 import { MatChipInputEvent } from '@angular/material/chips';
 import { VideoLibraryApiService } from '../../services/video-library-api.service';
 import { LoggerService } from '../../services/logger.service';
+import { GenreChipsEditorComponent } from '../shared/genre-chips-editor/genre-chips-editor.component';
 
 export interface VideoEditDialogData {
   fileName: string;
@@ -57,7 +58,8 @@ export interface VideoEditDialogResult {
     MatIconModule,
     MatButtonModule,
     MatProgressSpinnerModule,
-    MatDividerModule
+    MatDividerModule,
+    GenreChipsEditorComponent
   ],
   templateUrl: './video-edit-dialog.component.html',
   styleUrls: ['./video-edit-dialog.component.css']

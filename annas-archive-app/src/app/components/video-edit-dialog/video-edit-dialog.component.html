@@ -61,31 +61,14 @@
         <input matInput [(ngModel)]="playlist" placeholder="Playlist name (optional)" />
       </mat-form-field>
 
-      <mat-form-field appearance="outline" class="full-width" *ngIf="availableGenres.length > 0">
-        <mat-label>Add Genre</mat-label>
-        <mat-select (selectionChange)="onGenreSelected($event.value)" [value]="null">
-          <mat-option *ngFor="let genre of availableGenres" [value]="genre">
-            {{ genre }}
-          </mat-option>
-        </mat-select>
-      </mat-form-field>
-
-      <mat-form-field appearance="outline" class="full-width">
-        <mat-label>Tags</mat-label>
-        <mat-chip-grid #chipGrid>
-          <mat-chip-row *ngFor="let tag of tags" (removed)="removeTag(tag)">
-            {{ tag }}
-            <mat-icon matChipRemove>cancel</mat-icon>
-          </mat-chip-row>
-          <input
-            matInput
-            placeholder="Add tag..."
-            [matChipInputFor]="chipGrid"
-            [matChipInputSeparatorKeyCodes]="separatorKeysCodes"
-            (matChipInputTokenEnd)="addTag($event)"
-          />
-        </mat-chip-grid>
-      </mat-form-field>
+      <app-genre-chips-editor
+        label="Tags"
+        addLabel="Add Genre"
+        [values]="tags"
+        [available]="availableGenres"
+        [allowCreate]="false"
+        (valuesChange)="tags = $event"
+      ></app-genre-chips-editor>
 
       <div class="description-section" *ngIf="data.description">
         <mat-divider></mat-divider>

@@ -111,30 +111,19 @@
     <!-- Right Column: Edit Form -->
     <div class="form-section">
       <!-- Favorite -->
-      <button
-        type="button"
-        class="favorite-toggle-btn"
-        [class.favorited]="isFavorited"
-        (click)="toggleFavorite()"
-      >
-        <mat-icon>{{ isFavorited ? 'favorite' : 'favorite_border' }}</mat-icon>
-        {{ isFavorited ? 'Favorited' : 'Add to Favorites' }}
-      </button>
+      <app-favorite-toggle
+        [favorited]="isFavorited"
+        (toggled)="toggleFavorite()"
+      ></app-favorite-toggle>
 
       <!-- Owner Selection -->
       <div class="owner-field">
-        <div class="section-label">Who's book is this?</div>
-        <div class="owner-toggles">
-          <button
-            type="button"
-            *ngFor="let opt of ownerOptions"
-            class="owner-toggle"
-            [class.active]="selectedOwners.has(opt.value)"
-            (click)="toggleOwner(opt.value)"
-          >
-            {{ opt.label }}
-          </button>
-        </div>
+        <app-owner-picker
+          label="Who's book is this?"
+          [options]="ownerOptions"
+          [selected]="selectedOwnersList"
+          (selectedChange)="onOwnersChange($event)"
+        ></app-owner-picker>
       </div>
 
       <!-- Title -->
@@ -149,42 +138,12 @@
         <input matInput [(ngModel)]="authorsInput" />
       </mat-form-field>
 
-      <!-- Add a Genre -->
-      <mat-form-field appearance="outline" class="w-100 add-genre-field">
-        <mat-label>Add a Genre</mat-label>
-        <mat-select (selectionChange)="onGenreSelected($event.value)" [value]="null">
-          <mat-option value="__create_new__" class="create-genre-option">
-            <mat-icon>add_circle_outline</mat-icon>
-            Would you like to create a new genre?
-          </mat-option>
-          <mat-divider></mat-divider>
-          <mat-option *ngFor="let genre of availableGenres" [value]="genre">
-            {{ genre }}
-          </mat-option>
-        </mat-select>
-      </mat-form-field>
-
       <!-- Genres (was Tags) -->
-      <mat-form-field appearance="outline" class="w-100">
-        <mat-label>Genres</mat-label>
-        <mat-chip-grid #chipGrid aria-label="Book genres">
-          <mat-chip-row
-            *ngFor="let tag of tags"
-            (removed)="removeTag(tag)"
-            [editable]="false"
-          >
-            {{ tag }}
-            <button matChipRemove [attr.aria-label]="'Remove ' + tag">
-              <mat-icon>cancel</mat-icon>
-            </button>
-          </mat-chip-row>
-        </mat-chip-grid>
-        <input
-          [matChipInputFor]="chipGrid"
-          [matChipInputSeparatorKeyCodes]="separatorKeysCodes"
-          (matChipInputTokenEnd)="addTag($event)"
-        />
-      </mat-form-field>
+      <app-genre-chips-editor
+        [values]="tags"
+        [available]="availableGenres"
+        (valuesChange)="tags = $event"
+      ></app-genre-chips-editor>
 
       <!-- Cover URL -->
       <div class="manual-cover-row">

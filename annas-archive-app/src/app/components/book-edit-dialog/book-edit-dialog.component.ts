@@ -20,6 +20,9 @@ import { LibraryApiService } from '../../services/library-api.service';
 import { LoggerService } from '../../services/logger.service';
 import { AuthService } from '../../services/auth.service';
 import { CreateGenreDialogComponent } from '../create-genre-dialog/create-genre-dialog.component';
+import { FavoriteToggleComponent } from '../shared/favorite-toggle/favorite-toggle.component';
+import { OwnerPickerComponent } from '../shared/owner-picker/owner-picker.component';
+import { GenreChipsEditorComponent } from '../shared/genre-chips-editor/genre-chips-editor.component';
 
 export interface BookEditDialogData {
   title: string;
@@ -68,7 +71,10 @@ interface CoverCandidate {
     MatIconModule,
     MatButtonModule,
     MatProgressSpinnerModule,
-    MatDividerModule
+    MatDividerModule,
+    FavoriteToggleComponent,
+    OwnerPickerComponent,
+    GenreChipsEditorComponent
   ],
   templateUrl: './book-edit-dialog.component.html',
   styleUrls: ['./book-edit-dialog.component.scss']
@@ -239,6 +245,15 @@ export class BookEditDialogComponent implements OnInit, OnDestroy {
     } else {
       this.selectedOwners.add(tag);
     }
+  }
+
+  /** Array view of the owner-tag selection for the shared owner picker. */
+  get selectedOwnersList(): string[] {
+    return Array.from(this.selectedOwners);
+  }
+
+  onOwnersChange(values: string[]): void {
+    this.selectedOwners = new Set(values);
   }
 
   get isFavorited(): boolean {

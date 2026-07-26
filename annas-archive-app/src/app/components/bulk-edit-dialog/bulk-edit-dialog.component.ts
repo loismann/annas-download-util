@@ -11,6 +11,8 @@ import { MatChipsModule } from '@angular/material/chips';
 import { MatChipInputEvent } from '@angular/material/chips';
 import { MatSlideToggleModule } from '@angular/material/slide-toggle';
 import { COMMA, ENTER } from '@angular/cdk/keycodes';
+import { OwnerPickerComponent } from '../shared/owner-picker/owner-picker.component';
+import { GenreChipsEditorComponent } from '../shared/genre-chips-editor/genre-chips-editor.component';
 
 export interface BookBulkEditDialogData {
   bookFileNames: string[];
@@ -48,7 +50,9 @@ export interface BookBulkEditDialogResult {
     MatButtonModule,
     MatIconModule,
     MatChipsModule,
-    MatSlideToggleModule
+    MatSlideToggleModule,
+    OwnerPickerComponent,
+    GenreChipsEditorComponent
   ],
   templateUrl: './bulk-edit-dialog.component.html',
   styleUrls: ['./bulk-edit-dialog.component.scss']
@@ -74,6 +78,15 @@ export class BulkEditDialogComponent {
     @Inject(MAT_DIALOG_DATA) public data: BookBulkEditDialogData
   ) {
     this.genres = data.availableGenres ?? [];
+  }
+
+  /** Array view of the owner-tag selection for the shared owner picker. */
+  get selectedOwnersList(): string[] {
+    return Array.from(this.selectedOwners);
+  }
+
+  onOwnersChange(values: string[]): void {
+    this.selectedOwners = new Set(values);
   }
 
   addTag(event: MatChipInputEvent): void {

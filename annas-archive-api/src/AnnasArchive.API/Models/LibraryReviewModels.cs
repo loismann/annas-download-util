@@ -40,8 +40,6 @@ public record LibraryReviewDecisionResult(bool Success, string? Error);
 /// </summary>
 public class LibraryReviewProgressState
 {
-    public bool CullComplete { get; set; }
-    public bool GenreComplete { get; set; }
     public DateTime? LastShownUtc { get; set; }
     public string? ActiveSessionPhase { get; set; }
     public List<string> ActiveSessionFileNames { get; set; } = new();

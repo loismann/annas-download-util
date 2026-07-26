@@ -37,8 +37,7 @@ public class LibraryReviewService : ILibraryReviewService
         {
             var state = Load();
             var books = _cache.GetBooks(baseUrl);
-            var (phase, remaining) = ComputeActivePhase(state, books);
-            Save(state); // persists any phase-completion latch computed above
+            var (phase, remaining) = ComputeActivePhase(books);
             return new LibraryReviewStatusResponse(
                 phase,
                 phase != "complete" && ShouldShow(state),
@@ -54,7 +53,7 @@ public class LibraryReviewService : ILibraryReviewService
             var state = Load();
             var books = _cache.GetBooks(baseUrl);
             var byFileName = books.ToDictionary(b => b.FileName, StringComparer.OrdinalIgnoreCase);
-            var (phase, totalRemaining) = ComputeActivePhase(state, books);
+            var (phase, totalRemaining) = ComputeActivePhase(books);
 
             if (phase == "complete")
             {
@@ -170,27 +169,22 @@ public class LibraryReviewService : ILibraryReviewService
     }
 
     /// <summary>
-    /// Determines the active phase against the current book list, latching CullComplete/GenreComplete
-    /// onto <paramref name="state"/> in place if a phase's eligible pool has just emptied out. Does
-    /// not persist — callers save afterward, once, alongside whatever else they changed.
+    /// Determines the active phase purely from current eligibility — no persisted "done" flag.
+    /// An earlier version latched a CullComplete/GenreComplete flag permanently true the first
+    /// time a phase's eligible count hit zero, which meant the daily prompt silently stopped
+    /// forever the moment you finished one pass through your existing library — including for
+    /// books added afterward, since the latch never re-checked. Recomputing live means the
+    /// prompt naturally resumes whenever a Paul-owned book actually needs a decision.
     /// </summary>
-    private static (string Phase, int Remaining) ComputeActivePhase(LibraryReviewProgressState state, List<LibraryBookDto> books)
+    private static (string Phase, int Remaining) ComputeActivePhase(List<LibraryBookDto> books)
     {
-        if (!state.CullComplete)
-        {
-            var remaining = books.Count(IsCullEligible);
-            if (remaining > 0)
-                return ("cull", remaining);
-            state.CullComplete = true;
-        }
+        var cullRemaining = books.Count(IsCullEligible);
+        if (cullRemaining > 0)
+            return ("cull", cullRemaining);
 
-        if (!state.GenreComplete)
-        {
-            var remaining = books.Count(IsGenreEligible);
-            if (remaining > 0)
-                return ("genre", remaining);
-            state.GenreComplete = true;
-        }
+        var genreRemaining = books.Count(IsGenreEligible);
+        if (genreRemaining > 0)
+            return ("genre", genreRemaining);
 
         return ("complete", 0);
     }

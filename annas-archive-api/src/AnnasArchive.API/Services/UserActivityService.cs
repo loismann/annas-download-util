@@ -1,4 +1,6 @@
 using System.Collections.Concurrent;
+using System.Text.Json;
+using Serilog;
 
 namespace AnnasArchive.API.Services;
 
@@ -28,16 +30,30 @@ public interface IUserActivityService
 }
 
 /// <summary>
-/// In-memory implementation of user activity tracking.
+/// Tracks user activity in memory (so the 60s frontend poll stays a cheap
+/// dictionary read) while persisting every update to the app_state table —
+/// same KV pattern as MediaMetadataService — so presence survives a redeploy.
+/// Previously pure in-memory: every container restart silently wiped
+/// everyone's "last seen," which looked like Mom/Dad had never been active
+/// even seconds after a deploy.
 /// </summary>
 public class UserActivityService : IUserActivityService
 {
+    private const string StateKey = "user-activity";
+
     // A gap longer than this since the user's last request counts as them
     // having left and come back — their "continuously active for" streak
     // resets rather than counting the idle time against it.
     private static readonly TimeSpan SessionIdleGap = TimeSpan.FromMinutes(10);
 
-    private readonly ConcurrentDictionary<string, UserActivitySnapshot> _activities = new();
+    private readonly Data.AppDatabase _db;
+    private readonly ConcurrentDictionary<string, UserActivitySnapshot> _activities;
+
+    public UserActivityService(Data.AppDatabase db)
+    {
+        _db = db;
+        _activities = new ConcurrentDictionary<string, UserActivitySnapshot>(LoadFromDb());
+    }
 
     public void RecordActivity(string userName, string? action = null)
     {
@@ -53,6 +69,12 @@ public class UserActivityService : IUserActivityService
                 var sessionStart = now - existing.LastSeenUtc > SessionIdleGap ? now : existing.SessionStartUtc;
                 return new UserActivitySnapshot(now, sessionStart, action ?? existing.LastAction);
             });
+
+        // Fires on every authenticated request app-wide, not just the classified
+        // ones — a full-blob upsert per call is trivial I/O for SQLite in WAL
+        // mode at this app's scale (3 users, single NAS), so it's not worth the
+        // extra complexity of debouncing/batching.
+        Save();
     }
 
     public UserActivitySnapshot? GetActivity(string userName)
@@ -63,5 +85,35 @@ public class UserActivityService : IUserActivityService
     public IReadOnlyDictionary<string, UserActivitySnapshot> GetAllActivities()
     {
         return _activities;
+    }
+
+    private Dictionary<string, UserActivitySnapshot> LoadFromDb()
+    {
+        try
+        {
+            var json = _db.GetState(StateKey);
+            if (json == null)
+                return new Dictionary<string, UserActivitySnapshot>();
+
+            return JsonSerializer.Deserialize<Dictionary<string, UserActivitySnapshot>>(json)
+                ?? new Dictionary<string, UserActivitySnapshot>();
+        }
+        catch (Exception ex)
+        {
+            Log.Warning("[UserActivity] Failed to load persisted activity state: {Message}", ex.Message);
+            return new Dictionary<string, UserActivitySnapshot>();
+        }
+    }
+
+    private void Save()
+    {
+        try
+        {
+            _db.SetState(StateKey, JsonSerializer.Serialize(_activities));
+        }
+        catch (Exception ex)
+        {
+            Log.Warning("[UserActivity] Failed to persist activity state: {Message}", ex.Message);
+        }
     }
 }

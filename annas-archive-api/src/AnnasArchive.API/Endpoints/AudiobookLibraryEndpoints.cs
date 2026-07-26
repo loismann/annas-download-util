@@ -77,7 +77,7 @@ public static class AudiobookLibraryEndpoints
             ApplyMetadata(items, metadata);
             return Results.Json(items);
         }
-        catch (HttpRequestException ex)
+        catch (Exception ex) when (IsUpstreamFailure(ex))
         {
             Log.Warning("[Audiobooks] Audiobookshelf catalog fetch failed: {Message}", ex.Message);
             return Results.Json(new { error = "Audiobookshelf is unavailable" }, statusCode: StatusCodes.Status502BadGateway);
@@ -98,7 +98,7 @@ public static class AudiobookLibraryEndpoints
             ApplyMetadata(items, metadata);
             return Results.Json(items[0]);
         }
-        catch (HttpRequestException ex)
+        catch (Exception ex) when (IsUpstreamFailure(ex))
         {
             Log.Warning("[Audiobooks] Audiobookshelf item fetch failed for {Id}: {Message}", safeId, ex.Message);
             return Results.Json(new { error = "Audiobookshelf is unavailable" }, statusCode: StatusCodes.Status502BadGateway);
@@ -190,10 +190,15 @@ public static class AudiobookLibraryEndpoints
             var result = await abs.GetCoverAsync(safeId, context.RequestAborted);
             await RelayStreamAsync(context, result);
         }
-        catch (HttpRequestException ex)
+        catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
+        {
+            // Browser gave up on the image (scrolled away, page navigation) — routine, not an error.
+        }
+        catch (Exception ex) when (IsUpstreamFailure(ex))
         {
             Log.Warning("[Audiobooks] Cover proxy failed for {Id}: {Message}", safeId, ex.Message);
-            context.Response.StatusCode = 502;
+            if (!context.Response.HasStarted)
+                context.Response.StatusCode = 502;
         }
     }
 
@@ -213,10 +218,16 @@ public static class AudiobookLibraryEndpoints
             var result = await abs.StreamAudioFileAsync(safeId, safeIno, rangeHeader, context.RequestAborted);
             await RelayStreamAsync(context, result);
         }
-        catch (HttpRequestException ex)
+        catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
+        {
+            // Player paused/seeked/closed mid-stream — the browser aborts the
+            // in-flight range request every time. Routine, not an error.
+        }
+        catch (Exception ex) when (IsUpstreamFailure(ex))
         {
             Log.Warning("[Audiobooks] Stream proxy failed for {Id}/{Ino}: {Message}", safeId, safeIno, ex.Message);
-            context.Response.StatusCode = 502;
+            if (!context.Response.HasStarted)
+                context.Response.StatusCode = 502;
         }
     }
 
@@ -284,6 +295,16 @@ public static class AudiobookLibraryEndpoints
 
         return new MediaItemMetadata(owners, genres);
     }
+
+    /// <summary>True for the failure shapes an unreachable/slow Audiobookshelf
+    /// produces through the resilience pipeline: connection errors, the
+    /// pipeline's per-attempt timeout (TimeoutRejectedException), and
+    /// HttpClient's own timeout (TaskCanceledException). These become a
+    /// friendly 502 rather than an unhandled 500.</summary>
+    private static bool IsUpstreamFailure(Exception ex) =>
+        ex is HttpRequestException
+        or Polly.Timeout.TimeoutRejectedException
+        or TaskCanceledException;
 
     /// <summary>Audiobookshelf ids are UUID-shaped strings — reject anything
     /// containing path-traversal or separator characters before it's used to

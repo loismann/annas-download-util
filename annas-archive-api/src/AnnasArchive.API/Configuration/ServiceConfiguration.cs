@@ -359,11 +359,14 @@ public static class ServiceConfiguration
         // but this same typed client also proxies audio file/cover streaming
         // (AudiobookLibraryEndpoints), which needs a much longer timeout
         // since HttpClient.Timeout governs the whole request including
-        // reading the response body.
+        // reading the response body. Uses the media-proxy resilience profile
+        // (no circuit breaker) — the standard profile's breaker was tripped
+        // by routine browser-aborted cover/stream requests, intermittently
+        // blacking out the whole audiobook section for 30s+ at a time.
         services.AddHttpClient<IAudiobookshelfService, AudiobookshelfService>(c =>
         {
             c.Timeout = HttpTimeouts.MediaStreamingTimeout;
-        }).AddStandardResilience("Audiobookshelf");
+        }).AddMediaProxyResilience("Audiobookshelf");
 
         return services;
     }

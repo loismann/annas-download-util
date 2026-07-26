@@ -2,6 +2,7 @@ using System.Net;
 using AnnasArchive.API.Constants;
 using Microsoft.Extensions.Http.Resilience;
 using Polly;
+using Polly.Timeout;
 using Serilog;
 
 namespace AnnasArchive.API.Configuration;
@@ -126,6 +127,43 @@ public static class ResilienceConfiguration
     }
 
     /// <summary>
+    /// Resilience for clients that proxy browser-driven media traffic (covers,
+    /// audio/video streaming) alongside catalog calls — currently Audiobookshelf.
+    /// NO CIRCUIT BREAKER: a single catalog page load fires hundreds of proxied
+    /// cover requests that the browser freely aborts, and any breaker shared with
+    /// the catalog calls turns that normal churn into "the whole section is down
+    /// for 30s+". Retry + per-attempt timeout only; the timeout caps time-to-
+    /// headers, so long-running audio streams (ResponseHeadersRead) are unaffected.
+    /// </summary>
+    public static IHttpClientBuilder AddMediaProxyResilience(this IHttpClientBuilder builder, string serviceName)
+    {
+        builder.AddResilienceHandler($"{serviceName}-resilience", (resilienceBuilder) =>
+        {
+            resilienceBuilder.AddRetry(new HttpRetryStrategyOptions
+            {
+                MaxRetryAttempts = 2,
+                BackoffType = DelayBackoffType.Exponential,
+                UseJitter = true,
+                Delay = TimeSpan.FromSeconds(1),
+                ShouldHandle = args => ValueTask.FromResult(ShouldRetry(args.Outcome)),
+                OnRetry = args =>
+                {
+                    Log.Warning("[{ServiceName}] Retry attempt {AttemptNumber} after {Delay}ms. Reason: {Reason}",
+                        serviceName,
+                        args.AttemptNumber,
+                        args.RetryDelay.TotalMilliseconds,
+                        args.Outcome.Exception?.Message ?? args.Outcome.Result?.StatusCode.ToString() ?? "Unknown");
+                    return ValueTask.CompletedTask;
+                }
+            });
+
+            resilienceBuilder.AddTimeout(HttpTimeouts.StandardApiTimeout);
+        });
+
+        return builder;
+    }
+
+    /// <summary>
     /// Adds resilience handler for scraping services with domain fallback support.
     /// NO CIRCUIT BREAKER - scraping services have their own multi-domain fallback mechanism.
     /// A circuit breaker would block ALL domains when one fails, defeating the fallback logic.
@@ -149,12 +187,21 @@ public static class ResilienceConfiguration
     /// </summary>
     private static bool ShouldRetry(Outcome<HttpResponseMessage> outcome)
     {
-        // Retry on exceptions (network errors, timeouts, etc.)
+        // Retry on exceptions (network errors, timeouts, etc.).
+        //
+        // A canceled request only counts as a failure when it's HttpClient's own
+        // timeout (TaskCanceledException wrapping a TimeoutException) or the
+        // pipeline's timeout strategy (TimeoutRejectedException). A plain
+        // TaskCanceledException means the *caller* aborted — which browsers do
+        // routinely to proxied cover/stream requests (scrolling away, seeking) —
+        // and treating those as failures poisoned the circuit breaker, taking
+        // whole sections down for 30s+ while the upstream service was healthy.
         if (outcome.Exception != null)
         {
             return outcome.Exception is HttpRequestException ||
-                   outcome.Exception is TaskCanceledException ||
-                   outcome.Exception is TimeoutException;
+                   outcome.Exception is TimeoutRejectedException ||
+                   outcome.Exception is TimeoutException ||
+                   (outcome.Exception is TaskCanceledException tce && tce.InnerException is TimeoutException);
         }
 
         // Retry on transient HTTP status codes

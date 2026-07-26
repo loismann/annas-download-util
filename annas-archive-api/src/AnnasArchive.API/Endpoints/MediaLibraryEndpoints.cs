@@ -222,7 +222,7 @@ public static class MediaLibraryEndpoints
 
         try
         {
-            metadata.Set("tv", seriesId, validated);
+            metadata.Set("tv", seriesId.ToString(), validated);
             Log.Information("[MediaLibrary] Set tv:{SeriesId} metadata: owners={Owners}, genres={Genres}",
                 seriesId, string.Join(",", validated.Owners), string.Join(",", validated.Genres));
             return Results.NoContent();
@@ -242,7 +242,7 @@ public static class MediaLibraryEndpoints
 
         try
         {
-            metadata.Set("movie", movieId, validated);
+            metadata.Set("movie", movieId.ToString(), validated);
             Log.Information("[MediaLibrary] Set movie:{MovieId} metadata: owners={Owners}, genres={Genres}",
                 movieId, string.Join(",", validated.Owners), string.Join(",", validated.Genres));
             return Results.NoContent();
@@ -273,8 +273,8 @@ public static class MediaLibraryEndpoints
 
         try
         {
-            metadata.SetFavorite(type, id, owner, request.Favorited);
-            var updated = metadata.Get(type, id);
+            metadata.SetFavorite(type, id.ToString(), owner, request.Favorited);
+            var updated = metadata.Get(type, id.ToString());
             return Results.Ok(new { success = true, favorites = updated?.Favorites ?? new List<string>() });
         }
         catch (Exception ex)
@@ -373,7 +373,7 @@ public static class MediaLibraryEndpoints
         foreach (var item in items)
         {
             if (item is not JsonObject obj || obj["id"] is null) continue;
-            var meta = all.GetValueOrDefault($"{type}:{obj["id"]!.GetValue<int>()}");
+            var meta = all.GetValueOrDefault($"{type}:{obj["id"]!.GetValue<int>().ToString()}");
             obj["owners"] = new JsonArray((meta?.Owners ?? new List<string>()).Select(o => (JsonNode)o).ToArray());
             obj["customGenres"] = new JsonArray((meta?.Genres ?? new List<string>()).Select(g => (JsonNode)g).ToArray());
             obj["favorites"] = new JsonArray((meta?.Favorites ?? new List<string>()).Select(f => (JsonNode)f).ToArray());

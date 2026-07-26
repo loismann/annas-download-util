@@ -319,22 +319,20 @@ public class LibraryWatcherService : BackgroundService
             ["goodreadsRating"] = existing?.GoodreadsRating,
             ["personalRating"] = existing?.PersonalRating,
             ["readerEnabled"] = existing?.ReaderEnabled,
+            ["description"] = existing?.Description,
             ["openLibraryConfidence"] = existing?.OpenLibraryConfidence,
             ["aiEnrichedAt"] = existing?.AiEnrichedAt,
-            ["enrichmentComplete"] = existing?.EnrichmentComplete ?? false
+            ["enrichmentComplete"] = existing?.EnrichmentComplete ?? false,
+            // User-editable fields the enrichment pass never touches — carried forward here so
+            // this rewrite doesn't silently drop them, then re-synced from disk again right
+            // before the final write (see below) in case the user edited them mid-scan.
+            ["favoritedBy"] = existing?.FavoritedBy ?? Array.Empty<string>(),
+            ["cullReviewedAt"] = existing?.CullReviewedAt?.ToString("o")
         };
 
-        // Auto-tag new books (files that haven't been fully enriched yet)
-        if (existing?.EnrichmentComplete != true && !string.IsNullOrWhiteSpace(_autoTagNewBooks))
-        {
-            var currentTags = (meta["tags"] as string[] ?? Array.Empty<string>()).ToList();
-            if (!currentTags.Contains(_autoTagNewBooks, StringComparer.OrdinalIgnoreCase))
-            {
-                currentTags.Add(_autoTagNewBooks);
-                meta["tags"] = currentTags.ToArray();
-                Log.Information("[LibraryWatcher] Auto-tagged new book with '{Tag}'", _autoTagNewBooks);
-            }
-        }
+        // Auto-tagging for new books is applied later, right before the final write, against
+        // the freshest on-disk tags rather than this method's start-of-processing snapshot —
+        // see the re-sync block near the final write for why.
 
         Log.Information("[LibraryWatcher] Processing {FileName}", Path.GetFileName(filePath));
         Log.Information("[LibraryWatcher]   Existing CoverUrl: {CoverUrl}", existing?.CoverUrl);
@@ -538,6 +536,27 @@ public class LibraryWatcherService : BackgroundService
             _ = _statsService.SaveAsync(token);
         }
 
+        // Re-sync user-editable fields from whatever is on disk right now, immediately before
+        // writing. A full enrichment pass can take a while (multiple throttled external API
+        // calls per book), and this whole method started from a snapshot of the file taken at
+        // the top — if the user favorited/tagged/reviewed this book via the API in the
+        // meantime, that edit is now sitting on disk and must win over our stale snapshot,
+        // not get clobbered by it.
+        var latest = await LoadExistingMetaAsync(metaPath, token);
+        if (latest != null)
+        {
+            meta["favoritedBy"] = latest.FavoritedBy ?? Array.Empty<string>();
+            meta["cullReviewedAt"] = latest.CullReviewedAt?.ToString("o");
+
+            var freshTags = (latest.Tags ?? Array.Empty<string>()).ToList();
+            if (existing?.EnrichmentComplete != true && !string.IsNullOrWhiteSpace(_autoTagNewBooks) &&
+                !freshTags.Contains(_autoTagNewBooks, StringComparer.OrdinalIgnoreCase))
+            {
+                freshTags.Add(_autoTagNewBooks);
+            }
+            meta["tags"] = freshTags.ToArray();
+        }
+
         var json = JsonSerializer.Serialize(meta, new JsonSerializerOptions
         {
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -634,8 +653,8 @@ public class LibraryWatcherService : BackgroundService
 
                 var candidateTitle = item.TryGetProperty("title", out var titleProp) ? titleProp.GetString() : null;
                 var candidateAuthors = ExtractStringArray(item, "author_name");
-                var titleScore = TokenSimilarity(title, candidateTitle);
-                var authorScore = CandidateAuthorScore(authors, candidateAuthors);
+                var titleScore = TitleMatchScorer.TokenSimilarity(title, candidateTitle);
+                var authorScore = TitleMatchScorer.CandidateAuthorScore(authors, candidateAuthors);
                 var confidence = Math.Round((titleScore * 0.7) + (authorScore * 0.3), 3);
 
                 if (best == null || confidence > best.Confidence)
@@ -823,8 +842,8 @@ public class LibraryWatcherService : BackgroundService
                 var href = titleNode.GetAttributeValue("href", "");
                 var urlValue = string.IsNullOrWhiteSpace(href) ? null : $"https://www.goodreads.com{href}";
 
-                var titleScore = TokenSimilarity(title, candidateTitle);
-                var authorScore = CandidateAuthorScore(authors, candidateAuthors);
+                var titleScore = TitleMatchScorer.TokenSimilarity(title, candidateTitle);
+                var authorScore = TitleMatchScorer.CandidateAuthorScore(authors, candidateAuthors);
                 var score = (titleScore * 0.7) + (authorScore * 0.3);
 
                 if (best == null || score > best.Score)
@@ -1069,51 +1088,9 @@ Return JSON:
         }
     }
 
-    private static double CandidateAuthorScore(string[] inputAuthors, string[] candidateAuthors)
-    {
-        if (candidateAuthors.Length == 0 || inputAuthors.Length == 0)
-            return 0;
-
-        var best = 0.0;
-        foreach (var input in inputAuthors)
-        {
-            foreach (var candidate in candidateAuthors)
-            {
-                best = Math.Max(best, TokenSimilarity(input, candidate));
-            }
-        }
-
-        return best;
-    }
-
-    private static double TokenSimilarity(string? left, string? right)
-    {
-        var leftTokens = NormalizeForMatch(left);
-        var rightTokens = NormalizeForMatch(right);
-
-        if (leftTokens.Count == 0 || rightTokens.Count == 0)
-            return 0;
-
-        var intersect = leftTokens.Intersect(rightTokens).Count();
-        var union = leftTokens.Union(rightTokens).Count();
-        return union == 0 ? 0 : (double)intersect / union;
-    }
-
-    private static List<string> NormalizeForMatch(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-            return new List<string>();
-
-        var cleaned = new string(value
-            .ToLowerInvariant()
-            .Select(ch => char.IsLetterOrDigit(ch) ? ch : ' ')
-            .ToArray());
-
-        return cleaned
-            .Split(' ', StringSplitOptions.RemoveEmptyEntries)
-            .Distinct()
-            .ToList();
-    }
+    // Jaccard token-similarity scoring (TokenSimilarity/CandidateAuthorScore/
+    // NormalizeForMatch) moved to the shared Services/Library/TitleMatchScorer.cs
+    // so AudiobookEnrichmentService can reuse it without duplicating this logic.
 
     private static string? ExtractResponseText(JsonElement root)
     {
@@ -1298,8 +1275,8 @@ Return JSON with:
                 var ratingNode = row.SelectSingleNode(".//span[contains(@class,'minirating')]");
                 var rating = ratingNode != null ? ParseGoodreadsRating(ratingNode.InnerText) : null;
 
-                var titleScore = TokenSimilarity(title, candidateTitle);
-                var authorScore = CandidateAuthorScore(authors, candidateAuthors);
+                var titleScore = TitleMatchScorer.TokenSimilarity(title, candidateTitle);
+                var authorScore = TitleMatchScorer.CandidateAuthorScore(authors, candidateAuthors);
                 var score = (titleScore * 0.7) + (authorScore * 0.3);
 
                 // Only accept if score is reasonable (> 0.5) and better than previous
@@ -1350,12 +1327,19 @@ Return JSON with:
                             ? false
                             : null
                     : null,
+                Description = root.TryGetProperty("description", out var desc) ? desc.GetString() : null,
                 OpenLibraryConfidence = root.TryGetProperty("openLibraryConfidence", out var conf) && conf.ValueKind == JsonValueKind.Number
                     ? conf.GetDouble()
                     : null,
                 AiEnrichedAt = root.TryGetProperty("aiEnrichedAt", out var ai) ? ai.GetString() : null,
                 EnrichmentComplete = root.TryGetProperty("enrichmentComplete", out var complete) &&
-                    complete.ValueKind == JsonValueKind.True
+                    complete.ValueKind == JsonValueKind.True,
+                FavoritedBy = ExtractStringArray(root, "favoritedBy"),
+                CullReviewedAt = root.TryGetProperty("cullReviewedAt", out var cull) &&
+                    cull.ValueKind == JsonValueKind.String &&
+                    DateTime.TryParse(cull.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var cullDate)
+                        ? cullDate
+                        : null
             };
         }
         catch
@@ -1400,9 +1384,12 @@ Return JSON with:
         public double? GoodreadsRating { get; init; }
         public int? PersonalRating { get; init; }
         public bool? ReaderEnabled { get; init; }
+        public string? Description { get; init; }
         public double? OpenLibraryConfidence { get; init; }
         public string? AiEnrichedAt { get; init; }
         public bool EnrichmentComplete { get; init; }
+        public string[]? FavoritedBy { get; init; }
+        public DateTime? CullReviewedAt { get; init; }
 
         public bool HasCoreMetadata =>
             !string.IsNullOrWhiteSpace(Title) &&

@@ -1,0 +1,186 @@
+.player-dialog {
+  position: relative;
+  padding: 20px 24px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.close-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+}
+
+.player-header {
+  display: flex;
+  gap: 16px;
+}
+
+.cover {
+  width: 120px;
+  height: 180px;
+  object-fit: cover;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  flex-shrink: 0;
+  background: #f1f5f9;
+}
+
+.header-details {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding-top: 4px;
+}
+
+.title {
+  margin: 0 0 4px;
+  font-size: 1.15rem;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.subtitle {
+  color: #64748b;
+  font-size: 0.9rem;
+  margin-bottom: 2px;
+}
+
+.favorite-toggle-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: fit-content;
+  border: 1px solid #fda4af;
+  background: #ffffff;
+  color: #e11d48;
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  margin-top: auto;
+}
+
+.favorite-toggle-btn:hover {
+  background: #fff1f2;
+}
+
+.favorite-toggle-btn.favorited {
+  background: #e11d48;
+  color: #ffffff;
+  border-color: #e11d48;
+}
+
+.load-error {
+  color: #dc2626;
+  font-size: 0.85rem;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  padding: 8px 12px;
+}
+
+.current-chapter {
+  text-align: center;
+  color: #475569;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.scrub-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.time-label {
+  font-size: 0.75rem;
+  color: #64748b;
+  font-variant-numeric: tabular-nums;
+  min-width: 44px;
+}
+
+.scrub-bar {
+  flex: 1;
+  accent-color: #3f51b5;
+  cursor: pointer;
+}
+
+.transport-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 20px;
+}
+
+.play-btn {
+  width: 56px;
+  height: 56px;
+  /* mat-icon-button's hover/focus state layer is sized independently of the
+     button's own box via this token — without it, the state layer stays at
+     Material's default size and renders larger than our resized button. */
+  --mdc-icon-button-state-layer-size: 56px;
+  /* Aligns with the mat-form-field's visible outlined-box bottom edge —
+     align-items: center would instead center against its shrunken flex
+     height (the subscript-wrapper is collapsed via negative margin below,
+     which offsets center-based alignment but not end-based). */
+  margin-bottom: 4px;
+}
+
+.play-btn mat-icon {
+  font-size: 48px;
+  width: 48px;
+  height: 48px;
+  color: #3f51b5;
+}
+
+.rate-field {
+  width: 130px;
+  margin-bottom: -1.25em;
+}
+
+.chapters-section {
+  border-top: 1px solid #e5e7eb;
+  padding-top: 12px;
+}
+
+.chapters-header {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 6px;
+}
+
+.chapters-list {
+  max-height: 200px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.chapter-item {
+  text-align: left;
+  border: none;
+  background: none;
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: #1f2937;
+}
+
+.chapter-item:hover {
+  background: #f1f5f9;
+}
+
+.chapter-item.active {
+  background: #eef2ff;
+  color: #3f51b5;
+  font-weight: 600;
+}

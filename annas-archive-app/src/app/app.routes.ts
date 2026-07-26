@@ -9,6 +9,7 @@ import { VideoLibraryComponent } from './video-library/video-library.component';
 import { MediaSearchComponent } from './media-search/media-search.component';
 import { MediaLibraryComponent } from './media-library/media-library.component';
 import { SeriesDetailComponent } from './media-library/series-detail/series-detail.component';
+import { AudiobooksComponent } from './audiobooks/audiobooks.component';
 import { authGuard } from './guards/auth.guard';
 import { adminGuard } from './guards/admin.guard';
 
@@ -23,6 +24,7 @@ export const routes: Routes = [
   { path: 'media', component: MediaSearchComponent, canActivate: [authGuard] },
   { path: 'media-library', component: MediaLibraryComponent, canActivate: [authGuard] },
   { path: 'media-library/series/:seriesId', component: SeriesDetailComponent, canActivate: [authGuard] },
+  { path: 'audiobooks', component: AudiobooksComponent, canActivate: [authGuard] },
   // Legacy routes redirect to main videos page
   { path: 'videos/download', redirectTo: '/videos', pathMatch: 'full' },
   { path: 'youtube', redirectTo: '/videos', pathMatch: 'full' },

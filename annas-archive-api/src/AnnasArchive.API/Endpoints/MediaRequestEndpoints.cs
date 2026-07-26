@@ -180,7 +180,7 @@ public static class MediaRequestEndpoints
     {
         try
         {
-            metadata.AddOwner(type, id, owner);
+            metadata.AddOwner(type, id.ToString(), owner);
         }
         catch (Exception ex)
         {

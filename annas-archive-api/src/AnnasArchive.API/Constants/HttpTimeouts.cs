@@ -26,6 +26,15 @@ public static class HttpTimeouts
     /// </summary>
     public static readonly TimeSpan AiOperationTimeout = TimeSpan.FromMinutes(5);
 
+    /// <summary>
+    /// Timeout for proxied media streaming calls (audiobook audio/cover via
+    /// Audiobookshelf) — applies to the whole request including reading the
+    /// response body, so it needs to comfortably outlast a single range-chunk
+    /// transfer over a slow connection, not just a metadata round-trip
+    /// (30 minutes).
+    /// </summary>
+    public static readonly TimeSpan MediaStreamingTimeout = TimeSpan.FromMinutes(30);
+
     // ========================================================================
     // Quick Operation Timeouts
     // ========================================================================

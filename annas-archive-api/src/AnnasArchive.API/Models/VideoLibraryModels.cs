@@ -1,3 +1,6 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
+
 namespace AnnasArchive.API.Models;
 
 /// <summary>
@@ -31,6 +34,12 @@ public record VideoMeta(
     public string? Playlist { get; set; } = Playlist;
     public int? PersonalRating { get; set; } = PersonalRating;
     public bool? Bookmarked { get; set; } = Bookmarked;
+
+    /// <summary>Same whole-file-rewrite protection as LibraryBookMeta.ExtraFields:
+    /// any field this model doesn't declare survives an edit-and-save untouched
+    /// instead of being silently deleted.</summary>
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? ExtraFields { get; set; }
 }
 
 /// <summary>

@@ -1,3 +1,6 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
+
 namespace AnnasArchive.API.Models;
 
 /// <summary>
@@ -40,6 +43,14 @@ public record LibraryBookMeta(
     public string[]? FavoritedBy { get; set; } = FavoritedBy;
     /// <summary>Set once Paul explicitly chooses "keep" in the daily library-review modal's cull phase. Null = not yet reviewed.</summary>
     public DateTime? CullReviewedAt { get; set; } = CullReviewedAt;
+
+    /// <summary>Every edit endpoint rewrites the whole .meta.json through this model, so any
+    /// field the model doesn't declare would be silently deleted on save. That's what kept
+    /// stripping enrichmentComplete/aiEnrichedAt/openLibraryConfidence, re-arming the
+    /// LibraryWatcher to re-enrich (and clobber) exactly the books users had personalized.
+    /// This catch-all round-trips those markers — and anything added later — untouched.</summary>
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? ExtraFields { get; set; }
 }
 
 public record LibraryBookMetadataUpdate(

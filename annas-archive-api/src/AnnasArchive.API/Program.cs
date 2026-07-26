@@ -109,6 +109,8 @@ app.MapAiSectionSummaryEndpoints();
 app.MapVpnSettingsEndpoints();
 app.MapMediaRequestEndpoints();
 app.MapMediaLibraryEndpoints();
+app.MapAudiobookLibraryEndpoints();
+app.MapAudiobookEnrichmentEndpoints();
 app.MapSystemStatsEndpoints();
 app.MapDevEndpoints();
 app.MapHealthCheckEndpoints();

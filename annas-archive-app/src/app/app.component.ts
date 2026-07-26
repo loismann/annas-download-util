@@ -88,6 +88,10 @@ import { switchMap, filter } from 'rxjs/operators';
               <mat-icon>local_library</mat-icon>
               <span>Ebook Library</span>
             </button>
+            <button mat-menu-item routerLink="/audiobooks">
+              <mat-icon>headphones</mat-icon>
+              <span>Audiobooks</span>
+            </button>
             <button *ngIf="authService.isAdmin()" mat-menu-item routerLink="/spotifinator">
               <mat-icon>library_music</mat-icon>
               <span>Spotif-inator</span>

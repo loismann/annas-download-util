@@ -1,0 +1,144 @@
+<div class="library-layout">
+  <aside class="library-sidebar">
+    <div class="sidebar-header">
+      <h2>Audiobooks</h2>
+      <p>Browse your audiobook library.</p>
+    </div>
+
+    <button type="button" class="reset-view-btn" (click)="resetView()">Reset View!</button>
+
+    <mat-form-field appearance="outline" class="w-100">
+      <mat-label>Search</mat-label>
+      <input matInput [(ngModel)]="searchTerm" placeholder="Title, author, narrator, series" />
+    </mat-form-field>
+
+    <mat-form-field appearance="outline" class="w-100">
+      <mat-label>Genre</mat-label>
+      <mat-select [(ngModel)]="selectedGenre">
+        <mat-option value="">All Genres</mat-option>
+        <mat-option *ngFor="let genre of genres" [value]="genre">{{ genre }}</mat-option>
+      </mat-select>
+    </mat-form-field>
+
+    <div class="sidebar-meta">
+      <div class="meta-label">Total audiobooks</div>
+      <div class="meta-value">{{ totalCount }}</div>
+    </div>
+  </aside>
+
+  <section class="library-panel">
+    <div class="library-controls">
+      <div class="owner-filters">
+        <button
+          *ngFor="let owner of owners"
+          type="button"
+          class="owner-filter"
+          [class.active]="selectedOwners.has(owner)"
+          (click)="toggleOwnerFilter(owner)"
+        >
+          {{ owner }}
+        </button>
+      </div>
+
+      <div class="tile-size-controls">
+        <button
+          mat-icon-button
+          type="button"
+          class="tile-size-btn"
+          [class.active]="tileSize === 'small'"
+          (click)="setTileSize('small')"
+          aria-label="Small tiles"
+        >
+          <mat-icon>view_comfy</mat-icon>
+        </button>
+        <button
+          mat-icon-button
+          type="button"
+          class="tile-size-btn"
+          [class.active]="tileSize === 'medium'"
+          (click)="setTileSize('medium')"
+          aria-label="Medium tiles"
+        >
+          <mat-icon>view_module</mat-icon>
+        </button>
+        <button
+          mat-icon-button
+          type="button"
+          class="tile-size-btn"
+          [class.active]="tileSize === 'large'"
+          (click)="setTileSize('large')"
+          aria-label="Large tiles"
+        >
+          <mat-icon>view_agenda</mat-icon>
+        </button>
+        <button
+          mat-icon-button
+          type="button"
+          class="favorites-filter-btn"
+          [class.active]="filterFavoritesOnly"
+          (click)="toggleFavoritesFilter()"
+          aria-label="Filter favorites"
+        >
+          <mat-icon>{{ filterFavoritesOnly ? 'favorite' : 'favorite_border' }}</mat-icon>
+        </button>
+      </div>
+
+      <mat-form-field appearance="outline" class="sort-field">
+        <mat-label>Sort by</mat-label>
+        <mat-select [(ngModel)]="sortOrder">
+          <mat-option value="recent">Recently added</mat-option>
+          <mat-option value="title">Title</mat-option>
+          <mat-option value="author">Author</mat-option>
+        </mat-select>
+      </mat-form-field>
+    </div>
+
+    <div *ngIf="loading" class="loading">
+      <mat-spinner diameter="32"></mat-spinner>
+    </div>
+
+    <div *ngIf="error" class="error">{{ error }}</div>
+
+    <div *ngIf="!loading && !error" class="count-indicator">
+      Showing {{ filteredCount }} of {{ totalCount }} audiobooks
+    </div>
+
+    <div
+      class="tiles-grid"
+      [class.small]="tileSize === 'small'"
+      [class.large]="tileSize === 'large'"
+      *ngIf="!loading && filteredItems.length"
+    >
+      <div class="tile" *ngFor="let item of filteredItems" (click)="openPlayer(item)">
+        <button
+          mat-icon-button
+          class="edit-btn"
+          matTooltip="Edit genres &amp; owners"
+          (click)="openEditDialog(item, $event)"
+        >
+          <mat-icon>edit</mat-icon>
+        </button>
+        <button
+          mat-icon-button
+          class="favorite-btn"
+          [class.favorited]="isFavorited(item)"
+          [matTooltip]="isFavorited(item) ? 'Remove from favorites' : 'Add to favorites'"
+          (click)="toggleFavorite(item, $event)"
+        >
+          <mat-icon>{{ isFavorited(item) ? 'favorite' : 'favorite_border' }}</mat-icon>
+        </button>
+        <img class="poster" [src]="coverUrl(item)" [alt]="titleLabel(item)" />
+        <div class="tile-title">{{ titleLabel(item) }}</div>
+        <div class="tile-status">
+          <div class="tile-meta">{{ subtitleLabel(item) }}</div>
+          <div class="tile-meta" *ngIf="durationLabel(item)">{{ durationLabel(item) }}</div>
+        </div>
+        <div class="owner-badge" *ngIf="item.owners?.length">{{ item.owners.join(', ') }}</div>
+      </div>
+    </div>
+
+    <div *ngIf="!loading && !error && filteredItems.length === 0" class="empty-state">
+      {{ items.length === 0 ? 'No audiobooks cataloged yet — check that Audiobookshelf has scanned the library.' : 'No audiobooks match the current filters.' }}
+    </div>
+  </section>
+</div>

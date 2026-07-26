@@ -87,6 +87,33 @@ public static class ServiceConfiguration
                 ValidateLifetime = true,
                 ClockSkew = TimeSpan.Zero
             };
+
+            // Native <audio>/<img> elements can't attach an Authorization
+            // header (unlike HttpClient requests, which get it from
+            // auth.interceptor.ts on the frontend), so the audiobook
+            // stream/cover routes accept the token via ?access_token= as a
+            // scoped fallback. Everything else still requires the header —
+            // this only fires for those two specific route shapes.
+            options.Events = new JwtBearerEvents
+            {
+                OnMessageReceived = context =>
+                {
+                    var path = context.HttpContext.Request.Path.Value ?? "";
+                    var isAudiobookStreamOrCover =
+                        path.StartsWith("/api/audiobooks/", StringComparison.OrdinalIgnoreCase) &&
+                        (path.Contains("/stream/", StringComparison.OrdinalIgnoreCase) ||
+                         path.EndsWith("/cover", StringComparison.OrdinalIgnoreCase));
+
+                    if (isAudiobookStreamOrCover)
+                    {
+                        var token = context.Request.Query["access_token"];
+                        if (!string.IsNullOrEmpty(token))
+                            context.Token = token;
+                    }
+
+                    return Task.CompletedTask;
+                }
+            };
         });
 
         return services;
@@ -119,6 +146,20 @@ public static class ServiceConfiguration
             options.AddFixedWindowLimiter("api", opt =>
             {
                 opt.PermitLimit = apiRateLimit;
+                opt.Window = TimeSpan.FromMinutes(1);
+                opt.QueueProcessingOrder = System.Threading.RateLimiting.QueueProcessingOrder.OldestFirst;
+                opt.QueueLimit = 0;
+            });
+
+            // Media proxy rate limit (cover art / audio streaming): 600 requests per minute
+            // per IP. Kept separate from "api" because a single audiobook catalog page load
+            // can fire a cover-image request per tile (hundreds of items, no pagination) —
+            // sharing the 60/min "api" budget meant to guard against abuse meant those covers
+            // alone exhausted it, causing legitimate follow-up requests (like opening the
+            // player) to get rejected with a fast 503 for the rest of that minute window.
+            options.AddFixedWindowLimiter("media", opt =>
+            {
+                opt.PermitLimit = 600;
                 opt.Window = TimeSpan.FromMinutes(1);
                 opt.QueueProcessingOrder = System.Threading.RateLimiting.QueueProcessingOrder.OldestFirst;
                 opt.QueueLimit = 0;
@@ -314,6 +355,16 @@ public static class ServiceConfiguration
             c.Timeout = HttpTimeouts.MetadataLookupTimeout;
         }).AddStandardResilience("Jellyfin");
 
+        // Audiobookshelf — catalog/metadata calls are quick like the above,
+        // but this same typed client also proxies audio file/cover streaming
+        // (AudiobookLibraryEndpoints), which needs a much longer timeout
+        // since HttpClient.Timeout governs the whole request including
+        // reading the response body.
+        services.AddHttpClient<IAudiobookshelfService, AudiobookshelfService>(c =>
+        {
+            c.Timeout = HttpTimeouts.MediaStreamingTimeout;
+        }).AddStandardResilience("Audiobookshelf");
+
         return services;
     }
 
@@ -331,6 +382,16 @@ public static class ServiceConfiguration
         {
             services.AddHostedService<LibraryWatcherService>();
         }
+
+        // Audiobook enrichment/rename service — registered as both a singleton
+        // (so the admin endpoint can call RunScanAsync directly, bypassing its
+        // internal weekly timer) and a hosted service (so the timer loop runs
+        // in the background). The service itself checks AudiobookWatcher:Enabled
+        // internally and no-ops if disabled — always registered so the admin
+        // endpoint can still resolve it for manual dry-run/subset triggering
+        // even when the automatic weekly scan is off.
+        services.AddSingleton<AudiobookEnrichmentService>();
+        services.AddHostedService(sp => sp.GetRequiredService<AudiobookEnrichmentService>());
 
         // Library services - LibraryIndexCache warms on startup via IHostedService
         services.AddSingleton<LibraryIndexCache>();
@@ -358,8 +419,16 @@ public static class ServiceConfiguration
         // Email service
         services.AddSingleton<IEmailService, EmailService>();
 
-        // Token usage tracking
-        services.AddSingleton<ITokenUsageService, TokenUsageService>();
+        // Token usage tracking — storage path must be configurable: the default
+        // (~/.annas-archive/ai-usage) lives on the container's ephemeral filesystem,
+        // so every deploy silently reset everyone's monthly AI cost allowance.
+        // docker-compose points this at the persistent /app/state mount.
+        services.AddSingleton<ITokenUsageService>(provider =>
+        {
+            var cfg = provider.GetRequiredService<IConfiguration>();
+            var configuredPath = cfg.GetValue<string>("TokenUsage:StoragePath");
+            return new TokenUsageService(string.IsNullOrWhiteSpace(configuredPath) ? null : configuredPath);
+        });
 
         // Download tracking service
         services.AddSingleton<IDownloadTrackingService>(provider =>

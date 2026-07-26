@@ -1,0 +1,78 @@
+<div class="player-dialog">
+  <audio
+    #audioEl
+    (play)="onPlay()"
+    (pause)="onPause()"
+    (timeupdate)="onTimeUpdate()"
+    (ended)="onEnded()"
+    (error)="onLoadError()"
+  ></audio>
+
+  <button mat-icon-button class="close-btn" (click)="close()" aria-label="Close">
+    <mat-icon>close</mat-icon>
+  </button>
+
+  <div class="player-header">
+    <img class="cover" [src]="coverUrl" [alt]="title" />
+    <div class="header-details">
+      <h2 class="title">{{ title }}</h2>
+      <div class="subtitle" *ngIf="author">{{ author }}</div>
+      <div class="subtitle" *ngIf="narrator">Narrated by {{ narrator }}</div>
+      <button
+        type="button"
+        class="favorite-toggle-btn"
+        [class.favorited]="isFavorited"
+        (click)="toggleFavorite()"
+      >
+        <mat-icon>{{ isFavorited ? 'favorite' : 'favorite_border' }}</mat-icon>
+        {{ isFavorited ? 'Favorited' : 'Add to Favorites' }}
+      </button>
+    </div>
+  </div>
+
+  <div *ngIf="loadError" class="load-error">{{ loadError }}</div>
+
+  <div class="current-chapter" *ngIf="currentChapter">{{ currentChapter.title }}</div>
+
+  <div class="scrub-row">
+    <span class="time-label">{{ formattedCurrentTime }}</span>
+    <input
+      type="range"
+      class="scrub-bar"
+      min="0"
+      [max]="totalDuration || 0"
+      step="1"
+      [value]="globalTime"
+      (input)="onSeek($any($event.target).valueAsNumber)"
+    />
+    <span class="time-label">{{ formattedTotalDuration }}</span>
+  </div>
+
+  <div class="transport-row">
+    <button mat-icon-button class="play-btn" (click)="togglePlay()" [attr.aria-label]="playing ? 'Pause' : 'Play'">
+      <mat-icon>{{ playing ? 'pause_circle' : 'play_circle' }}</mat-icon>
+    </button>
+
+    <mat-form-field appearance="outline" class="rate-field">
+      <mat-label>Speed</mat-label>
+      <mat-select [ngModel]="playbackRate" (ngModelChange)="onRateChange($event)">
+        <mat-option *ngFor="let rate of rates" [value]="rate">{{ rate }}x</mat-option>
+      </mat-select>
+    </mat-form-field>
+  </div>
+
+  <div class="chapters-section" *ngIf="chapters.length">
+    <div class="chapters-header">Chapters</div>
+    <div class="chapters-list">
+      <button
+        type="button"
+        class="chapter-item"
+        *ngFor="let chapter of chapters"
+        [class.active]="chapter === currentChapter"
+        (click)="jumpToChapter(chapter)"
+      >
+        {{ chapter.title }}
+      </button>
+    </div>
+  </div>
+</div>

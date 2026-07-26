@@ -681,6 +681,11 @@
 .tile-size-btn {
   width: 44px;
   height: 56px;
+  /* mat-icon-button's hover/focus state layer defaults to Material's own
+     size token, independent of the button's own box — without overriding
+     it here, the state layer mismatches our custom size and can bleed past
+     the button's edge into ancestors that clip overflow (.library-panel). */
+  --mdc-icon-button-state-layer-size: 44px;
   border: 1px solid #cbd5f5;
   border-radius: 10px;
   color: #64748b;
@@ -713,6 +718,10 @@
 .favorites-filter-btn {
   width: 44px;
   height: 56px;
+  /* Same state-layer-size mismatch as .tile-size-btn — this button sits at
+     the right edge of .tile-size-controls, closest to .library-panel's
+     clipped boundary, which is why the icon visibly clips here specifically. */
+  --mdc-icon-button-state-layer-size: 44px;
   border: 1px solid #cbd5f5;
   border-radius: 10px;
   color: #64748b;

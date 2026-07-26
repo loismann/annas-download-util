@@ -11,6 +11,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { COMMA, ENTER } from '@angular/cdk/keycodes';
 import { CreateGenreDialogComponent } from '../create-genre-dialog/create-genre-dialog.component';
 import { MediaLibraryApiService } from '../../services/media-library-api.service';
+import { AudiobookApiService } from '../../services/audiobook-api.service';
 import { AuthService } from '../../services/auth.service';
 import { LoggerService } from '../../services/logger.service';
 
@@ -23,8 +24,9 @@ export interface MediaEditDialogData {
   /** Pre-formatted (e.g. "4.2 GB") — omitted/undefined when there's nothing on disk yet. */
   sizeLabel?: string;
   favoritedBy: string[];
-  mediaType: 'tv' | 'movie';
-  id: number;
+  mediaType: 'tv' | 'movie' | 'audiobook';
+  /** Sonarr/Radarr ids are integers; Audiobookshelf ids are string UUIDs. */
+  id: number | string;
 }
 
 export interface MediaEditDialogResult {
@@ -202,6 +204,7 @@ export class MediaEditDialogComponent {
     @Inject(MAT_DIALOG_DATA) public data: MediaEditDialogData,
     private dialog: MatDialog,
     private mediaApi: MediaLibraryApiService,
+    private audiobookApi: AudiobookApiService,
     private authService: AuthService,
     private logger: LoggerService
   ) {
@@ -225,8 +228,10 @@ export class MediaEditDialogComponent {
       : (this.data.favoritedBy ?? []).filter(o => o !== ownerName);
 
     const request$ = this.data.mediaType === 'movie'
-      ? this.mediaApi.setMovieFavorite(this.data.id, newValue)
-      : this.mediaApi.setTvFavorite(this.data.id, newValue);
+      ? this.mediaApi.setMovieFavorite(this.data.id as number, newValue)
+      : this.data.mediaType === 'audiobook'
+      ? this.audiobookApi.setFavorite(this.data.id as string, newValue)
+      : this.mediaApi.setTvFavorite(this.data.id as number, newValue);
 
     request$.subscribe({
       next: (resp) => {

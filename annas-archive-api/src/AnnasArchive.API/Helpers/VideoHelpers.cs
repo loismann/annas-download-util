@@ -16,7 +16,13 @@ public static class VideoHelpers
     /// </summary>
     public static string ResolveVideoRoot()
     {
-        var envRoot = Environment.GetEnvironmentVariable("YOUTUBE_DOWNLOAD_ROOT");
+        // docker-compose sets the .NET-config-style YouTube__DownloadRoot (the same key
+        // YouTubeDownloadService reads via IConfiguration), not YOUTUBE_DOWNLOAD_ROOT —
+        // checking only the latter made this resolve to the ephemeral /app/videos in the
+        // container while yt-dlp wrote to /data/youtube. Both spellings accepted so the
+        // browse/metadata side and the download side always agree on the root.
+        var envRoot = Environment.GetEnvironmentVariable("YOUTUBE_DOWNLOAD_ROOT")
+            ?? Environment.GetEnvironmentVariable("YouTube__DownloadRoot");
         if (!string.IsNullOrWhiteSpace(envRoot))
             return envRoot;
 

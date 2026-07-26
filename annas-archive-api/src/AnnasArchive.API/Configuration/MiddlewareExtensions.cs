@@ -186,6 +186,18 @@ public static class MiddlewareExtensions
 
     private static async Task HandleExceptionAsync(HttpContext context, Exception exception)
     {
+        // Streaming responses (audio file proxying) write bytes to the client as they
+        // arrive from upstream. If the client cancels mid-stream (e.g. the browser's
+        // <audio> element aborting an initial request in favor of a ranged one, or a
+        // seek), the response has already started and its status code/headers are
+        // already sent — trying to overwrite them throws InvalidOperationException.
+        // Nothing more can be sent to a torn-down connection, so just log and stop.
+        if (context.Response.HasStarted)
+        {
+            Log.Information("Request canceled after response had already started (client disconnected/aborted): {Message}", exception.Message);
+            return;
+        }
+
         var (statusCode, response) = exception switch
         {
             ValidationException validationEx => (

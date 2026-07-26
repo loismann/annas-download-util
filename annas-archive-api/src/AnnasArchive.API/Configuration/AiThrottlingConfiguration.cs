@@ -80,6 +80,24 @@ public static class AiThrottlingConfiguration
 
     #endregion
 
+    #region Audiobook Enrichment Throttling
+
+    /// <summary>
+    /// Interval between full audiobook library scans. Daily — a full tree
+    /// walk is cheap even at this cadence because already-"renamed" folders
+    /// are an instant no-op (sidecar check, no API calls), and unmatched
+    /// folders have their own separate weekly retry cooldown
+    /// (AudiobookEnrichmentService.UnmatchedRetryCooldown) so a stubborn
+    /// backlog doesn't get re-queried against paid APIs every single day.
+    /// Daily (not weekly) specifically so a newly-dropped-in audiobook gets
+    /// picked up within a day rather than waiting up to a week. Reuses
+    /// LibraryDelayBetweenBooks/LibraryDelayBetweenBatches/BatchSize above
+    /// for per-item pacing — no independent tuning need yet.
+    /// </summary>
+    public static readonly TimeSpan AudiobookScanInterval = TimeSpan.FromDays(1);
+
+    #endregion
+
     #region Helper Methods
 
     /// <summary>

@@ -49,35 +49,15 @@ public interface IRadarrService
 /// and same reasoning for resolving root folder/quality profile dynamically
 /// rather than hardcoding IDs that aren't stable across installs.
 /// </summary>
-public class RadarrService : IRadarrService
+public class RadarrService : ArrServiceBase, IRadarrService
 {
-    private readonly HttpClient _http;
-
     public RadarrService(HttpClient http, IConfiguration configuration)
+        : base(http, configuration, "Radarr", "includeMovie=true", "/data/Movies")
     {
-        _http = http;
-        var baseUrl = configuration["Radarr:BaseUrl"];
-        var apiKey = configuration["Radarr:ApiKey"];
-        if (!string.IsNullOrWhiteSpace(baseUrl))
-        {
-            _http.BaseAddress = new Uri(baseUrl);
-        }
-        if (!string.IsNullOrWhiteSpace(apiKey))
-        {
-            _http.DefaultRequestHeaders.Remove("X-Api-Key");
-            _http.DefaultRequestHeaders.Add("X-Api-Key", apiKey);
-        }
     }
 
-    public async Task<JsonArray> LookupMoviesAsync(string term, CancellationToken ct = default)
-    {
-        var encoded = Uri.EscapeDataString(term);
-        var response = await _http.GetAsync($"/api/v3/movie/lookup?term={encoded}", ct);
-        response.EnsureSuccessStatusCode();
-
-        var node = await response.Content.ReadFromJsonAsync<JsonNode>(cancellationToken: ct);
-        return node as JsonArray ?? [];
-    }
+    public Task<JsonArray> LookupMoviesAsync(string term, CancellationToken ct = default) =>
+        GetJsonArrayAsync($"/api/v3/movie/lookup?term={Uri.EscapeDataString(term)}", ct);
 
     public async Task<JsonObject> AddMovieAsync(JsonObject movie, CancellationToken ct = default)
     {
@@ -92,7 +72,7 @@ public class RadarrService : IRadarrService
             ["searchForMovie"] = true
         };
 
-        var response = await _http.PostAsJsonAsync("/api/v3/movie", movie, ct);
+        var response = await Http.PostAsJsonAsync("/api/v3/movie", movie, ct);
         var body = await response.Content.ReadAsStringAsync(ct);
         if (!response.IsSuccessStatusCode)
         {
@@ -104,45 +84,14 @@ public class RadarrService : IRadarrService
         return JsonNode.Parse(body) as JsonObject ?? [];
     }
 
-    public async Task<JsonObject> GetQueueAsync(CancellationToken ct = default)
-    {
-        var response = await _http.GetAsync("/api/v3/queue?includeMovie=true", ct);
-        response.EnsureSuccessStatusCode();
-        var node = await response.Content.ReadFromJsonAsync<JsonNode>(cancellationToken: ct);
-        return node as JsonObject ?? [];
-    }
+    /// <summary>Radarr's own "interactive search" — same one triggered by the
+    /// magnifying-glass icon in Radarr's UI — so results already include the
+    /// full rejection reasoning Radarr computed against the movie's profile.</summary>
+    public Task<JsonArray> SearchReleasesAsync(int movieId, CancellationToken ct = default) =>
+        GetJsonArrayAsync($"/api/v3/release?movieId={movieId}", ct);
 
-    public async Task<JsonArray> SearchReleasesAsync(int movieId, CancellationToken ct = default)
-    {
-        // This is Radarr's own "interactive search" — same one triggered by the
-        // magnifying-glass icon in Radarr's UI — so results already include the
-        // full rejection reasoning Radarr computed against the movie's profile.
-        var response = await _http.GetAsync($"/api/v3/release?movieId={movieId}", ct);
-        response.EnsureSuccessStatusCode();
-        var node = await response.Content.ReadFromJsonAsync<JsonNode>(cancellationToken: ct);
-        return node as JsonArray ?? [];
-    }
-
-    public async Task GrabReleaseAsync(JsonObject release, CancellationToken ct = default)
-    {
-        var response = await _http.PostAsJsonAsync("/api/v3/release", release, ct);
-        if (!response.IsSuccessStatusCode)
-        {
-            var body = await response.Content.ReadAsStringAsync(ct);
-            Log.Warning("[Radarr] Grab release failed ({StatusCode}): {Body}", response.StatusCode, body);
-            throw new ExternalApiException("Radarr", ArrErrorParsing.ExtractMessage(body), response.StatusCode, isTransient: false);
-        }
-
-        Log.Information("[Radarr] Manually grabbed release '{Title}'", release["title"]?.ToString());
-    }
-
-    public async Task<JsonArray> GetAllMoviesAsync(CancellationToken ct = default)
-    {
-        var response = await _http.GetAsync("/api/v3/movie", ct);
-        response.EnsureSuccessStatusCode();
-        var node = await response.Content.ReadFromJsonAsync<JsonNode>(cancellationToken: ct);
-        return node as JsonArray ?? [];
-    }
+    public Task<JsonArray> GetAllMoviesAsync(CancellationToken ct = default) =>
+        GetJsonArrayAsync("/api/v3/movie", ct);
 
     public async Task DeleteMovieAsync(int movieId, CancellationToken ct = default)
     {
@@ -151,9 +100,9 @@ public class RadarrService : IRadarrService
         // job keeps running completely independently, orphaned, forever. Clear
         // it first so nothing keeps downloading/seeding after the movie itself
         // is gone.
-        await RemoveQueueItemsForAsync(movieId, ct);
+        await RemoveQueueItemsForAsync("movieId", movieId, ct);
 
-        var response = await _http.DeleteAsync($"/api/v3/movie/{movieId}?deleteFiles=true", ct);
+        var response = await Http.DeleteAsync($"/api/v3/movie/{movieId}?deleteFiles=true", ct);
         if (!response.IsSuccessStatusCode)
         {
             var body = await response.Content.ReadAsStringAsync(ct);
@@ -164,59 +113,4 @@ public class RadarrService : IRadarrService
         Log.Information("[Radarr] Deleted movie {MovieId} and its files", movieId);
     }
 
-    /// <summary>Finds every queue entry for this movie and removes it with
-    /// removeFromClient=true — this tells qBittorrent/SABnzbd to actually
-    /// cancel the job and delete its data (both the incomplete/temp location
-    /// and, if already finished, the completed-downloads location), not just
-    /// clear Radarr's own view of the queue. Best-effort: a queue item that
-    /// fails to remove (e.g. a race where it finished importing in the
-    /// meantime) is logged, not thrown — it shouldn't block the movie delete
-    /// that's about to happen anyway.</summary>
-    private async Task RemoveQueueItemsForAsync(int movieId, CancellationToken ct)
-    {
-        try
-        {
-            var queue = await GetQueueAsync(ct);
-            var records = queue["records"] as JsonArray ?? [];
-            foreach (var record in records)
-            {
-                if (record is not JsonObject obj) continue;
-                if ((int?)obj["movieId"] != movieId) continue;
-
-                var queueId = (int?)obj["id"];
-                if (queueId is null) continue;
-
-                var deleteResponse = await _http.DeleteAsync(
-                    $"/api/v3/queue/{queueId}?removeFromClient=true&blocklist=false", ct);
-                if (!deleteResponse.IsSuccessStatusCode)
-                {
-                    Log.Warning("[Radarr] Remove queue item {QueueId} for movie {MovieId} failed: {StatusCode}",
-                        queueId, movieId, deleteResponse.StatusCode);
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            Log.Warning("[Radarr] Failed to clear queue items for movie {MovieId}: {Message}", movieId, ex.Message);
-        }
-    }
-
-    private async Task<(string rootFolderPath, int qualityProfileId)> ResolveDefaultsAsync(CancellationToken ct)
-    {
-        var rootFoldersResp = await _http.GetAsync("/api/v3/rootfolder", ct);
-        rootFoldersResp.EnsureSuccessStatusCode();
-        var rootFolders = await rootFoldersResp.Content.ReadFromJsonAsync<JsonArray>(cancellationToken: ct) ?? [];
-        var rootFolderPath = rootFolders.Count > 0 ? rootFolders[0]?["path"]?.ToString() : null;
-        if (string.IsNullOrWhiteSpace(rootFolderPath))
-            throw new InvalidOperationException("Radarr has no root folder configured — add one (e.g. /data/Movies) in Radarr's Media Management settings first.");
-
-        var profilesResp = await _http.GetAsync("/api/v3/qualityprofile", ct);
-        profilesResp.EnsureSuccessStatusCode();
-        var profiles = await profilesResp.Content.ReadFromJsonAsync<JsonArray>(cancellationToken: ct) ?? [];
-        if (profiles.Count == 0)
-            throw new InvalidOperationException("Radarr has no quality profile configured.");
-        var qualityProfileId = (int)(profiles[0]?["id"] ?? 0);
-
-        return (rootFolderPath, qualityProfileId);
-    }
 }

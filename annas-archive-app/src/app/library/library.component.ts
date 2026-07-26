@@ -23,6 +23,7 @@ import { AuthService } from '../services/auth.service';
 import { LoggerService } from '../services/logger.service';
 import { BATCH_DELAY_MS } from '../constants/timeouts';
 import { TileSizeControlsComponent } from '../components/shared/tile-size-controls/tile-size-controls.component';
+import { BOOK_OWNER_TAGS, ownerToBookTag } from '../constants/owners';
 
 @Component({
   selector: 'app-library',
@@ -74,7 +75,7 @@ export class LibraryComponent implements OnInit, OnDestroy {
   activeLetter = '#';
   private scrollFrameRequested = false;
   selectedOwnerTags = new Set<string>();
-  readonly ownerTags = ["Dad's Books", "Mom's Books", "Paul's Books"];
+  readonly ownerTags = BOOK_OWNER_TAGS;
   bulkEditMode = false;
   selectedBooksForBulk = new Set<string>();
   tileSize: 'small' | 'medium' | 'large' = 'medium';
@@ -165,7 +166,7 @@ export class LibraryComponent implements OnInit, OnDestroy {
     // toggle after this — anyone can clear/change it from here.
     const ownerName = this.authService.getOwnerName();
     if (ownerName) {
-      this.selectedOwnerTags.add(`${ownerName}'s Books`);
+      this.selectedOwnerTags.add(ownerToBookTag(ownerName));
     }
 
     // Set up debounced search trigger (300ms debounce for filter changes)

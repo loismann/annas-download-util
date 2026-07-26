@@ -23,6 +23,7 @@ import { CreateGenreDialogComponent } from '../create-genre-dialog/create-genre-
 import { FavoriteToggleComponent } from '../shared/favorite-toggle/favorite-toggle.component';
 import { OwnerPickerComponent } from '../shared/owner-picker/owner-picker.component';
 import { GenreChipsEditorComponent } from '../shared/genre-chips-editor/genre-chips-editor.component';
+import { BOOK_OWNER_OPTIONS, BOOK_OWNER_TAGS } from '../../constants/owners';
 
 export interface BookEditDialogData {
   title: string;
@@ -83,12 +84,8 @@ export class BookEditDialogComponent implements OnInit, OnDestroy {
   private destroy$ = new Subject<void>();
 
   readonly separatorKeysCodes = [ENTER, COMMA] as const;
-  readonly ownerTags = ["Dad's Books", "Mom's Books", "Paul's Books"];
-  readonly ownerOptions = [
-    { value: "Dad's Books", label: "Dad's" },
-    { value: "Mom's Books", label: "Mom's" },
-    { value: "Paul's Books", label: "Paul's" }
-  ];
+  readonly ownerTags = BOOK_OWNER_TAGS;
+  readonly ownerOptions = BOOK_OWNER_OPTIONS;
 
   genres: string[];
   tags: string[];

@@ -227,7 +227,7 @@ public class LibraryIndexCache : IHostedService, IDisposable
         var availableGenres = allBooks
             .SelectMany(b => (b.Tags ?? Array.Empty<string>()).Concat(new[] { b.PrimaryGenre ?? "" }))
             .Where(g => !string.IsNullOrWhiteSpace(g) &&
-                        g != "Dad's Books" && g != "Mom's Books" && g != "Paul's Books")
+                        !Constants.HouseholdOwners.IsBookOwnerTag(g))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(g => g, StringComparer.OrdinalIgnoreCase)
             .ToArray();
@@ -393,13 +393,7 @@ public class LibraryIndexCache : IHostedService, IDisposable
     }
 
     /// <summary>Maps a book owner tag ("Paul's Books") to the bare household-member name ("Paul") used by FavoritedBy.</summary>
-    private static string? OwnerTagToName(string tag) => tag switch
-    {
-        "Paul's Books" => "Paul",
-        "Mom's Books" => "Mom",
-        "Dad's Books" => "Dad",
-        _ => null
-    };
+    private static string? OwnerTagToName(string tag) => Constants.HouseholdOwners.NameForBookTag(tag);
 
     /// <summary>
     /// Normalizes cover URLs with the actual base URL.

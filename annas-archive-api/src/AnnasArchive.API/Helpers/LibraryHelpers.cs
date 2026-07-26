@@ -47,7 +47,7 @@ public static class LibraryHelpers
     public static string? ResolveUserLibraryTag(HttpContext context)
     {
         var name = ResolveUserDisplayName(context);
-        return name is null ? null : $"{name}'s Books";
+        return name is null ? null : Constants.HouseholdOwners.BookTagFor(name);
     }
 
     /// <summary>
@@ -117,7 +117,7 @@ public static class LibraryHelpers
     /// </summary>
     public static string GetKindleTargetTag(string target)
     {
-        return target.ToLower() == "mom" ? "Mom's Books" : "Dad's Books";
+        return Constants.HouseholdOwners.BookTagFor(target.ToLower() == "mom" ? "Mom" : "Dad");
     }
 
     /// <summary>

@@ -13,6 +13,7 @@ import { MatSlideToggleModule } from '@angular/material/slide-toggle';
 import { COMMA, ENTER } from '@angular/cdk/keycodes';
 import { OwnerPickerComponent } from '../shared/owner-picker/owner-picker.component';
 import { GenreChipsEditorComponent } from '../shared/genre-chips-editor/genre-chips-editor.component';
+import { BOOK_OWNER_OPTIONS } from '../../constants/owners';
 
 export interface BookBulkEditDialogData {
   bookFileNames: string[];
@@ -66,11 +67,7 @@ export class BulkEditDialogComponent {
   appendTags = true; // Default to append mode
   readonly separatorKeysCodes = [ENTER, COMMA] as const;
 
-  readonly ownerOptions = [
-    { value: "Dad's Books", label: "Dad's" },
-    { value: "Mom's Books", label: "Mom's" },
-    { value: "Paul's Books", label: "Paul's" }
-  ];
+  readonly ownerOptions = BOOK_OWNER_OPTIONS;
   selectedOwners = new Set<string>();
 
   constructor(

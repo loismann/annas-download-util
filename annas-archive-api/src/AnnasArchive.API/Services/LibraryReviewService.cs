@@ -7,7 +7,7 @@ namespace AnnasArchive.API.Services;
 
 public class LibraryReviewService : ILibraryReviewService
 {
-    private const string OwnerTag = "Paul's Books";
+    private static readonly string OwnerTag = Constants.HouseholdOwners.BookTagFor("Paul");
     private const int BatchSize = 20;
     private static readonly TimeSpan ShowInterval = TimeSpan.FromHours(24);
 

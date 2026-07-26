@@ -79,6 +79,33 @@
   font-weight: 700;
 }
 
+.bulk-edit-section {
+  margin-top: 1rem;
+  padding: 1rem;
+  background: #f8fafc;
+  border-radius: 8px;
+}
+
+.select-all-visible-btn,
+.bulk-edit-toggle {
+  width: 100%;
+  margin-bottom: 0.5rem;
+}
+
+.bulk-edit-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.selection-counter {
+  font-weight: 600;
+  color: #3f51b5;
+  font-size: 0.9rem;
+  padding: 0.5rem 0;
+  text-align: center;
+}
+
 .library-controls {
   display: flex;
   align-items: center;

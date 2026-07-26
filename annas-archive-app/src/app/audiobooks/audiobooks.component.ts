@@ -11,6 +11,7 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import { AudiobookApiService, AudiobookItem } from '../services/audiobook-api.service';
 import { MediaEditDialogComponent, MediaEditDialogData, MediaEditDialogResult } from '../components/media-edit-dialog/media-edit-dialog.component';
+import { MediaBulkEditDialogComponent, MediaBulkEditDialogData, MediaBulkEditDialogResult } from '../components/media-bulk-edit-dialog/media-bulk-edit-dialog.component';
 import { MediaTileComponent } from '../components/shared/media-tile/media-tile.component';
 import {
   AudiobookPlayerDialogComponent,
@@ -116,6 +117,10 @@ export class AudiobooksComponent implements OnInit {
   filterFavoritesOnly = false;
   sortOrder: SortOrder = 'recent';
   tileSize: TileSize = 'medium';
+
+  /** Bulk genre/owner editing — keyed by Audiobookshelf's string item id. */
+  bulkEditMode = false;
+  selectedForBulk = new Set<string>();
 
   readonly owners = OWNERS;
 
@@ -267,6 +272,80 @@ export class AudiobooksComponent implements OnInit {
     this.filterFavoritesOnly = false;
     this.sortOrder = 'recent';
     this.tileSize = 'medium';
+    this.exitBulkEditMode();
+  }
+
+  toggleBulkEditMode(): void {
+    this.bulkEditMode = !this.bulkEditMode;
+    if (!this.bulkEditMode) {
+      this.selectedForBulk.clear();
+    }
+  }
+
+  toggleTileSelection(id: string): void {
+    if (!this.bulkEditMode || !id) return;
+    if (this.selectedForBulk.has(id)) {
+      this.selectedForBulk.delete(id);
+    } else {
+      this.selectedForBulk.add(id);
+    }
+  }
+
+  selectAllVisible(): void {
+    if (!this.bulkEditMode) return;
+    this.filteredItems.forEach(item => this.selectedForBulk.add(item.id));
+  }
+
+  private exitBulkEditMode(): void {
+    this.bulkEditMode = false;
+    this.selectedForBulk.clear();
+  }
+
+  openBulkEditDialog(): void {
+    if (this.selectedForBulk.size === 0) return;
+
+    const dialogRef = this.dialog.open<MediaBulkEditDialogComponent, MediaBulkEditDialogData, MediaBulkEditDialogResult>(
+      MediaBulkEditDialogComponent,
+      {
+        width: '480px',
+        data: {
+          count: this.selectedForBulk.size,
+          availableGenres: this.genres
+        }
+      }
+    );
+
+    dialogRef.afterClosed().subscribe(result => {
+      if (!result) return;
+      this.applyBulk(result);
+    });
+  }
+
+  private applyBulk(result: MediaBulkEditDialogResult): void {
+    const merge = (existing: string[] | undefined, incoming: string[]): string[] => {
+      if (incoming.length === 0) return existing ?? [];
+      if (result.mode === 'replace') return incoming;
+      return Array.from(new Set([...(existing ?? []), ...incoming]));
+    };
+
+    const targets = this.items.filter(item => this.selectedForBulk.has(item.id));
+    const failedTitles: string[] = [];
+    for (const item of targets) {
+      const owners = merge(item.owners, result.owners);
+      const genres = merge(item.customGenres, result.genres);
+      this.api.setMetadata(item.id, owners, genres).subscribe({
+        next: () => {
+          item.owners = owners;
+          item.customGenres = genres;
+        },
+        error: (err) => {
+          this.logger.error('[AudiobooksComponent] bulk setMetadata failed', err);
+          failedTitles.push(titleOf(item));
+          this.error = `Could not save changes for: ${failedTitles.join(', ')}`;
+        }
+      });
+    }
+    this.exitBulkEditMode();
   }
 
   titleLabel(item: AudiobookItem): string {
@@ -287,6 +366,13 @@ export class AudiobooksComponent implements OnInit {
   }
 
   openPlayer(item: AudiobookItem): void {
+    // In bulk mode the whole tile acts as a selection target — popping the
+    // player dialog mid-selection would just get in the way.
+    if (this.bulkEditMode) {
+      this.toggleTileSelection(item.id);
+      return;
+    }
+
     // The catalog list endpoint only returns lightweight summary data
     // (counts, not the actual audioFiles/chapters arrays) — the player needs
     // the full item detail to know what to actually stream.

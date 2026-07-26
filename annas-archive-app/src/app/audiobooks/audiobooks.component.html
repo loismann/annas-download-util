@@ -24,6 +24,29 @@
       <div class="meta-label">Total audiobooks</div>
       <div class="meta-value">{{ totalCount }}</div>
     </div>
+
+    <div class="bulk-edit-section">
+      <button
+        *ngIf="bulkEditMode"
+        mat-raised-button
+        color="primary"
+        class="select-all-visible-btn"
+        (click)="selectAllVisible()"
+      >
+        Select All Visible ({{ filteredCount }})
+      </button>
+
+      <button mat-raised-button color="accent" class="bulk-edit-toggle" (click)="toggleBulkEditMode()">
+        {{ bulkEditMode ? 'Exit Bulk Edit' : 'Bulk Edit' }}
+      </button>
+
+      <div *ngIf="bulkEditMode && selectedForBulk.size > 0" class="bulk-edit-controls">
+        <div class="selection-counter">
+          {{ selectedForBulk.size }} {{ selectedForBulk.size === 1 ? 'item' : 'items' }} selected
+        </div>
+        <button mat-raised-button color="primary" (click)="openBulkEditDialog()">Edit Selected</button>
+      </div>
+    </div>
   </aside>
 
   <section class="library-panel">
@@ -77,14 +100,18 @@
     >
       <app-media-tile
         class="tile"
+        [class.bulk-selected]="bulkEditMode && selectedForBulk.has(item.id)"
         *ngFor="let item of filteredItems"
         (click)="openPlayer(item)"
         [title]="titleLabel(item)"
         [posterUrl]="coverUrl(item)"
         [favorited]="isFavorited(item)"
         [ownerLabel]="item.owners?.length ? item.owners.join(', ') : null"
+        [bulkMode]="bulkEditMode"
+        [bulkSelected]="selectedForBulk.has(item.id)"
         (edit)="openEditDialog(item, $event)"
         (favoriteToggle)="toggleFavorite(item, $event)"
+        (bulkToggle)="toggleTileSelection(item.id)"
       >
         <div class="tile-meta">{{ subtitleLabel(item) }}</div>
         <div class="tile-meta" *ngIf="durationLabel(item)">{{ durationLabel(item) }}</div>

@@ -51,6 +51,13 @@ public static class AudiobookLibraryEndpoints
             .RequireAuthorization()
             .RequireRateLimiting("api");
 
+        // Cascades to Audiobookshelf (hard delete — removes the audio files from
+        // disk too, not just the catalog entry) and then cleans up everything we
+        // track for it (owners/genres/favorites/progress, any cover override).
+        app.MapDelete("/api/audiobooks/{id}", HandleDelete)
+            .RequireAuthorization()
+            .RequireRateLimiting("api");
+
         app.MapPatch("/api/audiobooks/{id}/metadata", HandleSetMetadata)
             .RequireAuthorization()
             .RequireRateLimiting("api");
@@ -124,6 +131,36 @@ public static class AudiobookLibraryEndpoints
             Log.Warning("[Audiobooks] Audiobookshelf item fetch failed for {Id}: {Message}", safeId, ex.Message);
             return Results.Json(new { error = "Audiobookshelf is unavailable" }, statusCode: StatusCodes.Status502BadGateway);
         }
+    }
+
+    private static async Task<IResult> HandleDelete([FromRoute] string id, IAudiobookshelfService abs, IMediaMetadataService metadata)
+    {
+        var safeId = SanitizeId(id);
+        if (safeId is null) return Results.BadRequest(new { error = "Invalid id." });
+
+        try
+        {
+            await abs.DeleteItemAsync(safeId);
+        }
+        catch (Exception ex) when (IsUpstreamFailure(ex))
+        {
+            Log.Warning("[Audiobooks] Audiobookshelf delete failed for {Id}: {Message}", safeId, ex.Message);
+            return Results.Json(new { error = "Audiobookshelf rejected the delete request" }, statusCode: StatusCodes.Status502BadGateway);
+        }
+
+        // Audiobookshelf has removed the item — clean up everything we track for it too,
+        // including any local cover-override file (resolved before Delete() drops the
+        // record that points at it).
+        var overridePath = ResolveCoverOverridePath(safeId, metadata);
+        metadata.Delete("audiobook", safeId);
+        if (overridePath is not null)
+        {
+            try { File.Delete(overridePath); }
+            catch (Exception ex) { Log.Warning("[Audiobooks] Failed to delete cover override for {Id}: {Message}", safeId, ex.Message); }
+        }
+
+        Log.Information("[Audiobooks] Deleted audiobook:{Id}", safeId);
+        return Results.NoContent();
     }
 
     private static IResult HandleSetMetadata([FromRoute] string id, [FromBody] SetMediaMetadataRequest request, IMediaMetadataService metadata)

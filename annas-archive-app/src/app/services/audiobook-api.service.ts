@@ -86,6 +86,12 @@ export class AudiobookApiService {
     return this.http.get<AudiobookItem>(`${this.baseUrl}/${encodeURIComponent(id)}`);
   }
 
+  /** Cascades to Audiobookshelf (removes the audio files from disk, not just the
+   *  catalog entry) and cleans up everything we track for the item. Permanent. */
+  deleteItem(id: string): Observable<void> {
+    return this.http.delete<void>(`${this.baseUrl}/${encodeURIComponent(id)}`);
+  }
+
   /** Full replace of an audiobook's owners + genre tags; title is optional and only
    *  applied when provided (a title override, distinct from Audiobookshelf's own —
    *  see AudiobookLibraryEndpoints.ApplyMetadata). Omitting it leaves any existing

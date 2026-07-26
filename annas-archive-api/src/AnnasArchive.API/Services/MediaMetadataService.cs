@@ -49,6 +49,11 @@ public interface IMediaMetadataService
     void SetFavorite(string type, string id, string owner, bool favorited);
     void SetProgress(string type, string id, string owner, double positionSeconds);
     void SetCoverUrl(string type, string id, string? relativeCoverPath);
+    /// <summary>Drops the whole record — used when the underlying item itself is
+    /// deleted, so a future item that happens to reuse the same id (Sonarr/Radarr
+    /// ids especially — Audiobookshelf's are UUIDs so this is only theoretical there)
+    /// never inherits a deleted item's owners/favorites/overrides.</summary>
+    void Delete(string type, string id);
     MediaItemMetadata? Get(string type, string id);
     IReadOnlyDictionary<string, MediaItemMetadata> GetAll();
 }
@@ -177,6 +182,17 @@ public class MediaMetadataService : IMediaMetadataService
                 data[key] = existing;
 
             SaveUnsafe(data);
+        }
+    }
+
+    public void Delete(string type, string id)
+    {
+        var key = $"{type}:{id}";
+        lock (_fileLock)
+        {
+            var data = LoadUnsafe();
+            if (data.Remove(key))
+                SaveUnsafe(data);
         }
     }
 

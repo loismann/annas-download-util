@@ -5,6 +5,7 @@ import { MatDialogModule, MatDialogRef, MAT_DIALOG_DATA } from '@angular/materia
 import { MatButtonModule } from '@angular/material/button';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
+import { MatIconModule } from '@angular/material/icon';
 import { MediaLibraryApiService } from '../../services/media-library-api.service';
 import { AudiobookApiService } from '../../services/audiobook-api.service';
 import { AuthService } from '../../services/auth.service';
@@ -42,6 +43,10 @@ export interface MediaEditDialogResult {
    * Audiobookshelf reports. Omitted (not just empty) when unedited, so an
    * owners/genres-only save never touches a previously-set title override. */
   title?: string;
+  /** Audiobooks only — the item was deleted (cascaded to Audiobookshelf already,
+   * see confirmDelete()). When set, callers should drop the item locally and
+   * ignore every other field on this result — there's nothing left to save. */
+  deleted?: boolean;
 }
 
 /**
@@ -61,6 +66,7 @@ export interface MediaEditDialogResult {
     MatButtonModule,
     MatFormFieldModule,
     MatInputModule,
+    MatIconModule,
     FavoriteToggleComponent,
     OwnerPickerComponent,
     GenreChipsEditorComponent,
@@ -100,11 +106,24 @@ export interface MediaEditDialogResult {
           [available]="data.availableGenres || []"
           (valuesChange)="genres = $event"
         ></app-genre-chips-editor>
+
+        <div *ngIf="deleteError" class="delete-error">{{ deleteError }}</div>
       </div>
 
       <div mat-dialog-actions align="end">
+        <button
+          *ngIf="data.mediaType === 'audiobook'"
+          mat-stroked-button
+          color="warn"
+          class="delete-btn"
+          [disabled]="isDeleting"
+          (click)="confirmDelete()"
+        >
+          <mat-icon>delete</mat-icon>
+          {{ isDeleting ? 'Deleting…' : 'Delete' }}
+        </button>
         <button mat-stroked-button (click)="onCancel()">Cancel</button>
-        <button mat-raised-button color="primary" (click)="onSave()">Save</button>
+        <button mat-raised-button color="primary" [disabled]="isDeleting" (click)="onSave()">Save</button>
       </div>
     </div>
   `,
@@ -118,6 +137,14 @@ export interface MediaEditDialogResult {
     .title-field {
       width: 100%;
     }
+    .delete-btn {
+      margin-right: auto;
+    }
+    .delete-error {
+      margin-top: 8px;
+      color: #b00020;
+      font-size: 0.85rem;
+    }
   `]
 })
 export class MediaEditDialogComponent {
@@ -125,6 +152,8 @@ export class MediaEditDialogComponent {
   selectedOwners: string[];
   selectedCoverUrl: string | undefined;
   titleInput: string;
+  isDeleting = false;
+  deleteError: string | null = null;
 
   constructor(
     public dialogRef: MatDialogRef<MediaEditDialogComponent, MediaEditDialogResult>,
@@ -189,5 +218,30 @@ export class MediaEditDialogComponent {
 
   onCancel(): void {
     this.dialogRef.close();
+  }
+
+  /** Audiobooks only. Cascades to Audiobookshelf — removes the audio files from
+   * disk, not just the catalog entry — so this is confirmed before firing. */
+  confirmDelete(): void {
+    if (this.isDeleting || this.data.mediaType !== 'audiobook') return;
+
+    const ok = window.confirm(
+      `Delete "${this.data.title}" from Audiobookshelf? This removes the audio files too and cannot be undone.`
+    );
+    if (!ok) return;
+
+    this.isDeleting = true;
+    this.deleteError = null;
+
+    this.audiobookApi.deleteItem(this.data.id as string).subscribe({
+      next: () => {
+        this.dialogRef.close({ genres: [], owners: [], deleted: true });
+      },
+      error: (err) => {
+        this.logger.error('[MediaEditDialog] Failed to delete audiobook:', err);
+        this.isDeleting = false;
+        this.deleteError = 'Could not delete — please try again.';
+      }
+    });
   }
 }

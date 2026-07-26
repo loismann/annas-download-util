@@ -424,11 +424,20 @@ export class AudiobooksComponent implements OnInit {
     );
 
     dialogRef.afterClosed().subscribe(result => {
+      // Deletion already happened inside the dialog (confirmDelete()) — nothing left
+      // to save, just drop the item locally. Skip the favorite-sync below too, since
+      // the item (and the favorite it just synced) no longer exists.
+      if (result?.deleted) {
+        this.items = this.items.filter(i => i.id !== item.id);
+        return;
+      }
+
       // The favorite toggle inside the dialog applies immediately (its own API call) —
-      // sync whatever it ended up at back onto the item here.
+      // sync whatever it ended up at back onto the item here, even on Cancel.
       item.favorites = dialogData.favoritedBy;
 
       if (!result) return;
+
       this.api.setMetadata(item.id, result.owners, result.genres, result.title).subscribe({
         next: () => {
           item.owners = result.owners;

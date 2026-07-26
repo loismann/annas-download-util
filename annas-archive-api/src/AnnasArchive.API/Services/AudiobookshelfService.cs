@@ -27,6 +27,12 @@ public interface IAudiobookshelfService
     Task<AudiobookshelfStreamResult> StreamAudioFileAsync(string itemId, string ino, string? rangeHeader, CancellationToken ct = default);
 
     Task<AudiobookshelfStreamResult> GetCoverAsync(string itemId, CancellationToken ct = default);
+
+    /// <summary>Deletes the item from Audiobookshelf's library AND removes its audio
+    /// files from disk (hard delete) — same "actually gone, not just unlinked" cascade
+    /// as Radarr/SonarrService's DeleteFiles=true. A soft delete would leave the files
+    /// in place, and Audiobookshelf's next library scan would just re-import them.</summary>
+    Task DeleteItemAsync(string itemId, CancellationToken ct = default);
 }
 
 /// <summary>
@@ -101,6 +107,18 @@ public class AudiobookshelfService : IAudiobookshelfService
         var response = await _http.GetAsync(
             $"/api/items/{Uri.EscapeDataString(itemId)}/cover", HttpCompletionOption.ResponseHeadersRead, ct);
         return await ToStreamResultAsync(response, ct);
+    }
+
+    public async Task DeleteItemAsync(string itemId, CancellationToken ct = default)
+    {
+        // hard=1 per Audiobookshelf's documented REST API (api.audiobookshelf.org) —
+        // without it, DELETE only unlinks the item from Audiobookshelf's database and
+        // leaves the audio files on disk, which the next library scan would just
+        // re-import. Verify this against the actual pinned image version if it starts
+        // 404ing or files stop actually being removed — same caveat as the API-key
+        // auth assumption above; this hasn't been confirmed against a live instance.
+        var response = await _http.DeleteAsync($"/api/items/{Uri.EscapeDataString(itemId)}?hard=1", ct);
+        response.EnsureSuccessStatusCode();
     }
 
     private static async Task<AudiobookshelfStreamResult> ToStreamResultAsync(HttpResponseMessage response, CancellationToken ct)

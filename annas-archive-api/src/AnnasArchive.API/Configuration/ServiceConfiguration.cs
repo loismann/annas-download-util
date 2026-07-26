@@ -151,15 +151,16 @@ public static class ServiceConfiguration
                 opt.QueueLimit = 0;
             });
 
-            // Media proxy rate limit (cover art / audio streaming): 600 requests per minute
-            // per IP. Kept separate from "api" because a single audiobook catalog page load
-            // can fire a cover-image request per tile (hundreds of items, no pagination) —
-            // sharing the 60/min "api" budget meant to guard against abuse meant those covers
-            // alone exhausted it, causing legitimate follow-up requests (like opening the
-            // player) to get rejected with a fast 503 for the rest of that minute window.
+            // Media proxy rate limit (cover art / audio streaming): per IP. Kept separate
+            // from "api" because the audiobook catalog fires a cover request per tile —
+            // sharing the 60/min "api" budget meant covers alone exhausted it. Covers are
+            // lazy-loaded and browser-cached now, but a fast full scroll through a large
+            // library (~1000 items) must still fit inside one window, so the ceiling is
+            // sized to the library, not to typical traffic — this is an anti-runaway
+            // guard on a Tailscale-only app, not an abuse defense.
             options.AddFixedWindowLimiter("media", opt =>
             {
-                opt.PermitLimit = 600;
+                opt.PermitLimit = 2000;
                 opt.Window = TimeSpan.FromMinutes(1);
                 opt.QueueProcessingOrder = System.Threading.RateLimiting.QueueProcessingOrder.OldestFirst;
                 opt.QueueLimit = 0;

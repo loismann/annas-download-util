@@ -27,6 +27,14 @@ public static class AudiobookLibraryEndpoints
 {
     private static readonly HashSet<string> ValidOwners = new(StringComparer.OrdinalIgnoreCase) { "Paul", "Mom", "Dad" };
 
+    /// <summary>Caps concurrent cover fetches against Audiobookshelf. Covers are
+    /// lazy-loaded client-side, but a fast scroll can still burst dozens of
+    /// requests at once and an ABS instance on NAS hardware folds under that —
+    /// excess requests just wait their turn here (covers are small, so slots
+    /// turn over in milliseconds). Audio streams are not gated: there's only
+    /// ever a player or two open.</summary>
+    private static readonly SemaphoreSlim CoverFetchGate = new(8);
+
     public static WebApplication MapAudiobookLibraryEndpoints(this WebApplication app)
     {
         app.MapGet("/api/audiobooks", HandleGetCatalog)
@@ -187,8 +195,20 @@ public static class AudiobookLibraryEndpoints
 
         try
         {
-            var result = await abs.GetCoverAsync(safeId, context.RequestAborted);
-            await RelayStreamAsync(context, result);
+            await CoverFetchGate.WaitAsync(context.RequestAborted);
+            try
+            {
+                var result = await abs.GetCoverAsync(safeId, context.RequestAborted);
+                // Covers are effectively immutable — let the browser cache them for a
+                // day so revisiting the catalog doesn't re-proxy hundreds of images.
+                if (result.StatusCode == StatusCodes.Status200OK)
+                    context.Response.Headers.CacheControl = "private, max-age=86400";
+                await RelayStreamAsync(context, result);
+            }
+            finally
+            {
+                CoverFetchGate.Release();
+            }
         }
         catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
         {

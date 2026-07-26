@@ -65,7 +65,10 @@ import { MatTooltipModule } from '@angular/material/tooltip';
     >
       <mat-icon>delete</mat-icon>
     </button>
-    <img class="poster" [src]="posterUrl" [alt]="title" />
+    <!-- loading="lazy": grids can hold hundreds of tiles (991 audiobooks) and
+         eagerly fetching every proxied cover at once stampedes the backend —
+         the browser only fetches covers as they near the viewport. -->
+    <img class="poster" [src]="posterUrl" [alt]="title" loading="lazy" decoding="async" />
     <div class="tile-title">{{ title }}</div>
     <div class="tile-status">
       <ng-content></ng-content>

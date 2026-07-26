@@ -43,12 +43,22 @@ public interface IMediaMetadataService
 
 public class MediaMetadataService : IMediaMetadataService
 {
-    private readonly string _storagePath;
+    private const string StateKey = "media-metadata";
+
+    private readonly Data.AppDatabase _db;
+    private readonly string? _legacyFilePath;
     private readonly object _fileLock = new();
 
-    public MediaMetadataService(string storagePath)
+    /// <summary>
+    /// Persists to the SQLite app_state table (persistent /app/state mount). The legacy
+    /// JSON file path, if given, is imported once on first read and then left alone —
+    /// this data lived on the ephemeral container filesystem before 2026-07-23 and was
+    /// wiped by every deploy (DOCS/PROJECT_AUDIT.md §8.6b).
+    /// </summary>
+    public MediaMetadataService(Data.AppDatabase db, string? legacyFilePath = null)
     {
-        _storagePath = storagePath;
+        _db = db;
+        _legacyFilePath = legacyFilePath;
     }
 
     public void Set(string type, string id, MediaItemMetadata metadata)
@@ -148,21 +158,26 @@ public class MediaMetadataService : IMediaMetadataService
     {
         try
         {
-            if (!File.Exists(_storagePath))
+            var json = _db.GetState(StateKey);
+
+            // One-time carry-over from the pre-SQLite JSON file, if present.
+            if (json == null && _legacyFilePath != null && File.Exists(_legacyFilePath))
+                json = File.ReadAllText(_legacyFilePath);
+
+            if (json == null)
                 return new Dictionary<string, MediaItemMetadata>();
 
-            var json = File.ReadAllText(_storagePath);
             return JsonSerializer.Deserialize<Dictionary<string, MediaItemMetadata>>(json)
                 ?? new Dictionary<string, MediaItemMetadata>();
         }
         catch (Exception ex)
         {
-            Log.Warning("[MediaMetadata] Failed to load {Path}: {Message}", _storagePath, ex.Message);
+            Log.Warning("[MediaMetadata] Failed to load media metadata state: {Message}", ex.Message);
             return new Dictionary<string, MediaItemMetadata>();
         }
     }
 
-    /// <summary>Writes the metadata file, letting any I/O failure propagate to
+    /// <summary>Persists the metadata, letting any I/O failure propagate to
     /// the caller. A swallowed write failure here previously meant a save could
     /// report success to the client (204) while never actually landing on
     /// disk — silently invisible until the next fetch quietly showed the old
@@ -171,15 +186,11 @@ public class MediaMetadataService : IMediaMetadataService
     {
         try
         {
-            var dir = Path.GetDirectoryName(_storagePath);
-            if (!string.IsNullOrEmpty(dir))
-                Directory.CreateDirectory(dir);
-
-            File.WriteAllText(_storagePath, JsonSerializer.Serialize(data, new JsonSerializerOptions { WriteIndented = true }));
+            _db.SetState(StateKey, JsonSerializer.Serialize(data));
         }
         catch (Exception ex)
         {
-            Log.Warning("[MediaMetadata] Failed to save {Path}: {Message}", _storagePath, ex.Message);
+            Log.Warning("[MediaMetadata] Failed to save media metadata state: {Message}", ex.Message);
             throw;
         }
     }

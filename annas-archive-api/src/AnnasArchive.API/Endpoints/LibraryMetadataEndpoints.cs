@@ -1,4 +1,5 @@
 using System.Text.Json;
+using AnnasArchive.API.Data;
 using AnnasArchive.API.Helpers;
 using AnnasArchive.API.Models;
 using AnnasArchive.API.Services;
@@ -9,6 +10,12 @@ namespace AnnasArchive.API.Endpoints;
 
 /// <summary>
 /// Extension methods for mapping Library metadata management endpoints.
+///
+/// All user edits write to <see cref="BookPersonalizationStore"/> (SQLite), never
+/// to the .meta.json sidecars — the sidecars are enrichment-owned and are only
+/// read here as fallback values. This is the write-side half of the §8.6 fix:
+/// the enrichment watcher and user edits no longer share a file, so neither can
+/// clobber the other.
 /// </summary>
 public static class LibraryMetadataEndpoints
 {
@@ -55,14 +62,45 @@ public static class LibraryMetadataEndpoints
         return app;
     }
 
+    /// <summary>Resolves and validates the route/query fileName; null result means invalid.</summary>
+    private static string? SafeName(string? fileName)
+    {
+        var safe = Path.GetFileName(fileName);
+        return !string.IsNullOrWhiteSpace(fileName) && string.Equals(fileName, safe, StringComparison.Ordinal)
+            ? safe
+            : null;
+    }
+
+    /// <summary>A book "exists" if either the ebook file or its enrichment sidecar is present —
+    /// personalization must also work for orphan files the watcher hasn't processed yet.</summary>
+    private static bool BookExists(string libraryRoot, string safeFileName) =>
+        File.Exists(Path.Combine(libraryRoot, safeFileName)) ||
+        File.Exists(Path.Combine(libraryRoot, safeFileName + ".meta.json"));
+
+    private static async Task<LibraryBookMeta?> TryReadMetaAsync(string metaPath)
+    {
+        try
+        {
+            if (!File.Exists(metaPath))
+                return null;
+            var json = await File.ReadAllTextAsync(metaPath);
+            return JsonSerializer.Deserialize<LibraryBookMeta>(json, LibraryHelpers.CreateLibraryJsonOptions());
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     private static async Task<IResult> HandleSetFavorite(
         [FromRoute] string fileName,
         [FromBody] LibraryBookFavoriteUpdate update,
         HttpContext context,
+        BookPersonalizationStore store,
         LibraryIndexCache cache)
     {
-        var safeFileName = Path.GetFileName(fileName);
-        if (!string.Equals(fileName, safeFileName, StringComparison.Ordinal))
+        var safeFileName = SafeName(fileName);
+        if (safeFileName == null)
             return Results.BadRequest(new { error = "Invalid fileName." });
 
         // Who's favoriting is resolved from the authenticated session, not a client-supplied
@@ -73,32 +111,31 @@ public static class LibraryMetadataEndpoints
             return Results.BadRequest(new { error = "Could not resolve the logged-in user." });
 
         var libraryRoot = LibraryHelpers.ResolveLibraryRoot();
-        var metaPath = Path.Combine(libraryRoot, safeFileName + ".meta.json");
-
-        if (!File.Exists(metaPath))
-            return Results.NotFound(new { error = "Metadata file not found." });
+        if (!BookExists(libraryRoot, safeFileName))
+            return Results.NotFound(new { error = "Book not found." });
 
         try
         {
-            var jsonOptions = LibraryHelpers.CreateLibraryJsonOptions();
-            var json = await File.ReadAllTextAsync(metaPath);
-            var meta = JsonSerializer.Deserialize<LibraryBookMeta>(json, jsonOptions);
+            // First favorite for a book starts from whatever the enrichment sidecar
+            // already recorded (pre-store history), so nothing is lost in the handoff.
+            var meta = await TryReadMetaAsync(Path.Combine(libraryRoot, safeFileName + ".meta.json"));
 
-            if (meta == null)
-                return Results.BadRequest(new { error = "Invalid metadata file." });
+            var row = store.Update(safeFileName, p =>
+            {
+                var favoritedBy = new HashSet<string>(
+                    p.FavoritedBy ?? meta?.FavoritedBy ?? Array.Empty<string>(),
+                    StringComparer.OrdinalIgnoreCase);
 
-            var favoritedBy = new HashSet<string>(meta.FavoritedBy ?? Array.Empty<string>(), StringComparer.OrdinalIgnoreCase);
-            if (update.Favorited)
-                favoritedBy.Add(owner);
-            else
-                favoritedBy.Remove(owner);
+                if (update.Favorited)
+                    favoritedBy.Add(owner);
+                else
+                    favoritedBy.Remove(owner);
 
-            var updated = meta with { FavoritedBy = favoritedBy.ToArray() };
-            var updatedJson = JsonSerializer.Serialize(updated, jsonOptions);
-            await File.WriteAllTextAsync(metaPath, updatedJson);
+                p.FavoritedBy = favoritedBy.ToArray();
+            });
+
             cache.InvalidateCache();
-
-            return Results.Ok(new { success = true, favoritedBy = updated.FavoritedBy });
+            return Results.Ok(new { success = true, favoritedBy = row.FavoritedBy });
         }
         catch (Exception ex)
         {
@@ -107,191 +144,124 @@ public static class LibraryMetadataEndpoints
         }
     }
 
-    private static async Task<IResult> HandleUpdateMetadata(
+    private static IResult HandleUpdateMetadata(
         [FromRoute] string fileName,
         [FromBody] LibraryBookMetadataUpdate update,
-        HttpContext context,
+        BookPersonalizationStore store,
         LibraryIndexCache cache)
     {
-        var safeFileName = Path.GetFileName(fileName);
-        if (!string.Equals(fileName, safeFileName, StringComparison.Ordinal))
+        var safeFileName = SafeName(fileName);
+        if (safeFileName == null)
             return Results.BadRequest(new { error = "Invalid fileName." });
 
         var libraryRoot = LibraryHelpers.ResolveLibraryRoot();
-        var metaPath = Path.Combine(libraryRoot, safeFileName + ".meta.json");
-
-        if (!File.Exists(metaPath))
-            return Results.NotFound(new { error = "Metadata file not found." });
+        if (!BookExists(libraryRoot, safeFileName))
+            return Results.NotFound(new { error = "Book not found." });
 
         try
         {
-            var jsonOptions = LibraryHelpers.CreateLibraryJsonOptions();
-            var json = await File.ReadAllTextAsync(metaPath);
-            var meta = JsonSerializer.Deserialize<LibraryBookMeta>(json, jsonOptions);
+            store.Update(safeFileName, p =>
+            {
+                // Empty string = "explicitly cleared" (distinct from null = no opinion) —
+                // see BookPersonalization's override semantics.
+                p.PrimaryGenre = update.PrimaryGenre ?? "";
+                p.Tags = update.Tags ?? Array.Empty<string>();
+                p.Series = update.Series ?? "";
+                if (!string.IsNullOrWhiteSpace(update.Title))
+                    p.Title = update.Title;
+                if (update.Authors != null)
+                    p.Authors = update.Authors;
+            });
 
-            if (meta == null)
-                return Results.BadRequest(new { error = "Invalid metadata file." });
-
-            // Update fields
-            meta.PrimaryGenre = update.PrimaryGenre;
-            meta.Tags = update.Tags ?? Array.Empty<string>();
-            meta.Series = update.Series;
-            if (!string.IsNullOrWhiteSpace(update.Title))
-                meta.Title = update.Title;
-            if (update.Authors != null)
-                meta.Authors = update.Authors;
-
-            // Save back to file
-            var updatedJson = JsonSerializer.Serialize(meta, jsonOptions);
-            await File.WriteAllTextAsync(metaPath, updatedJson);
             cache.InvalidateCache();
 
             Log.Information("[library] Updated metadata for {FileName}: Genre={Genre}, Tags={Tags}, Series={Series}",
-                safeFileName, meta.PrimaryGenre, string.Join(", ", meta.Tags ?? Array.Empty<string>()), meta.Series);
+                safeFileName, update.PrimaryGenre, string.Join(", ", update.Tags ?? Array.Empty<string>()), update.Series);
 
             return Results.Ok(new { success = true, message = "Metadata updated successfully." });
         }
-        catch (ArgumentException ex)
-        {
-            Log.Information("[library] Invalid argument for metadata update: {Message}", ex.Message);
-            return Results.BadRequest(new { error = $"Invalid parameter: {ex.ParamName ?? "unknown"}" });
-        }
         catch (Exception ex)
         {
-            Log.Information("[library] Failed to update metadata for {safeFileName}: {ex.Message}");
+            Log.Warning(ex, "[library] Failed to update metadata for {SafeFileName}", safeFileName);
             return Results.Problem("Failed to update metadata.");
         }
     }
 
-    private static async Task<IResult> HandleUpdateRatings(
+    private static IResult HandleUpdateRatings(
         [FromRoute] string fileName,
         [FromBody] LibraryBookRatingsUpdate update,
+        BookPersonalizationStore store,
         LibraryIndexCache cache)
     {
-        var safeFileName = Path.GetFileName(fileName);
-        if (!string.Equals(fileName, safeFileName, StringComparison.Ordinal))
+        var safeFileName = SafeName(fileName);
+        if (safeFileName == null)
             return Results.BadRequest(new { error = "Invalid fileName." });
 
         var libraryRoot = LibraryHelpers.ResolveLibraryRoot();
-        var metaPath = Path.Combine(libraryRoot, safeFileName + ".meta.json");
-
-        if (!File.Exists(metaPath))
-            return Results.NotFound(new { error = "Metadata file not found." });
+        if (!BookExists(libraryRoot, safeFileName))
+            return Results.NotFound(new { error = "Book not found." });
 
         try
         {
-            var jsonOptions = LibraryHelpers.CreateLibraryJsonOptions();
-            var json = await File.ReadAllTextAsync(metaPath);
-            var meta = JsonSerializer.Deserialize<LibraryBookMeta>(json, jsonOptions);
-
-            if (meta == null)
-                return Results.BadRequest(new { error = "Invalid metadata file." });
-
-            if (update.GoodreadsRating.HasValue)
+            var row = store.Update(safeFileName, p =>
             {
-                var gr = Math.Clamp(update.GoodreadsRating.Value, 0, 5);
-                meta.GoodreadsRating = gr;
-            }
+                if (update.GoodreadsRating.HasValue)
+                    p.GoodreadsRating = Math.Clamp(update.GoodreadsRating.Value, 0, 5);
+                if (update.PersonalRating.HasValue)
+                    p.PersonalRating = Math.Clamp(update.PersonalRating.Value, 0, 5);
+            });
 
-            if (update.PersonalRating.HasValue)
-            {
-                var pr = Math.Clamp(update.PersonalRating.Value, 0, 5);
-                meta.PersonalRating = pr;
-            }
-
-            var updatedJson = JsonSerializer.Serialize(meta, jsonOptions);
-            await File.WriteAllTextAsync(metaPath, updatedJson);
             cache.InvalidateCache();
 
             Log.Information("[library] Updated ratings for {FileName}: Goodreads={Goodreads}, Personal={Personal}",
-                safeFileName, meta.GoodreadsRating, meta.PersonalRating);
+                safeFileName, row.GoodreadsRating, row.PersonalRating);
 
             return Results.Ok(new { success = true, message = "Ratings updated successfully." });
         }
-        catch (ArgumentException ex)
-        {
-            Log.Information("[library] Invalid argument for ratings update: {Message}", ex.Message);
-            return Results.BadRequest(new { error = $"Invalid parameter: {ex.ParamName ?? "unknown"}" });
-        }
         catch (Exception ex)
         {
-            Log.Information("[library] Failed to update ratings for {safeFileName}: {ex.Message}");
+            Log.Warning(ex, "[library] Failed to update ratings for {SafeFileName}", safeFileName);
             return Results.Problem("Failed to update ratings.");
         }
     }
 
-    private static async Task<IResult> HandleToggleReaderByRoute(
+    private static IResult HandleToggleReaderByRoute(
         [FromRoute] string fileName,
         [FromBody] LibraryBookReaderUpdate update,
-        LibraryIndexCache cache)
-    {
-        var safeFileName = Path.GetFileName(fileName);
-        if (!string.Equals(fileName, safeFileName, StringComparison.Ordinal))
-            return Results.BadRequest(new { error = "Invalid fileName." });
+        BookPersonalizationStore store,
+        LibraryIndexCache cache) =>
+        SetReaderFlag(fileName, update, store, cache, requireEpub: false);
 
-        var libraryRoot = LibraryHelpers.ResolveLibraryRoot();
-        var metaPath = Path.Combine(libraryRoot, safeFileName + ".meta.json");
-
-        if (!File.Exists(metaPath))
-            return Results.NotFound(new { error = "Metadata file not found." });
-
-        try
-        {
-            var jsonOptions = LibraryHelpers.CreateLibraryJsonOptions();
-            var json = await File.ReadAllTextAsync(metaPath);
-            var meta = JsonSerializer.Deserialize<LibraryBookMeta>(json, jsonOptions);
-
-            if (meta == null)
-                return Results.BadRequest(new { error = "Invalid metadata file." });
-
-            var enabled = update?.Enabled ?? true;
-            var updated = meta with { ReaderEnabled = enabled };
-            var updatedJson = JsonSerializer.Serialize(updated, jsonOptions);
-            await File.WriteAllTextAsync(metaPath, updatedJson);
-            cache.InvalidateCache();
-
-            return Results.Ok(new { success = true, enabled });
-        }
-        catch (Exception ex)
-        {
-            Log.Warning("[library] Failed to update reader flag for {SafeFileName}: {Message}", safeFileName, ex.Message);
-            return Results.Problem("Failed to update reader flag.");
-        }
-    }
-
-    private static async Task<IResult> HandleToggleReaderByQuery(
+    private static IResult HandleToggleReaderByQuery(
         [FromQuery] string? fileName,
         [FromBody] LibraryBookReaderUpdate update,
-        LibraryIndexCache cache)
+        BookPersonalizationStore store,
+        LibraryIndexCache cache) =>
+        SetReaderFlag(fileName, update, store, cache, requireEpub: true);
+
+    private static IResult SetReaderFlag(
+        string? fileName,
+        LibraryBookReaderUpdate update,
+        BookPersonalizationStore store,
+        LibraryIndexCache cache,
+        bool requireEpub)
     {
-        var safeFileName = Path.GetFileName(fileName);
-        if (string.IsNullOrWhiteSpace(fileName) || !string.Equals(fileName, safeFileName, StringComparison.Ordinal))
+        var safeFileName = SafeName(fileName);
+        if (safeFileName == null)
             return Results.BadRequest(new { error = "Invalid fileName." });
 
-        if (!string.Equals(Path.GetExtension(safeFileName), ".epub", StringComparison.OrdinalIgnoreCase))
+        if (requireEpub && !string.Equals(Path.GetExtension(safeFileName), ".epub", StringComparison.OrdinalIgnoreCase))
             return Results.BadRequest(new { error = "Reader supports EPUB files only." });
 
         var libraryRoot = LibraryHelpers.ResolveLibraryRoot();
-        var metaPath = Path.Combine(libraryRoot, safeFileName + ".meta.json");
-
-        if (!File.Exists(metaPath))
-            return Results.NotFound(new { error = "Metadata file not found." });
+        if (!BookExists(libraryRoot, safeFileName))
+            return Results.NotFound(new { error = "Book not found." });
 
         try
         {
-            var jsonOptions = LibraryHelpers.CreateLibraryJsonOptions();
-            var json = await File.ReadAllTextAsync(metaPath);
-            var meta = JsonSerializer.Deserialize<LibraryBookMeta>(json, jsonOptions);
-
-            if (meta == null)
-                return Results.BadRequest(new { error = "Invalid metadata file." });
-
             var enabled = update?.Enabled ?? true;
-            var updated = meta with { ReaderEnabled = enabled };
-            var updatedJson = JsonSerializer.Serialize(updated, jsonOptions);
-            await File.WriteAllTextAsync(metaPath, updatedJson);
+            store.Update(safeFileName, p => p.ReaderEnabled = enabled);
             cache.InvalidateCache();
-
             return Results.Ok(new { success = true, enabled });
         }
         catch (Exception ex)
@@ -301,11 +271,18 @@ public static class LibraryMetadataEndpoints
         }
     }
 
-    private static async Task<IResult> HandleWipeGenres(LibraryIndexCache cache)
+    private static async Task<IResult> HandleWipeGenres(
+        BookPersonalizationStore store,
+        LibraryIndexCache cache)
     {
         var libraryRoot = LibraryHelpers.ResolveLibraryRoot();
         if (!Directory.Exists(libraryRoot))
             return Results.Ok(new { success = true, updated = 0 });
+
+        // Bulk admin wipe has to clear both layers: the user overrides in the store AND
+        // the enrichment fallbacks in the sidecars — clearing only the store would let
+        // the old sidecar genres shine straight back through the merge.
+        store.ClearGenreFields();
 
         var metaFiles = Directory.GetFiles(libraryRoot, "*.meta.json");
         var jsonOptions = LibraryHelpers.CreateLibraryJsonOptions();
@@ -349,8 +326,8 @@ public static class LibraryMetadataEndpoints
         IDescriptionFetcherService descriptionFetcher,
         LibraryIndexCache cache)
     {
-        var safeFileName = Path.GetFileName(fileName);
-        if (!string.Equals(fileName, safeFileName, StringComparison.Ordinal))
+        var safeFileName = SafeName(fileName);
+        if (safeFileName == null)
             return Results.BadRequest(new { error = "Invalid fileName." });
 
         var libraryRoot = LibraryHelpers.ResolveLibraryRoot();
@@ -362,8 +339,7 @@ public static class LibraryMetadataEndpoints
         try
         {
             var jsonOptions = LibraryHelpers.CreateLibraryJsonOptions();
-            var json = await File.ReadAllTextAsync(metaPath);
-            var meta = JsonSerializer.Deserialize<LibraryBookMeta>(json, jsonOptions);
+            var meta = await TryReadMetaAsync(metaPath);
 
             if (meta == null)
                 return Results.BadRequest(new { error = "Invalid metadata file." });
@@ -382,14 +358,14 @@ public static class LibraryMetadataEndpoints
             var summary = result.Description;
             var source = result.Source;
 
-            // Save to metadata if we got a summary
+            // A fetched description is enrichment data, not a user edit — it stays in the
+            // sidecar. Safe to whole-file rewrite now that the model round-trips unknown fields.
             if (!string.IsNullOrWhiteSpace(summary))
             {
                 try
                 {
                     // Re-read to avoid race conditions
-                    json = await File.ReadAllTextAsync(metaPath);
-                    meta = JsonSerializer.Deserialize<LibraryBookMeta>(json, jsonOptions);
+                    meta = await TryReadMetaAsync(metaPath);
                     if (meta != null)
                     {
                         var updated = meta with { Description = summary };
@@ -401,7 +377,7 @@ public static class LibraryMetadataEndpoints
                 }
                 catch (Exception ex)
                 {
-                    Log.Information("[library-summary] Failed to save summary: {ex.Message}");
+                    Log.Warning("[library-summary] Failed to save summary: {Message}", ex.Message);
                 }
             }
 
@@ -409,7 +385,7 @@ public static class LibraryMetadataEndpoints
         }
         catch (Exception ex)
         {
-            Log.Information("[library-summary] Error: {ex.Message}");
+            Log.Warning("[library-summary] Error for {SafeFileName}: {Message}", safeFileName, ex.Message);
             return Results.Problem("Failed to get summary.");
         }
     }

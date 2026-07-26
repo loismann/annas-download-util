@@ -22,9 +22,13 @@ public class LibraryIndexCache : IHostedService, IDisposable
     private Timer? _debounceTimer;
     private bool _isRebuilding;
     private readonly TimeSpan _debounceDelay = TimeSpan.FromSeconds(2);
+    private readonly Data.BookPersonalizationStore? _personalization;
 
-    public LibraryIndexCache()
+    // The personalization store is optional only so tests can construct the cache
+    // without a database; in the real app DI always supplies it.
+    public LibraryIndexCache(Data.BookPersonalizationStore? personalization = null)
     {
+        _personalization = personalization;
         InitializeWatcher();
     }
 
@@ -483,11 +487,18 @@ public class LibraryIndexCache : IHostedService, IDisposable
         }
     }
 
-    private static List<LibraryBookDto> BuildLibraryIndex(string baseUrl)
+    private List<LibraryBookDto> BuildLibraryIndex(string? baseUrl)
     {
         var libraryRoot = LibraryHelpers.ResolveLibraryRoot();
         if (!Directory.Exists(libraryRoot))
             return new List<LibraryBookDto>();
+
+        // User edits live in SQLite (see BookPersonalizationStore); the sidecars hold
+        // enrichment facts. The index is where the two views get merged — DB wins
+        // per-field wherever the user has expressed an opinion.
+        _personalization?.ImportFromMetaFilesIfNeeded(libraryRoot);
+        var overlays = _personalization?.LoadAll()
+            ?? new Dictionary<string, Data.BookPersonalization>(StringComparer.OrdinalIgnoreCase);
 
         var metaFiles = Directory.GetFiles(libraryRoot, "*.meta.json");
         var jsonOptions = LibraryHelpers.CreateLibraryJsonOptions();
@@ -516,13 +527,16 @@ public class LibraryIndexCache : IHostedService, IDisposable
                             meta.CoverUrl, coverUrl);
                     }
 
+                    var p = overlays.GetValueOrDefault(meta.FileName);
                     var genres = meta.Genres ?? Array.Empty<string>();
-                    var tags = meta.Tags ?? genres;
-                    var primaryGenre = meta.PrimaryGenre ?? genres.FirstOrDefault() ?? tags.FirstOrDefault();
+                    var tags = p?.Tags ?? meta.Tags ?? genres;
+                    var primaryGenre = Data.BookPersonalizationStore.OverrideString(
+                        p?.PrimaryGenre,
+                        meta.PrimaryGenre ?? genres.FirstOrDefault() ?? tags.FirstOrDefault());
 
                     books.Add(new LibraryBookDto(
-                        meta.Title ?? Path.GetFileNameWithoutExtension(meta.FileName),
-                        meta.Authors ?? Array.Empty<string>(),
+                        p?.Title ?? meta.Title ?? Path.GetFileNameWithoutExtension(meta.FileName),
+                        p?.Authors ?? meta.Authors ?? Array.Empty<string>(),
                         meta.Format ?? Path.GetExtension(meta.FileName).TrimStart('.').ToUpperInvariant(),
                         meta.FileSize ?? "",
                         meta.FileName,
@@ -532,15 +546,15 @@ public class LibraryIndexCache : IHostedService, IDisposable
                         meta.SavedAt,
                         primaryGenre,
                         tags,
-                        meta.Series,
+                        Data.BookPersonalizationStore.OverrideString(p?.Series, meta.Series),
                         genres,
                         meta.PublishedDate,
                         meta.Pages,
-                        meta.GoodreadsRating,
-                        meta.PersonalRating,
-                        meta.ReaderEnabled,
-                        meta.FavoritedBy ?? Array.Empty<string>(),
-                        meta.CullReviewedAt
+                        p?.GoodreadsRating ?? meta.GoodreadsRating,
+                        p?.PersonalRating ?? meta.PersonalRating,
+                        p?.ReaderEnabled ?? meta.ReaderEnabled,
+                        p?.FavoritedBy ?? meta.FavoritedBy ?? Array.Empty<string>(),
+                        p?.CullReviewedAt ?? meta.CullReviewedAt
                     ));
                 }
                 catch
@@ -566,9 +580,10 @@ public class LibraryIndexCache : IHostedService, IDisposable
                     continue;
 
                 var info = new FileInfo(filePath);
+                var p = overlays.GetValueOrDefault(fileName);
                 books.Add(new LibraryBookDto(
-                    Path.GetFileNameWithoutExtension(fileName),
-                    Array.Empty<string>(),
+                    p?.Title ?? Path.GetFileNameWithoutExtension(fileName),
+                    p?.Authors ?? Array.Empty<string>(),
                     ext.TrimStart('.').ToUpperInvariant(),
                     LibraryHelpers.FormatFileSize(info.Length),
                     fileName,
@@ -576,17 +591,17 @@ public class LibraryIndexCache : IHostedService, IDisposable
                     null,
                     null,
                     info.LastWriteTimeUtc,
-                    null,
+                    Data.BookPersonalizationStore.OverrideString(p?.PrimaryGenre, null),
+                    p?.Tags ?? Array.Empty<string>(),
+                    Data.BookPersonalizationStore.OverrideString(p?.Series, null),
                     Array.Empty<string>(),
                     null,
-                    Array.Empty<string>(),
                     null,
-                    null,
-                    null,
-                    null,
-                    null,
-                    Array.Empty<string>(),
-                    null
+                    p?.GoodreadsRating,
+                    p?.PersonalRating,
+                    p?.ReaderEnabled,
+                    p?.FavoritedBy ?? Array.Empty<string>(),
+                    p?.CullReviewedAt
                 ));
             }
             catch (Exception ex)

@@ -393,6 +393,12 @@ public static class ServiceConfiguration
         services.AddSingleton<AudiobookEnrichmentService>();
         services.AddHostedService(sp => sp.GetRequiredService<AudiobookEnrichmentService>());
 
+        // User-state SQLite database (persistent /app/state mount in prod) + the
+        // book personalization store — the write target for all user edits, kept
+        // structurally separate from the enrichment sidecars. See DOCS/PROJECT_AUDIT.md §8.6.
+        services.AddSingleton<Data.AppDatabase>();
+        services.AddSingleton<Data.BookPersonalizationStore>();
+
         // Library services - LibraryIndexCache warms on startup via IHostedService
         services.AddSingleton<LibraryIndexCache>();
         services.AddHostedService(sp => sp.GetRequiredService<LibraryIndexCache>());
@@ -446,31 +452,38 @@ public static class ServiceConfiguration
         });
 
         // Media (Sonarr/Radarr) owner(s) + custom genre tags — who requested
-        // what, and user-created genre tags independent of Sonarr/Radarr's own
+        // what, and user-created genre tags independent of Sonarr/Radarr's own.
+        // Persisted in the app SQLite database; the old MediaMetadata:StoragePath
+        // JSON file (if it exists) is imported once and then left alone.
         services.AddSingleton<Services.IMediaMetadataService>(provider =>
         {
             var cfg = provider.GetRequiredService<IConfiguration>();
             var configuredPath = cfg.GetValue<string>("MediaMetadata:StoragePath");
-            var storagePath = string.IsNullOrWhiteSpace(configuredPath)
+            var legacyPath = string.IsNullOrWhiteSpace(configuredPath)
                 ? Path.Combine(Directory.GetCurrentDirectory(), "media-metadata.json")
                 : (Path.IsPathRooted(configuredPath)
                     ? configuredPath
                     : Path.Combine(Directory.GetCurrentDirectory(), configuredPath));
-            return new Services.MediaMetadataService(storagePath);
+            return new Services.MediaMetadataService(provider.GetRequiredService<Data.AppDatabase>(), legacyPath);
         });
 
-        // Daily library-review modal — forced cull-then-genre triage of Paul's untagged books
+        // Daily library-review modal — forced cull-then-genre triage of Paul's untagged books.
+        // Progress lives in the app SQLite database; LibraryReview:StoragePath is only the
+        // legacy JSON file imported once if present.
         services.AddSingleton<Services.ILibraryReviewService>(provider =>
         {
             var cfg = provider.GetRequiredService<IConfiguration>();
-            var cache = provider.GetRequiredService<LibraryIndexCache>();
             var configuredPath = cfg.GetValue<string>("LibraryReview:StoragePath");
-            var storagePath = string.IsNullOrWhiteSpace(configuredPath)
+            var legacyPath = string.IsNullOrWhiteSpace(configuredPath)
                 ? Path.Combine(Directory.GetCurrentDirectory(), "library-review-progress.json")
                 : (Path.IsPathRooted(configuredPath)
                     ? configuredPath
                     : Path.Combine(Directory.GetCurrentDirectory(), configuredPath));
-            return new Services.LibraryReviewService(cache, storagePath);
+            return new Services.LibraryReviewService(
+                provider.GetRequiredService<LibraryIndexCache>(),
+                provider.GetRequiredService<Data.AppDatabase>(),
+                provider.GetRequiredService<Data.BookPersonalizationStore>(),
+                legacyPath);
         });
 
         // AI-related services

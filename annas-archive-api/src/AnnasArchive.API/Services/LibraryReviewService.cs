@@ -11,14 +11,24 @@ public class LibraryReviewService : ILibraryReviewService
     private const int BatchSize = 20;
     private static readonly TimeSpan ShowInterval = TimeSpan.FromHours(24);
 
+    private const string ProgressStateKey = "library-review-progress";
+
     private readonly LibraryIndexCache _cache;
-    private readonly string _storagePath;
+    private readonly Data.AppDatabase _db;
+    private readonly Data.BookPersonalizationStore _personalization;
+    private readonly string _legacyStoragePath;
     private readonly object _lock = new();
 
-    public LibraryReviewService(LibraryIndexCache cache, string storagePath)
+    public LibraryReviewService(
+        LibraryIndexCache cache,
+        Data.AppDatabase db,
+        Data.BookPersonalizationStore personalization,
+        string legacyStoragePath)
     {
         _cache = cache;
-        _storagePath = storagePath;
+        _db = db;
+        _personalization = personalization;
+        _legacyStoragePath = legacyStoragePath;
     }
 
     public LibraryReviewStatusResponse GetStatus(string baseUrl)
@@ -110,22 +120,15 @@ public class LibraryReviewService : ILibraryReviewService
         switch (decision)
         {
             case "keep":
-                if (File.Exists(metaPath))
-                {
-                    var meta = JsonSerializer.Deserialize<LibraryBookMeta>(await File.ReadAllTextAsync(metaPath), jsonOptions);
-                    if (meta != null)
-                    {
-                        var updated = meta with { CullReviewedAt = DateTime.UtcNow };
-                        await File.WriteAllTextAsync(metaPath, JsonSerializer.Serialize(updated, jsonOptions));
-                        _cache.InvalidateCache();
-                    }
-                }
+                // User decision → personalization store, never the enrichment sidecar.
+                _personalization.Update(safeFileName, p => p.CullReviewedAt = DateTime.UtcNow);
+                _cache.InvalidateCache();
                 break;
 
             case "delete":
                 try
                 {
-                    LibraryBookDeletionHelper.DeleteBookCompletely(safeFileName, _cache);
+                    LibraryBookDeletionHelper.DeleteBookCompletely(safeFileName, _cache, _personalization);
                 }
                 catch (Exception ex)
                 {
@@ -135,10 +138,18 @@ public class LibraryReviewService : ILibraryReviewService
                 break;
 
             case "genreSet":
-                if (File.Exists(metaPath))
                 {
-                    var meta = JsonSerializer.Deserialize<LibraryBookMeta>(await File.ReadAllTextAsync(metaPath), jsonOptions);
-                    if (meta != null && IsGenreMissing(meta.PrimaryGenre))
+                    // Effective genre = user override (store) falling back to enrichment (sidecar),
+                    // same merge the index applies.
+                    string? metaGenre = null;
+                    if (File.Exists(metaPath))
+                    {
+                        var meta = JsonSerializer.Deserialize<LibraryBookMeta>(await File.ReadAllTextAsync(metaPath), jsonOptions);
+                        metaGenre = meta?.PrimaryGenre;
+                    }
+                    var effectiveGenre = Data.BookPersonalizationStore.OverrideString(
+                        _personalization.Get(safeFileName)?.PrimaryGenre, metaGenre);
+                    if (IsGenreMissing(effectiveGenre))
                         return new LibraryReviewDecisionResult(false, "Genre has not been set for this book yet.");
                 }
                 break;
@@ -217,10 +228,15 @@ public class LibraryReviewService : ILibraryReviewService
     {
         try
         {
-            if (!File.Exists(_storagePath))
+            var json = _db.GetState(ProgressStateKey);
+
+            // One-time carry-over from the pre-SQLite JSON file, if it's still around.
+            if (json == null && File.Exists(_legacyStoragePath))
+                json = File.ReadAllText(_legacyStoragePath);
+
+            if (json == null)
                 return new LibraryReviewProgressState();
 
-            var json = File.ReadAllText(_storagePath);
             return JsonSerializer.Deserialize<LibraryReviewProgressState>(json) ?? new LibraryReviewProgressState();
         }
         catch (Exception ex)
@@ -234,10 +250,7 @@ public class LibraryReviewService : ILibraryReviewService
     {
         try
         {
-            var dir = Path.GetDirectoryName(_storagePath);
-            if (!string.IsNullOrEmpty(dir))
-                Directory.CreateDirectory(dir);
-            File.WriteAllText(_storagePath, JsonSerializer.Serialize(state, new JsonSerializerOptions { WriteIndented = true }));
+            _db.SetState(ProgressStateKey, JsonSerializer.Serialize(state));
         }
         catch (Exception ex)
         {

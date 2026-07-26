@@ -79,6 +79,10 @@ services:
       - YouTube__DownloadRoot=/data/youtube
       - DownloadTracking__StoragePath=/app/state/download-tracking.json
       - Quiz__StoragePath=/app/state/quiz-data
+      # The single user-state SQLite database (book personalization, media
+      # metadata, review progress — see AppDatabase.cs). The *StoragePath
+      # JSON entries below/above it are now legacy import sources only.
+      - Database__Path=/app/state/app.db
       - MediaMetadata__StoragePath=/app/state/media-metadata.json
       # Both of these previously defaulted to paths inside the container
       # filesystem (/app and ~/.annas-archive respectively), so every deploy

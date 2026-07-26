@@ -22,9 +22,16 @@ public record LibraryDeletionResult(
 /// </summary>
 public static class LibraryBookDeletionHelper
 {
-    public static LibraryDeletionResult DeleteBookCompletely(string fileName, LibraryIndexCache cache)
+    public static LibraryDeletionResult DeleteBookCompletely(
+        string fileName,
+        LibraryIndexCache cache,
+        Data.BookPersonalizationStore? personalization = null)
     {
         var safeFileName = Path.GetFileName(fileName);
+
+        // User personalization row goes too — a future book with the same file name
+        // must not inherit a deleted book's favorites/tags.
+        personalization?.Delete(safeFileName);
 
         var libraryRoot = LibraryHelpers.ResolveLibraryRoot();
         var bookPath = Path.Combine(libraryRoot, safeFileName);

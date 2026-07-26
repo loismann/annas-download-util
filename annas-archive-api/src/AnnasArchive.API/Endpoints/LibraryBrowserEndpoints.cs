@@ -178,7 +178,10 @@ public static class LibraryBrowserEndpoints
         return Results.Json(results.OrderBy(r => r.Title, StringComparer.OrdinalIgnoreCase).ToList());
     }
 
-    private static IResult HandleDeleteBook([FromRoute] string fileName, LibraryIndexCache cache)
+    private static IResult HandleDeleteBook(
+        [FromRoute] string fileName,
+        LibraryIndexCache cache,
+        Data.BookPersonalizationStore personalization)
     {
         var safeFileName = Path.GetFileName(fileName);
         if (!string.Equals(fileName, safeFileName, StringComparison.Ordinal))
@@ -186,7 +189,7 @@ public static class LibraryBrowserEndpoints
 
         try
         {
-            var result = LibraryBookDeletionHelper.DeleteBookCompletely(safeFileName, cache);
+            var result = LibraryBookDeletionHelper.DeleteBookCompletely(safeFileName, cache, personalization);
             if (!result.Found)
                 return Results.NotFound(new { error = "Book not found." });
 

@@ -22,6 +22,7 @@ import { LibrarySidebarComponent } from '../components/library-sidebar/library-s
 import { AuthService } from '../services/auth.service';
 import { LoggerService } from '../services/logger.service';
 import { BATCH_DELAY_MS } from '../constants/timeouts';
+import { TileSizeControlsComponent } from '../components/shared/tile-size-controls/tile-size-controls.component';
 
 @Component({
   selector: 'app-library',
@@ -39,7 +40,8 @@ import { BATCH_DELAY_MS } from '../constants/timeouts';
     MatIconModule,
     MatCheckboxModule,
     BookCardComponent,
-    LibrarySidebarComponent
+    LibrarySidebarComponent,
+    TileSizeControlsComponent,
   ],
   templateUrl: './library.component.html',
   styleUrls: ['./library.component.css']

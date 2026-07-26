@@ -22,9 +22,11 @@ import {
 import { ConfirmDialogComponent, ConfirmDialogData } from '../components/confirm-dialog/confirm-dialog.component';
 import { MediaEditDialogComponent, MediaEditDialogData, MediaEditDialogResult } from '../components/media-edit-dialog/media-edit-dialog.component';
 import { MediaBulkEditDialogComponent, MediaBulkEditDialogData, MediaBulkEditDialogResult } from '../components/media-bulk-edit-dialog/media-bulk-edit-dialog.component';
+import { MediaTileComponent } from '../components/shared/media-tile/media-tile.component';
 import { ReleasePickerDialogComponent, ReleasePickerDialogData } from '../components/release-picker-dialog/release-picker-dialog.component';
 import { LoggerService } from '../services/logger.service';
 import { AuthService } from '../services/auth.service';
+import { TileSizeControlsComponent } from '../components/shared/tile-size-controls/tile-size-controls.component';
 
 interface LibraryTile {
   result: MediaLookupResult;
@@ -119,7 +121,9 @@ function formatBytes(bytes: number): string | undefined {
     MatIconModule,
     MatTooltipModule,
     MatCheckboxModule,
-    MatDialogModule
+    MatDialogModule,
+    MediaTileComponent,
+    TileSizeControlsComponent,
   ],
   templateUrl: './media-library.component.html',
   styleUrl: './media-library.component.css'

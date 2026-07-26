@@ -11,12 +11,14 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import { AudiobookApiService, AudiobookItem } from '../services/audiobook-api.service';
 import { MediaEditDialogComponent, MediaEditDialogData, MediaEditDialogResult } from '../components/media-edit-dialog/media-edit-dialog.component';
+import { MediaTileComponent } from '../components/shared/media-tile/media-tile.component';
 import {
   AudiobookPlayerDialogComponent,
   AudiobookPlayerDialogData
 } from '../components/audiobook-player-dialog/audiobook-player-dialog.component';
 import { LoggerService } from '../services/logger.service';
 import { AuthService } from '../services/auth.service';
+import { TileSizeControlsComponent } from '../components/shared/tile-size-controls/tile-size-controls.component';
 
 type SortOrder = 'title' | 'author' | 'recent';
 type TileSize = 'small' | 'medium' | 'large';
@@ -96,7 +98,9 @@ function formatDuration(seconds: number | undefined): string | undefined {
     MatButtonModule,
     MatIconModule,
     MatTooltipModule,
-    MatDialogModule
+    MatDialogModule,
+    MediaTileComponent,
+    TileSizeControlsComponent,
   ],
   templateUrl: './audiobooks.component.html',
   styleUrl: './audiobooks.component.css'

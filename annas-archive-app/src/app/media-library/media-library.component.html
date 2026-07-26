@@ -74,48 +74,13 @@
         <mat-button-toggle [value]="false">TV Shows</mat-button-toggle>
       </mat-button-toggle-group>
 
-      <div class="tile-size-controls">
-        <button
-          mat-icon-button
-          type="button"
-          class="tile-size-btn"
-          [class.active]="tileSize === 'small'"
-          (click)="setTileSize('small')"
-          aria-label="Small tiles"
-        >
-          <mat-icon>view_comfy</mat-icon>
-        </button>
-        <button
-          mat-icon-button
-          type="button"
-          class="tile-size-btn"
-          [class.active]="tileSize === 'medium'"
-          (click)="setTileSize('medium')"
-          aria-label="Medium tiles"
-        >
-          <mat-icon>view_module</mat-icon>
-        </button>
-        <button
-          mat-icon-button
-          type="button"
-          class="tile-size-btn"
-          [class.active]="tileSize === 'large'"
-          (click)="setTileSize('large')"
-          aria-label="Large tiles"
-        >
-          <mat-icon>view_agenda</mat-icon>
-        </button>
-        <button
-          mat-icon-button
-          type="button"
-          class="favorites-filter-btn"
-          [class.active]="filterFavoritesOnly"
-          (click)="toggleFavoritesFilter()"
-          aria-label="Filter favorites"
-        >
-          <mat-icon>{{ filterFavoritesOnly ? 'favorite' : 'favorite_border' }}</mat-icon>
-        </button>
-      </div>
+      <app-tile-size-controls
+        [tileSize]="tileSize"
+        (tileSizeChange)="setTileSize($event)"
+        [showFilter]="true"
+        [filterActive]="filterFavoritesOnly"
+        (filterToggle)="toggleFavoritesFilter()"
+      ></app-tile-size-controls>
 
       <mat-form-field appearance="outline" class="sort-field">
         <mat-label>Sort by</mat-label>
@@ -144,64 +109,36 @@
       [class.large]="tileSize === 'large'"
       *ngIf="!loading && !showingMovies && filteredTvTiles.length"
     >
-      <div
+      <app-media-tile
         class="tile"
         [class.bulk-selected]="bulkEditMode && tile.result.id !== undefined && selectedForBulk.has(tile.result.id)"
         *ngFor="let tile of filteredTvTiles"
         (click)="openSeries(tile)"
+        [title]="tile.result.title || ''"
+        [posterUrl]="posterUrl(tile.result)"
+        [favorited]="isFavorited(tile.result)"
+        [showDelete]="true"
+        deleteTooltip="Delete show"
+        [bulkMode]="bulkEditMode"
+        [bulkSelected]="tile.result.id !== undefined && selectedForBulk.has(tile.result.id)"
+        [ownerLabel]="ownerLabel(tile.result)"
+        (edit)="openTvEditDialog(tile, $event)"
+        (favoriteToggle)="toggleFavorite(tile.result, $event)"
+        (remove)="deleteSeries(tile, $event)"
+        (bulkToggle)="toggleTileSelection(tile.result.id)"
       >
-        <div *ngIf="bulkEditMode" class="bulk-checkbox-wrapper">
-          <mat-checkbox
-            [checked]="tile.result.id !== undefined && selectedForBulk.has(tile.result.id)"
-            (change)="toggleTileSelection(tile.result.id)"
-            (click)="$event.stopPropagation()"
-          ></mat-checkbox>
-        </div>
-        <button
-          *ngIf="!bulkEditMode"
-          mat-icon-button
-          class="edit-btn"
-          matTooltip="Edit genres &amp; owners"
-          (click)="openTvEditDialog(tile, $event)"
-        >
-          <mat-icon>edit</mat-icon>
-        </button>
-        <button
-          *ngIf="!bulkEditMode"
-          mat-icon-button
-          class="favorite-btn"
-          [class.favorited]="isFavorited(tile.result)"
-          [matTooltip]="isFavorited(tile.result) ? 'Remove from favorites' : 'Add to favorites'"
-          (click)="toggleFavorite(tile.result, $event)"
-        >
-          <mat-icon>{{ isFavorited(tile.result) ? 'favorite' : 'favorite_border' }}</mat-icon>
-        </button>
-        <button
-          *ngIf="!bulkEditMode"
-          mat-icon-button
-          class="delete-btn"
-          matTooltip="Delete show"
-          (click)="deleteSeries(tile, $event)"
-        >
-          <mat-icon>delete</mat-icon>
-        </button>
-        <img class="poster" [src]="posterUrl(tile.result)" [alt]="tile.result.title" />
-        <div class="tile-title">{{ tile.result.title }}</div>
-        <div class="tile-status">
-          <ng-container *ngIf="getProgress(tile.result.id) as progress; else seasonsFallback">
-            <div class="progress-bar-track">
-              <div class="progress-bar-fill" [style.width.%]="progress.percent"></div>
-            </div>
-            <div class="progress-label">
-              {{ progress.percent }}%<span *ngIf="progress.speedLabel"> · {{ progress.speedLabel }}</span><span *ngIf="progress.etaLabel"> · ETA {{ progress.etaLabel }}</span>
-            </div>
-          </ng-container>
-          <ng-template #seasonsFallback>
-            <div class="tile-meta">{{ tile.downloadedSeasonCount }} / {{ tile.totalSeasonCount }} seasons downloaded</div>
-          </ng-template>
-        </div>
-        <div class="owner-badge">{{ ownerLabel(tile.result) }}</div>
-      </div>
+        <ng-container *ngIf="getProgress(tile.result.id) as progress; else seasonsFallback">
+          <div class="progress-bar-track">
+            <div class="progress-bar-fill" [style.width.%]="progress.percent"></div>
+          </div>
+          <div class="progress-label">
+            {{ progress.percent }}%<span *ngIf="progress.speedLabel"> · {{ progress.speedLabel }}</span><span *ngIf="progress.etaLabel"> · ETA {{ progress.etaLabel }}</span>
+          </div>
+        </ng-container>
+        <ng-template #seasonsFallback>
+          <div class="tile-meta">{{ tile.downloadedSeasonCount }} / {{ tile.totalSeasonCount }} seasons downloaded</div>
+        </ng-template>
+      </app-media-tile>
     </div>
 
     <!-- Movies -->
@@ -211,79 +148,52 @@
       [class.large]="tileSize === 'large'"
       *ngIf="!loading && showingMovies && filteredMovieTiles.length"
     >
-      <div
+      <app-media-tile
         class="tile"
         [class.not-ready]="!movie['hasFile']"
         [class.bulk-selected]="bulkEditMode && movie.id !== undefined && selectedForBulk.has(movie.id)"
         *ngFor="let movie of filteredMovieTiles"
         (click)="playMovie(movie)"
+        [title]="movie.title || ''"
+        [posterUrl]="posterUrl(movie)"
+        [favorited]="isFavorited(movie)"
+        [showDelete]="true"
+        deleteTooltip="Delete movie"
+        [bulkMode]="bulkEditMode"
+        [bulkSelected]="movie.id !== undefined && selectedForBulk.has(movie.id)"
+        [ownerLabel]="ownerLabel(movie)"
+        (edit)="openMovieEditDialog(movie, $event)"
+        (favoriteToggle)="toggleFavorite(movie, $event)"
+        (remove)="deleteMovie(movie, $event)"
+        (bulkToggle)="toggleTileSelection(movie.id)"
       >
-        <div *ngIf="bulkEditMode" class="bulk-checkbox-wrapper">
-          <mat-checkbox
-            [checked]="movie.id !== undefined && selectedForBulk.has(movie.id)"
-            (change)="toggleTileSelection(movie.id)"
-            (click)="$event.stopPropagation()"
-          ></mat-checkbox>
-        </div>
-        <button
-          *ngIf="!bulkEditMode"
-          mat-icon-button
-          class="edit-btn"
-          matTooltip="Edit genres &amp; owners"
-          (click)="openMovieEditDialog(movie, $event)"
-        >
-          <mat-icon>edit</mat-icon>
-        </button>
-        <button
-          *ngIf="!bulkEditMode"
-          mat-icon-button
-          class="favorite-btn"
-          [class.favorited]="isFavorited(movie)"
-          [matTooltip]="isFavorited(movie) ? 'Remove from favorites' : 'Add to favorites'"
-          (click)="toggleFavorite(movie, $event)"
-        >
-          <mat-icon>{{ isFavorited(movie) ? 'favorite' : 'favorite_border' }}</mat-icon>
-        </button>
-        <button
-          *ngIf="!bulkEditMode"
-          mat-icon-button
-          class="delete-btn"
-          matTooltip="Delete movie"
-          (click)="deleteMovie(movie, $event)"
-        >
-          <mat-icon>delete</mat-icon>
-        </button>
-        <img class="poster" [src]="posterUrl(movie)" [alt]="movie.title" />
-        <div class="tile-title">{{ movie.title }}</div>
-        <div class="tile-status">
-          <div class="tile-meta" *ngIf="movie['hasFile']">Ready to watch</div>
-          <ng-container *ngIf="!movie['hasFile']">
-            <ng-container *ngIf="getProgress(movie.id) as progress; else queuedFallback">
-              <div class="progress-bar-track">
-                <div class="progress-bar-fill" [style.width.%]="progress.percent"></div>
-              </div>
-              <div class="progress-label">
-                {{ progress.percent }}%<span *ngIf="progress.speedLabel"> · {{ progress.speedLabel }}</span><span *ngIf="progress.etaLabel"> · ETA {{ progress.etaLabel }}</span>
-              </div>
-            </ng-container>
-            <ng-template #queuedFallback>
-              <button
-                type="button"
-                class="find-releases-link"
-                (click)="openMovieReleasePicker(movie, $event)"
-              >
-                No release found — search manually
-              </button>
-            </ng-template>
+        <div class="tile-meta" *ngIf="movie['hasFile']">Ready to watch</div>
+        <ng-container *ngIf="!movie['hasFile']">
+          <ng-container *ngIf="getProgress(movie.id) as progress; else queuedFallback">
+            <div class="progress-bar-track">
+              <div class="progress-bar-fill" [style.width.%]="progress.percent"></div>
+            </div>
+            <div class="progress-label">
+              {{ progress.percent }}%<span *ngIf="progress.speedLabel"> · {{ progress.speedLabel }}</span><span *ngIf="progress.etaLabel"> · ETA {{ progress.etaLabel }}</span>
+            </div>
           </ng-container>
-        </div>
+          <ng-template #queuedFallback>
+            <button
+              type="button"
+              class="find-releases-link"
+              (click)="openMovieReleasePicker(movie, $event)"
+            >
+              No release found — search manually
+            </button>
+          </ng-template>
+        </ng-container>
         <mat-spinner
+          tile-extra
           *ngIf="resolvingMovieId === movie.tmdbId"
           diameter="24"
           class="resolving-spinner"
         ></mat-spinner>
-        <div class="owner-badge">{{ ownerLabel(movie) }}</div>
-      </div>
+      </app-media-tile>
     </div>
 
     <div *ngIf="!loading && !error && !showingMovies && filteredTvTiles.length === 0" class="empty-state">

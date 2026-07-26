@@ -40,48 +40,13 @@
         </button>
       </div>
 
-      <div class="tile-size-controls">
-        <button
-          mat-icon-button
-          type="button"
-          class="tile-size-btn"
-          [class.active]="tileSize === 'small'"
-          (click)="setTileSize('small')"
-          aria-label="Small tiles"
-        >
-          <mat-icon>view_comfy</mat-icon>
-        </button>
-        <button
-          mat-icon-button
-          type="button"
-          class="tile-size-btn"
-          [class.active]="tileSize === 'medium'"
-          (click)="setTileSize('medium')"
-          aria-label="Medium tiles"
-        >
-          <mat-icon>view_module</mat-icon>
-        </button>
-        <button
-          mat-icon-button
-          type="button"
-          class="tile-size-btn"
-          [class.active]="tileSize === 'large'"
-          (click)="setTileSize('large')"
-          aria-label="Large tiles"
-        >
-          <mat-icon>view_agenda</mat-icon>
-        </button>
-        <button
-          mat-icon-button
-          type="button"
-          class="favorites-filter-btn"
-          [class.active]="filterFavoritesOnly"
-          (click)="toggleFavoritesFilter()"
-          aria-label="Filter favorites"
-        >
-          <mat-icon>{{ filterFavoritesOnly ? 'favorite' : 'favorite_border' }}</mat-icon>
-        </button>
-      </div>
+      <app-tile-size-controls
+        [tileSize]="tileSize"
+        (tileSizeChange)="setTileSize($event)"
+        [showFilter]="true"
+        [filterActive]="filterFavoritesOnly"
+        (filterToggle)="toggleFavoritesFilter()"
+      ></app-tile-size-controls>
 
       <mat-form-field appearance="outline" class="sort-field">
         <mat-label>Sort by</mat-label>
@@ -109,32 +74,20 @@
       [class.large]="tileSize === 'large'"
       *ngIf="!loading && filteredItems.length"
     >
-      <div class="tile" *ngFor="let item of filteredItems" (click)="openPlayer(item)">
-        <button
-          mat-icon-button
-          class="edit-btn"
-          matTooltip="Edit genres &amp; owners"
-          (click)="openEditDialog(item, $event)"
-        >
-          <mat-icon>edit</mat-icon>
-        </button>
-        <button
-          mat-icon-button
-          class="favorite-btn"
-          [class.favorited]="isFavorited(item)"
-          [matTooltip]="isFavorited(item) ? 'Remove from favorites' : 'Add to favorites'"
-          (click)="toggleFavorite(item, $event)"
-        >
-          <mat-icon>{{ isFavorited(item) ? 'favorite' : 'favorite_border' }}</mat-icon>
-        </button>
-        <img class="poster" [src]="coverUrl(item)" [alt]="titleLabel(item)" />
-        <div class="tile-title">{{ titleLabel(item) }}</div>
-        <div class="tile-status">
-          <div class="tile-meta">{{ subtitleLabel(item) }}</div>
-          <div class="tile-meta" *ngIf="durationLabel(item)">{{ durationLabel(item) }}</div>
-        </div>
-        <div class="owner-badge" *ngIf="item.owners?.length">{{ item.owners.join(', ') }}</div>
-      </div>
+      <app-media-tile
+        class="tile"
+        *ngFor="let item of filteredItems"
+        (click)="openPlayer(item)"
+        [title]="titleLabel(item)"
+        [posterUrl]="coverUrl(item)"
+        [favorited]="isFavorited(item)"
+        [ownerLabel]="item.owners?.length ? item.owners.join(', ') : null"
+        (edit)="openEditDialog(item, $event)"
+        (favoriteToggle)="toggleFavorite(item, $event)"
+      >
+        <div class="tile-meta">{{ subtitleLabel(item) }}</div>
+        <div class="tile-meta" *ngIf="durationLabel(item)">{{ durationLabel(item) }}</div>
+      </app-media-tile>
     </div>
 
     <div *ngIf="!loading && !error && filteredItems.length === 0" class="empty-state">

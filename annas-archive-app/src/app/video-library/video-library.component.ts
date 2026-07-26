@@ -22,6 +22,7 @@ import { VideoPlayerDialogComponent, VideoPlayerDialogData } from '../components
 import { YouTubeDownloaderComponent } from '../youtube-downloader/youtube-downloader.component';
 import { AuthService } from '../services/auth.service';
 import { LoggerService } from '../services/logger.service';
+import { TileSizeControlsComponent } from '../components/shared/tile-size-controls/tile-size-controls.component';
 
 @Component({
   selector: 'app-video-library',
@@ -40,7 +41,8 @@ import { LoggerService } from '../services/logger.service';
     MatCheckboxModule,
     VideoCardComponent,
     VideoSidebarComponent,
-    YouTubeDownloaderComponent
+    YouTubeDownloaderComponent,
+    TileSizeControlsComponent,
   ],
   templateUrl: './video-library.component.html',
   styleUrls: ['./video-library.component.css']

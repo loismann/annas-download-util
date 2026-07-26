@@ -12,11 +12,14 @@ import { MatTooltipModule } from '@angular/material/tooltip';
  * type (progress bars, meta lines, release-picker links), so it's projected
  * content rather than configuration.
  *
- * Encapsulation is deliberately off and the class names are unchanged
- * (.tile/.poster/.tile-title/...): the host pages already carry the tile CSS,
- * including grid-size modifiers like `.tiles-grid.small .tile-title`, and this
- * component slots into those selectors as-is. Consumers put `class="tile"`,
- * size/selection classes, and the tile click handler on the host element.
+ * Owns all tile styling below. The page's emulated-encapsulation CSS cannot
+ * reach into this template (its selectors are compiled against the page's own
+ * elements), so every rule for .poster/.tile-title/etc. must live here —
+ * encapsulation is off and each selector is prefixed with `app-media-tile` so
+ * the styles apply globally to this element only. Projected content (progress
+ * bars, meta lines) is authored in the page template and stays styled by the
+ * page. Consumers put `class="tile"`, state classes (.not-ready,
+ * .bulk-selected), and the tile click handler on the host element.
  */
 @Component({
   selector: 'app-media-tile',
@@ -69,7 +72,128 @@ import { MatTooltipModule } from '@angular/material/tooltip';
     </div>
     <ng-content select="[tile-extra]"></ng-content>
     <div class="owner-badge" *ngIf="ownerLabel">{{ ownerLabel }}</div>
-  `
+  `,
+  styles: [`
+    app-media-tile {
+      position: relative;
+      cursor: pointer;
+    }
+
+    app-media-tile.not-ready {
+      cursor: default;
+    }
+
+    app-media-tile.not-ready .poster {
+      opacity: 0.5;
+    }
+
+    app-media-tile.bulk-selected {
+      outline: 3px solid #3f51b5;
+      outline-offset: 2px;
+      border-radius: 4px;
+    }
+
+    app-media-tile .bulk-checkbox-wrapper {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      z-index: 10;
+      background: #ffffff;
+      border-radius: 4px;
+      padding: 4px;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+
+    app-media-tile .poster {
+      width: 100%;
+      aspect-ratio: 2 / 3;
+      object-fit: cover;
+      border-radius: 4px;
+      display: block;
+      background: #f1f5f9;
+    }
+
+    app-media-tile .tile-title {
+      margin-top: 0.5rem;
+      font-weight: 500;
+      font-size: 0.95rem;
+      line-height: 1.3;
+      /* Always reserves 2 lines, even for a short one-line title, so every
+         tile's status/owner-badge row starts at the same Y position. */
+      min-height: calc(1.3em * 2);
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    app-media-tile .tile-status {
+      /* Reserves the same height whether it holds one line of text or a
+         progress bar + label, keeping owner badges aligned across a row. */
+      min-height: 2.3em;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 3px;
+    }
+
+    app-media-tile .delete-btn,
+    app-media-tile .edit-btn,
+    app-media-tile .favorite-btn {
+      position: absolute;
+      top: 4px;
+      z-index: 1;
+      background: rgba(0, 0, 0, 0.55);
+      color: #fff;
+      opacity: 0;
+      transition: opacity 0.15s ease;
+    }
+
+    app-media-tile .delete-btn {
+      right: 4px;
+    }
+
+    app-media-tile .edit-btn {
+      left: 4px;
+    }
+
+    app-media-tile .favorite-btn {
+      left: 48px;
+    }
+
+    app-media-tile:hover .delete-btn,
+    app-media-tile:hover .edit-btn,
+    app-media-tile:hover .favorite-btn {
+      opacity: 1;
+    }
+
+    app-media-tile .favorite-btn.favorited {
+      color: #f87171;
+    }
+
+    app-media-tile .delete-btn:hover {
+      background: rgba(211, 47, 47, 0.85);
+    }
+
+    app-media-tile .edit-btn:hover {
+      background: rgba(63, 81, 181, 0.85);
+    }
+
+    app-media-tile .favorite-btn:hover {
+      background: rgba(190, 24, 93, 0.85);
+    }
+
+    app-media-tile .owner-badge {
+      display: inline-block;
+      margin-top: 0.4rem;
+      border: 1px solid #cbd5f5;
+      background: #eef2ff;
+      color: #3f51b5;
+      padding: 2px 10px;
+      border-radius: 999px;
+      font-size: 0.72rem;
+    }
+  `]
 })
 export class MediaTileComponent {
   @Input() title = '';

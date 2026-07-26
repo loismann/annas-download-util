@@ -670,86 +670,8 @@
   background: transparent;
 }
 
-/* Tile Size Controls */
-.tile-size-controls {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  margin-right: 12px;
-}
-
-.tile-size-btn {
-  width: 44px;
-  height: 56px;
-  /* mat-icon-button's hover/focus state layer defaults to Material's own
-     size token, independent of the button's own box — without overriding
-     it here, the state layer mismatches our custom size and can bleed past
-     the button's edge into ancestors that clip overflow (.library-panel). */
-  --mdc-icon-button-state-layer-size: 44px;
-  border: 1px solid #cbd5f5;
-  border-radius: 10px;
-  color: #64748b;
-  background: #ffffff;
-  transition: all 0.15s ease;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-}
-
-.tile-size-btn:hover {
-  background: #eef2ff;
-  color: #3f51b5;
-}
-
-.tile-size-btn.active {
-  background: #3f51b5;
-  color: #ffffff;
-  border-color: #3f51b5;
-}
-
-.tile-size-btn mat-icon {
-  font-size: 22px;
-  width: 22px;
-  height: 22px;
-  line-height: 22px;
-}
-
-.favorites-filter-btn {
-  width: 44px;
-  height: 56px;
-  /* Same state-layer-size mismatch as .tile-size-btn — this button sits at
-     the right edge of .tile-size-controls, closest to .library-panel's
-     clipped boundary, which is why the icon visibly clips here specifically. */
-  --mdc-icon-button-state-layer-size: 44px;
-  border: 1px solid #cbd5f5;
-  border-radius: 10px;
-  color: #64748b;
-  background: #ffffff;
-  transition: all 0.15s ease;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-left: 8px;
-}
-
-.favorites-filter-btn:hover {
-  background: #eef2ff;
-  color: #3f51b5;
-}
-
-.favorites-filter-btn.active {
-  background: #3f51b5;
-  color: #ffffff;
-  border-color: #3f51b5;
-}
-
-.favorites-filter-btn mat-icon {
-  font-size: 22px;
-  width: 22px;
-  height: 22px;
-  line-height: 22px;
-}
+/* Tile-size-control styling lives in the shared TileSizeControls component —
+   page CSS can't reach into its template. */
 
 /* Small Tile Size */
 .library-card-small {

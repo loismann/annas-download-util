@@ -7,7 +7,11 @@ namespace AnnasArchive.API.Services;
 
 public class LibraryReviewService : ILibraryReviewService
 {
-    private static readonly string OwnerTag = Constants.HouseholdOwners.BookTagFor("Paul");
+    private static readonly string PaulTag = Constants.HouseholdOwners.BookTagFor("Paul");
+    private static readonly string[] OtherOwnerTags = Constants.HouseholdOwners.Names
+        .Where(n => n != "Paul")
+        .Select(Constants.HouseholdOwners.BookTagFor)
+        .ToArray();
     private const int BatchSize = 20;
     private static readonly TimeSpan ShowInterval = TimeSpan.FromHours(24);
 
@@ -215,14 +219,23 @@ public class LibraryReviewService : ILibraryReviewService
         return ("complete", 0);
     }
 
-    private static bool IsOwnedByPaul(LibraryBookDto book) =>
-        (book.Tags ?? Array.Empty<string>()).Contains(OwnerTag, StringComparer.OrdinalIgnoreCase);
+    /// <summary>True only for books tagged exclusively "Paul's Books" — a book shared
+    /// with Mom or Dad (multi-owner tagging is supported; see OwnerPickerComponent's
+    /// multi-select) must never enter this flow, since a "keep"/"delete" decision here
+    /// is made unilaterally by Paul and would otherwise affect a book someone else
+    /// also claims. A plain "contains Paul's tag" check would incorrectly include those.</summary>
+    private static bool IsExclusivelyPaulsBook(LibraryBookDto book)
+    {
+        var tags = book.Tags ?? Array.Empty<string>();
+        return tags.Contains(PaulTag, StringComparer.OrdinalIgnoreCase) &&
+               !OtherOwnerTags.Any(t => tags.Contains(t, StringComparer.OrdinalIgnoreCase));
+    }
 
     private static bool IsCullEligible(LibraryBookDto book) =>
-        IsOwnedByPaul(book) && book.CullReviewedAt == null;
+        IsExclusivelyPaulsBook(book) && book.CullReviewedAt == null;
 
     private static bool IsGenreEligible(LibraryBookDto book) =>
-        IsOwnedByPaul(book) && IsGenreMissing(book.PrimaryGenre);
+        IsExclusivelyPaulsBook(book) && IsGenreMissing(book.PrimaryGenre);
 
     private static bool IsGenreMissing(string? genre) =>
         string.IsNullOrWhiteSpace(genre) || string.Equals(genre, "Uncategorized", StringComparison.OrdinalIgnoreCase);

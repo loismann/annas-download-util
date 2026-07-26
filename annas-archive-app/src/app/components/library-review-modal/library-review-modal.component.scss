@@ -111,12 +111,27 @@
   gap: 8px;
   color: #64748b;
   font-size: 0.85rem;
+  // Matches .summary-text's min-height so the panel doesn't jump taller/shorter
+  // the moment loading finishes and the bordered box below takes its place.
+  min-height: 52px;
+  box-sizing: border-box;
 }
 
 .summary-text {
   font-size: 0.9rem;
   line-height: 1.4;
   color: #1f2937;
+  // Fixed-size scroll frame instead of letting a long summary grow the whole
+  // dialog — otherwise the modal's size varies book-to-book depending on
+  // summary length, which is jarring flipping through a batch of 20. min-height
+  // keeps short/empty summaries from collapsing the frame down to nothing.
+  min-height: 52px;
+  max-height: 130px;
+  overflow-y: auto;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 8px 12px 8px 10px;
+  box-sizing: border-box;
 }
 
 .summary-source {

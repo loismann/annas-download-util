@@ -110,10 +110,6 @@ import { switchMap, filter } from 'rxjs/operators';
           <mat-icon>video_library</mat-icon>
           <span>Video Library</span>
         </button>
-        <button *ngIf="authService.isAdmin()" mat-menu-item (click)="openLibraryReview()">
-          <mat-icon>fact_check</mat-icon>
-          <span>Review Library</span>
-        </button>
       </mat-menu>
 
       <mat-menu #videosMenu="matMenu">
@@ -206,11 +202,6 @@ export class AppComponent implements OnInit, OnDestroy {
   ngOnDestroy(): void {
     this.activitySubscription?.unsubscribe();
     this.reviewCheckSubscription?.unsubscribe();
-  }
-
-  /** On-demand trigger for the "Review Library" nav button — bypasses the once-a-day gate. */
-  openLibraryReview(): void {
-    this.libraryReviewTrigger.open();
   }
 
   private fetchUserActivity(): void {

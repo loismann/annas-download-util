@@ -127,6 +127,25 @@ export interface MatchSeriesBooksResponse {
   matches: SeriesBookMatch[];
 }
 
+/* ─────────────── search result grouping (duplicate/format detection) ─── */
+export interface GroupableBook {
+  md5: string;
+  title: string;
+  authors: string[];
+  format: string;
+  year: number | null;
+}
+
+export interface GroupSearchResultsRequest {
+  books: GroupableBook[];
+}
+
+/** Each inner array is the md5s of one group of "same book" results —
+ *  every md5 from the request appears in exactly one group. */
+export interface GroupSearchResultsResponse {
+  groups: string[][];
+}
+
 /**
  * Service for AI-powered features.
  * Handles summarization, flashcards, vocabulary learning, character graphs, and book recommendations.
@@ -492,6 +511,19 @@ export class AiApiService {
     return this.http.post<MatchSeriesBooksResponse>(
       `${this.aiBaseUrl}/match-series-books`,
       request
+    );
+  }
+
+  /**
+   * Groups book search results that represent the same underlying book
+   * (different format, or a duplicate upload/scan) so the frontend can
+   * collapse them into one card instead of one row per file. Every input
+   * md5 comes back in exactly one group, including books with no duplicates.
+   */
+  groupSearchResults(books: GroupableBook[]): Observable<GroupSearchResultsResponse> {
+    return this.http.post<GroupSearchResultsResponse>(
+      `${this.aiBaseUrl}/group-search-results`,
+      { books }
     );
   }
 

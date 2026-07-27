@@ -101,7 +101,6 @@ describe('SearchFormComponent', () => {
       spyOn(component.search, 'emit');
       component.searchTerm = 'Test Book';
       component.selectedAuthor = 'Test Author';
-      component.selectedFormat = 'EPUB';
       component.useLibGen = false;
 
       component.onSubmit();
@@ -109,7 +108,6 @@ describe('SearchFormComponent', () => {
       expect(component.search.emit).toHaveBeenCalledWith({
         searchTerm: 'Test Book',
         selectedAuthor: 'Test Author',
-        selectedFormat: 'EPUB',
         useLibGen: false,
         isAiSearch: false
       } as SearchFormSubmitEvent);
@@ -120,7 +118,6 @@ describe('SearchFormComponent', () => {
       component.aiSearchExpanded = true;
       component.aiSearchQuery = 'Find me sci-fi books';
       component.searchTerm = 'Test';
-      component.selectedFormat = 'PDF';
 
       component.onSubmit();
 
@@ -184,13 +181,6 @@ describe('SearchFormComponent', () => {
       component.aiSearchQuery = 'Some query';
       component.toggleAiSearch();
       expect(component.aiSearchQuery).toBe('');
-    });
-  });
-
-  describe('Format change', () => {
-    it('should update selectedFormat', () => {
-      component.onFormatChange('MOBI');
-      expect(component.selectedFormat).toBe('MOBI');
     });
   });
 

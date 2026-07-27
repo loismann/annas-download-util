@@ -126,6 +126,26 @@ public record SeriesBookMatch(
 
 public record MatchSeriesBooksResponse(List<SeriesBookMatch> Matches);
 
+// ─── Search Result Grouping (duplicate/format detection) ──────────────────
+// Anna's Archive/LibGen return many near-duplicate entries per book — the
+// same edition uploaded as EPUB, PDF, MOBI, or just re-scanned/re-uploaded
+// multiple times in the same format. This groups which search results are
+// really the same underlying book, so the frontend can collapse them into
+// one card instead of one row per file.
+public record GroupSearchResultsRequest(List<GroupableBook> Books);
+
+public record GroupableBook(
+    string Md5,
+    string Title,
+    List<string> Authors,
+    string Format,
+    int? Year);
+
+/// <summary>Each inner list is the Md5s of one group of "same book" results —
+/// every Md5 from the request appears in exactly one group, including books
+/// with no duplicates (a singleton group of one).</summary>
+public record GroupSearchResultsResponse(List<List<string>> Groups);
+
 // ─── Chapter Summaries ───────────────────────────────────────────────────
 public record FullChapterSummaryRequest(
     string DropboxPath,

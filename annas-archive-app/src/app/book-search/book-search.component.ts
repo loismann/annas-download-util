@@ -18,7 +18,8 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import {
   AiApiService,
   AuthorSuggestion,
-  AiBookSearchResult
+  AiBookSearchResult,
+  GroupableBook
 } from '../services/ai-api.service';
 import {
   BookSearchApiService,
@@ -28,6 +29,8 @@ import {
 import { AuthService } from '../services/auth.service';
 import { LoggerService } from '../services/logger.service';
 import { BookDto } from '../models/book-dto.model';
+import { BookGroup } from '../models/book-group.model';
+import { BookSummaryModalComponent } from '../components/book-summary-modal/book-summary-modal.component';
 import { SlumHealthEntry, MirrorHealthEntry, SlumHealthResponse, MirrorHealthResponse } from '../models/health-check.model';
 import {
   AUTO_COVER_FETCH_LIMIT,
@@ -41,6 +44,8 @@ import { RelatedBooksModalComponent } from '../related-books-modal/related-books
 import { SearchFormComponent, DomainHealth, SearchFormSubmitEvent } from '../components/search-form/search-form.component';
 import {
   SearchResultsComponent,
+  DisplayGroup,
+  VariantSelectedEvent,
   SendToLibraryEvent,
   SendToDropboxEvent,
   SendToKindleEvent,
@@ -90,6 +95,14 @@ export class BookSearchComponent implements OnInit, OnDestroy {
   books: BookDto[] = [];
   selectedFormat = '';
   expandedCards = new Set<string>(); // Track which book cards are expanded by md5
+
+  /* ───────── result grouping (collapse duplicate uploads/formats) ───────── */
+  bookGroups: BookGroup[] = [];
+  groupingInProgress = false;
+  /** groupKey -> md5 of the variant the user explicitly picked within that
+   *  group (e.g. one of several EPUB uploads once filtered to EPUB-only) —
+   *  defaults to the group's first book when unset. */
+  private groupSelection = new Map<string, string>();
 
   downloadsLeft: number | null = null;
   downloadsPerDay: number | null = null;
@@ -307,12 +320,115 @@ export class BookSearchComponent implements OnInit, OnDestroy {
     return filtered;
   }
 
+  /** Grouped, filtered view the results grid actually renders — same author/
+   *  format predicates as filteredBooks, applied per-group so a format filter
+   *  narrows which books within a group are eligible without dropping the
+   *  whole group (see activeBookFor for how the "displayed" book is picked
+   *  when a group still has more than one match). */
+  get filteredGroups(): BookGroup[] {
+    return this.bookGroups
+      .map(group => {
+        let books = group.books;
+
+        if (this.selectedAuthor) {
+          books = books.filter(b =>
+            b.authors.some(author => this.authorMatches(author, this.selectedAuthor))
+          );
+        }
+
+        if (this.selectedFormat) {
+          books = books.filter(b => b.format === this.selectedFormat);
+        }
+
+        return books.length > 0 ? { key: group.key, books } : null;
+      })
+      .filter((g): g is BookGroup => g !== null);
+  }
+
+  /** Which book within a (possibly filtered) group is currently shown on its
+   *  card / acted on by the send-to buttons — the user's explicit pick if
+   *  they made one and it's still in the filtered set, otherwise the first. */
+  activeBookFor(group: BookGroup): BookDto {
+    const selectedMd5 = this.groupSelection.get(group.key);
+    const selected = selectedMd5 ? group.books.find(b => b.md5 === selectedMd5) : undefined;
+    return selected ?? group.books[0];
+  }
+
+  selectVariant(group: BookGroup, book: BookDto): void {
+    this.groupSelection.set(group.key, book.md5);
+  }
+
+  /** What the results grid actually renders — each filtered group paired
+   *  with whichever book is currently "active" for it (see activeBookFor). */
+  get displayGroups(): DisplayGroup[] {
+    return this.filteredGroups.map(group => ({ group, active: this.activeBookFor(group) }));
+  }
+
+  onVariantSelected(event: VariantSelectedEvent): void {
+    this.selectVariant(event.group, event.book);
+  }
+
+  openSummaryModal(book: BookDto): void {
+    this.dialog.open(BookSummaryModalComponent, {
+      width: '700px',
+      maxWidth: '90vw',
+      data: { book, placeholderUrl: this.placeholderUrl }
+    });
+
+    if (!book.description) {
+      this.fetchDescriptionOnDemand(book);
+    }
+  }
+
+  /** Sends the current (possibly page-1-only, possibly full) result set to
+   *  the AI grouping endpoint and rebuilds bookGroups from the response.
+   *  Safe to call again once page 2 lands — the old groups stay on screen
+   *  until the new response replaces them, so there's no flash-to-empty. */
+  private regroupBooks(): void {
+    if (this.books.length === 0) {
+      this.bookGroups = [];
+      return;
+    }
+
+    this.groupingInProgress = true;
+    const payload: GroupableBook[] = this.books.map(b => ({
+      md5: b.md5,
+      title: b.title,
+      authors: b.authors,
+      format: b.format,
+      year: b.year
+    }));
+
+    this.aiApi.groupSearchResults(payload).subscribe({
+      next: (resp) => {
+        const byMd5 = new Map(this.books.map(b => [b.md5, b]));
+        this.bookGroups = resp.groups
+          .map(md5s => {
+            const groupBooks = md5s.map(md5 => byMd5.get(md5)).filter((b): b is BookDto => !!b);
+            return groupBooks.length > 0 ? { key: groupBooks[0].md5, books: groupBooks } : null;
+          })
+          .filter((g): g is BookGroup => g !== null);
+        this.groupingInProgress = false;
+      },
+      error: (err) => {
+        this.logger.error('[book-search] Grouping failed, showing ungrouped results', err);
+        // Degrade to "every book is its own group" rather than showing
+        // nothing — duplicates stay uncollapsed, but nothing disappears.
+        this.bookGroups = this.books.map(b => ({ key: b.md5, books: [b] }));
+        this.groupingInProgress = false;
+      }
+    });
+  }
+
   /* ───────── search form handler ───────── */
   onSearchFormSubmit(event: SearchFormSubmitEvent): void {
     this.searchTerm = event.searchTerm;
     this.selectedAuthor = event.selectedAuthor;
-    this.selectedFormat = event.selectedFormat;
     this.useLibGen = event.useLibGen;
+    // selectedFormat isn't part of the submit event — the format selector
+    // now lives above the results grid (book-search.component.html), driven
+    // directly by this.selectedFormat/onFormatChange, independent of search
+    // submission — see search-form.component.ts.
 
     if (event.isAiSearch && event.aiSearchQuery) {
       this.aiSearchQuery = event.aiSearchQuery;
@@ -383,6 +499,9 @@ export class BookSearchComponent implements OnInit, OnDestroy {
     this.loading = true;
     this.searchPerformed = true;
     // Keep selectedFormat so it persists across searches
+    // Stale groups from a previous search shouldn't linger while this one loads.
+    this.bookGroups = [];
+    this.groupSelection.clear();
 
     const initIdleState = (b: BookDto) => {
       b.sendState = 'idle';
@@ -401,6 +520,7 @@ export class BookSearchComponent implements OnInit, OnDestroy {
           this.loading = false;
           this.queueCoverLookups();
           this.fetchBookDescriptions();
+          this.regroupBooks();
         },
         error: err => this.handleSearchError(err),
       });
@@ -418,6 +538,7 @@ export class BookSearchComponent implements OnInit, OnDestroy {
         this.loading = false;
         this.queueCoverLookups();
         this.fetchBookDescriptions();
+        this.regroupBooks();
 
         this.bookSearchApi.searchBooks(searchQuery, false, 2).subscribe({
           next: more => {
@@ -431,6 +552,10 @@ export class BookSearchComponent implements OnInit, OnDestroy {
             // risk double-firing an in-flight fetch for a page-1 book that
             // hasn't resolved yet (no in-flight guard on that path).
             this.queueCoverLookups();
+            // Re-group over the combined set — page 2 may add more
+            // duplicates of page-1 books, or entirely new ones. The old
+            // groups stay on screen until this response replaces them.
+            this.regroupBooks();
           },
           error: err => {
             // A 404 here just means there's no page 2 — not a real error,

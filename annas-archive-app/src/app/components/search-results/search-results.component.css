@@ -4,13 +4,28 @@
 
 .search-results {
   padding: 1rem 0 3rem;
-  display: flex;
-  justify-content: center;
 }
 
 .results-inner {
-  width: 57%;
-  max-width: 800px;
+  width: 100%;
+}
+
+.grouping-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 3rem 1rem;
+  color: #94a3b8;
+}
+
+.grouping-indicator .spin {
+  animation: spin 1.2s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 /* Shown before the first search so the panel never renders as blank space */
@@ -40,93 +55,104 @@
   opacity: 0.8;
 }
 
-/* card spacing */
-.book-card {
-  margin-bottom: 1rem;
+/* ─── Grid of grouped book tiles ─────────────────────────────── */
+.results-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 1.25rem;
 }
 
-/* ─── Layout override: image on left, info on right ─── */
-:host ::ng-deep mat-card.book-card {
+.book-tile {
   display: flex !important;
-  flex-direction: row !important;
-  overflow: hidden;
+  flex-direction: column !important;
   padding: 0;
+  overflow: hidden;
+  cursor: pointer;
+  transition: box-shadow 0.15s ease, transform 0.15s ease;
 }
 
-:host ::ng-deep mat-card.book-card .cover {
-  flex: 0 0 180px;
-  width: 180px;
-  /* aspect-ratio, not a stretched height — stretching this to match
-     whatever height the info column happens to need (via align-items:
-     stretch) fixed the old "gap below a short card" problem, but
-     object-fit: cover then crops the image's SIDES to fill whatever
-     odd aspect ratio the stretched box ends up with on a tall card. A
-     fixed 2:3 ratio keeps the actual cover art undistorted at all times;
-     align-self: flex-start anchors it to the top instead of stretching, so
-     a card taller than the cover just shows a bit of card background below
-     it rather than a warped image. */
+.book-tile:hover {
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.12);
+  transform: translateY(-2px);
+}
+
+.cover {
+  width: 100%;
   aspect-ratio: 2 / 3;
-  align-self: flex-start;
   object-fit: cover;
-  border-radius: 0 !important;
-  margin: 0;
+  display: block;
 }
 
-:host ::ng-deep mat-card.book-card .info {
+.tile-body {
   display: flex;
   flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px 14px;
   flex: 1 1 auto;
-  min-height: 0;
 }
 
-:host ::ng-deep mat-card.book-card .info .mat-card-header {
-  padding: 40px 40px 0 40px;
-  align-items: start;
-  position: relative;
-  flex: 0 0 auto;
-}
-
-:host ::ng-deep mat-card.book-card .info .mat-card-header .remove-book-button {
-  position: absolute;
-  top: 32px;
-  right: 32px;
-  width: 32px;
-  height: 32px;
-  line-height: 32px;
-  color: #666;
-  transition: color 0.2s ease, background-color 0.2s ease;
-}
-
-:host ::ng-deep mat-card.book-card .info .mat-card-header .remove-book-button:hover {
-  color: #f44336;
-  background-color: rgba(244, 67, 54, 0.1);
-}
-
-:host ::ng-deep mat-card.book-card .info .mat-card-header .remove-book-button mat-icon {
-  font-size: 20px;
-  width: 20px;
-  height: 20px;
-  line-height: 20px;
-}
-
-:host ::ng-deep mat-card.book-card .info .mat-card-content {
-  padding: 0 40px 20px 40px;
-  flex: 1 1 auto;
+.tile-title {
+  font-weight: 600;
+  font-size: 0.95rem;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
 }
 
-/* Book description styling */
-:host ::ng-deep mat-card.book-card .book-description {
-  margin-top: 0.75rem;
-  padding-top: 0.75rem;
-  border-top: 1px solid #e0e0e0;
-  position: relative;
+.tile-author {
+  color: #64748b;
+  font-size: 0.82rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-:host ::ng-deep mat-card.book-card .book-description .description-text {
-  margin: 0;
-  padding-right: 40px;
-  font-size: 0.9rem;
+.format-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.format-badge {
+  border: 1px solid #cbd5f5;
+  background: #ffffff;
+  color: #3f51b5;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.format-badge.active {
+  background: #3f51b5;
+  color: #ffffff;
+  border-color: #3f51b5;
+}
+
+.format-badge:hover:not(.active) {
+  border-color: #3f51b5;
+}
+
+.variant-select {
+  width: 100%;
+  margin-top: -4px;
+  margin-bottom: -1.25em;
+  font-size: 0.85rem;
+}
+
+.tile-meta {
+  color: #94a3b8;
+  font-size: 0.78rem;
+}
+
+.tile-description {
+  margin: 4px 0 0;
+  font-size: 0.82rem;
   line-height: 1.5;
   color: #555;
   display: -webkit-box;
@@ -135,104 +161,45 @@
   overflow: hidden;
 }
 
-:host ::ng-deep mat-card.book-card .book-description .description-text.expanded {
-  -webkit-line-clamp: unset;
-  max-height: none;
-}
-
-:host ::ng-deep mat-card.book-card .book-description .expand-toggle {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  color: #3f51b5;
-  width: 44px;
-  height: 44px;
-  min-width: 44px;
-  padding: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-:host ::ng-deep mat-card.book-card .book-description .expand-toggle:disabled {
-  opacity: 0.3;
-  cursor: not-allowed;
-}
-
-:host ::ng-deep mat-card.book-card .book-description .expand-toggle mat-icon {
-  font-size: 24px;
-  width: 24px;
-  height: 24px;
-  line-height: 24px;
-  margin: 0;
-}
-
-:host ::ng-deep mat-card.book-card .book-description .retrieve-summary-btn {
-  width: auto;
+.description-source-icon {
   display: inline-block;
-  opacity: 0.6;
-  transition: opacity 0.2s ease;
-}
-
-:host ::ng-deep mat-card.book-card .book-description .retrieve-summary-btn:hover {
-  opacity: 1;
-}
-
-:host ::ng-deep mat-card.book-card .book-description.retrieve-summary-container {
-  padding: 2rem 0;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  min-height: 85px;
-}
-
-:host ::ng-deep mat-card.book-card .book-description .description-source-icon {
-  display: inline-block;
-  font-size: 1rem;
-  width: 1rem;
-  height: 1rem;
+  font-size: 0.9rem;
+  width: 0.9rem;
+  height: 0.9rem;
   vertical-align: middle;
   margin-left: 4px;
   opacity: 0.7;
 }
 
-:host ::ng-deep mat-card.book-card .book-description .robot-icon {
+.robot-icon { color: #3f51b5; }
+.book-icon { color: #ff6f00; }
+.leaf-icon { color: #4caf50; }
+.wiki-icon { color: #636466; }
+
+.retrieve-summary-btn {
+  align-self: flex-start;
+  margin-top: 2px;
+  padding: 0 4px;
+  min-width: 0;
   color: #3f51b5;
+  opacity: 0.75;
 }
 
-:host ::ng-deep mat-card.book-card .book-description .book-icon {
-  color: #ff6f00;
+.retrieve-summary-btn:hover {
+  opacity: 1;
 }
 
-:host ::ng-deep mat-card.book-card .book-description .leaf-icon {
-  color: #4caf50;
-}
-
-:host ::ng-deep mat-card.book-card .book-description .wiki-icon {
-  color: #636466;
-}
-
-/* Grid, not flex — a grid column's width is a deterministic share of the
-   container (1fr each), with no flex-basis/min-content ambiguity to fight.
-   Grid items also stretch to fill their cell on both axes by default, which
-   is exactly "evenly fill the row" with zero extra properties needed. */
-:host ::ng-deep mat-card.book-card .info .mat-card-actions,
-:host ::ng-deep mat-card.book-card .info .action-buttons {
-  width: 100%;
-  box-sizing: border-box;
-  /* Left/right padding matches the gap below on purpose — the space
-     between the edge buttons and the card edge should read as the same
-     distance as the space between two buttons, not a bigger outer margin. */
-  padding: 24px 8px;
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 8px;
+/* ACTION BUTTONS — 2x2 grid rather than the old single-row-of-4, which
+   only worked in a wide horizontal card; a vertical tile needs the room. */
+.tile-actions {
   margin-top: auto;
-  flex: 0 0 auto;
+  padding-top: 10px;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
 }
 
-:host ::ng-deep mat-card.book-card .info .mat-card-actions button,
-:host ::ng-deep mat-card.book-card .info .action-buttons button {
+.tile-actions button {
   min-width: 0;
   box-sizing: border-box;
   white-space: nowrap;
@@ -240,14 +207,13 @@
   text-overflow: ellipsis;
   height: auto;
   min-height: 36px;
-  padding: 8px 4px;
+  padding: 6px 4px;
   line-height: 1.2;
   text-align: center;
   font-size: 12px;
 }
 
-:host ::ng-deep mat-card.book-card .info .mat-card-actions button .mdc-button__label,
-:host ::ng-deep mat-card.book-card .info .action-buttons button .mdc-button__label {
+.tile-actions button .mdc-button__label {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -255,160 +221,39 @@
   width: 100%;
 }
 
-:host ::ng-deep mat-card.book-card .info .action-buttons .button-label-with-icon,
-:host ::ng-deep mat-card.book-card .info .mat-card-actions .button-label-with-icon {
+.button-label-with-icon {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
 }
 
-:host ::ng-deep mat-card.book-card .info .action-buttons .inline-icon,
-:host ::ng-deep mat-card.book-card .info .mat-card-actions .inline-icon {
+.inline-icon {
   font-size: 16px;
   width: 16px;
   height: 16px;
   line-height: 16px;
 }
 
-/* ─── RESPONSIVE: card sizing reacts to the results panel's OWN width ───
-   The host element (.results-panel, set from the parent book-search
-   component) establishes a container-query context, so these breakpoints
-   are keyed off the actual pixel width this component has to work with,
-   not the raw browser viewport — matters less now that results are full
-   page width rather than a narrow column next to a sidebar, but the page
-   itself is still capped at 1400px (.book-search-page), so these still
-   correctly reflect what the cards actually have to work with. */
-
-/* Medium tablets (iPad Air/Pro landscape ~1180-1366px, iPad Pro 12.9" portrait 1024px) */
-@container results-panel (max-width: 946px) {
-  .search-results {
-    padding: 3rem 0;
+/* Mobile: two-across grid instead of one-column, same treatment as the
+   movie/TV search results grid. */
+@media (max-width: 640px) {
+  .results-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
   }
 
-  .results-inner {
-    width: 75%;
-    max-width: none;
+  .tile-body {
+    padding: 8px 10px 10px;
   }
 
-  :host ::ng-deep mat-card.book-card .info .mat-card-header {
-    padding: 24px 24px 0 24px;
-  }
-
-  :host ::ng-deep mat-card.book-card .info .mat-card-content {
-    padding: 0 24px 16px 24px;
-  }
-
-  :host ::ng-deep mat-card.book-card .info .mat-card-actions,
-  :host ::ng-deep mat-card.book-card .info .action-buttons {
-    padding: 16px 8px;
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
-
-/* Smaller tablets (iPad Air/Pro portrait ~820-1024px, iPad Mini landscape ~1133px) */
-@container results-panel (max-width: 760px) {
-  .results-inner {
-    width: 85%;
-  }
-
-  :host ::ng-deep mat-card.book-card .cover {
-    flex: 0 0 140px;
-    width: 140px;
-  }
-
-  :host ::ng-deep mat-card.book-card .info .mat-card-header {
-    padding: 16px 16px 0 16px;
-  }
-
-  :host ::ng-deep mat-card.book-card .info .mat-card-content {
-    padding: 0 16px 12px 16px;
-  }
-
-  :host ::ng-deep mat-card.book-card .info .mat-card-actions,
-  :host ::ng-deep mat-card.book-card .info .action-buttons {
-    padding: 12px 8px;
-  }
-
-  :host ::ng-deep mat-card.book-card .info .mat-card-actions button,
-  :host ::ng-deep mat-card.book-card .info .action-buttons button {
+  .tile-actions button {
     font-size: 11px;
-    padding: 6px 2px;
-  }
-
-  :host ::ng-deep mat-card.book-card .book-description .description-text {
-    padding-right: 30px;
-    font-size: 0.85rem;
-  }
-}
-
-/* Narrower results column - still 2-column layout but tighter */
-@container results-panel (min-width: 325px) and (max-width: 414px) {
-  .results-inner {
-    width: 95%;
-  }
-
-  :host ::ng-deep mat-card.book-card .cover {
-    flex: 0 0 100px;
-    width: 100px;
-  }
-
-  :host ::ng-deep mat-card.book-card .info .mat-card-header {
-    padding: 12px 12px 0 12px;
-  }
-
-  :host ::ng-deep mat-card.book-card .info .mat-card-content {
-    padding: 0 12px 8px 12px;
-  }
-
-  :host ::ng-deep mat-card.book-card .info .mat-card-actions,
-  :host ::ng-deep mat-card.book-card .info .action-buttons {
-    padding: 8px 6px;
-    gap: 6px;
-  }
-
-  :host ::ng-deep mat-card.book-card .info .mat-card-actions button,
-  :host ::ng-deep mat-card.book-card .info .action-buttons button {
-    font-size: 10px;
     min-height: 32px;
   }
 }
 
-/* Small tablets (iPad Mini) and phones: 744px and below - Single column stacked */
-@media (max-width: 744px) {
-  .search-results {
-    padding: 1rem;
-  }
-
-  .results-inner {
-    width: 100%;
-  }
-}
-
-/* Mobile: 480px and below */
-@media (max-width: 480px) {
-  .search-results {
-    padding: 0.5rem;
-  }
-
-  /* Stack book card vertically on very small screens */
-  :host ::ng-deep mat-card.book-card {
-    flex-direction: column !important;
-  }
-
-  :host ::ng-deep mat-card.book-card .cover {
-    flex: 0 0 auto;
-    width: 100%;
-    height: auto;
-    aspect-ratio: 2 / 3;
-  }
-
-  :host ::ng-deep mat-card.book-card .info .mat-card-actions {
-    padding: 8px;
+@media (max-width: 400px) {
+  .results-grid {
     grid-template-columns: 1fr;
-    gap: 8px;
-  }
-
-  :host ::ng-deep mat-card.book-card .info .mat-card-actions button {
-    font-size: 13px;
   }
 }

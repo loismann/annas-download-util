@@ -1,144 +1,155 @@
 <div class="search-results">
   <div class="results-inner">
-    <ng-container *ngIf="books.length; else maybeNoResults">
-      <mat-card *ngFor="let book of books; let i = index"
-                class="book-card"
-                [class.expanded]="isCardExpanded(book.md5)">
-        <img
-          class="cover"
-          [src]="getCoverUrl(book)"
-          (error)="onCoverError(book, $event)"
-          [alt]="book.title + ' cover'"
-        />
+    <div *ngIf="groupingInProgress && groups.length === 0" class="grouping-indicator">
+      <mat-icon class="spin">autorenew</mat-icon>
+      <span>Grouping results…</span>
+    </div>
 
-        <div class="info">
-          <mat-card-header>
-            <mat-card-title>{{ book.title }}</mat-card-title>
-            <mat-card-subtitle>{{ book.authors.join(', ') }}</mat-card-subtitle>
-          </mat-card-header>
+    <ng-container *ngIf="groups.length; else maybeNoResults">
+      <div class="results-grid">
+        <mat-card
+          *ngFor="let dg of groups; trackBy: trackByGroupKey"
+          class="book-tile"
+          (click)="onTileClick(dg.active)"
+        >
+          <img
+            class="cover"
+            [src]="getCoverUrl(dg.active)"
+            (error)="onCoverError(dg.active, $event)"
+            [alt]="dg.active.title + ' cover'"
+          />
 
-          <mat-card-content>
-            Format: {{ book.format }} &nbsp;|&nbsp; Size: {{ book.fileSize }}
+          <div class="tile-body">
+            <div class="tile-title">{{ dg.active.title }}</div>
+            <div class="tile-author">{{ dg.active.authors.join(', ') }}</div>
 
-            <!-- Book Description -->
-            <div class="book-description" *ngIf="book.description">
+            <!-- Format badges — only shown when this group actually has more
+                 than one format to pick between (see BookGroup: entries here
+                 are the same book, different files). -->
+            <div class="format-row" *ngIf="formatsOf(dg.group).length > 1" (click)="$event.stopPropagation()">
               <button
-                mat-icon-button
-                class="expand-toggle"
-                (click)="toggleCardExpansion(book.md5)"
-                [disabled]="!needsExpansion(book.description)"
-                [attr.aria-label]="isCardExpanded(book.md5) ? 'Collapse' : 'Expand'">
-                <mat-icon>{{ isCardExpanded(book.md5) ? 'keyboard_arrow_up' : 'keyboard_arrow_down' }}</mat-icon>
-              </button>
-              <p class="description-text" [class.expanded]="isCardExpanded(book.md5)">
-                {{ book.description }}
-                <mat-icon
-                  *ngIf="book.descriptionSource === 'gpt'"
-                  class="description-source-icon robot-icon"
-                  aria-label="AI-generated description"
-                  matTooltip="AI-generated description">
-                  smart_toy
-                </mat-icon>
-                <mat-icon
-                  *ngIf="book.descriptionSource === 'googlebooks'"
-                  class="description-source-icon book-icon"
-                  aria-label="Google Books description"
-                  matTooltip="From Google Books">
-                  menu_book
-                </mat-icon>
-                <mat-icon
-                  *ngIf="book.descriptionSource === 'openlibrary'"
-                  class="description-source-icon leaf-icon"
-                  aria-label="OpenLibrary description"
-                  matTooltip="From OpenLibrary">
-                  eco
-                </mat-icon>
-                <mat-icon
-                  *ngIf="book.descriptionSource === 'wikipedia'"
-                  class="description-source-icon wiki-icon"
-                  aria-label="Wikipedia description"
-                  matTooltip="From Wikipedia">
-                  public
-                </mat-icon>
-              </p>
+                *ngFor="let fmt of formatsOf(dg.group)"
+                type="button"
+                class="format-badge"
+                [class.active]="fmt === dg.active.format"
+                (click)="onPickFormat(dg, fmt)"
+              >{{ fmt }}</button>
             </div>
 
-            <!-- Retrieve Summary Button — shown for any book past whatever
-                 range is auto-fetched (see autoDescriptionFetchLimit) -->
-            <div class="book-description retrieve-summary-container" *ngIf="!book.description && i >= autoDescriptionFetchLimit">
+            <!-- Version picker — only when multiple uploads share the SAME
+                 active format (distinct from the format badges above, which
+                 switch format; this switches between duplicate scans/uploads
+                 of that one format). -->
+            <mat-form-field
+              *ngIf="sameFormatSiblings(dg.group, dg.active).length > 1"
+              appearance="outline"
+              class="variant-select"
+              (click)="$event.stopPropagation()"
+            >
+              <mat-label>Version</mat-label>
+              <mat-select [ngModel]="dg.active.md5" (ngModelChange)="onPickVariant(dg, $event)">
+                <mat-option *ngFor="let v of sameFormatSiblings(dg.group, dg.active)" [value]="v.md5">
+                  {{ v.fileSize }}{{ v.source ? ' · ' + v.source : '' }}
+                </mat-option>
+              </mat-select>
+            </mat-form-field>
+
+            <div class="tile-meta">{{ dg.active.format }} &nbsp;|&nbsp; {{ dg.active.fileSize }}</div>
+
+            <p class="tile-description" *ngIf="dg.active.description">
+              {{ dg.active.description }}
+              <mat-icon
+                *ngIf="dg.active.descriptionSource === 'gpt'"
+                class="description-source-icon robot-icon"
+                aria-label="AI-generated description"
+                matTooltip="AI-generated description">smart_toy</mat-icon>
+              <mat-icon
+                *ngIf="dg.active.descriptionSource === 'googlebooks'"
+                class="description-source-icon book-icon"
+                aria-label="Google Books description"
+                matTooltip="From Google Books">menu_book</mat-icon>
+              <mat-icon
+                *ngIf="dg.active.descriptionSource === 'openlibrary'"
+                class="description-source-icon leaf-icon"
+                aria-label="OpenLibrary description"
+                matTooltip="From OpenLibrary">eco</mat-icon>
+              <mat-icon
+                *ngIf="dg.active.descriptionSource === 'wikipedia'"
+                class="description-source-icon wiki-icon"
+                aria-label="Wikipedia description"
+                matTooltip="From Wikipedia">public</mat-icon>
+            </p>
+            <button
+              *ngIf="!dg.active.description"
+              mat-button
+              type="button"
+              class="retrieve-summary-btn"
+              (click)="onFetchDescription(dg.active); $event.stopPropagation()"
+            >Get Summary</button>
+
+            <!-- ACTION BUTTONS -->
+            <div class="tile-actions" (click)="$event.stopPropagation()">
+              <button mat-raised-button color="primary" (click)="onSendToLibrary(dg.active)">
+                <ng-container [ngSwitch]="dg.active.libraryState">
+                  <span *ngSwitchCase="'sending'">Saving…</span>
+                  <span *ngSwitchCase="'success'">✓ Saved</span>
+                  <span *ngSwitchCase="'error'">✖ Retry</span>
+                  <span *ngSwitchDefault class="button-label-with-icon">
+                    <mat-icon class="inline-icon">menu_book</mat-icon>
+                    Library
+                  </span>
+                </ng-container>
+              </button>
+
               <button
                 mat-raised-button
                 color="accent"
-                class="retrieve-summary-btn"
-                (click)="onFetchDescription(book)">
-                Retrieve Summary
+                (click)="onSendToDropbox(dg.active)"
+                [disabled]="dg.active.sendState === 'sending'"
+              >
+                <ng-container [ngSwitch]="dg.active.sendState">
+                  <span *ngSwitchCase="'sending'">Uploading…</span>
+                  <span *ngSwitchCase="'success'">✓ Uploaded!</span>
+                  <span *ngSwitchCase="'error'">✖ Retry</span>
+                  <span *ngSwitchDefault>📤 Dropbox</span>
+                </ng-container>
+              </button>
+
+              <button
+                mat-raised-button
+                color="primary"
+                (click)="onSendToDadsKindle(dg.active)"
+                [disabled]="dg.active.dadsKindleState === 'sending' || dg.active.format !== 'EPUB'"
+              >
+                <ng-container [ngSwitch]="dg.active.dadsKindleState">
+                  <span *ngSwitchCase="'sending'">Sending…</span>
+                  <span *ngSwitchCase="'success'">✔ Sent!</span>
+                  <span *ngSwitchCase="'error'">✖ Retry</span>
+                  <span *ngSwitchDefault>Dad's Kindle</span>
+                </ng-container>
+              </button>
+
+              <button
+                mat-raised-button
+                color="primary"
+                (click)="onSendToMomsKindle(dg.active)"
+                [disabled]="dg.active.momsKindleState === 'sending' || dg.active.format !== 'EPUB'"
+              >
+                <ng-container [ngSwitch]="dg.active.momsKindleState">
+                  <span *ngSwitchCase="'sending'">Sending…</span>
+                  <span *ngSwitchCase="'success'">✔ Sent!</span>
+                  <span *ngSwitchCase="'error'">✖ Retry</span>
+                  <span *ngSwitchDefault>Mom's Kindle</span>
+                </ng-container>
               </button>
             </div>
-          </mat-card-content>
-
-          <!-- ACTION BUTTONS -->
-          <mat-card-actions class="action-buttons">
-            <!-- library -->
-            <button mat-raised-button color="primary" (click)="onSendToLibrary(book)">
-              <ng-container [ngSwitch]="book.libraryState">
-                <span *ngSwitchCase="'sending'">Saving…</span>
-                <span *ngSwitchCase="'success'">✓ Saved</span>
-                <span *ngSwitchCase="'error'">✖ Retry</span>
-                <span *ngSwitchDefault class="button-label-with-icon">
-                  <mat-icon class="inline-icon">menu_book</mat-icon>
-                  Library
-                </span>
-              </ng-container>
-            </button>
-
-            <button
-              mat-raised-button
-              color="accent"
-              (click)="onSendToDropbox(book)"
-              [disabled]="book.sendState === 'sending'"
-            >
-              <ng-container [ngSwitch]="book.sendState">
-                <span *ngSwitchCase="'sending'">Uploading…</span>
-                <span *ngSwitchCase="'success'">✓ Uploaded!</span>
-                <span *ngSwitchCase="'error'">✖ Retry</span>
-                <span *ngSwitchDefault>📤 Dropbox</span>
-              </ng-container>
-            </button>
-
-            <button
-              mat-raised-button
-              color="primary"
-              (click)="onSendToDadsKindle(book)"
-              [disabled]="book.dadsKindleState === 'sending' || book.format !== 'EPUB'"
-            >
-              <ng-container [ngSwitch]="book.dadsKindleState">
-                <span *ngSwitchCase="'sending'">Sending…</span>
-                <span *ngSwitchCase="'success'">✔ Sent!</span>
-                <span *ngSwitchCase="'error'">✖ Retry</span>
-                <span *ngSwitchDefault>Dad's Kindle</span>
-              </ng-container>
-            </button>
-
-            <button
-              mat-raised-button
-              color="primary"
-              (click)="onSendToMomsKindle(book)"
-              [disabled]="book.momsKindleState === 'sending' || book.format !== 'EPUB'"
-            >
-              <ng-container [ngSwitch]="book.momsKindleState">
-                <span *ngSwitchCase="'sending'">Sending…</span>
-                <span *ngSwitchCase="'success'">✔ Sent!</span>
-                <span *ngSwitchCase="'error'">✖ Retry</span>
-                <span *ngSwitchDefault>Mom's Kindle</span>
-              </ng-container>
-            </button>
-          </mat-card-actions>
-        </div>
-      </mat-card>
+          </div>
+        </mat-card>
+      </div>
     </ng-container>
 
     <ng-template #maybeNoResults>
-      <p *ngIf="searchPerformed && !loading">No results</p>
+      <p *ngIf="searchPerformed && !loading && !groupingInProgress">No results</p>
       <div *ngIf="!searchPerformed && !loading" class="pre-search-hint">
         <mat-icon>auto_stories</mat-icon>
         <p>Search Anna's Archive for books.</p>

@@ -1,0 +1,18 @@
+<h2 mat-dialog-title>{{ data.book.title }}</h2>
+
+<mat-dialog-content class="summary-content">
+  <img class="cover" [src]="coverUrl" [alt]="data.book.title + ' cover'" />
+
+  <div class="details">
+    <p class="authors" *ngIf="data.book.authors?.length">{{ data.book.authors.join(', ') }}</p>
+    <p class="meta">Format: {{ data.book.format }} &nbsp;|&nbsp; Size: {{ data.book.fileSize }}</p>
+    <p class="description" *ngIf="data.book.description; else noDescription">{{ data.book.description }}</p>
+    <ng-template #noDescription>
+      <p class="no-description">No summary available yet.</p>
+    </ng-template>
+  </div>
+</mat-dialog-content>
+
+<mat-dialog-actions align="end">
+  <button mat-button (click)="close()">Close</button>
+</mat-dialog-actions>

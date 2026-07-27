@@ -1,7 +1,8 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { SearchResultsComponent } from './search-results.component';
+import { SearchResultsComponent, DisplayGroup } from './search-results.component';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { BookDto } from '../../models/book-dto.model';
+import { BookGroup } from '../../models/book-group.model';
 
 describe('SearchResultsComponent', () => {
   let component: SearchResultsComponent;
@@ -29,6 +30,14 @@ describe('SearchResultsComponent', () => {
     ...overrides
   });
 
+  /** Wraps one or more books (same underlying book, different files) into a
+   *  DisplayGroup the way book-search.component.ts's displayGroups getter
+   *  would — the first book is "active" unless a variant was picked. */
+  const createDisplayGroup = (books: BookDto[]): DisplayGroup => {
+    const group: BookGroup = { key: books[0].md5, books };
+    return { group, active: books[0] };
+  };
+
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [SearchResultsComponent, NoopAnimationsModule]
@@ -44,15 +53,18 @@ describe('SearchResultsComponent', () => {
   });
 
   describe('Inputs', () => {
-    it('should display books when provided', () => {
-      component.books = [createMockBook(), createMockBook({ md5: 'test-md5-456', title: 'Another Book' })];
+    it('should display one tile per group', () => {
+      component.groups = [
+        createDisplayGroup([createMockBook()]),
+        createDisplayGroup([createMockBook({ md5: 'test-md5-456', title: 'Another Book' })])
+      ];
       fixture.detectChanges();
-      const cards = fixture.nativeElement.querySelectorAll('.book-card');
-      expect(cards.length).toBe(2);
+      const tiles = fixture.nativeElement.querySelectorAll('.book-tile');
+      expect(tiles.length).toBe(2);
     });
 
-    it('should show no results message when searchPerformed but no books', () => {
-      component.books = [];
+    it('should show no results message when searchPerformed but no groups', () => {
+      component.groups = [];
       component.searchPerformed = true;
       component.loading = false;
       fixture.detectChanges();
@@ -61,7 +73,7 @@ describe('SearchResultsComponent', () => {
     });
 
     it('should not show no results when loading', () => {
-      component.books = [];
+      component.groups = [];
       component.searchPerformed = true;
       component.loading = true;
       fixture.detectChanges();
@@ -70,34 +82,61 @@ describe('SearchResultsComponent', () => {
     });
 
     it('should not show no results when search not performed', () => {
-      component.books = [];
+      component.groups = [];
       component.searchPerformed = false;
       fixture.detectChanges();
       const noResults = fixture.nativeElement.querySelector('.results-inner p');
       expect(noResults).toBeNull();
     });
+
+    it('should show a grouping indicator while grouping and nothing has landed yet', () => {
+      component.groups = [];
+      component.groupingInProgress = true;
+      fixture.detectChanges();
+      const indicator = fixture.nativeElement.querySelector('.grouping-indicator');
+      expect(indicator).toBeTruthy();
+    });
   });
 
-  describe('Card expansion', () => {
-    it('should toggle card expansion', () => {
-      const md5 = 'test-md5';
-      expect(component.isCardExpanded(md5)).toBe(false);
-      component.toggleCardExpansion(md5);
-      expect(component.isCardExpanded(md5)).toBe(true);
-      component.toggleCardExpansion(md5);
-      expect(component.isCardExpanded(md5)).toBe(false);
+  describe('Grouping helpers', () => {
+    it('formatsOf returns the distinct formats across a group', () => {
+      const group: BookGroup = {
+        key: 'a',
+        books: [
+          createMockBook({ md5: 'a', format: 'EPUB' }),
+          createMockBook({ md5: 'b', format: 'PDF' }),
+          createMockBook({ md5: 'c', format: 'EPUB' })
+        ]
+      };
+      expect(component.formatsOf(group).sort()).toEqual(['EPUB', 'PDF']);
     });
 
-    it('should determine if description needs expansion', () => {
-      const shortDescription = 'Short description';
-      const longDescription = 'A'.repeat(200);
-
-      expect(component.needsExpansion(shortDescription)).toBe(false);
-      expect(component.needsExpansion(longDescription)).toBe(true);
+    it('sameFormatSiblings returns only books sharing the active format', () => {
+      const epub1 = createMockBook({ md5: 'a', format: 'EPUB' });
+      const epub2 = createMockBook({ md5: 'b', format: 'EPUB' });
+      const pdf = createMockBook({ md5: 'c', format: 'PDF' });
+      const group: BookGroup = { key: 'a', books: [epub1, epub2, pdf] };
+      expect(component.sameFormatSiblings(group, epub1)).toEqual([epub1, epub2]);
     });
 
-    it('should return false for empty description', () => {
-      expect(component.needsExpansion('')).toBe(false);
+    it('onPickFormat emits variantSelected for a book matching the requested format', () => {
+      spyOn(component.variantSelected, 'emit');
+      const epub = createMockBook({ md5: 'a', format: 'EPUB' });
+      const pdf = createMockBook({ md5: 'b', format: 'PDF' });
+      const dg = createDisplayGroup([epub, pdf]);
+
+      component.onPickFormat(dg, 'PDF');
+
+      expect(component.variantSelected.emit).toHaveBeenCalledWith({ group: dg.group, book: pdf });
+    });
+
+    it('onPickFormat does nothing when the requested format is already active', () => {
+      spyOn(component.variantSelected, 'emit');
+      const dg = createDisplayGroup([createMockBook({ format: 'EPUB' })]);
+
+      component.onPickFormat(dg, 'EPUB');
+
+      expect(component.variantSelected.emit).not.toHaveBeenCalled();
     });
   });
 
@@ -157,35 +196,42 @@ describe('SearchResultsComponent', () => {
       component.onCoverError(book, event);
       expect(component.coverError.emit).toHaveBeenCalledWith({ book, event });
     });
+
+    it('should emit openSummary when a tile is clicked', () => {
+      spyOn(component.openSummary, 'emit');
+      const book = createMockBook();
+      component.onTileClick(book);
+      expect(component.openSummary.emit).toHaveBeenCalledWith(book);
+    });
   });
 
   describe('Button states', () => {
     it('should display sending state for library button', () => {
-      component.books = [createMockBook({ libraryState: 'sending' })];
+      component.groups = [createDisplayGroup([createMockBook({ libraryState: 'sending' })])];
       fixture.detectChanges();
-      const button = fixture.nativeElement.querySelector('.action-buttons button:first-child');
+      const button = fixture.nativeElement.querySelector('.tile-actions button:first-child');
       expect(button.textContent).toContain('Saving');
     });
 
     it('should display success state for library button', () => {
-      component.books = [createMockBook({ libraryState: 'success' })];
+      component.groups = [createDisplayGroup([createMockBook({ libraryState: 'success' })])];
       fixture.detectChanges();
-      const button = fixture.nativeElement.querySelector('.action-buttons button:first-child');
+      const button = fixture.nativeElement.querySelector('.tile-actions button:first-child');
       expect(button.textContent).toContain('Saved');
     });
 
     it('should disable Kindle buttons for non-EPUB books', () => {
-      component.books = [createMockBook({ format: 'PDF' })];
+      component.groups = [createDisplayGroup([createMockBook({ format: 'PDF' })])];
       fixture.detectChanges();
-      const kindleButtons = fixture.nativeElement.querySelectorAll('.action-buttons button[disabled]');
+      const kindleButtons = fixture.nativeElement.querySelectorAll('.tile-actions button[disabled]');
       // Dad's Kindle and Mom's Kindle should be disabled
       expect(kindleButtons.length).toBeGreaterThanOrEqual(2);
     });
 
     it('should enable Kindle buttons for EPUB books', () => {
-      component.books = [createMockBook({ format: 'EPUB' })];
+      component.groups = [createDisplayGroup([createMockBook({ format: 'EPUB' })])];
       fixture.detectChanges();
-      const buttons = fixture.nativeElement.querySelectorAll('.action-buttons button');
+      const buttons = fixture.nativeElement.querySelectorAll('.tile-actions button');
       // Third and fourth buttons are Kindle buttons
       expect(buttons[2].disabled).toBe(false);
       expect(buttons[3].disabled).toBe(false);
@@ -194,42 +240,45 @@ describe('SearchResultsComponent', () => {
 
   describe('Description display', () => {
     it('should show description when present', () => {
-      component.books = [createMockBook({ description: 'This is a test description' })];
+      component.groups = [createDisplayGroup([createMockBook({ description: 'This is a test description' })])];
       fixture.detectChanges();
-      const description = fixture.nativeElement.querySelector('.book-description .description-text');
+      const description = fixture.nativeElement.querySelector('.tile-description');
       expect(description?.textContent).toContain('This is a test description');
     });
 
     it('should show GPT icon for AI-generated description', () => {
-      component.books = [createMockBook({ description: 'AI description', descriptionSource: 'gpt' })];
+      component.groups = [createDisplayGroup([createMockBook({ description: 'AI description', descriptionSource: 'gpt' })])];
       fixture.detectChanges();
       const icon = fixture.nativeElement.querySelector('.robot-icon');
       expect(icon).toBeTruthy();
     });
 
     it('should show Google Books icon', () => {
-      component.books = [createMockBook({ description: 'Google description', descriptionSource: 'googlebooks' })];
+      component.groups = [createDisplayGroup([createMockBook({ description: 'Google description', descriptionSource: 'googlebooks' })])];
       fixture.detectChanges();
       const icon = fixture.nativeElement.querySelector('.book-icon');
       expect(icon).toBeTruthy();
     });
 
     it('should show OpenLibrary icon', () => {
-      component.books = [createMockBook({ description: 'OpenLibrary description', descriptionSource: 'openlibrary' })];
+      component.groups = [createDisplayGroup([createMockBook({ description: 'OpenLibrary description', descriptionSource: 'openlibrary' })])];
       fixture.detectChanges();
       const icon = fixture.nativeElement.querySelector('.leaf-icon');
       expect(icon).toBeTruthy();
     });
 
-    it('should show retrieve summary button for books without description after index 10', () => {
-      const books = Array.from({ length: 15 }, (_, i) =>
-        createMockBook({ md5: `md5-${i}`, title: `Book ${i}`, description: null })
-      );
-      component.books = books;
+    it('should show a retrieve-summary button whenever a book has no description yet', () => {
+      component.groups = [createDisplayGroup([createMockBook({ description: null })])];
       fixture.detectChanges();
-      const retrieveButtons = fixture.nativeElement.querySelectorAll('.retrieve-summary-btn');
-      // Books 11-15 (indices 10-14) should have the button
-      expect(retrieveButtons.length).toBe(5);
+      const retrieveButton = fixture.nativeElement.querySelector('.retrieve-summary-btn');
+      expect(retrieveButton).toBeTruthy();
+    });
+
+    it('should not show a retrieve-summary button once a description exists', () => {
+      component.groups = [createDisplayGroup([createMockBook({ description: 'Already have one' })])];
+      fixture.detectChanges();
+      const retrieveButton = fixture.nativeElement.querySelector('.retrieve-summary-btn');
+      expect(retrieveButton).toBeFalsy();
     });
   });
 });

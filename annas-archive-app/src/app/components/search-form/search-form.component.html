@@ -99,12 +99,8 @@
 
       <!-- Filters row -->
       <app-search-filters
-        [selectedFormat]="selectedFormat"
-        [availableFormats]="availableFormats"
         [downloadsLeft]="downloadsLeft"
         [downloadsPerDay]="downloadsPerDay"
-        [disabled]="relatedBooksModalOpen"
-        (formatChange)="onFormatChange($event)"
       ></app-search-filters>
 
       <!-- Find Related Books button -->

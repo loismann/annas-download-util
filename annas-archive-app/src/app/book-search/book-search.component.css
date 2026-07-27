@@ -9,12 +9,17 @@
   justify-content: center;
 }
 
-/* Establishes the container-query context search-results.component.css keys
-   its card-density breakpoints off of — sized against this page's actual
-   width now, not a fixed sidebar-constrained column. */
-.results-panel {
-  container-type: inline-size;
-  container-name: results-panel;
+/* Format filter — upper-right corner of the results area, only rendered
+   once there are results to filter (see *ngIf in the template). */
+.results-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 0.5rem;
+}
+
+.results-toolbar .format-filter {
+  width: 160px;
+  margin-bottom: -1.25em;
 }
 
 @media (max-width: 640px) {

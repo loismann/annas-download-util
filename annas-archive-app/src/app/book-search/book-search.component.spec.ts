@@ -53,7 +53,8 @@ describe('BookSearchComponent', () => {
     mockAiApiService = jasmine.createSpyObj('AiApiService', [
       'suggestAuthors',
       'getRelatedBooks',
-      'aiBookSearch'
+      'aiBookSearch',
+      'groupSearchResults'
     ]);
 
     // BookSearchApiService - search, download, cover, description methods
@@ -108,6 +109,13 @@ describe('BookSearchComponent', () => {
       { name: "Anna's Archive PK", health: '92%', cert_exp: '85 days' },
       { name: "Anna's Archive GD", health: '88%', cert_exp: '80 days' }
     ]));
+
+    // Grouping runs automatically after every search — default to "no
+    // duplicates found" (each book its own group) so tests that don't care
+    // about grouping specifically aren't left with an unhandled spy call.
+    mockAiApiService.groupSearchResults.and.callFake((books: { md5: string }[]) =>
+      of({ groups: books.map(b => [b.md5]) })
+    );
 
     await TestBed.configureTestingModule({
       imports: [

@@ -1,12 +1,29 @@
 import { Component, EventEmitter, Input, Output } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { MatCardModule } from '@angular/material/card';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatTooltipModule } from '@angular/material/tooltip';
+import { MatFormFieldModule } from '@angular/material/form-field';
+import { MatSelectModule } from '@angular/material/select';
 
 import { BookDto } from '../../models/book-dto.model';
-import { AUTO_DESCRIPTION_FETCH_LIMIT } from '../../constants/limits';
+import { BookGroup } from '../../models/book-group.model';
+
+/** One card in the results grid — a group plus whichever book within it is
+ *  currently "active" (shown on the card / acted on by the send buttons).
+ *  Computed by the parent (BookSearchComponent.displayGroups) since that's
+ *  where the per-group variant selection state (groupSelection) lives. */
+export interface DisplayGroup {
+  group: BookGroup;
+  active: BookDto;
+}
+
+export interface VariantSelectedEvent {
+  group: BookGroup;
+  book: BookDto;
+}
 
 export interface SendToLibraryEvent {
   book: BookDto;
@@ -35,53 +52,63 @@ export interface CoverErrorEvent {
   standalone: true,
   imports: [
     CommonModule,
+    FormsModule,
     MatCardModule,
     MatButtonModule,
     MatIconModule,
-    MatTooltipModule
+    MatTooltipModule,
+    MatFormFieldModule,
+    MatSelectModule
   ],
   templateUrl: './search-results.component.html',
   styleUrls: ['./search-results.component.css']
 })
 export class SearchResultsComponent {
-  // Exposed for the template — the manual "Retrieve Summary" button should
-  // only appear for books past whatever range book-search.component.ts's
-  // fetchBookDescriptions() already auto-fetches. Was hardcoded as a
-  // literal `10` in the template, which silently went stale when
-  // AUTO_DESCRIPTION_FETCH_LIMIT was turned down to 0 (auto-fetch disabled
-  // entirely) — every book was then in the auto-fetch limit's "index < 10"
-  // dead zone with no description and no way to request one. Binding to
-  // the real constant keeps these two in sync going forward.
-  readonly autoDescriptionFetchLimit = AUTO_DESCRIPTION_FETCH_LIMIT;
-
-  @Input() books: BookDto[] = [];
+  @Input() groups: DisplayGroup[] = [];
+  @Input() groupingInProgress = false;
   @Input() loading = false;
   @Input() searchPerformed = false;
   @Input() placeholderUrl = '/assets/placeholder.jpg';
 
+  @Output() variantSelected = new EventEmitter<VariantSelectedEvent>();
   @Output() sendToLibrary = new EventEmitter<SendToLibraryEvent>();
   @Output() sendToDropbox = new EventEmitter<SendToDropboxEvent>();
   @Output() sendToKindle = new EventEmitter<SendToKindleEvent>();
   @Output() fetchDescription = new EventEmitter<FetchDescriptionEvent>();
   @Output() coverError = new EventEmitter<CoverErrorEvent>();
+  @Output() openSummary = new EventEmitter<BookDto>();
 
-  // Track expanded cards by md5
-  private expandedCards = new Set<string>();
-
-  toggleCardExpansion(bookMd5: string): void {
-    if (this.expandedCards.has(bookMd5)) {
-      this.expandedCards.delete(bookMd5);
-    } else {
-      this.expandedCards.add(bookMd5);
-    }
+  trackByGroupKey(_index: number, dg: DisplayGroup): string {
+    return dg.group.key;
   }
 
-  isCardExpanded(bookMd5: string): boolean {
-    return this.expandedCards.has(bookMd5);
+  /** Distinct formats anywhere in the group — the card's format badges,
+   *  independent of which one happens to be "active" right now. */
+  formatsOf(group: BookGroup): string[] {
+    return Array.from(new Set(group.books.map(b => b.format)));
   }
 
-  needsExpansion(description: string): boolean {
-    return !!description && description.length > 150;
+  /** Other uploads sharing the active book's format — when there's more
+   *  than one, the card offers a version picker (distinguished only by
+   *  file size/source, since title/author/format are otherwise identical). */
+  sameFormatSiblings(group: BookGroup, active: BookDto): BookDto[] {
+    return group.books.filter(b => b.format === active.format);
+  }
+
+  onPickFormat(dg: DisplayGroup, format: string): void {
+    if (format === dg.active.format) return;
+    const book = dg.group.books.find(b => b.format === format);
+    if (book) this.variantSelected.emit({ group: dg.group, book });
+  }
+
+  onPickVariant(dg: DisplayGroup, md5: string): void {
+    if (md5 === dg.active.md5) return;
+    const book = dg.group.books.find(b => b.md5 === md5);
+    if (book) this.variantSelected.emit({ group: dg.group, book });
+  }
+
+  onTileClick(book: BookDto): void {
+    this.openSummary.emit(book);
   }
 
   onCoverError(book: BookDto, event: Event): void {

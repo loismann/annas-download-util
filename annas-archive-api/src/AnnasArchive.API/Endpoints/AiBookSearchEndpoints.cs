@@ -47,6 +47,13 @@ public static class AiBookSearchEndpoints
             .RequireAuthorization()
             .RequireRateLimiting("api");
 
+        // POST /api/ai/group-search-results - Detect which search results are
+        // the same book (different format/duplicate upload) vs genuinely
+        // different books, so the frontend can collapse duplicates into one card.
+        app.MapPost("/api/ai/group-search-results", HandleGroupSearchResults)
+            .RequireAuthorization()
+            .RequireRateLimiting("api");
+
         return app;
     }
 
@@ -993,6 +1000,171 @@ Rules:
             Log.Warning("OpenAI match-series-books failed: {ErrorMessage}", ex.Message);
             return ApiResponse.InternalError("Failed to match series books.");
         }
+    }
+
+    private static async Task<IResult> HandleGroupSearchResults(
+        HttpContext context,
+        [FromBody] GroupSearchResultsRequest request,
+        IHttpClientFactory httpFactory,
+        IConfiguration cfg,
+        ITokenUsageService tokenUsage,
+        IOpenAiModelHelper modelHelper,
+        IAiResponseParser aiResponseParser,
+        IModelSelectionService modelSelection)
+    {
+        if (request is null || request.Books is null || request.Books.Count == 0)
+            return Results.BadRequest(new { error = "Books list is required." });
+
+        // Nothing to group — skip the OpenAI round-trip for the trivial case.
+        if (request.Books.Count == 1)
+            return Results.Ok(new GroupSearchResultsResponse(new List<List<string>> { new() { request.Books[0].Md5 } }));
+
+        var tokenLimitResult = TokenLimitHelpers.CheckTokenLimit(cfg, tokenUsage, context);
+        if (tokenLimitResult is not null) return tokenLimitResult;
+
+        try
+        {
+            using var http = httpFactory.CreateClient("OpenAI");
+            var model = modelSelection.GetModelFast();
+
+            // Index-only payload — asking the model to faithfully echo back
+            // 32-char md5 hashes for 50-100+ books risks silent transcription
+            // errors that would misfile a book into the wrong group or drop
+            // it from the response entirely. Small integer indices round-trip
+            // reliably; we map back to md5 ourselves afterward using the same
+            // array we sent (see ParseGroupIndices).
+            var indexedBooks = request.Books
+                .Select((b, i) => new { index = i, title = b.Title, authors = b.Authors, format = b.Format, year = b.Year })
+                .ToList();
+            var booksJson = JsonSerializer.Serialize(indexedBooks, new JsonSerializerOptions { WriteIndented = true });
+
+            var systemPrompt = @"You are a library cataloging assistant. You'll receive a JSON array of book search results, each with an index, title, authors, format, and year. Many entries represent the SAME underlying book — a different file format (EPUB/PDF/MOBI/AZW3/etc.) or a duplicate upload/scan of the identical edition.
+
+Your task: group indices that represent the same book together. Format never matters for grouping — EPUB and PDF copies of the same book belong in the same group. Do NOT group:
+- Different volumes/books in a series (e.g. a book titled ""Book 2"" or ""#2"" is a DIFFERENT book from ""Book 1"" or the base title with no number)
+- Different, unrelated books that merely share a similar title
+- Meaningfully different editions (e.g. abridged vs unabridged, a translation vs the original) unless you're confident they're the same core work
+
+Every index from the input must appear in exactly one group in the output. A book with no duplicates is still its own group of one.
+
+Return ONLY valid JSON with no markdown or explanation.";
+
+            var userPrompt = $@"Books:
+{booksJson}
+
+Return ONLY this JSON structure:
+{{
+  ""groups"": [[0, 3, 7], [1], [2, 5]]
+}}
+
+Each inner array is a list of indices that are the same book.";
+
+            var payload = modelHelper.BuildChatCompletionPayload(
+                model,
+                new[]
+                {
+                    new { role = "system", content = systemPrompt },
+                    new { role = "user", content = userPrompt }
+                },
+                maxCompletionTokens: 4000,
+                temperature: 0.1
+            );
+
+            var aiSw = Stopwatch.StartNew();
+            var response = await http.PostAsJsonAsync("https://api.openai.com/v1/chat/completions", payload);
+            PerfLog.Record("OpenAI.ChatCompletion", aiSw.Elapsed.TotalMilliseconds, response.IsSuccessStatusCode, ("Endpoint", "group-search-results"), ("Model", model));
+            if (!response.IsSuccessStatusCode)
+            {
+                var body = await response.Content.ReadAsStringAsync();
+                Log.Information("❌ OpenAI group-search-results failed status={Status} body={Body}", (int)response.StatusCode, body);
+                return Results.Problem($"OpenAI request failed: {(int)response.StatusCode}");
+            }
+
+            using var stream = await response.Content.ReadAsStreamAsync();
+            using var doc = await JsonDocument.ParseAsync(stream);
+            var rawText = aiResponseParser.ExtractText(doc.RootElement);
+
+            if (doc.RootElement.TryGetProperty("usage", out var usage))
+            {
+                var promptTokens = usage.GetProperty("prompt_tokens").GetInt32();
+                var completionTokens = usage.GetProperty("completion_tokens").GetInt32();
+                var userId = UserHelpers.GetUserIdFromContext(context);
+                if (userId != null)
+                    tokenUsage.AddUsage(userId, promptTokens, completionTokens);
+            }
+
+            var indexGroups = ParseGroupIndices(rawText, request.Books.Count);
+            var md5Groups = indexGroups.Select(g => g.Select(i => request.Books[i].Md5).ToList()).ToList();
+
+            return Results.Ok(new GroupSearchResultsResponse(md5Groups));
+        }
+        catch (ArgumentException ex)
+        {
+            Log.Information("❌ Invalid argument for group-search-results: {Message}", ex.Message);
+            return Results.BadRequest(new { error = $"Invalid parameter: {ex.ParamName ?? "unknown"}" });
+        }
+        catch (Exception ex)
+        {
+            Log.Warning("OpenAI group-search-results failed: {ErrorMessage}", ex.Message);
+            return ApiResponse.InternalError("Failed to group search results.");
+        }
+    }
+
+    /// <summary>Parses the model's {"groups":[[...]]} response into validated
+    /// index groups, defensively covering every index 0..count-1 exactly
+    /// once — any index the model omitted becomes its own singleton group,
+    /// and any index it duplicated across groups is dropped on the later
+    /// occurrence, so a parsing hiccup degrades to "no grouping" for the
+    /// affected books rather than silently dropping them from the results.</summary>
+    private static List<List<int>> ParseGroupIndices(string? rawText, int count)
+    {
+        var groups = new List<List<int>>();
+        var seen = new HashSet<int>();
+
+        if (!string.IsNullOrWhiteSpace(rawText))
+        {
+            try
+            {
+                var cleanedText = rawText.Trim();
+                if (cleanedText.StartsWith("```"))
+                {
+                    cleanedText = cleanedText.Replace("```json", "").Replace("```", "").Trim();
+                }
+
+                var groupDoc = JsonDocument.Parse(cleanedText);
+                if (groupDoc.RootElement.TryGetProperty("groups", out var groupsArray) && groupsArray.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var groupEl in groupsArray.EnumerateArray())
+                    {
+                        if (groupEl.ValueKind != JsonValueKind.Array) continue;
+                        var indices = new List<int>();
+                        foreach (var idxEl in groupEl.EnumerateArray())
+                        {
+                            if (idxEl.ValueKind != JsonValueKind.Number) continue;
+                            var idx = idxEl.GetInt32();
+                            if (idx < 0 || idx >= count) continue; // out-of-range, ignore
+                            if (!seen.Add(idx)) continue; // already claimed by an earlier group
+                            indices.Add(idx);
+                        }
+                        if (indices.Count > 0) groups.Add(indices);
+                    }
+                }
+            }
+            catch (JsonException ex)
+            {
+                Log.Information("⚠️ Failed to parse group-search-results JSON: {Message}", ex.Message);
+                Log.Information("Raw text: {RawText}", rawText);
+            }
+        }
+
+        // Any index the model never mentioned (parse failure, omission, etc.)
+        // still needs to show up — as its own singleton group.
+        for (var i = 0; i < count; i++)
+        {
+            if (seen.Add(i)) groups.Add(new List<int> { i });
+        }
+
+        return groups;
     }
 
     #region OpenLibrary Author Cache Helpers

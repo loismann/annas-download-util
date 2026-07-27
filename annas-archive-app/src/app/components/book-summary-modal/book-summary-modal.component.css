@@ -1,0 +1,56 @@
+.summary-content {
+  display: flex;
+  gap: 24px;
+  max-width: 700px;
+  max-height: 65vh;
+}
+
+.cover {
+  flex: 0 0 180px;
+  width: 180px;
+  aspect-ratio: 2 / 3;
+  object-fit: cover;
+  border-radius: 4px;
+  align-self: flex-start;
+}
+
+.details {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-y: auto;
+}
+
+.authors {
+  color: #666;
+  margin: 0 0 8px;
+}
+
+.meta {
+  color: #888;
+  font-size: 0.85rem;
+  margin: 0 0 16px;
+}
+
+.description {
+  margin: 0;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  color: #333;
+}
+
+.no-description {
+  margin: 0;
+  color: #999;
+  font-style: italic;
+}
+
+@media (max-width: 600px) {
+  .summary-content {
+    flex-direction: column;
+  }
+
+  .cover {
+    width: 140px;
+    align-self: center;
+  }
+}

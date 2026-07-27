@@ -27,7 +27,6 @@ export interface DomainHealth {
 export interface SearchFormSubmitEvent {
   searchTerm: string;
   selectedAuthor: string;
-  selectedFormat: string;
   useLibGen: boolean;
   isAiSearch: boolean;
   aiSearchQuery?: string;
@@ -64,14 +63,12 @@ export class SearchFormComponent implements OnDestroy {
   @Output() search = new EventEmitter<SearchFormSubmitEvent>();
   @Output() openRelatedBooks = new EventEmitter<{ searchTerm: string; author: string }>();
   @Output() toggleCollapsed = new EventEmitter<void>();
-  @Output() formatChange = new EventEmitter<string>();
 
   // Internal form state
   searchTerm = '';
   aiSearchQuery = '';
   aiSearchExpanded = false;
   selectedAuthor = '';
-  selectedFormat = '';
   useLibGen = false;
 
   // Author suggestions
@@ -80,9 +77,6 @@ export class SearchFormComponent implements OnDestroy {
   private searchTermSubject = new Subject<string>();
   private destroy$ = new Subject<void>();
   private latestAuthorQuery = '';
-
-  // Static format list
-  readonly availableFormats = ['EPUB', 'MOBI', 'PDF', 'AZW3', 'FB2', 'TXT'];
 
   constructor(
     private aiApi: AiApiService,
@@ -108,7 +102,6 @@ export class SearchFormComponent implements OnDestroy {
       this.search.emit({
         searchTerm: this.searchTerm.trim(),
         selectedAuthor: this.selectedAuthor,
-        selectedFormat: this.selectedFormat,
         useLibGen: this.useLibGen,
         isAiSearch: true,
         aiSearchQuery: this.aiSearchQuery.trim()
@@ -117,7 +110,6 @@ export class SearchFormComponent implements OnDestroy {
       this.search.emit({
         searchTerm: this.searchTerm.trim(),
         selectedAuthor: this.selectedAuthor,
-        selectedFormat: this.selectedFormat,
         useLibGen: this.useLibGen,
         isAiSearch: false
       });
@@ -139,11 +131,6 @@ export class SearchFormComponent implements OnDestroy {
 
     // Trigger debounced author fetch
     this.searchTermSubject.next(newTerm.trim());
-  }
-
-  onFormatChange(format: string): void {
-    this.selectedFormat = format;
-    this.formatChange.emit(format);
   }
 
   onToggleCollapsed(): void {

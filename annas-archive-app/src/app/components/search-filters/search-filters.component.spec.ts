@@ -13,7 +13,6 @@ describe('SearchFiltersComponent', () => {
 
     fixture = TestBed.createComponent(SearchFiltersComponent);
     component = fixture.componentInstance;
-    component.availableFormats = ['EPUB', 'MOBI', 'PDF'];
     fixture.detectChanges();
   });
 
@@ -22,18 +21,6 @@ describe('SearchFiltersComponent', () => {
   });
 
   describe('Inputs', () => {
-    it('should display format dropdown', () => {
-      const select = fixture.nativeElement.querySelector('mat-select');
-      expect(select).toBeTruthy();
-    });
-
-    it('should be disabled when disabled input is true', () => {
-      component.disabled = true;
-      fixture.detectChanges();
-      const select = fixture.nativeElement.querySelector('mat-select');
-      expect(select.getAttribute('aria-disabled')).toBe('true');
-    });
-
     it('should display download counter when downloadsLeft is set', () => {
       component.downloadsLeft = 50;
       component.downloadsPerDay = 100;
@@ -49,14 +36,6 @@ describe('SearchFiltersComponent', () => {
       fixture.detectChanges();
       const counter = fixture.nativeElement.querySelector('.download-counter');
       expect(counter).toBeFalsy();
-    });
-  });
-
-  describe('Outputs', () => {
-    it('should emit formatChange when format selection changes', () => {
-      spyOn(component.formatChange, 'emit');
-      component.onFormatChange('EPUB');
-      expect(component.formatChange.emit).toHaveBeenCalledWith('EPUB');
     });
   });
 

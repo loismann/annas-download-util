@@ -29,6 +29,27 @@ export interface SendToBooxResponse {
   } | null;
 }
 
+/* ─────────────── send-to-library shape (fire-and-forget background job) ──── */
+export interface SendToLibraryResponse {
+  success: boolean;
+  jobId?: string;
+  message?: string;
+  accountFastInfo: {
+    downloadsLeft: number;
+    downloadsPerDay: number;
+  } | null;
+}
+
+export interface DownloadProgressResponse {
+  jobId: string;
+  status: 'queued' | 'downloading' | 'complete' | 'error';
+  bytesDownloaded: number;
+  totalBytes: number | null;
+  percent: number | null;
+  fileName: string | null;
+  message: string | null;
+}
+
 export interface CoverLookupResponse {
   coverUrl: string | null;
 }
@@ -112,7 +133,7 @@ export class AnnaArchiveApiService {
     fileSize?: string,
     source?: string,
     description?: string
-  ): Observable<any> {
+  ): Observable<SendToLibraryResponse> {
     let params = new HttpParams().set('title', title);
     if (coverUrl) {
       params = params.set('coverUrl', coverUrl);
@@ -133,10 +154,21 @@ export class AnnaArchiveApiService {
     if (description) {
       params = params.set('description', description);
     }
-    return this.http.post(
+    return this.http.post<SendToLibraryResponse>(
       `${this.baseUrl}/book/${md5}/send-to-library`,
       null,
       { params }
+    );
+  }
+
+  /**
+   * Poll the status of a "send to library" background download (jobId comes back
+   * from sendToLibrary/sendToLibraryLibGen) — the actual download runs detached
+   * from the request that started it, since large books can take minutes.
+   */
+  getDownloadProgress(jobId: string): Observable<DownloadProgressResponse> {
+    return this.http.get<DownloadProgressResponse>(
+      `${this.apiHost}/api/library/download-progress/${jobId}`
     );
   }
 
@@ -232,7 +264,7 @@ export class AnnaArchiveApiService {
     fileSize?: string,
     source?: string,
     description?: string
-  ): Observable<any> {
+  ): Observable<SendToLibraryResponse> {
     let params = new HttpParams().set('title', title);
     if (coverUrl) {
       params = params.set('coverUrl', coverUrl);
@@ -253,7 +285,7 @@ export class AnnaArchiveApiService {
     if (description) {
       params = params.set('description', description);
     }
-    return this.http.post(
+    return this.http.post<SendToLibraryResponse>(
       `${this.libgenBaseUrl}/book/${md5}/send-to-library`,
       null,
       { params }

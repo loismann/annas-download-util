@@ -18,6 +18,7 @@ import { BookEditDialogComponent, BookEditDialogData, BookEditDialogResult } fro
 import { BulkEditDialogComponent, BookBulkEditDialogData, BookBulkEditDialogResult } from '../components/bulk-edit-dialog/bulk-edit-dialog.component';
 import { FileUploadDialogComponent } from '../components/file-upload-dialog/file-upload-dialog.component';
 import { BookCardComponent, LibraryBook } from '../components/book-card/book-card.component';
+import type { PdfViewerDialogData } from '../components/pdf-viewer-dialog/pdf-viewer-dialog.component';
 import { LibrarySidebarComponent } from '../components/library-sidebar/library-sidebar.component';
 import { AuthService } from '../services/auth.service';
 import { LibraryReviewTriggerService } from '../services/library-review-trigger.service';
@@ -620,6 +621,29 @@ export class LibraryComponent implements OnInit, OnDestroy {
 
   onSendToDropbox(book: LibraryBook): void {
     this.sendToDropbox(book);
+  }
+
+  async onReadBook(book: LibraryBook): Promise<void> {
+    if (!book.fileName) return;
+
+    // Dynamically imported (rather than a static top-of-file import) so the
+    // PDF viewer library — large, since it bundles pdf.js — lands in its own
+    // lazy chunk instead of inflating the initial bundle for every user who
+    // never opens a PDF.
+    const { PdfViewerDialogComponent } = await import('../components/pdf-viewer-dialog/pdf-viewer-dialog.component');
+
+    const dialogData: PdfViewerDialogData = {
+      title: book.title,
+      fileName: book.fileName
+    };
+
+    this.dialog.open(PdfViewerDialogComponent, {
+      width: '95vw',
+      maxWidth: '1600px',
+      height: '92vh',
+      data: dialogData,
+      panelClass: 'pdf-viewer-dialog-panel'
+    });
   }
 
   setPersonalRating(book: LibraryBook, rating: number): void {

@@ -597,14 +597,21 @@ export class MediaLibraryComponent implements OnInit, OnDestroy {
     });
   }
 
-  /** Opens Jellyfin's proxied file download in a new tab — the browser handles
-   * the actual save via the response's Content-Disposition: attachment header,
-   * this just needs to not navigate the SPA away from itself. */
+  /** Triggers Jellyfin's proxied file download via the response's
+   * Content-Disposition: attachment header — navigating the CURRENT tab to
+   * an attachment response makes the browser divert to its download handler
+   * instead of actually replacing the page, so the SPA is never navigated
+   * away from. Deliberately not window.open(url, '_blank'): that opens a
+   * real new tab/window, which popup blockers (DuckDuckGo's browser in
+   * particular) treat as a suspicious popup needing explicit permission —
+   * and since the response has no HTML to render, the "allowed" tab is just
+   * blank anyway. No new window is requested here, so there's nothing for a
+   * popup blocker to catch. */
   downloadMovie(movie: MediaLookupResult, event: Event): void {
     event.stopPropagation(); // don't also trigger playMovie()
     if (movie.tmdbId === undefined) return;
 
-    window.open(this.api.getMovieDownloadUrl(movie.tmdbId), '_blank');
+    window.location.href = this.api.getMovieDownloadUrl(movie.tmdbId);
   }
 
   openTvEditDialog(tile: LibraryTile, event: Event): void {

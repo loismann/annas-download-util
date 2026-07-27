@@ -13,26 +13,20 @@
 
 .search-form form {
   width: 100%;
-  max-width: 640px;
+  /* Desktop gets a wide, roomy column — width:100% below still lets it
+     compress naturally on narrower viewports (tablet/phone), same as
+     every field inside it. */
+  max-width: 1280px;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
   gap: var(--form-item-gap);
 }
 
-/* Row 1: book name + Search — same shape as the movie/TV search bar */
-.search-bar {
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  gap: 1rem;
-  flex-wrap: wrap;
-  width: 100%;
-}
-
+/* Book name field — full width of the shared 640px column, same as Author
+   below it. */
 .search-field {
-  flex: 1 1 320px;
-  min-width: 200px;
+  width: 100%;
 }
 
 .ai-search-field textarea {
@@ -43,15 +37,14 @@
   color: #3f51b5;
 }
 
-/* mat-form-field's outline appearance renders at 56px tall by default —
-   matching that explicitly is simpler than trying to make the button
-   stretch to whatever height the field ends up at. */
+/* Search button sits below Author now — full width to match both fields
+   above it rather than a content-sized button off on its own row. */
 .search-button {
+  width: 100%;
   height: 56px;
-  padding: 0 2rem;
 }
 
-/* Row 2: Author — always visible, full width of the shared 640px column */
+/* Author — always visible, full width of the shared 640px column */
 .author-dropdown {
   width: 100%;
 }
@@ -152,12 +145,13 @@
   color: white;
 }
 
-/* source toggle row */
+/* source toggle row — left-aligned, same as the VPN toggle row below it,
+   rather than centered off on its own */
 .source-toggle-row {
   width: 100%;
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   padding: 8px 0;
 }
 

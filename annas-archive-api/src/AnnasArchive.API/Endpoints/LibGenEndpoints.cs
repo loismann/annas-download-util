@@ -169,7 +169,7 @@ public static class LibGenEndpoints
         }
     }
 
-    private static async Task<IResult> HandleLibGenSendToLibrary(
+    private static IResult HandleLibGenSendToLibrary(
         [FromRoute] string md5,
         [FromQuery] string? title,
         [FromQuery] string? coverUrl,
@@ -178,10 +178,10 @@ public static class LibGenEndpoints
         [FromQuery] string? fileSize,
         [FromQuery] string? source,
         [FromQuery] string? description,
-        LibGenService libgen,
         IValidationService validation,
-        IEbookCoverService coverService,
         IDownloadTrackingService downloadTracking,
+        Services.IBookDownloadJobService jobs,
+        IServiceScopeFactory scopeFactory,
         HttpContext context)
     {
         // Use shared extended validation helper for all parameters
@@ -194,44 +194,73 @@ public static class LibGenEndpoints
         var userTag = LibraryHelpers.ResolveUserLibraryTag(context);
         Log.Information("[LibGen] Saving book {Md5} to library for user {UserName}...", md5, userName);
 
-        var resp = await libgen.GetDownloadResponseAsync(md5, HttpCompletionOption.ResponseHeadersRead);
-        if (resp == null || !resp.IsSuccessStatusCode)
+        var job = jobs.Start(title ?? md5);
+
+        // Fire-and-forget — see the identical comment on HandleSendToLibrary in
+        // AnnaDownloadEndpoints.cs for why this doesn't await the download.
+        _ = Task.Run(async () =>
         {
-            var (downloadsLeft, downloadsPerDay) = downloadTracking.GetDownloadStatus();
-            Log.Warning("[LibGen] Failed to download book {Md5}", md5);
-            return Results.Ok(new { success = false, message = "Failed to download book from LibGen.", accountFastInfo = new AccountFastDownloadInfoDto(downloadsLeft, downloadsPerDay) });
-        }
+            using var scope = scopeFactory.CreateScope();
+            var libgen = scope.ServiceProvider.GetRequiredService<LibGenService>();
+            var coverService = scope.ServiceProvider.GetRequiredService<IEbookCoverService>();
 
-        var downloadUrl = await libgen.GetDownloadUrlAsync(md5);
-        var (_, ext, fileName) = BuildFileInfo(title, md5, downloadUrl, resp);
-
-        downloadTracking.RecordDownload(md5, userName);
-        Log.Information("[library-libgen] Recorded download for user {UserName}, MD5: {Md5}", userName, md5);
-
-        var (currentDownloadsLeft, currentDownloadsPerDay) = downloadTracking.GetDownloadStatus();
-        var trackingInfo = new AccountFastDownloadInfoDto(currentDownloadsLeft, currentDownloadsPerDay);
-
-        var libraryRoot = LibraryHelpers.ResolveLibraryRoot();
-        Directory.CreateDirectory(libraryRoot);
-
-        using (resp)
-        {
-            var ebookStream = await resp.Content.ReadAsStreamAsync();
-            ebookStream = await SendToTargetHelpers.TryReplaceCoverAsync(
-                ebookStream, coverUrl, fileName, coverService, "library-libgen");
-
-            var destinationPath = Path.Combine(libraryRoot, fileName);
-            if (File.Exists(destinationPath))
+            try
             {
-                return Results.Ok(new { success = true, message = "File already exists in library.", fileName, path = destinationPath, accountFastInfo = trackingInfo });
+                var resp = await libgen.GetDownloadResponseAsync(md5, HttpCompletionOption.ResponseHeadersRead);
+                if (resp == null || !resp.IsSuccessStatusCode)
+                {
+                    Log.Warning("[LibGen] Failed to download book {Md5}", md5);
+                    jobs.Fail(job.JobId, "Failed to download book from LibGen.");
+                    return;
+                }
+
+                var downloadUrl = await libgen.GetDownloadUrlAsync(md5);
+                var (_, ext, fileName) = BuildFileInfo(title, md5, downloadUrl, resp);
+
+                downloadTracking.RecordDownload(md5, userName);
+                Log.Information("[library-libgen] Recorded download for user {UserName}, MD5: {Md5}", userName, md5);
+
+                var libraryRoot = LibraryHelpers.ResolveLibraryRoot();
+                Directory.CreateDirectory(libraryRoot);
+
+                using (resp)
+                {
+                    var ebookStream = await resp.Content.ReadAsStreamAsync();
+                    ebookStream = await SendToTargetHelpers.TryReplaceCoverAsync(
+                        ebookStream, coverUrl, fileName, coverService, "library-libgen");
+
+                    var destinationPath = Path.Combine(libraryRoot, fileName);
+                    if (File.Exists(destinationPath))
+                    {
+                        jobs.Complete(job.JobId, fileName, "File already exists in library.");
+                        return;
+                    }
+
+                    await LibraryDownloadHelpers.CopyToLibraryAtomicallyAsync(
+                        ebookStream,
+                        destinationPath,
+                        resp.Content.Headers.ContentLength,
+                        (bytesDownloaded, totalBytes) => jobs.UpdateProgress(job.JobId, bytesDownloaded, totalBytes));
+
+                    await LibraryHelpers.WriteLibraryMetadataAsync(libraryRoot, fileName, md5, title, authors, format, fileSize, coverUrl, source, userTag, description);
+
+                    jobs.Complete(job.JobId, fileName, "Saved to library.");
+                }
             }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "[library-libgen] Background download failed for MD5 {Md5}", md5);
+                jobs.Fail(job.JobId, "Download failed: " + ex.Message);
+            }
+        });
 
-            await using var outStream = File.Create(destinationPath);
-            await ebookStream.CopyToAsync(outStream);
-
-            await LibraryHelpers.WriteLibraryMetadataAsync(libraryRoot, fileName, md5, title, authors, format, fileSize, coverUrl, source, userTag, description);
-
-            return Results.Ok(new { success = true, message = "Saved to library.", fileName, path = destinationPath, accountFastInfo = trackingInfo });
-        }
+        var (downloadsLeft, downloadsPerDay) = downloadTracking.GetDownloadStatus();
+        return Results.Ok(new
+        {
+            success = true,
+            jobId = job.JobId,
+            message = "Download started.",
+            accountFastInfo = new AccountFastDownloadInfoDto(downloadsLeft, downloadsPerDay)
+        });
     }
 }

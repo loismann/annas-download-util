@@ -219,6 +219,11 @@ public static class ServiceConfiguration
         services.AddHttpClient("AnnasArchive", c =>
         {
             c.BaseAddress = new Uri("https://annas-archive.org");
+            // HttpClient.Timeout covers the whole request including reading the
+            // response body — the default 100s was killing "send to library"
+            // downloads of large books (100MB+) partway through CopyToAsync.
+            // Same reasoning as the Jellyfin/Audiobookshelf clients below.
+            c.Timeout = HttpTimeouts.MediaStreamingTimeout;
             c.DefaultRequestHeaders.UserAgent.ParseAdd(
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
                 "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36");
@@ -289,7 +294,12 @@ public static class ServiceConfiguration
         services.AddHttpClient<LibGenService>(c =>
         {
             c.BaseAddress = new Uri("https://libgen.rs");
-            c.Timeout = HttpTimeouts.ScrapingTimeout;
+            // Same client handles both quick search scraping and full-book
+            // downloads via "send to library" — needs to cover the slower case
+            // (whole request including response body, per HttpClient.Timeout
+            // semantics), a fast search request finishing early doesn't care
+            // that the ceiling is generous.
+            c.Timeout = HttpTimeouts.MediaStreamingTimeout;
             c.DefaultRequestHeaders.UserAgent.ParseAdd(
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
                 "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36");
@@ -442,6 +452,10 @@ public static class ServiceConfiguration
         // Video library services - VideoIndexCache warms on startup via IHostedService
         services.AddSingleton<VideoIndexCache>();
         services.AddHostedService(sp => sp.GetRequiredService<VideoIndexCache>());
+
+        // Tracks progress of "send to library" downloads that run detached from
+        // their originating HTTP request (see HandleSendToLibrary / HandleLibGenSendToLibrary)
+        services.AddSingleton<Services.IBookDownloadJobService, Services.BookDownloadJobService>();
 
         services.AddSingleton<IGenreClassificationService, GenreClassificationService>();
         services.AddSingleton<IDuplicateDetectionService, DuplicateDetectionService>();

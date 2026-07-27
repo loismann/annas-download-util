@@ -1,12 +1,23 @@
 .vpn-toggle-row {
   width: 100%;
-  max-width: 360px;
-  margin-bottom: var(--form-item-gap, 1rem);
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
   padding: 8px 0;
+}
+
+/* mat-form-field's floating "Region" label sits inside its own reserved
+   space above the actual select box, so centering the row on total element
+   height (the default) leaves the toggle looking low relative to where the
+   select box itself visually sits. Giving the toggle the same explicit
+   height as the field (see .vpn-region-select below) and centering ITS
+   OWN content within that height lines the two up regardless of the
+   field's internal label spacing. */
+.vpn-toggle-row mat-slide-toggle {
+  display: flex;
+  align-items: center;
+  height: 44px;
 }
 
 .vpn-region-select {

@@ -15,20 +15,9 @@
     ></app-search-form>
   </div>
 
-  <!-- Format filter: only meaningful once there are results to filter, so
-       it lives here rather than being a permanent fixture in the search
-       controls (see search-filters.component, which used to render it). -->
-  <div class="results-toolbar" *ngIf="books.length > 0">
-    <mat-form-field appearance="outline" class="format-filter">
-      <mat-label>Format</mat-label>
-      <mat-select [ngModel]="selectedFormat" (ngModelChange)="onFormatChange($event)" name="resultsFormat">
-        <mat-option value="">All</mat-option>
-        <mat-option *ngFor="let fmt of availableFormats" [value]="fmt">{{ fmt }}</mat-option>
-      </mat-select>
-    </mat-form-field>
-  </div>
-
-  <!-- Results, full width below the hero -->
+  <!-- Results, full width below the hero. No separate format filter here —
+       each card has its own format badges/version picker for switching
+       between what that specific book has available. -->
   <app-search-results
     class="results-panel"
     [groups]="displayGroups"

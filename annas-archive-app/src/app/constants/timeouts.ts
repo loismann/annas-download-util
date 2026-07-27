@@ -42,6 +42,9 @@ export const DESCRIPTION_FETCH_STAGGER_MS = 100;
 /** Delay between related books cover lookups to avoid rate limiting external APIs (600ms) */
 export const RELATED_BOOKS_STAGGER_MS = 600;
 
+/** How often to poll a background "send to library" download job for progress (1.5 seconds) */
+export const DOWNLOAD_JOB_POLL_MS = 1500;
+
 // ============================================================================
 // UI Feedback Delays
 // ============================================================================

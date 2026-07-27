@@ -23,36 +23,43 @@
             <div class="tile-title">{{ dg.active.title }}</div>
             <div class="tile-author">{{ dg.active.authors.join(', ') }}</div>
 
-            <!-- Format badges — only shown when this group actually has more
-                 than one format to pick between (see BookGroup: entries here
-                 are the same book, different files). -->
-            <div class="format-row" *ngIf="formatsOf(dg.group).length > 1" (click)="$event.stopPropagation()">
-              <button
-                *ngFor="let fmt of formatsOf(dg.group)"
-                type="button"
-                class="format-badge"
-                [class.active]="fmt === dg.active.format"
-                (click)="onPickFormat(dg, fmt)"
-              >{{ fmt }}</button>
+            <!-- Format badges — reserves the same height whether or not this
+                 particular group has more than one format to pick between,
+                 so cards don't shift relative to their neighbors depending
+                 on what happens to be present. -->
+            <div class="format-row" (click)="$event.stopPropagation()">
+              <ng-container *ngIf="formatsOf(dg.group).length > 1">
+                <button
+                  *ngFor="let fmt of formatsOf(dg.group)"
+                  type="button"
+                  class="format-badge"
+                  [class.active]="fmt === dg.active.format"
+                  (click)="onPickFormat(dg, fmt)"
+                >{{ fmt }}</button>
+              </ng-container>
             </div>
 
-            <!-- Version picker — only when multiple uploads share the SAME
-                 active format (distinct from the format badges above, which
-                 switch format; this switches between duplicate scans/uploads
-                 of that one format). -->
-            <mat-form-field
-              *ngIf="sameFormatSiblings(dg.group, dg.active).length > 1"
-              appearance="outline"
-              class="variant-select"
-              (click)="$event.stopPropagation()"
-            >
-              <mat-label>Version</mat-label>
-              <mat-select [ngModel]="dg.active.md5" (ngModelChange)="onPickVariant(dg, $event)">
-                <mat-option *ngFor="let v of sameFormatSiblings(dg.group, dg.active)" [value]="v.md5">
-                  {{ v.fileSize }}{{ v.source ? ' · ' + v.source : '' }}
-                </mat-option>
-              </mat-select>
-            </mat-form-field>
+            <!-- Version picker slot — same reserved-height treatment. Only
+                 populated when multiple uploads share the SAME active format
+                 (distinct from the format badges above, which switch format;
+                 this switches between duplicate scans/uploads of that one
+                 format). A compact menu button rather than a full form field
+                 — this is a small in-card control, not a page-level form. -->
+            <div class="variant-row" (click)="$event.stopPropagation()">
+              <ng-container *ngIf="sameFormatSiblings(dg.group, dg.active).length > 1">
+                <button type="button" class="variant-trigger" [matMenuTriggerFor]="variantMenu">
+                  <span>{{ dg.active.fileSize }}<ng-container *ngIf="dg.active.source">&nbsp;· {{ dg.active.source }}</ng-container></span>
+                  <mat-icon class="variant-caret">expand_more</mat-icon>
+                </button>
+                <mat-menu #variantMenu="matMenu">
+                  <button
+                    mat-menu-item
+                    *ngFor="let v of sameFormatSiblings(dg.group, dg.active)"
+                    (click)="onPickVariant(dg, v.md5)"
+                  >{{ v.fileSize }}<ng-container *ngIf="v.source"> · {{ v.source }}</ng-container></button>
+                </mat-menu>
+              </ng-container>
+            </div>
 
             <div class="tile-meta">{{ dg.active.format }} &nbsp;|&nbsp; {{ dg.active.fileSize }}</div>
 

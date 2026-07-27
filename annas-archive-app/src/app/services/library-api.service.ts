@@ -374,6 +374,18 @@ export class LibraryApiService {
   }
 
   /**
+   * Fetch a library book's raw file bytes (PDF viewer only). Goes through HttpClient
+   * (not a plain URL) so the auth interceptor attaches the Bearer token — the file route
+   * can't accept an unauthenticated <iframe>/<embed> src like the video/audio streams do.
+   */
+  getLibraryBookFile(fileName: string): Observable<Blob> {
+    return this.http.get(
+      `${this.libraryBaseUrl}/book/${encodeURIComponent(fileName)}/file`,
+      { responseType: 'blob' }
+    );
+  }
+
+  /**
    * Get book summary. Pass `deep = true` to use the higher-quality ("deep") AI model for the
    * fallback generation step, if neither Google Books nor Open Library has a real description.
    */

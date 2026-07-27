@@ -37,7 +37,42 @@ public static class LibraryBrowserEndpoints
             .RequireAuthorization()
             .RequireRateLimiting("api");
 
+        // GET /api/library/book/{fileName}/file - Stream a book's raw file bytes (PDF viewer only, for now)
+        app.MapGet("/api/library/book/{fileName}/file", HandleGetBookFile)
+            .RequireAuthorization()
+            .RequireRateLimiting("media");
+
+        // GET /api/library/download-progress/{jobId} - Poll a "send to library" background download
+        // (jobId comes back from either the Anna's Archive or LibGen send-to-library endpoints)
+        app.MapGet("/api/library/download-progress/{jobId}", HandleGetDownloadProgress)
+            .RequireAuthorization()
+            .RequireRateLimiting("api");
+
         return app;
+    }
+
+    private static IResult HandleGetDownloadProgress(
+        [FromRoute] string jobId,
+        Services.IBookDownloadJobService jobs)
+    {
+        var job = jobs.Get(jobId);
+        if (job == null)
+            return Results.NotFound(new { error = "Job not found." });
+
+        double? percent = job.TotalBytes is > 0
+            ? Math.Round(job.BytesDownloaded * 100.0 / job.TotalBytes.Value, 1)
+            : null;
+
+        return Results.Json(new
+        {
+            jobId = job.JobId,
+            status = job.Status.ToString().ToLowerInvariant(),
+            bytesDownloaded = job.BytesDownloaded,
+            totalBytes = job.TotalBytes,
+            percent,
+            fileName = job.FileName,
+            message = job.Message
+        });
     }
 
     private static IResult HandleListBooks(
@@ -200,6 +235,25 @@ public static class LibraryBrowserEndpoints
             Log.Warning("[library] Failed to delete book {SafeFileName}: {Message}", safeFileName, ex.Message);
             return Results.Problem("Failed to delete book.");
         }
+    }
+
+    private static IResult HandleGetBookFile([FromRoute] string fileName)
+    {
+        var safeFileName = Path.GetFileName(fileName);
+        if (!string.Equals(fileName, safeFileName, StringComparison.Ordinal))
+            return Results.BadRequest(new { error = "Invalid fileName." });
+
+        // Only PDFs are viewable in-app for now — other formats go out via
+        // Kindle/Dropbox instead, so there's no browser-side renderer for them.
+        if (!string.Equals(Path.GetExtension(safeFileName), ".pdf", StringComparison.OrdinalIgnoreCase))
+            return Results.BadRequest(new { error = "Only PDF files can be viewed in-app." });
+
+        var libraryRoot = LibraryHelpers.ResolveLibraryRoot();
+        var fullPath = Path.Combine(libraryRoot, safeFileName);
+        if (!File.Exists(fullPath))
+            return Results.NotFound(new { error = "File not found." });
+
+        return Results.File(fullPath, "application/pdf", enableRangeProcessing: true);
     }
 
     // Helper function for resolving reader keys

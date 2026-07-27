@@ -1,5 +1,6 @@
 import { Component, Inject, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { HttpErrorResponse } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
 import { Subject } from 'rxjs';
 import { takeUntil } from 'rxjs/operators';
@@ -7,6 +8,7 @@ import { MAT_DIALOG_DATA, MatDialogModule, MatDialogRef } from '@angular/materia
 import { MatButtonModule } from '@angular/material/button';
 import { MatListModule } from '@angular/material/list';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatIconModule } from '@angular/material/icon';
 import { MatDividerModule } from '@angular/material/divider';
 import { MatCheckboxModule } from '@angular/material/checkbox';
@@ -20,11 +22,11 @@ import {
   BookWithCandidates,
   CandidateBook
 } from '../services/ai-api.service';
-import { AnnaArchiveApiService } from '../services/anna-archive-api.service';
+import { AnnaArchiveApiService, DownloadProgressResponse } from '../services/anna-archive-api.service';
 import { BookDto } from '../models/book-dto.model';
 import { firstValueFrom } from 'rxjs';
 import { LoggerService } from '../services/logger.service';
-import { RELATED_BOOKS_STAGGER_MS } from '../constants/timeouts';
+import { RELATED_BOOKS_STAGGER_MS, DOWNLOAD_JOB_POLL_MS } from '../constants/timeouts';
 
 // How many per-book candidate searches run at once during "Review
 // Selections". Kept deliberately small — see the comment at its call site
@@ -85,6 +87,7 @@ interface MatchResult {
     MatButtonModule,
     MatListModule,
     MatProgressSpinnerModule,
+    MatProgressBarModule,
     MatIconModule,
     MatDividerModule,
     MatCheckboxModule,
@@ -105,6 +108,11 @@ export class RelatedBooksModalComponent implements OnDestroy {
   preparingMatches = false;
   sending = false;
   sendLog: string[] = [];
+  /** Progress of whatever book is currently downloading in the background, 0-100 —
+   *  null while nothing's actively downloading, or while a job hasn't reported a
+   *  byte total yet (server doesn't always get a Content-Length from the source). */
+  activeDownloadPercent: number | null = null;
+  activeDownloadActive = false;
   selectedFormat = 'EPUB';
   statusUpdates: string[] = [];
   coverLookupsInFlight = new Set<string>();
@@ -376,7 +384,7 @@ export class RelatedBooksModalComponent implements OnDestroy {
 
         const trySaveToLibrary = async (): Promise<boolean> => {
           try {
-            await firstValueFrom(
+            const started = await firstValueFrom(
               this.annaApi.sendToLibrary(
                 selected.md5,
                 selected.title,
@@ -388,9 +396,21 @@ export class RelatedBooksModalComponent implements OnDestroy {
                 selected.description ?? undefined
               )
             );
-            return true;
+            // The download itself runs in the background on the server (see
+            // AnnaDownloadEndpoints.HandleSendToLibrary) — started.jobId lets us
+            // poll for real progress instead of blocking on one long HTTP call,
+            // which is what used to make large books look "stuck" once they
+            // outran the request's timeout.
+            if (!started?.jobId) {
+              return !!started?.success;
+            }
+            const finalStatus = await this.pollDownloadJob(started.jobId);
+            return finalStatus.status === 'complete';
           } catch {
             return false;
+          } finally {
+            this.activeDownloadActive = false;
+            this.activeDownloadPercent = null;
           }
         };
 
@@ -611,5 +631,46 @@ export class RelatedBooksModalComponent implements OnDestroy {
 
   private delay(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  /** Polls a background "send to library" job until it reaches a terminal
+   *  state, updating activeDownloadPercent/activeDownloadActive as it goes so
+   *  the template can render a live progress bar. */
+  private async pollDownloadJob(jobId: string): Promise<DownloadProgressResponse> {
+    this.activeDownloadActive = true;
+    this.activeDownloadPercent = null;
+
+    const lostJob = (message: string): DownloadProgressResponse => ({
+      jobId, status: 'error', bytesDownloaded: 0, totalBytes: null, percent: null, fileName: null, message
+    });
+
+    let consecutiveFailures = 0;
+    const maxConsecutiveFailures = 5;
+
+    while (true) {
+      try {
+        const status = await firstValueFrom(this.annaApi.getDownloadProgress(jobId));
+        consecutiveFailures = 0;
+        this.activeDownloadPercent = status.percent;
+
+        if (status.status === 'complete' || status.status === 'error') {
+          return status;
+        }
+      } catch (err) {
+        // A 404 means the job is genuinely gone (pruned, or the server restarted
+        // mid-download) — retrying forever would just recreate the "stuck
+        // indefinitely" bug this polling loop exists to fix. Anything else is
+        // assumed transient (a dropped request) and gets a few retries.
+        if (err instanceof HttpErrorResponse && err.status === 404) {
+          return lostJob('Download job no longer exists — it may have been interrupted by a server restart.');
+        }
+        consecutiveFailures++;
+        if (consecutiveFailures >= maxConsecutiveFailures) {
+          return lostJob('Lost connection while checking download progress.');
+        }
+      }
+
+      await this.delay(DOWNLOAD_JOB_POLL_MS);
+    }
   }
 }

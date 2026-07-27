@@ -61,7 +61,7 @@
       </div>
     </div>
   </div>
-  <div class="card-actions">
+  <div class="card-actions" *ngIf="!isPdf">
     <button
       mat-raised-button
       color="primary"
@@ -91,6 +91,16 @@
           <span class="kindle-btn-compact"><mat-icon>send</mat-icon>M</span>
         </ng-container>
       </ng-container>
+    </button>
+  </div>
+  <div class="card-actions-full" *ngIf="isPdf">
+    <button
+      mat-raised-button
+      color="primary"
+      (click)="onReadClick()"
+      [disabled]="!book.fileName">
+      <mat-icon>menu_book</mat-icon>
+      Read
     </button>
   </div>
   <div class="card-actions-full" *ngIf="isAdmin">

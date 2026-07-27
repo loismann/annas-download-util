@@ -2,6 +2,7 @@ using System.Text.Json.Nodes;
 using AnnasArchive.API.Helpers;
 using AnnasArchive.API.Services;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Server.Kestrel.Core.Features;
 using Serilog;
 
 namespace AnnasArchive.API.Endpoints;
@@ -592,6 +593,22 @@ public static class MediaLibraryEndpoints
     /// buffering — movie files can be several GB.</summary>
     private static async Task RelayDownloadAsync(HttpContext context, JellyfinDownloadResult result)
     {
+        // A movie/episode download is one long-lived, multi-GB write. Kestrel's
+        // DEFAULT minimum response data rate (240 bytes/sec after a 5s grace
+        // period — meant to guard against slow-loris-style attacks) stays
+        // active for the whole response by default. On a real but imperfect
+        // cellular connection, a transient stall anywhere in a multi-minute
+        // transfer (a tower handoff, a signal dip) is enough to trip it —
+        // Kestrel then aborts the connection server-side with no error
+        // surfaced to the browser, so the download just silently never
+        // appears. HLS streaming doesn't hit this: each segment is a short
+        // request that finishes well inside the grace period regardless of
+        // connection quality. Disabling the floor here (not globally in
+        // Program.cs) keeps the protection for every other endpoint.
+        var minRateFeature = context.Features.Get<IHttpMinResponseDataRateFeature>();
+        if (minRateFeature is not null)
+            minRateFeature.MinDataRate = null;
+
         context.Response.ContentType = result.ContentType;
         if (result.ContentLength is not null)
             context.Response.ContentLength = result.ContentLength;

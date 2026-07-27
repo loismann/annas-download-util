@@ -184,6 +184,24 @@
   }
 }
 
+.download-progress {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.4rem;
+
+  mat-progress-bar {
+    flex: 1;
+  }
+
+  .download-progress-label {
+    font-size: 0.75rem;
+    color: #555;
+    min-width: 2.5rem;
+    text-align: right;
+  }
+}
+
 .loading-state {
   display: flex;
   flex-direction: column;

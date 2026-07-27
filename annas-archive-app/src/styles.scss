@@ -198,6 +198,22 @@ button {
   background: rgba(0, 0, 0, 0.85) !important;
 }
 
+/* PDF Viewer Dialog - fullscreen-like dark backdrop */
+.pdf-viewer-dialog-panel {
+  overflow: hidden !important;
+  max-width: 95vw !important;
+}
+
+.pdf-viewer-dialog-panel .mat-mdc-dialog-container {
+  padding: 0 !important;
+  background: transparent !important;
+}
+
+.pdf-viewer-dialog-panel .mdc-dialog__surface {
+  border-radius: 8px !important;
+  background: #262a2d !important;
+}
+
 /* Video Edit Dialog */
 .video-edit-dialog-panel {
   overflow: hidden !important;

@@ -32,6 +32,7 @@ import { BookDto } from '../models/book-dto.model';
 import { BookGroup } from '../models/book-group.model';
 import { BookSummaryModalComponent } from '../components/book-summary-modal/book-summary-modal.component';
 import { SlumHealthEntry, MirrorHealthEntry, SlumHealthResponse, MirrorHealthResponse } from '../models/health-check.model';
+import { DISPLAYABLE_BOOK_FORMATS } from '../constants/book-formats';
 import {
   AUTO_COVER_FETCH_LIMIT,
   AUTO_DESCRIPTION_FETCH_LIMIT,
@@ -122,6 +123,17 @@ export class BookSearchComponent implements OnInit, OnDestroy {
   private destroy$ = new Subject<void>();
   private latestAuthorQuery = '';
   private coverLookupsInFlight = new Set<string>();
+  /** Staggers cover lookups triggered by broken images (onCoverError) —
+   *  without this, the grid view can have a dozen-plus cards' images fail
+   *  within the same animation frame (many more cards visible at once than
+   *  the old one-per-row list), each firing its own fallback lookup
+   *  immediately. That burst of simultaneous requests to Anna's
+   *  Archive/OpenLibrary/Google Books is what was making search feel like
+   *  it hung — later requests queue up behind earlier ones and each one
+   *  individually gets slower as the pile grows. Same COVER_LOOKUP_STAGGER_MS
+   *  spacing the (currently disabled) auto-fetch path already used. */
+  private coverLookupQueue: BookDto[] = [];
+  private coverLookupQueuePumping = false;
 
   constructor(
     private aiApi: AiApiService,
@@ -294,12 +306,9 @@ export class BookSearchComponent implements OnInit, OnDestroy {
 
   /* ───────── helpers for template ───────── */
   get availableFormats(): string[] {
-    // Return static list of common formats so users can filter before searching
-    return ['EPUB', 'MOBI', 'PDF', 'AZW3', 'FB2', 'TXT'];
-  }
-
-  onFormatChange(format: string): void {
-    this.selectedFormat = format;
+    // Only the formats every household device can actually open — matches
+    // what the result cards' format badges show (see DISPLAYABLE_BOOK_FORMATS).
+    return [...DISPLAYABLE_BOOK_FORMATS];
   }
 
   get filteredBooks(): BookDto[] {
@@ -347,11 +356,21 @@ export class BookSearchComponent implements OnInit, OnDestroy {
 
   /** Which book within a (possibly filtered) group is currently shown on its
    *  card / acted on by the send-to buttons — the user's explicit pick if
-   *  they made one and it's still in the filtered set, otherwise the first. */
+   *  they made one and it's still in the filtered set; failing that, the
+   *  first book in DISPLAYABLE_BOOK_FORMATS order (EPUB over PDF over MOBI)
+   *  so a card never defaults to showing some other format (AZW3, say) when
+   *  a standard one is sitting right there in the same group; failing even
+   *  that (no standard-format copy exists at all), just the first book. */
   activeBookFor(group: BookGroup): BookDto {
     const selectedMd5 = this.groupSelection.get(group.key);
     const selected = selectedMd5 ? group.books.find(b => b.md5 === selectedMd5) : undefined;
-    return selected ?? group.books[0];
+    if (selected) return selected;
+
+    for (const format of DISPLAYABLE_BOOK_FORMATS) {
+      const preferred = group.books.find(b => b.format === format);
+      if (preferred) return preferred;
+    }
+    return group.books[0];
   }
 
   selectVariant(group: BookGroup, book: BookDto): void {
@@ -768,15 +787,34 @@ export class BookSearchComponent implements OnInit, OnDestroy {
         // no more external covers → fall back
         book.coverCandidates = [];
         img.src = this.placeholderUrl;
-        this.lookupCoverForBook(book);
+        this.enqueueCoverLookup(book);
       }
     }
 
   private queueCoverLookups(): void {
     const missing = this.books.filter(b => this.needsExternalCoverLookup(b));
-    missing.slice(0, AUTO_COVER_FETCH_LIMIT).forEach((book, index) => {
-      setTimeout(() => this.lookupCoverForBook(book), index * COVER_LOOKUP_STAGGER_MS);
-    });
+    missing.slice(0, AUTO_COVER_FETCH_LIMIT).forEach(book => this.enqueueCoverLookup(book));
+  }
+
+  /** Adds a book to the staggered cover-lookup queue rather than firing the
+   *  lookup immediately — see coverLookupQueue's doc comment for why. */
+  private enqueueCoverLookup(book: BookDto): void {
+    if (this.coverLookupQueue.includes(book) || this.coverLookupsInFlight.has(book.md5)) return;
+    this.coverLookupQueue.push(book);
+    this.pumpCoverLookupQueue();
+  }
+
+  private pumpCoverLookupQueue(): void {
+    if (this.coverLookupQueuePumping) return;
+    const next = this.coverLookupQueue.shift();
+    if (!next) return;
+
+    this.coverLookupQueuePumping = true;
+    this.lookupCoverForBook(next);
+    setTimeout(() => {
+      this.coverLookupQueuePumping = false;
+      this.pumpCoverLookupQueue();
+    }, COVER_LOOKUP_STAGGER_MS);
   }
 
   private lookupCoverForBook(book: BookDto): void {

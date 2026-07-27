@@ -9,19 +9,6 @@
   justify-content: center;
 }
 
-/* Format filter — upper-right corner of the results area, only rendered
-   once there are results to filter (see *ngIf in the template). */
-.results-toolbar {
-  display: flex;
-  justify-content: flex-end;
-  margin-bottom: 0.5rem;
-}
-
-.results-toolbar .format-filter {
-  width: 160px;
-  margin-bottom: -1.25em;
-}
-
 @media (max-width: 640px) {
   .book-search-page {
     padding: 12px;

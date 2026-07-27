@@ -1,4 +1,9 @@
 .download-counter {
+  /* Without this, width:100% + padding puts this box's content 100% wide
+     PLUS the padding on top — wider than its siblings (health status row,
+     Find Related Books button), which get border-box for free from the
+     browser's default form-control styling. A plain div doesn't. */
+  box-sizing: border-box;
   margin: 0 auto;
   padding: 0.75rem 1rem;
   border-radius: 4px;

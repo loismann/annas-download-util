@@ -1,57 +1,46 @@
 <div class="search-form">
   <form (ngSubmit)="onSubmit()">
-    <!-- Row 1: book name + Search, same shape as the movie/TV search bar -->
-    <div class="search-bar">
-      <mat-form-field
-        appearance="outline"
-        class="search-field ai-search-field"
-        [floatLabel]="aiSearchExpanded ? 'always' : 'auto'"
-      >
-        <mat-label>Book name</mat-label>
-        <ng-container *ngIf="!aiSearchExpanded; else aiSearchInput">
-          <input
-            matInput
-            [(ngModel)]="searchTerm"
-            (ngModelChange)="onSearchTermChange($event)"
-            name="searchTerm"
-            required
-          />
-        </ng-container>
-        <ng-template #aiSearchInput>
-          <textarea
-            matInput
-            [(ngModel)]="aiSearchQuery"
-            name="aiSearchQuery"
-            rows="4"
-            placeholder="Ask for books, e.g., top-rated Hugo winners from the 1980s"
-          ></textarea>
-        </ng-template>
-        <button
-          mat-icon-button
-          matSuffix
-          type="button"
-          class="ai-toggle"
-          (click)="toggleAiSearch()"
-          [attr.aria-label]="aiSearchExpanded ? 'Close AI search' : 'Open AI search'"
-        >
-          <mat-icon>{{ aiSearchExpanded ? 'close' : 'smart_toy' }}</mat-icon>
-        </button>
-      </mat-form-field>
-
+    <!-- Book name -->
+    <mat-form-field
+      appearance="outline"
+      class="search-field ai-search-field"
+      [floatLabel]="aiSearchExpanded ? 'always' : 'auto'"
+    >
+      <mat-label>Book name</mat-label>
+      <ng-container *ngIf="!aiSearchExpanded; else aiSearchInput">
+        <input
+          matInput
+          [(ngModel)]="searchTerm"
+          (ngModelChange)="onSearchTermChange($event)"
+          name="searchTerm"
+          required
+        />
+      </ng-container>
+      <ng-template #aiSearchInput>
+        <textarea
+          matInput
+          [(ngModel)]="aiSearchQuery"
+          name="aiSearchQuery"
+          rows="4"
+          placeholder="Ask for books, e.g., top-rated Hugo winners from the 1980s"
+        ></textarea>
+      </ng-template>
       <button
-        mat-raised-button
-        color="primary"
-        type="submit"
-        class="search-button"
-        [disabled]="loading"
+        mat-icon-button
+        matSuffix
+        type="button"
+        class="ai-toggle"
+        (click)="toggleAiSearch()"
+        [attr.aria-label]="aiSearchExpanded ? 'Close AI search' : 'Open AI search'"
       >
-        {{ aiSearchExpanded ? 'Ask AI' : 'Search' }}
+        <mat-icon>{{ aiSearchExpanded ? 'close' : 'smart_toy' }}</mat-icon>
       </button>
-    </div>
+    </mat-form-field>
 
-    <!-- Row 2: Author — always visible, not tucked behind "More options",
-         since narrowing to a known author materially improves match quality
-         rather than being a cosmetic filter. -->
+    <!-- Author — always visible, not tucked behind "More options", since
+         narrowing to a known author materially improves match quality
+         rather than being a cosmetic filter. Same width as the book name
+         field above it. -->
     <mat-form-field appearance="outline" class="author-dropdown">
       <mat-label>Author</mat-label>
       <mat-select
@@ -72,6 +61,16 @@
         style="margin-right: 8px;"
       ></mat-spinner>
     </mat-form-field>
+
+    <button
+      mat-raised-button
+      color="primary"
+      type="submit"
+      class="search-button"
+      [disabled]="loading"
+    >
+      {{ aiSearchExpanded ? 'Ask AI' : 'Search' }}
+    </button>
 
     <!-- Everything else collapses behind this, matching the movie/TV page's
          minimal look — health status, format, source, VPN, Related Books. -->

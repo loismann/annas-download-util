@@ -37,6 +37,11 @@
                 "output": "/assets"
               },
               {
+                "glob": "**/*",
+                "input": "node_modules/ngx-extended-pdf-viewer/assets",
+                "output": "/assets/"
+              },
+              {
                 "glob": ".htaccess",
                 "input": "src",
                 "output": "/"

@@ -1,0 +1,34 @@
+<div class="pdf-viewer-container" #pdfContainer [class.fullscreen]="isFullscreen">
+  <div class="pdf-header">
+    <h2 class="pdf-title">{{ data.title }}</h2>
+    <div class="header-actions">
+      <button mat-icon-button (click)="toggleFullscreen()" [attr.aria-label]="isFullscreen ? 'Exit fullscreen' : 'Fullscreen'">
+        <mat-icon>{{ isFullscreen ? 'fullscreen_exit' : 'fullscreen' }}</mat-icon>
+      </button>
+      <button mat-icon-button (click)="onClose()" aria-label="Close">
+        <mat-icon>close</mat-icon>
+      </button>
+    </div>
+  </div>
+
+  <div class="pdf-wrapper">
+    <div *ngIf="isLoading" class="loading-overlay">
+      <mat-spinner diameter="48"></mat-spinner>
+      <span>Loading PDF...</span>
+    </div>
+
+    <div *ngIf="hasError" class="error-overlay">
+      <mat-icon class="error-icon">error_outline</mat-icon>
+      <span>Failed to load this PDF.</span>
+    </div>
+
+    <ngx-extended-pdf-viewer
+      *ngIf="pdfSrc"
+      [src]="pdfSrc"
+      [page]="currentPage"
+      (pageChange)="onPageChange($event)"
+      height="100%"
+      backgroundColor="#525659"
+    ></ngx-extended-pdf-viewer>
+  </div>
+</div>

@@ -61,6 +61,7 @@ export class BookCardComponent implements AfterViewInit, OnChanges, OnDestroy {
   @Output() favoriteToggle = new EventEmitter<LibraryBook>();
   @Output() sendToKindle = new EventEmitter<{ book: LibraryBook; target: 'dad' | 'mom' }>();
   @Output() sendToDropbox = new EventEmitter<LibraryBook>();
+  @Output() readBook = new EventEmitter<LibraryBook>();
   @Output() selectionToggle = new EventEmitter<LibraryBook>();
   @Output() coverError = new EventEmitter<Event>();
 
@@ -193,6 +194,10 @@ export class BookCardComponent implements AfterViewInit, OnChanges, OnDestroy {
     this.ratingChange.emit({ book: this.book, rating });
   }
 
+  get isPdf(): boolean {
+    return (this.book?.format ?? '').toUpperCase() === 'PDF';
+  }
+
   get isFavorited(): boolean {
     return !!this.currentOwnerName && (this.book?.favoritedBy ?? []).includes(this.currentOwnerName);
   }
@@ -207,6 +212,10 @@ export class BookCardComponent implements AfterViewInit, OnChanges, OnDestroy {
 
   onSendToDropbox(): void {
     this.sendToDropbox.emit(this.book);
+  }
+
+  onReadClick(): void {
+    this.readBook.emit(this.book);
   }
 
   onSelectionToggle(): void {

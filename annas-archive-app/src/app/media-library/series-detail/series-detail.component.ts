@@ -160,16 +160,20 @@ export class SeriesDetailComponent implements OnInit {
     });
   }
 
-  /** Opens Jellyfin's proxied file download in a new tab — not to be confused
-   * with downloadSeason() below, which triggers a Sonarr *acquisition* (grabbing
-   * a release from an indexer). This downloads the file already on disk to the
-   * user's own device. */
+  /** Triggers Jellyfin's proxied file download of the episode already on disk
+   * — not to be confused with downloadSeason() below, which triggers a
+   * Sonarr *acquisition* (grabbing a release from an indexer). Navigates the
+   * current tab rather than window.open(..., '_blank'): the response's
+   * Content-Disposition: attachment header makes the browser divert to its
+   * download handler instead of actually replacing the page, so this never
+   * navigates the SPA away — and unlike window.open, it doesn't ask popup
+   * blockers (DuckDuckGo's browser in particular) for permission to open a
+   * new window that would've just rendered blank anyway. */
   downloadEpisode(episode: EpisodeInfo): void {
     if (!this.series?.tvdbId || !episode.hasFile) return;
 
-    window.open(
-      this.api.getEpisodeDownloadUrl(this.series.tvdbId, episode.seasonNumber, episode.episodeNumber),
-      '_blank'
+    window.location.href = this.api.getEpisodeDownloadUrl(
+      this.series.tvdbId, episode.seasonNumber, episode.episodeNumber
     );
   }
 

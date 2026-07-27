@@ -183,7 +183,7 @@ public static class AnnaDownloadEndpoints
 
     // ─── Send to Library Endpoint ──────────────────────────────────────────────
 
-    private static async Task<IResult> HandleSendToLibrary(
+    private static IResult HandleSendToLibrary(
         [FromRoute] string md5,
         [FromQuery] string? title,
         [FromQuery] string? coverUrl,
@@ -192,11 +192,11 @@ public static class AnnaDownloadEndpoints
         [FromQuery] string? fileSize,
         [FromQuery] string? source,
         [FromQuery] string? description,
-        AnnaArchiveService anna,
         IValidationService validation,
-        IEbookCoverService coverService,
         IDownloadTrackingService downloadTracking,
         IConfiguration cfg,
+        Services.IBookDownloadJobService jobs,
+        IServiceScopeFactory scopeFactory,
         HttpContext context)
     {
         // Use shared extended validation helper for all parameters
@@ -208,75 +208,87 @@ public static class AnnaDownloadEndpoints
         var memberKey = cfg["Anna:MemberKey"]
             ?? throw new InvalidOperationException("Missing Anna:MemberKey.");
 
-        // Get user name from auth context
+        // Get user name from auth context — resolved here (synchronously, while
+        // the request's HttpContext is still valid) rather than inside the
+        // detached background task below, since HttpContext isn't safe to touch
+        // once this handler returns and the context is recycled for the next request.
         var userName = context.User?.FindFirst(ClaimTypes.Email)?.Value
             ?? context.User?.FindFirst(ClaimTypes.Name)?.Value
             ?? "unknown";
         var userTag = LibraryHelpers.ResolveUserLibraryTag(context);
 
-        // Use shared helper to download book from Anna's Archive
-        var (resp, fileName, acctInfo, errorMessage) = await AnnaDownloadHelpers.DownloadBookFromAnnaArchiveAsync(md5, title, anna, memberKey);
+        var job = jobs.Start(title ?? md5);
 
-        if (errorMessage != null)
+        // Fire-and-forget: large books can take several minutes to download, far
+        // longer than it's reasonable to hold the client's HTTP connection open
+        // for. Runs in its own DI scope (AnnaArchiveService is request-scoped —
+        // this request's scope is disposed the moment we return the jobId below)
+        // and is intentionally not awaited; the frontend polls job status instead.
+        _ = Task.Run(async () =>
         {
-            var (downloadsLeft, downloadsPerDay) = downloadTracking.GetDownloadStatus();
-            var trackingInfo = new AccountFastDownloadInfoDto(downloadsLeft, downloadsPerDay);
-            return Results.Ok(new { success = false, message = errorMessage, accountFastInfo = trackingInfo });
-        }
+            using var scope = scopeFactory.CreateScope();
+            var anna = scope.ServiceProvider.GetRequiredService<AnnaArchiveService>();
+            var coverService = scope.ServiceProvider.GetRequiredService<IEbookCoverService>();
 
-        if (resp == null || fileName == null)
-        {
-            var (downloadsLeft, downloadsPerDay) = downloadTracking.GetDownloadStatus();
-            var trackingInfo = new AccountFastDownloadInfoDto(downloadsLeft, downloadsPerDay);
-            return Results.Ok(new { success = false, message = "Failed to download book.", accountFastInfo = trackingInfo });
-        }
-
-        // Record successful download in our tracking system
-        downloadTracking.RecordDownload(md5, userName);
-        Log.Information("[library-anna] Recorded download for user {UserName}, MD5: {Md5}", userName, md5);
-
-        // Get updated download status
-        var (currentDownloadsLeft, currentDownloadsPerDay) = downloadTracking.GetDownloadStatus();
-        var currentTrackingInfo = new AccountFastDownloadInfoDto(currentDownloadsLeft, currentDownloadsPerDay);
-
-        var libraryRoot = LibraryHelpers.ResolveLibraryRoot();
-        Directory.CreateDirectory(libraryRoot);
-
-        using (resp)
-        {
-            Stream ebookStream = await resp.Content.ReadAsStreamAsync();
-
-            // Attempt cover replacement using shared helper
-            ebookStream = await SendToTargetHelpers.TryReplaceCoverAsync(
-                ebookStream, coverUrl, fileName, coverService, "library-anna");
-
-            var destinationPath = Path.Combine(libraryRoot, fileName);
-            if (File.Exists(destinationPath))
+            try
             {
-                return Results.Ok(new
+                var (resp, fileName, _, errorMessage) =
+                    await AnnaDownloadHelpers.DownloadBookFromAnnaArchiveAsync(md5, title, anna, memberKey);
+
+                if (errorMessage != null || resp == null || fileName == null)
                 {
-                    success = true,
-                    message = "File already exists in library.",
-                    fileName,
-                    path = destinationPath,
-                    accountFastInfo = currentTrackingInfo
-                });
+                    jobs.Fail(job.JobId, errorMessage ?? "Failed to download book.");
+                    return;
+                }
+
+                downloadTracking.RecordDownload(md5, userName);
+                Log.Information("[library-anna] Recorded download for user {UserName}, MD5: {Md5}", userName, md5);
+
+                var libraryRoot = LibraryHelpers.ResolveLibraryRoot();
+                Directory.CreateDirectory(libraryRoot);
+
+                using (resp)
+                {
+                    Stream ebookStream = await resp.Content.ReadAsStreamAsync();
+
+                    ebookStream = await SendToTargetHelpers.TryReplaceCoverAsync(
+                        ebookStream, coverUrl, fileName, coverService, "library-anna");
+
+                    var destinationPath = Path.Combine(libraryRoot, fileName);
+                    if (File.Exists(destinationPath))
+                    {
+                        jobs.Complete(job.JobId, fileName, "File already exists in library.");
+                        return;
+                    }
+
+                    await LibraryDownloadHelpers.CopyToLibraryAtomicallyAsync(
+                        ebookStream,
+                        destinationPath,
+                        resp.Content.Headers.ContentLength,
+                        (bytesDownloaded, totalBytes) => jobs.UpdateProgress(job.JobId, bytesDownloaded, totalBytes));
+
+                    await LibraryHelpers.WriteLibraryMetadataAsync(libraryRoot, fileName, md5, title, authors, format, fileSize, coverUrl, source, userTag, description);
+
+                    jobs.Complete(job.JobId, fileName, "Saved to library.");
+                }
             }
-
-            await using var outStream = File.Create(destinationPath);
-            await ebookStream.CopyToAsync(outStream);
-
-            await LibraryHelpers.WriteLibraryMetadataAsync(libraryRoot, fileName, md5, title, authors, format, fileSize, coverUrl, source, userTag, description);
-
-            return Results.Ok(new
+            catch (Exception ex)
             {
-                success = true,
-                message = "Saved to library.",
-                fileName,
-                path = destinationPath,
-                accountFastInfo = currentTrackingInfo
-            });
-        }
+                Log.Warning(ex, "[library-anna] Background download failed for MD5 {Md5}", md5);
+                jobs.Fail(job.JobId, "Download failed: " + ex.Message);
+            }
+        });
+
+        var (downloadsLeft, downloadsPerDay) = downloadTracking.GetDownloadStatus();
+        var trackingInfo = new AccountFastDownloadInfoDto(downloadsLeft, downloadsPerDay);
+
+        return Results.Ok(new
+        {
+            success = true,
+            jobId = job.JobId,
+            message = "Download started.",
+            accountFastInfo = trackingInfo
+        });
     }
 
     // ─── Send to Boox Endpoint ─────────────────────────────────────────────────

@@ -279,6 +279,13 @@
         </div>
         <div *ngIf="sendLog.length > 0" class="send-log">
           <p *ngFor="let line of sendLog">{{ line }}</p>
+          <div *ngIf="activeDownloadActive" class="download-progress">
+            <mat-progress-bar
+              [mode]="activeDownloadPercent !== null ? 'determinate' : 'indeterminate'"
+              [value]="activeDownloadPercent ?? 0"
+            ></mat-progress-bar>
+            <span *ngIf="activeDownloadPercent !== null" class="download-progress-label">{{ activeDownloadPercent }}%</span>
+          </div>
         </div>
       </div>
     </div>

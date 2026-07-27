@@ -16,6 +16,14 @@ public record SetMediaMetadataRequest(List<string>? Owners, List<string>? Genres
 /// authenticated session, never taken from the client.</summary>
 public record SetMediaFavoriteRequest(bool Favorited);
 
+/// <summary>Body for POST .../movies/progress — tmdbId (not Radarr's own movieId) to match
+/// the id space watch/download/stream already use for this same item.</summary>
+public record SaveMovieProgressRequest(int TmdbId, double PositionSeconds);
+
+/// <summary>Body for POST .../tv/progress — episode identity has no single route-friendly
+/// id the way a movie does, so it rides in the body alongside the position.</summary>
+public record SaveTvProgressRequest(int TvdbId, int Season, int Episode, double PositionSeconds);
+
 /// <summary>
 /// "What's actually downloaded, and how do I watch it" endpoints — distinct
 /// from MediaRequestEndpoints (search/add) and from the unrelated, older
@@ -40,6 +48,27 @@ public static class MediaLibraryEndpoints
             .RequireAuthorization()
             .RequireRateLimiting("api");
 
+        // Native <video> stream for household members with personal Jellyfin
+        // credentials configured (see JellyfinService.HasPersonalCredentials) —
+        // only reachable after HandleWatchTv/HandleWatchMovie returns mode:"native"
+        // for that person. Auth via ?access_token=, same reasoning as the
+        // download routes below (a <video src> can't carry an Authorization header).
+        app.MapGet("/api/media/tv/stream", HandleStreamTv)
+            .RequireAuthorization()
+            .RequireRateLimiting("media");
+
+        app.MapPost("/api/media/tv/progress", HandleSaveTvProgress)
+            .RequireAuthorization()
+            .RequireRateLimiting("api");
+
+        // Converts one embedded subtitle stream to WebVTT for a <track> element —
+        // a browser can't parse embedded SRT/ASS/PGS out of a container itself.
+        // Auth via ?access_token=, same reasoning as the stream routes (a <track
+        // src> is a plain browser-issued GET, no custom headers possible).
+        app.MapGet("/api/media/tv/subtitles", HandleTvSubtitles)
+            .RequireAuthorization()
+            .RequireRateLimiting("media");
+
         // Proxies the actual file down from Jellyfin (see JellyfinService.DownloadEpisodeAsync).
         // Rate-limited under "media" (large-file proxy), same convention as audiobook
         // stream/cover. Auth arrives via ?access_token= — see the OnMessageReceived
@@ -56,6 +85,18 @@ public static class MediaLibraryEndpoints
         app.MapGet("/api/media/movies/watch", HandleWatchMovie)
             .RequireAuthorization()
             .RequireRateLimiting("api");
+
+        app.MapGet("/api/media/movies/stream", HandleStreamMovie)
+            .RequireAuthorization()
+            .RequireRateLimiting("media");
+
+        app.MapPost("/api/media/movies/progress", HandleSaveMovieProgress)
+            .RequireAuthorization()
+            .RequireRateLimiting("api");
+
+        app.MapGet("/api/media/movies/subtitles", HandleMovieSubtitles)
+            .RequireAuthorization()
+            .RequireRateLimiting("media");
 
         app.MapGet("/api/media/movies/download", HandleDownloadMovie)
             .RequireAuthorization()
@@ -140,20 +181,95 @@ public static class MediaLibraryEndpoints
     }
 
     private static async Task<IResult> HandleWatchTv(
-        [FromQuery] int tvdbId, [FromQuery] int season, [FromQuery] int episode, IJellyfinService jellyfin)
+        HttpContext context, [FromQuery] int tvdbId, [FromQuery] int season, [FromQuery] int episode, IJellyfinService jellyfin)
     {
+        var owner = LibraryHelpers.ResolveUserDisplayName(context);
         try
         {
+            if (owner is not null && jellyfin.HasPersonalCredentials(owner))
+            {
+                var state = await jellyfin.GetEpisodePlaybackStateAsync(owner, tvdbId, season, episode);
+                return state is null
+                    ? Results.NotFound(new { error = "Jellyfin hasn't matched this episode yet — it may still be scanning." })
+                    : Results.Ok(new
+                    {
+                        mode = "native",
+                        itemId = state.ItemId,
+                        resumePositionSeconds = state.ResumePositionSeconds,
+                        durationSeconds = state.DurationSeconds,
+                        mediaSourceId = state.MediaSourceId,
+                        audioTracks = state.AudioTracks,
+                        subtitleTracks = state.SubtitleTracks
+                    });
+            }
+
             var embedUrl = await jellyfin.GetTvEmbedUrlAsync(tvdbId, season, episode);
             return embedUrl is null
                 ? Results.NotFound(new { error = "Jellyfin hasn't matched this episode yet — it may still be scanning." })
-                : Results.Ok(new { embedUrl });
+                : Results.Ok(new { mode = "embed", embedUrl });
         }
         catch (HttpRequestException ex)
         {
             Log.Warning("[MediaLibrary] Jellyfin lookup failed: {Message}", ex.Message);
             return Results.Json(new { error = "Jellyfin is unavailable" }, statusCode: StatusCodes.Status503ServiceUnavailable);
         }
+    }
+
+    private static async Task HandleStreamTv(
+        HttpContext context, [FromQuery] int tvdbId, [FromQuery] int season, [FromQuery] int episode, IJellyfinService jellyfin)
+    {
+        var owner = LibraryHelpers.ResolveUserDisplayName(context);
+        if (owner is null)
+        {
+            context.Response.StatusCode = 400;
+            return;
+        }
+
+        try
+        {
+            var rangeHeader = context.Request.Headers.Range.FirstOrDefault();
+            var result = await jellyfin.StreamEpisodeAsync(owner, tvdbId, season, episode, rangeHeader, context.RequestAborted);
+            if (result is null)
+            {
+                context.Response.StatusCode = 404;
+                return;
+            }
+            await RelayStreamAsync(context, result);
+        }
+        catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
+        {
+            // Player paused/seeked/closed mid-stream — the browser aborts the
+            // in-flight range request every time. Routine, not an error.
+        }
+        catch (HttpRequestException ex)
+        {
+            Log.Warning("[MediaLibrary] Jellyfin episode stream failed: {Message}", ex.Message);
+            if (!context.Response.HasStarted)
+                context.Response.StatusCode = 502;
+        }
+    }
+
+    private static async Task<IResult> HandleSaveTvProgress(
+        [FromBody] SaveTvProgressRequest request, HttpContext context, IJellyfinService jellyfin)
+    {
+        var owner = LibraryHelpers.ResolveUserDisplayName(context);
+        if (owner is null)
+            return Results.BadRequest(new { error = "Could not resolve the logged-in user." });
+
+        var saved = await jellyfin.SaveEpisodePositionAsync(owner, request.TvdbId, request.Season, request.Episode, request.PositionSeconds);
+        return saved ? Results.NoContent() : Results.NotFound();
+    }
+
+    private static async Task<IResult> HandleTvSubtitles(
+        HttpContext context, [FromQuery] int tvdbId, [FromQuery] int season, [FromQuery] int episode,
+        [FromQuery] string mediaSourceId, [FromQuery] int subtitleIndex, IJellyfinService jellyfin)
+    {
+        var owner = LibraryHelpers.ResolveUserDisplayName(context);
+        if (owner is null)
+            return Results.BadRequest(new { error = "Could not resolve the logged-in user." });
+
+        var vtt = await jellyfin.GetEpisodeSubtitleVttAsync(owner, tvdbId, season, episode, mediaSourceId, subtitleIndex);
+        return vtt is null ? Results.NotFound() : Results.Text(vtt, "text/vtt");
     }
 
     private static async Task HandleDownloadTv(
@@ -196,19 +312,111 @@ public static class MediaLibraryEndpoints
         }
     }
 
-    private static async Task<IResult> HandleWatchMovie([FromQuery] int tmdbId, IJellyfinService jellyfin)
+    private static async Task<IResult> HandleWatchMovie(HttpContext context, [FromQuery] int tmdbId, IJellyfinService jellyfin)
     {
+        var owner = LibraryHelpers.ResolveUserDisplayName(context);
         try
         {
+            if (owner is not null && jellyfin.HasPersonalCredentials(owner))
+            {
+                var state = await jellyfin.GetMoviePlaybackStateAsync(owner, tmdbId);
+                return state is null
+                    ? Results.NotFound(new { error = "Jellyfin hasn't matched this movie yet — it may still be scanning." })
+                    : Results.Ok(new
+                    {
+                        mode = "native",
+                        itemId = state.ItemId,
+                        resumePositionSeconds = state.ResumePositionSeconds,
+                        durationSeconds = state.DurationSeconds,
+                        mediaSourceId = state.MediaSourceId,
+                        audioTracks = state.AudioTracks,
+                        subtitleTracks = state.SubtitleTracks
+                    });
+            }
+
             var embedUrl = await jellyfin.GetMovieEmbedUrlAsync(tmdbId);
             return embedUrl is null
                 ? Results.NotFound(new { error = "Jellyfin hasn't matched this movie yet — it may still be scanning." })
-                : Results.Ok(new { embedUrl });
+                : Results.Ok(new { mode = "embed", embedUrl });
         }
         catch (HttpRequestException ex)
         {
             Log.Warning("[MediaLibrary] Jellyfin lookup failed: {Message}", ex.Message);
             return Results.Json(new { error = "Jellyfin is unavailable" }, statusCode: StatusCodes.Status503ServiceUnavailable);
+        }
+    }
+
+    private static async Task HandleStreamMovie(HttpContext context, [FromQuery] int tmdbId, IJellyfinService jellyfin)
+    {
+        var owner = LibraryHelpers.ResolveUserDisplayName(context);
+        if (owner is null)
+        {
+            context.Response.StatusCode = 400;
+            return;
+        }
+
+        try
+        {
+            var rangeHeader = context.Request.Headers.Range.FirstOrDefault();
+            var result = await jellyfin.StreamMovieAsync(owner, tmdbId, rangeHeader, context.RequestAborted);
+            if (result is null)
+            {
+                context.Response.StatusCode = 404;
+                return;
+            }
+            await RelayStreamAsync(context, result);
+        }
+        catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
+        {
+            // Player paused/seeked/closed mid-stream — the browser aborts the
+            // in-flight range request every time. Routine, not an error.
+        }
+        catch (HttpRequestException ex)
+        {
+            Log.Warning("[MediaLibrary] Jellyfin movie stream failed: {Message}", ex.Message);
+            if (!context.Response.HasStarted)
+                context.Response.StatusCode = 502;
+        }
+    }
+
+    private static async Task<IResult> HandleSaveMovieProgress(
+        [FromBody] SaveMovieProgressRequest request, HttpContext context, IJellyfinService jellyfin)
+    {
+        var owner = LibraryHelpers.ResolveUserDisplayName(context);
+        if (owner is null)
+            return Results.BadRequest(new { error = "Could not resolve the logged-in user." });
+
+        var saved = await jellyfin.SaveMoviePositionAsync(owner, request.TmdbId, request.PositionSeconds);
+        return saved ? Results.NoContent() : Results.NotFound();
+    }
+
+    private static async Task<IResult> HandleMovieSubtitles(
+        HttpContext context, [FromQuery] int tmdbId, [FromQuery] string mediaSourceId, [FromQuery] int subtitleIndex, IJellyfinService jellyfin)
+    {
+        var owner = LibraryHelpers.ResolveUserDisplayName(context);
+        if (owner is null)
+            return Results.BadRequest(new { error = "Could not resolve the logged-in user." });
+
+        var vtt = await jellyfin.GetMovieSubtitleVttAsync(owner, tmdbId, mediaSourceId, subtitleIndex);
+        return vtt is null ? Results.NotFound() : Results.Text(vtt, "text/vtt");
+    }
+
+    /// <summary>Relays a proxied per-user Jellyfin stream response (status, Content-Type,
+    /// Content-Range/Content-Length when present, and body) straight through to the
+    /// browser — same partial-content contract as the audiobook stream proxy.</summary>
+    private static async Task RelayStreamAsync(HttpContext context, JellyfinStreamResult result)
+    {
+        context.Response.StatusCode = result.StatusCode;
+        context.Response.ContentType = result.ContentType;
+        context.Response.Headers.AcceptRanges = "bytes";
+        if (result.ContentRange is not null)
+            context.Response.Headers.ContentRange = result.ContentRange;
+        if (result.ContentLength is not null)
+            context.Response.ContentLength = result.ContentLength;
+
+        await using (result.Body)
+        {
+            await result.Body.CopyToAsync(context.Response.Body, context.RequestAborted);
         }
     }
 

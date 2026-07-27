@@ -106,8 +106,13 @@ public static class ServiceConfiguration
                     var isMediaDownload =
                         path.Equals("/api/media/movies/download", StringComparison.OrdinalIgnoreCase) ||
                         path.Equals("/api/media/tv/download", StringComparison.OrdinalIgnoreCase);
+                    var isMediaStream =
+                        path.Equals("/api/media/movies/stream", StringComparison.OrdinalIgnoreCase) ||
+                        path.Equals("/api/media/tv/stream", StringComparison.OrdinalIgnoreCase) ||
+                        path.Equals("/api/media/movies/subtitles", StringComparison.OrdinalIgnoreCase) ||
+                        path.Equals("/api/media/tv/subtitles", StringComparison.OrdinalIgnoreCase);
 
-                    if (isAudiobookStreamOrCover || isMediaDownload)
+                    if (isAudiobookStreamOrCover || isMediaDownload || isMediaStream)
                     {
                         var token = context.Request.Query["access_token"];
                         if (!string.IsNullOrEmpty(token))
@@ -364,6 +369,21 @@ public static class ServiceConfiguration
         {
             c.Timeout = HttpTimeouts.MediaStreamingTimeout;
         }).AddMediaProxyResilience("Jellyfin");
+
+        // Separate, unauthenticated-by-default named client for per-person Jellyfin
+        // calls (AuthenticateByName, then streaming/UserData as that specific user).
+        // Kept apart from the typed client above because that one carries the shared
+        // admin API key on every request via DefaultRequestHeaders — reusing it here
+        // would mean a personal request goes out with two conflicting X-Emby-Token
+        // headers. JellyfinService adds the right per-user token per-request instead.
+        services.AddHttpClient("JellyfinUser", (provider, c) =>
+        {
+            var cfg = provider.GetRequiredService<IConfiguration>();
+            var baseUrl = cfg["Jellyfin:BaseUrl"];
+            if (!string.IsNullOrWhiteSpace(baseUrl))
+                c.BaseAddress = new Uri(baseUrl);
+            c.Timeout = HttpTimeouts.MediaStreamingTimeout;
+        }).AddMediaProxyResilience("JellyfinUser");
 
         // Audiobookshelf — catalog/metadata calls are quick like the above,
         // but this same typed client also proxies audio file/cover streaming

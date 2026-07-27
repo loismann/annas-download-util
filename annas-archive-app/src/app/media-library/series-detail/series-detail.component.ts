@@ -118,14 +118,34 @@ export class SeriesDetailComponent implements OnInit {
   playEpisode(episode: EpisodeInfo): void {
     if (!this.series?.tvdbId || !episode.hasFile || this.resolvingEpisodeId !== null) return;
 
+    const tvdbId = this.series.tvdbId;
+    const season = episode.seasonNumber;
+    const ep = episode.episodeNumber;
+
     this.resolvingEpisodeId = episode.id;
-    this.api.watchTv(this.series.tvdbId, episode.seasonNumber, episode.episodeNumber).subscribe({
+    this.api.watchTv(tvdbId, season, ep).subscribe({
       next: (resp) => {
         this.resolvingEpisodeId = null;
         this.dialog.open<JellyfinPlayerModalComponent, JellyfinPlayerModalData>(JellyfinPlayerModalComponent, {
           width: '90vw',
           maxWidth: '1100px',
-          data: { title: `${this.series!.title} — ${episode.title || 'S' + episode.seasonNumber + 'E' + episode.episodeNumber}`, embedUrl: resp.embedUrl }
+          data: {
+            title: `${this.series!.title} — ${episode.title || 'S' + season + 'E' + ep}`,
+            mode: resp.mode,
+            embedUrl: resp.embedUrl,
+            streamUrl: resp.mode === 'native' ? this.api.getEpisodeStreamUrl(tvdbId, season, ep) : undefined,
+            resumePositionSeconds: resp.resumePositionSeconds,
+            audioTracks: resp.audioTracks,
+            subtitleTracks: resp.subtitleTracks,
+            subtitleUrlFor: resp.mode === 'native' && resp.mediaSourceId
+              ? (subtitleIndex) => this.api.getEpisodeSubtitleUrl(tvdbId, season, ep, resp.mediaSourceId!, subtitleIndex)
+              : undefined,
+            saveProgress: resp.mode === 'native'
+              ? (positionSeconds) => this.api.saveTvProgress(tvdbId, season, ep, positionSeconds).subscribe({
+                  error: (err) => this.logger.error('[SeriesDetailComponent] saveTvProgress failed', err)
+                })
+              : undefined
+          }
         });
       },
       error: (err) => {

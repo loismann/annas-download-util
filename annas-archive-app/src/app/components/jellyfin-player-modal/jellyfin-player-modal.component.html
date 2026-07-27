@@ -2,12 +2,48 @@
 
 <mat-dialog-content class="player-content">
   <iframe
+    *ngIf="data.mode === 'embed'"
     [src]="safeEmbedUrl"
     class="player-frame"
     allow="autoplay; fullscreen"
     allowfullscreen
   ></iframe>
+  <video
+    *ngIf="data.mode === 'native'"
+    #videoEl
+    class="player-frame"
+    [src]="data.streamUrl"
+    controls
+    autoplay
+    (pause)="onPause()"
+    (loadedmetadata)="onLoadedMetadata()"
+  >
+    <track
+      *ngFor="let t of data.subtitleTracks"
+      kind="subtitles"
+      [src]="subtitleUrl(t)"
+      [label]="trackLabel(t)"
+      [srclang]="t.language || 'und'"
+    />
+  </video>
 </mat-dialog-content>
+
+<div class="track-controls" *ngIf="data.mode === 'native' && (audioTrackOptions.length > 1 || (data.subtitleTracks?.length ?? 0) > 0)">
+  <mat-form-field appearance="outline" *ngIf="audioTrackOptions.length > 1" class="track-select">
+    <mat-label>Audio</mat-label>
+    <mat-select [value]="selectedAudioTrackId" (selectionChange)="selectAudioTrack($event.value)">
+      <mat-option *ngFor="let opt of audioTrackOptions" [value]="opt.id">{{ opt.label }}</mat-option>
+    </mat-select>
+  </mat-form-field>
+
+  <mat-form-field appearance="outline" *ngIf="(data.subtitleTracks?.length ?? 0) > 0" class="track-select">
+    <mat-label>Subtitles</mat-label>
+    <mat-select [value]="selectedSubtitlePos" (selectionChange)="selectSubtitle($event.value)">
+      <mat-option [value]="null">Off</mat-option>
+      <mat-option *ngFor="let t of data.subtitleTracks; let i = index" [value]="i">{{ trackLabel(t) }}</mat-option>
+    </mat-select>
+  </mat-form-field>
+</div>
 
 <mat-dialog-actions align="end">
   <button mat-button (click)="close()">Close</button>

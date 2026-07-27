@@ -19,11 +19,11 @@
           <button
             mat-icon-button
             color="primary"
-            [matTooltip]="group.allDownloaded ? 'Already downloaded' : 'Download this season'"
+            [matTooltip]="group.allDownloaded ? 'Already downloaded' : 'Grab this season'"
             [disabled]="group.allDownloaded || downloadingSeasonNumber === group.seasonNumber || requestedSeasonNumbers.has(group.seasonNumber)"
             (click)="$event.stopPropagation(); downloadSeason(group)"
           >
-            <mat-icon>{{ requestedSeasonNumbers.has(group.seasonNumber) ? 'check_circle' : 'download' }}</mat-icon>
+            <mat-icon>{{ requestedSeasonNumbers.has(group.seasonNumber) ? 'check_circle' : 'cloud_download' }}</mat-icon>
           </button>
           <button
             mat-icon-button

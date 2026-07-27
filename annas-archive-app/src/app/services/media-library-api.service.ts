@@ -14,8 +14,28 @@ export interface EpisodeInfo {
   airDate?: string;
 }
 
+/** One embedded audio or subtitle stream, as Jellyfin's ffprobe-derived
+ *  MediaStreams metadata describes it. */
+export interface MediaTrackInfo {
+  index: number;
+  language?: string;
+  title?: string;
+  isDefault?: boolean;
+}
+
+/** "embed" is the original iframe-into-Jellyfin's-own-player flow (used for anyone
+ *  without personal Jellyfin credentials configured server-side); "native" means our
+ *  own <video> player should be used, streaming through this app's stream endpoints
+ *  with resume position already resolved from Jellyfin's per-user UserData. */
 export interface WatchResponse {
-  embedUrl: string;
+  mode: 'native' | 'embed';
+  embedUrl?: string;
+  itemId?: string;
+  resumePositionSeconds?: number;
+  durationSeconds?: number;
+  mediaSourceId?: string;
+  audioTracks?: MediaTrackInfo[];
+  subtitleTracks?: MediaTrackInfo[];
 }
 
 /** One release Radarr/Sonarr's indexers found for a movie/season — raw
@@ -90,6 +110,42 @@ export class MediaLibraryApiService {
   getEpisodeDownloadUrl(tvdbId: number, season: number, episode: number): string {
     const token = this.authService.getToken() ?? '';
     return `${this.baseUrl}/tv/download?tvdbId=${tvdbId}&season=${season}&episode=${episode}&access_token=${encodeURIComponent(token)}`;
+  }
+
+  /** Same-origin stream URL for a native <video> element (WatchResponse.mode === 'native')
+   *  — same ?access_token= reasoning as getMovieDownloadUrl, since <video src> can't carry
+   *  an Authorization header either. Proxies straight from Jellyfin using this person's own
+   *  Jellyfin login, so their own library permissions apply. */
+  getMovieStreamUrl(tmdbId: number): string {
+    const token = this.authService.getToken() ?? '';
+    return `${this.baseUrl}/movies/stream?tmdbId=${tmdbId}&access_token=${encodeURIComponent(token)}`;
+  }
+
+  getEpisodeStreamUrl(tvdbId: number, season: number, episode: number): string {
+    const token = this.authService.getToken() ?? '';
+    return `${this.baseUrl}/tv/stream?tvdbId=${tvdbId}&season=${season}&episode=${episode}&access_token=${encodeURIComponent(token)}`;
+  }
+
+  /** Saves resume position for whoever's logged in — written straight to Jellyfin's own
+   *  per-user UserData for this item (see JellyfinService), not stored in this app. */
+  saveMovieProgress(tmdbId: number, positionSeconds: number): Observable<void> {
+    return this.http.post<void>(`${this.baseUrl}/movies/progress`, { tmdbId, positionSeconds });
+  }
+
+  saveTvProgress(tvdbId: number, season: number, episode: number, positionSeconds: number): Observable<void> {
+    return this.http.post<void>(`${this.baseUrl}/tv/progress`, { tvdbId, season, episode, positionSeconds });
+  }
+
+  /** WebVTT URL for a <track src>, converted server-side from the embedded subtitle
+   *  stream at subtitleIndex (browsers can't parse embedded SRT/ASS/PGS themselves). */
+  getMovieSubtitleUrl(tmdbId: number, mediaSourceId: string, subtitleIndex: number): string {
+    const token = this.authService.getToken() ?? '';
+    return `${this.baseUrl}/movies/subtitles?tmdbId=${tmdbId}&mediaSourceId=${encodeURIComponent(mediaSourceId)}&subtitleIndex=${subtitleIndex}&access_token=${encodeURIComponent(token)}`;
+  }
+
+  getEpisodeSubtitleUrl(tvdbId: number, season: number, episode: number, mediaSourceId: string, subtitleIndex: number): string {
+    const token = this.authService.getToken() ?? '';
+    return `${this.baseUrl}/tv/subtitles?tvdbId=${tvdbId}&season=${season}&episode=${episode}&mediaSourceId=${encodeURIComponent(mediaSourceId)}&subtitleIndex=${subtitleIndex}&access_token=${encodeURIComponent(token)}`;
   }
 
   /** Removes the whole series from Sonarr and deletes all its files. */

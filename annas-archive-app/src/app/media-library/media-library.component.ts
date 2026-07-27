@@ -546,13 +546,30 @@ export class MediaLibraryComponent implements OnInit, OnDestroy {
 
     this.error = null;
     this.resolvingMovieId = movie.tmdbId;
-    this.api.watchMovie(movie.tmdbId).subscribe({
+    const tmdbId = movie.tmdbId;
+    this.api.watchMovie(tmdbId).subscribe({
       next: (resp) => {
         this.resolvingMovieId = null;
         this.dialog.open<JellyfinPlayerModalComponent, JellyfinPlayerModalData>(JellyfinPlayerModalComponent, {
           width: '90vw',
           maxWidth: '1100px',
-          data: { title: movie.title, embedUrl: resp.embedUrl }
+          data: {
+            title: movie.title,
+            mode: resp.mode,
+            embedUrl: resp.embedUrl,
+            streamUrl: resp.mode === 'native' ? this.api.getMovieStreamUrl(tmdbId) : undefined,
+            resumePositionSeconds: resp.resumePositionSeconds,
+            audioTracks: resp.audioTracks,
+            subtitleTracks: resp.subtitleTracks,
+            subtitleUrlFor: resp.mode === 'native' && resp.mediaSourceId
+              ? (subtitleIndex) => this.api.getMovieSubtitleUrl(tmdbId, resp.mediaSourceId!, subtitleIndex)
+              : undefined,
+            saveProgress: resp.mode === 'native'
+              ? (positionSeconds) => this.api.saveMovieProgress(tmdbId, positionSeconds).subscribe({
+                  error: (err) => this.logger.error('[MediaLibraryComponent] saveMovieProgress failed', err)
+                })
+              : undefined
+          }
         });
       },
       error: (err) => {

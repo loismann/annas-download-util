@@ -1,13 +1,9 @@
 :host {
   display: block;
-  height: 100%;
 }
 
-/* ─── RIGHT column ────────────────────────────── */
 .search-results {
-  overflow-y: auto;
-  height: 100%;
-  padding: 5rem 0;
+  padding: 1rem 0 3rem;
   display: flex;
   justify-content: center;
 }
@@ -15,6 +11,33 @@
 .results-inner {
   width: 57%;
   max-width: 800px;
+}
+
+/* Shown before the first search so the panel never renders as blank space */
+.pre-search-hint {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 3rem 1rem;
+  text-align: center;
+  color: #94a3b8;
+}
+
+.pre-search-hint mat-icon {
+  font-size: 44px;
+  width: 44px;
+  height: 44px;
+}
+
+.pre-search-hint p {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.pre-search-hint .hint-sub {
+  font-size: 0.85rem;
+  opacity: 0.8;
 }
 
 /* card spacing */
@@ -250,11 +273,11 @@
 /* ─── RESPONSIVE: card sizing reacts to the results panel's OWN width ───
    The host element (.results-panel, set from the parent book-search
    component) establishes a container-query context, so these breakpoints
-   are keyed off the actual pixel width this component has to work with —
-   not the browser viewport. That's the only way this stays correct
-   regardless of how wide the sidebar next to it is; a viewport @media
-   breakpoint has no way to know how much of that viewport the sidebar ate,
-   so it either wraps too late (buttons clipped) or too early. */
+   are keyed off the actual pixel width this component has to work with,
+   not the raw browser viewport — matters less now that results are full
+   page width rather than a narrow column next to a sidebar, but the page
+   itself is still capped at 1400px (.book-search-page), so these still
+   correctly reflect what the cards actually have to work with. */
 
 /* Medium tablets (iPad Air/Pro landscape ~1180-1366px, iPad Pro 12.9" portrait 1024px) */
 @container results-panel (max-width: 946px) {

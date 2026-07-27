@@ -146,6 +146,10 @@ export class SearchFormComponent implements OnDestroy {
     this.formatChange.emit(format);
   }
 
+  onToggleCollapsed(): void {
+    this.toggleCollapsed.emit();
+  }
+
   onOpenRelatedBooks(): void {
     if (this.searchTerm.trim() && this.selectedAuthor) {
       this.openRelatedBooks.emit({

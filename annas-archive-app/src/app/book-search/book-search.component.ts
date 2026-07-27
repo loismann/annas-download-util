@@ -82,7 +82,8 @@ export class BookSearchComponent implements OnInit, OnDestroy {
   loading = false;
   error: string | null = null;
   searchPerformed = false;
-  searchPanelCollapsed = false;
+  /* Secondary search options start collapsed on every screen size — see ngOnInit. */
+  searchPanelCollapsed = true;
   useLibGen = false; // Toggle between Anna's Archive and LibGen
   relatedBooksModalOpen = false; // Track if related books modal is open for matching
 
@@ -143,11 +144,6 @@ export class BookSearchComponent implements OnInit, OnDestroy {
   }
 
   ngOnInit(): void {
-    // Start with search panel collapsed on mobile for better UX
-    if (window.innerWidth <= 480) {
-      this.searchPanelCollapsed = true;
-    }
-
     // Fetch domain health status once on page load
     this.fetchDomainHealth();
     this.fetchMirrorHealth();

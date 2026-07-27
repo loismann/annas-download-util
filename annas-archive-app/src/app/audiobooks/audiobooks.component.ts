@@ -122,6 +122,9 @@ export class AudiobooksComponent implements OnInit {
   bulkEditMode = false;
   selectedForBulk = new Set<string>();
 
+  /** Mobile: filters live in a bottom sheet toggled by the filter FAB. */
+  sidebarCollapsed = false;
+
   /** Bumped after a cover override save so coverUrl()'s cache-busting query
    * param changes — cover responses carry a 1-day Cache-Control, so without
    * this the browser would keep showing the pre-edit cached image. */
@@ -137,6 +140,11 @@ export class AudiobooksComponent implements OnInit {
   ) {}
 
   ngOnInit(): void {
+    // On mobile the filter sheet starts closed so the grid is what loads first
+    if (window.innerWidth <= 768) {
+      this.sidebarCollapsed = true;
+    }
+
     // Default to showing the current session's own audiobooks — same
     // convention as the ebook/media libraries.
     const ownerName = this.authService.getOwnerName();
@@ -278,6 +286,11 @@ export class AudiobooksComponent implements OnInit {
     this.sortOrder = 'recent';
     this.tileSize = 'medium';
     this.exitBulkEditMode();
+  }
+
+  /** Toggle the mobile filter sheet */
+  toggleSidebar(): void {
+    this.sidebarCollapsed = !this.sidebarCollapsed;
   }
 
   toggleBulkEditMode(): void {

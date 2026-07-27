@@ -7,6 +7,9 @@
     <mat-icon>{{ sidebarCollapsed ? 'filter_list' : 'close' }}</mat-icon>
   </button>
 
+  <!-- Mobile-only scrim behind the filter sheet; tap to dismiss -->
+  <div class="sidebar-backdrop" *ngIf="!sidebarCollapsed" (click)="toggleSidebar()"></div>
+
   <div class="library-layout">
     <div class="sidebar-container" [class.collapsed]="sidebarCollapsed">
       <app-library-sidebar
@@ -56,8 +59,9 @@
             class="owner-filter"
             [class.active]="selectedOwnerTags.has(owner)"
             (click)="toggleOwnerTag(owner)"
+            [attr.aria-label]="owner"
           >
-            {{ owner }}
+            {{ shortOwnerLabel(owner) }}
           </button>
         </div>
         <app-tile-size-controls

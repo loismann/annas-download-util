@@ -133,8 +133,12 @@ export class SeriesDetailComponent implements OnInit {
             title: `${this.series!.title} — ${episode.title || 'S' + season + 'E' + ep}`,
             mode: resp.mode,
             embedUrl: resp.embedUrl,
-            streamUrl: resp.mode === 'native' ? this.api.getEpisodeStreamUrl(tvdbId, season, ep) : undefined,
+            streamUrl: resp.mode === 'native'
+              ? (resp.playbackMode === 'transcode' ? this.api.getEpisodeHlsMasterUrl(tvdbId, season, ep) : this.api.getEpisodeStreamUrl(tvdbId, season, ep))
+              : undefined,
+            isHls: resp.playbackMode === 'transcode',
             resumePositionSeconds: resp.resumePositionSeconds,
+            durationSeconds: resp.durationSeconds,
             audioTracks: resp.audioTracks,
             subtitleTracks: resp.subtitleTracks,
             subtitleUrlFor: resp.mode === 'native' && resp.mediaSourceId

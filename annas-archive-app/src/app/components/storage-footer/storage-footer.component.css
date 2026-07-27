@@ -7,7 +7,7 @@
   background: #263238;
   color: rgba(255, 255, 255, 0.85);
   font-size: 0.8rem;
-  padding: 6px 16px;
+  padding: 6px 16px calc(6px + env(safe-area-inset-bottom));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -21,4 +21,33 @@
 
 .divider {
   opacity: 0.5;
+}
+
+/* Only meaningful on mobile, where the breakdown is collapsed behind a tap */
+.expand-hint {
+  display: none;
+  opacity: 0.6;
+}
+
+/* Mobile: one short line (percent + free) that expands to the full breakdown
+   on tap, instead of wrapping to two permanent lines. */
+@media (max-width: 720px) {
+  .storage-footer {
+    cursor: pointer;
+    flex-wrap: nowrap;
+    white-space: nowrap;
+  }
+
+  .expand-hint {
+    display: inline;
+  }
+
+  .storage-footer:not(.expanded) .detail {
+    display: none;
+  }
+
+  .storage-footer.expanded {
+    flex-wrap: wrap;
+    white-space: normal;
+  }
 }

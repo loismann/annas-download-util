@@ -1,6 +1,6 @@
 :host {
   display: block;
-  height: calc(100vh - 64px);
+  height: calc(100dvh - 64px);
   padding: 36px 36px 28px;
   background: radial-gradient(circle at 10% 20%, #eef2ff 0, #f8fafc 35%, #ffffff 70%);
   box-sizing: border-box;
@@ -13,6 +13,11 @@
 }
 
 .mobile-sidebar-toggle {
+  display: none;
+}
+
+/* Mobile-only scrim behind the filter sheet (hidden on desktop) */
+.sidebar-backdrop {
   display: none;
 }
 
@@ -200,12 +205,20 @@
 
 /* Mobile Sidebar Collapse */
 @media (max-width: 768px) {
+  :host {
+    height: calc(100dvh - 56px);
+    padding: 12px 12px 8px;
+  }
+
+  /* Filter FAB: sits above the storage footer + iOS home indicator */
   .mobile-sidebar-toggle {
     display: flex;
+    align-items: center;
+    justify-content: center;
     position: fixed;
-    bottom: 16px;
+    bottom: calc(52px + env(safe-area-inset-bottom));
     right: 16px;
-    z-index: 1000;
+    z-index: 1200;
     background: #3f51b5;
     color: white;
     box-shadow: 0 4px 12px rgba(0,0,0,0.3);
@@ -220,23 +233,42 @@
 
   .video-library-layout {
     grid-template-columns: 1fr;
-    gap: 16px;
+    gap: 12px;
+  }
+
+  /* Filters become a bottom sheet over the grid instead of pushing it down */
+  .sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.45);
+    z-index: 1150;
   }
 
   .sidebar-container {
     display: block;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    top: auto;
+    z-index: 1160;
+    max-height: 78dvh;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    background: #ffffff;
+    border: none;
+    border-radius: 16px 16px 0 0;
+    box-shadow: 0 -8px 30px rgba(15, 23, 42, 0.3);
+    padding-bottom: env(safe-area-inset-bottom);
   }
 
   .sidebar-container.collapsed {
     display: none;
   }
 
-  :host {
-    padding: 16px;
-  }
-
   .video-library-panel {
-    height: calc(100vh - 120px);
+    height: 100%;
   }
 }
 

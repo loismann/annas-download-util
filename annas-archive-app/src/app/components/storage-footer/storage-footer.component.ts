@@ -19,6 +19,8 @@ const REFRESH_MS = 10 * 60 * 1000;
 })
 export class StorageFooterComponent implements OnInit, OnDestroy {
   stats: StorageStats | null = null;
+  /** Mobile-only: whether the per-category breakdown is shown (CSS ignores this on desktop). */
+  expanded = false;
   private sub?: Subscription;
 
   constructor(
@@ -40,6 +42,10 @@ export class StorageFooterComponent implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.sub?.unsubscribe();
+  }
+
+  toggleExpanded(): void {
+    this.expanded = !this.expanded;
   }
 
   formatTb(bytes: number): string {

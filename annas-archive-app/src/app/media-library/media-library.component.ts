@@ -149,6 +149,9 @@ export class MediaLibraryComponent implements OnInit, OnDestroy {
   bulkEditMode = false;
   selectedForBulk = new Set<number>();
 
+  /** Mobile: filters live in a bottom sheet toggled by the filter FAB. */
+  sidebarCollapsed = false;
+
   /** Live download progress for anything still downloading, keyed by
    * Sonarr seriesId / Radarr movieId. */
   downloadProgress = new Map<number, DownloadProgress>();
@@ -167,6 +170,11 @@ export class MediaLibraryComponent implements OnInit, OnDestroy {
   ) {}
 
   ngOnInit(): void {
+    // On mobile the filter sheet starts closed so the grid is what loads first
+    if (window.innerWidth <= 768) {
+      this.sidebarCollapsed = true;
+    }
+
     // Default to showing the current session's own movies/shows — Mom sees
     // Mom's, Dad sees Dad's, and the admin (Paul) account sees Paul's, same
     // as the ebook library. Still just a normal toggle after this — anyone
@@ -423,6 +431,11 @@ export class MediaLibraryComponent implements OnInit, OnDestroy {
     }
   }
 
+  /** Toggle the mobile filter sheet */
+  toggleSidebar(): void {
+    this.sidebarCollapsed = !this.sidebarCollapsed;
+  }
+
   toggleTileSelection(id: number | undefined): void {
     if (!this.bulkEditMode || id === undefined) return;
     if (this.selectedForBulk.has(id)) {
@@ -557,8 +570,12 @@ export class MediaLibraryComponent implements OnInit, OnDestroy {
             title: movie.title,
             mode: resp.mode,
             embedUrl: resp.embedUrl,
-            streamUrl: resp.mode === 'native' ? this.api.getMovieStreamUrl(tmdbId) : undefined,
+            streamUrl: resp.mode === 'native'
+              ? (resp.playbackMode === 'transcode' ? this.api.getMovieHlsMasterUrl(tmdbId) : this.api.getMovieStreamUrl(tmdbId))
+              : undefined,
+            isHls: resp.playbackMode === 'transcode',
             resumePositionSeconds: resp.resumePositionSeconds,
+            durationSeconds: resp.durationSeconds,
             audioTracks: resp.audioTracks,
             subtitleTracks: resp.subtitleTracks,
             subtitleUrlFor: resp.mode === 'native' && resp.mediaSourceId

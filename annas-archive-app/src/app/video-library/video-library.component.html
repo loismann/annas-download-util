@@ -7,6 +7,9 @@
     <mat-icon>{{ sidebarCollapsed ? 'filter_list' : 'close' }}</mat-icon>
   </button>
 
+  <!-- Mobile-only scrim behind the filter sheet; tap to dismiss -->
+  <div class="sidebar-backdrop" *ngIf="!sidebarCollapsed" (click)="toggleSidebar()"></div>
+
   <div class="video-library-layout">
     <div class="sidebar-container" [class.collapsed]="sidebarCollapsed">
       <app-video-sidebar

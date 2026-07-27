@@ -36,6 +36,12 @@ export interface WatchResponse {
   mediaSourceId?: string;
   audioTracks?: MediaTrackInfo[];
   subtitleTracks?: MediaTrackInfo[];
+  /** "direct" — the file is already something a plain <video src> can decode
+   *  (mp4/h264/aac|mp3). "transcode" — it isn't (AVI container, AC3/DTS audio,
+   *  etc.) and the frontend should request the HLS master playlist instead
+   *  (see getMovieHlsMasterUrl/getEpisodeHlsMasterUrl) so Jellyfin transcodes
+   *  it into something every browser can play. */
+  playbackMode?: 'direct' | 'transcode';
 }
 
 /** One release Radarr/Sonarr's indexers found for a movie/season — raw
@@ -124,6 +130,20 @@ export class MediaLibraryApiService {
   getEpisodeStreamUrl(tvdbId: number, season: number, episode: number): string {
     const token = this.authService.getToken() ?? '';
     return `${this.baseUrl}/tv/stream?tvdbId=${tvdbId}&season=${season}&episode=${episode}&access_token=${encodeURIComponent(token)}`;
+  }
+
+  /** HLS master-playlist URL for a movie whose source file isn't browser-native
+   *  (WatchResponse.playbackMode === 'transcode') — same ?access_token= reasoning
+   *  as getMovieStreamUrl, fed to hls.js (or Safari's native HLS support) instead
+   *  of a plain <video src>. */
+  getMovieHlsMasterUrl(tmdbId: number): string {
+    const token = this.authService.getToken() ?? '';
+    return `${this.baseUrl}/movies/hls/master.m3u8?tmdbId=${tmdbId}&access_token=${encodeURIComponent(token)}`;
+  }
+
+  getEpisodeHlsMasterUrl(tvdbId: number, season: number, episode: number): string {
+    const token = this.authService.getToken() ?? '';
+    return `${this.baseUrl}/tv/hls/master.m3u8?tvdbId=${tvdbId}&season=${season}&episode=${episode}&access_token=${encodeURIComponent(token)}`;
   }
 
   /** Saves resume position for whoever's logged in — written straight to Jellyfin's own

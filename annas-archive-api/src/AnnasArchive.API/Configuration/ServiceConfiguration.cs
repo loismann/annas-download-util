@@ -110,7 +110,10 @@ public static class ServiceConfiguration
                         path.Equals("/api/media/movies/stream", StringComparison.OrdinalIgnoreCase) ||
                         path.Equals("/api/media/tv/stream", StringComparison.OrdinalIgnoreCase) ||
                         path.Equals("/api/media/movies/subtitles", StringComparison.OrdinalIgnoreCase) ||
-                        path.Equals("/api/media/tv/subtitles", StringComparison.OrdinalIgnoreCase);
+                        path.Equals("/api/media/tv/subtitles", StringComparison.OrdinalIgnoreCase) ||
+                        path.Equals("/api/media/movies/hls/master.m3u8", StringComparison.OrdinalIgnoreCase) ||
+                        path.Equals("/api/media/tv/hls/master.m3u8", StringComparison.OrdinalIgnoreCase) ||
+                        path.StartsWith("/api/media/hls/", StringComparison.OrdinalIgnoreCase);
 
                     if (isAudiobookStreamOrCover || isMediaDownload || isMediaStream)
                     {

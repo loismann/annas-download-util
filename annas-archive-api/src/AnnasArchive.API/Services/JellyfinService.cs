@@ -26,14 +26,25 @@ public record JellyfinMediaTrack(int Index, string? Language, string? Title, boo
 /// 100ns "ticks" Jellyfin's API speaks natively, converted at the service
 /// boundary so nothing above this layer needs to know about ticks. Track
 /// lists describe what's embedded in the file so the frontend can offer a
-/// picker; MediaSourceId is needed alongside a subtitle's Index to fetch it.</summary>
+/// picker; MediaSourceId is needed alongside a subtitle's Index to fetch it.
+/// PlaybackMode is "direct" when the source file's container/codecs are
+/// something a plain HTML5 <video> can decode natively (mp4/h264/aac|mp3) —
+/// "transcode" means the frontend should use the HLS master-playlist route
+/// instead (see GetMovieHlsMasterAsync), since e.g. an AVI container or AC3
+/// audio has no browser-native decoder at all.</summary>
 public record JellyfinPlaybackState(
     string ItemId,
     double ResumePositionSeconds,
     double? DurationSeconds,
     string? MediaSourceId,
     List<JellyfinMediaTrack> AudioTracks,
-    List<JellyfinMediaTrack> SubtitleTracks);
+    List<JellyfinMediaTrack> SubtitleTracks,
+    string PlaybackMode);
+
+/// <summary>Jellyfin's raw HLS master playlist text plus the itemId the endpoint
+/// layer needs in order to rewrite its relative URLs into this app's own HLS
+/// proxy routes (Jellyfin's own URLs aren't reachable from the browser directly).</summary>
+public record JellyfinHlsPlaylistResult(string ItemId, string PlaylistText);
 
 public interface IJellyfinService
 {
@@ -72,6 +83,26 @@ public interface IJellyfinService
     Task<JellyfinStreamResult?> StreamMovieAsync(string ownerName, int tmdbId, string? rangeHeader, CancellationToken ct = default);
 
     Task<JellyfinStreamResult?> StreamEpisodeAsync(string ownerName, int tvdbId, int season, int episode, string? rangeHeader, CancellationToken ct = default);
+
+    /// <summary>Returns Jellyfin's HLS "master" playlist for this movie, forced to
+    /// H.264 video + AAC audio so every browser can play it regardless of the
+    /// source file's actual codec/container — only meant to be used when
+    /// GetMoviePlaybackStateAsync's PlaybackMode came back "transcode". Every
+    /// relative URL inside the playlist text is Jellyfin's own (unreachable from
+    /// the browser); the endpoint layer rewrites them into this app's own HLS
+    /// proxy route before handing the playlist to the frontend.</summary>
+    Task<JellyfinHlsPlaylistResult?> GetMovieHlsMasterAsync(string ownerName, int tmdbId, CancellationToken ct = default);
+
+    Task<JellyfinHlsPlaylistResult?> GetEpisodeHlsMasterAsync(string ownerName, int tvdbId, int season, int episode, CancellationToken ct = default);
+
+    /// <summary>Forwards one HLS sub-resource — the second-level "main.m3u8"
+    /// playlist, or a .ts media segment — straight through to Jellyfin. Auth rides
+    /// along in the query string (an api_key Jellyfin itself embedded when the
+    /// master playlist was built, since that request explicitly asked for it —
+    /// see GetHlsMasterAsync), not a per-user header, because by this point the
+    /// caller only has the opaque Jellyfin itemId, not a household member's
+    /// identity.</summary>
+    Task<JellyfinStreamResult?> ProxyHlsResourceAsync(string itemId, string subPath, string? queryString, string? rangeHeader, CancellationToken ct = default);
 
     /// <summary>Writes the resume position back to Jellyfin's own per-user UserData
     /// for this item, so it's a single source of truth shared with any other
@@ -114,9 +145,33 @@ public class JellyfinService : IJellyfinService
     private readonly HttpClient _http;
     private readonly HttpClient _userHttp;
     private readonly Dictionary<string, UserCredential> _userCredentials;
-    private readonly ConcurrentDictionary<string, UserSession> _userSessions = new(StringComparer.OrdinalIgnoreCase);
     private readonly string _proxyBaseUrl;
     private string? _cachedServerId;
+
+    // MUST be static, not an instance field: JellyfinService is a typed HttpClient
+    // (services.AddHttpClient<IJellyfinService, JellyfinService>), which ASP.NET
+    // Core registers Transient by default — a fresh instance per DI resolution, so
+    // per separate incoming HTTP request. An instance-field cache here silently
+    // never hit: every request that needed a session (master.m3u8, progress saves,
+    // subtitle fetches, ...) re-ran AuthenticateByName from scratch. That alone
+    // wouldn't matter except that Jellyfin invalidates a device's PREVIOUS token the
+    // moment a new login happens for that same DeviceId (confirmed directly against
+    // the live server) — so every one of those "redundant" logins was silently
+    // killing whatever token an in-flight HLS playback session was still using,
+    // which is what actually caused every 401 chased through this session, not a
+    // transcoder race. Static makes this a real, request-spanning cache again.
+    private static readonly ConcurrentDictionary<string, UserSession> _userSessions = new(StringComparer.OrdinalIgnoreCase);
+
+    // Jellyfin's HLS transcoder appears to race when two requests for the same
+    // item arrive close together (observed live: a seek's first segment succeeds,
+    // the very next one — fired moments later by the player — 401s even on retry,
+    // while the identical request sent in isolation always succeeds). Serializing
+    // our own outbound requests per itemId means Jellyfin never actually sees
+    // overlapping requests for one item, even if the player fires them
+    // concurrently. Static (not an instance field) because JellyfinService is a
+    // typed HttpClient, and DI may hand out more than one instance across
+    // requests — this has to be shared process-wide to actually serialize anything.
+    private static readonly ConcurrentDictionary<string, SemaphoreSlim> _hlsItemLocks = new();
 
     public JellyfinService(HttpClient http, IHttpClientFactory httpClientFactory, IConfiguration configuration)
     {
@@ -202,6 +257,75 @@ public class JellyfinService : IJellyfinService
         return episodeItemId is null ? null : await StreamItemAsync(ownerName, episodeItemId, rangeHeader, ct);
     }
 
+    public async Task<JellyfinHlsPlaylistResult?> GetMovieHlsMasterAsync(string ownerName, int tmdbId, CancellationToken ct = default)
+    {
+        var movieId = await ResolveMovieItemIdAsync(tmdbId, ct);
+        return movieId is null ? null : await GetHlsMasterAsync(ownerName, movieId, ct);
+    }
+
+    public async Task<JellyfinHlsPlaylistResult?> GetEpisodeHlsMasterAsync(string ownerName, int tvdbId, int season, int episode, CancellationToken ct = default)
+    {
+        var episodeItemId = await ResolveEpisodeItemIdAsync(tvdbId, season, episode, ct);
+        return episodeItemId is null ? null : await GetHlsMasterAsync(ownerName, episodeItemId, ct);
+    }
+
+    public async Task<JellyfinStreamResult?> ProxyHlsResourceAsync(string itemId, string subPath, string? queryString, string? rangeHeader, CancellationToken ct = default)
+    {
+        var url = $"/Videos/{itemId}/{subPath}" + (string.IsNullOrEmpty(queryString) ? "" : $"?{queryString}");
+
+        // See _hlsItemLocks — only the request/header-exchange phase needs
+        // serializing against Jellyfin, not the (potentially slow, client-bound)
+        // body transfer, so the lock is released as soon as we have a response.
+        var itemLock = _hlsItemLocks.GetOrAdd(itemId, _ => new SemaphoreSlim(1, 1));
+        HttpResponseMessage response;
+        await itemLock.WaitAsync(ct);
+        try
+        {
+            try
+            {
+                response = await SendHlsResourceRequestAsync(url, rangeHeader, ct);
+
+                // Seeking ahead of what Jellyfin's ffmpeg job has already generated
+                // makes it kill and restart the transcode at the new position — a
+                // segment requested in that brief window can come back 401/500 even
+                // though nothing is actually wrong. One short retry papers over that
+                // race rather than surfacing a real player error for it.
+                if (!response.IsSuccessStatusCode)
+                {
+                    response.Dispose();
+                    await Task.Delay(500, ct);
+                    response = await SendHlsResourceRequestAsync(url, rangeHeader, ct);
+                }
+            }
+            catch (HttpRequestException)
+            {
+                await Task.Delay(500, ct);
+                response = await SendHlsResourceRequestAsync(url, rangeHeader, ct);
+            }
+        }
+        finally
+        {
+            itemLock.Release();
+        }
+
+        var body = await response.Content.ReadAsStreamAsync(ct);
+        return new JellyfinStreamResult(
+            body,
+            response.Content.Headers.ContentType?.ToString() ?? "application/octet-stream",
+            response.Content.Headers.ContentRange?.ToString(),
+            response.Content.Headers.ContentLength,
+            (int)response.StatusCode);
+    }
+
+    private Task<HttpResponseMessage> SendHlsResourceRequestAsync(string url, string? rangeHeader, CancellationToken ct)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Get, url);
+        request.Headers.TryAddWithoutValidation("X-Emby-Authorization", ClientAuthHeader);
+        if (!string.IsNullOrEmpty(rangeHeader))
+            request.Headers.TryAddWithoutValidation("Range", rangeHeader);
+        return _userHttp.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+    }
+
     public async Task<bool> SaveMoviePositionAsync(string ownerName, int tmdbId, double positionSeconds, CancellationToken ct = default)
     {
         var movieId = await ResolveMovieItemIdAsync(tmdbId, ct);
@@ -263,11 +387,18 @@ public class JellyfinService : IJellyfinService
         var doc = await response.Content.ReadFromJsonAsync<JsonObject>(cancellationToken: ct);
         var runtimeTicks = (long?)doc?["RunTimeTicks"];
         var positionTicks = (long?)doc?["UserData"]?["PlaybackPositionTicks"] ?? 0;
-        var mediaSourceId = ((doc?["MediaSources"] as JsonArray)?.FirstOrDefault() as JsonObject)?["Id"]?.ToString();
+        var primarySource = (doc?["MediaSources"] as JsonArray)?.FirstOrDefault() as JsonObject;
+        var mediaSourceId = primarySource?["Id"]?.ToString();
+        var container = primarySource?["Container"]?.ToString();
 
         var streams = (doc?["MediaStreams"] as JsonArray ?? []).OfType<JsonObject>().ToList();
         var audioTracks = streams.Where(s => (string?)s["Type"] == "Audio").Select(ToTrack).ToList();
         var subtitleTracks = streams.Where(s => (string?)s["Type"] == "Subtitle").Select(ToTrack).ToList();
+
+        var videoCodec = streams.FirstOrDefault(s => (string?)s["Type"] == "Video")?["Codec"]?.ToString();
+        var defaultAudioCodec = (streams.FirstOrDefault(s => (string?)s["Type"] == "Audio" && (bool?)s["IsDefault"] == true)
+            ?? streams.FirstOrDefault(s => (string?)s["Type"] == "Audio"))?["Codec"]?.ToString();
+        var playbackMode = IsBrowserCompatible(container, videoCodec, defaultAudioCodec) ? "direct" : "transcode";
 
         return new JellyfinPlaybackState(
             itemId,
@@ -275,8 +406,20 @@ public class JellyfinService : IJellyfinService
             runtimeTicks is null ? null : TicksToSeconds(runtimeTicks.Value),
             mediaSourceId,
             audioTracks,
-            subtitleTracks);
+            subtitleTracks,
+            playbackMode);
     }
+
+    /// <summary>Conservative allowlist (not a denylist of known-bad combos) matching
+    /// exactly what a plain HTML5 <video src> can decode without help across
+    /// Chrome/Firefox/Safari — notably, Safari has zero MKV/AVI/WebM support, and no
+    /// major browser ships an AC3/DTS decoder. Anything outside this falls back to
+    /// server-side HLS transcoding (see GetHlsMasterAsync) rather than silently
+    /// failing to play (blank video, or video-with-no-audio).</summary>
+    private static bool IsBrowserCompatible(string? container, string? videoCodec, string? audioCodec) =>
+        container?.ToLowerInvariant() is "mp4" or "m4v" or "mov"
+        && videoCodec?.ToLowerInvariant() == "h264"
+        && audioCodec?.ToLowerInvariant() is "aac" or "mp3";
 
     private static JellyfinMediaTrack ToTrack(JsonObject stream) => new(
         (int)(stream["Index"] ?? 0),
@@ -308,6 +451,54 @@ public class JellyfinService : IJellyfinService
             response.Content.Headers.ContentRange?.ToString(),
             response.Content.Headers.ContentLength,
             (int)response.StatusCode);
+    }
+
+    private async Task<JellyfinHlsPlaylistResult?> GetHlsMasterAsync(string ownerName, string itemId, CancellationToken ct)
+    {
+        var session = await AuthenticateUserAsync(ownerName, ct);
+        if (session is null) return null;
+
+        // master.m3u8 rejects with 400 ("mediaSourceId field is required") without
+        // this — unlike /Videos/{id}/stream, it won't infer the source on its own
+        // even when there's only one.
+        var sourceResponse = await SendAsUserWithRetryAsync(
+            ownerName, session,
+            () => new HttpRequestMessage(HttpMethod.Get, $"/Users/{session.UserId}/Items/{itemId}?fields=MediaSources"),
+            ct);
+        if (sourceResponse is null || !sourceResponse.IsSuccessStatusCode) return null;
+        var sourceDoc = await sourceResponse.Content.ReadFromJsonAsync<JsonObject>(cancellationToken: ct);
+        var mediaSourceId = (((sourceDoc?["MediaSources"] as JsonArray)?.FirstOrDefault() as JsonObject)?["Id"])?.ToString();
+        if (mediaSourceId is null) return null;
+
+        // Forcing H.264/AAC output (rather than leaving codec negotiation to
+        // Jellyfin's defaults) means Jellyfin stream-copies whichever track is
+        // already compatible and only transcodes the ones that aren't — an
+        // already-H.264 file costs little extra CPU, just the audio gets
+        // re-encoded. api_key rides in the query (not just a header)
+        // specifically so Jellyfin bakes it into every relative URL it emits
+        // for the segment/sub-playlist requests that follow — see
+        // ProxyHlsResourceAsync, which has no other way to authenticate since
+        // it only knows the opaque itemId, not which household member asked.
+        //
+        // PlaySessionId is how real Jellyfin clients tell the server that every
+        // segment request across a seek belongs to the SAME ongoing playback —
+        // without it, a seek to a not-yet-generated segment (a normal jump ahead
+        // in a movie) can 401 because Jellyfin has no stable session to attach
+        // the seek/re-encode to. Generated once per "watch" click and threaded
+        // through every subsequent URL automatically by Jellyfin itself, the same
+        // way it already echoes MediaSourceId back into every segment URL.
+        var playSessionId = Guid.NewGuid().ToString("N");
+        var query = $"MediaSourceId={Uri.EscapeDataString(mediaSourceId)}&VideoCodec=h264&AudioCodec=aac&TranscodingMaxAudioChannels=2&SegmentContainer=ts"
+            + $"&PlaySessionId={playSessionId}&api_key={Uri.EscapeDataString(session.AccessToken)}&DeviceId=ferrer-utils-server";
+
+        var response = await SendAsUserWithRetryAsync(
+            ownerName, session,
+            () => new HttpRequestMessage(HttpMethod.Get, $"/Videos/{itemId}/master.m3u8?{query}"),
+            ct);
+        if (response is null || !response.IsSuccessStatusCode) return null;
+
+        var text = await response.Content.ReadAsStringAsync(ct);
+        return new JellyfinHlsPlaylistResult(itemId, text);
     }
 
     /// <summary>Patches just the resume position onto Jellyfin's per-user UserData

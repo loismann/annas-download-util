@@ -350,6 +350,18 @@ services:
       - ../data/jellyfin/config:/config
       - ../data/jellyfin/cache:/cache
       - /home/pferrer/Media:/data
+    # Passes the host's Intel Quick Sync iGPU through so Jellyfin can hardware-
+    # transcode instead of falling back to CPU-only software x264 — needed for
+    # every file that isn't already browser-native (AC3/DTS audio, non-H.264
+    # video, oversized files getting downscaled for a phone). The container's
+    # own process runs as root (confirmed via `docker exec jellyfin whoami`),
+    # so no group_add for the host's render group is needed — root can open
+    # the device regardless of its group ownership. Still requires flipping
+    # "Hardware acceleration: Intel QuickSync (QSV)" on under Jellyfin's own
+    # Dashboard -> Playback settings; the device being present isn't enough
+    # on its own.
+    devices:
+      - /dev/dri:/dev/dri
 
   # Sits in front of Jellyfin purely to make the embedded-player feature
   # possible — Jellyfin's own CSP blocks iframe embedding entirely with no

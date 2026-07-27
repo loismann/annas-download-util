@@ -1,32 +1,96 @@
 :host {
   display: block;
-  height: 100%;
   --form-item-height: 56px;
   --form-item-gap: 1rem;
 }
 
 .search-form {
-  height: 100%;
-  overflow-y: auto;
   display: flex;
   flex-direction: column;
-  justify-content: center;
   align-items: center;
-  gap: var(--form-item-gap);
+  padding: 1.5rem 1rem;
 }
 
 .search-form form {
   width: 100%;
-  max-width: 360px;
+  max-width: 640px;
+  margin: 0 auto;
   display: flex;
   flex-direction: column;
   gap: var(--form-item-gap);
+}
+
+/* Row 1: book name + Search — same shape as the movie/TV search bar */
+.search-bar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  width: 100%;
+}
+
+.search-field {
+  flex: 1 1 320px;
+  min-width: 200px;
+}
+
+.ai-search-field textarea {
+  resize: vertical;
+}
+
+.ai-toggle {
+  color: #3f51b5;
+}
+
+/* mat-form-field's outline appearance renders at 56px tall by default —
+   matching that explicitly is simpler than trying to make the button
+   stretch to whatever height the field ends up at. */
+.search-button {
+  height: 56px;
+  padding: 0 2rem;
+}
+
+/* Row 2: Author — always visible, full width of the shared 640px column */
+.author-dropdown {
+  width: 100%;
+}
+
+/* Disabled author dropdown styling */
+:host ::ng-deep .mat-mdc-form-field.mat-form-field-disabled .mat-mdc-text-field-wrapper {
+  background-color: #f5f5f5;
+}
+
+:host ::ng-deep .mat-mdc-form-field.mat-form-field-disabled .mdc-notched-outline__leading,
+:host ::ng-deep .mat-mdc-form-field.mat-form-field-disabled .mdc-notched-outline__notch,
+:host ::ng-deep .mat-mdc-form-field.mat-form-field-disabled .mdc-notched-outline__trailing {
+  border-color: #999 !important;
+}
+
+/* "More options" disclosure — collapsed by default on every screen size,
+   matching the minimal look of the movie/TV search page. */
+.options-toggle {
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 40px;
+  color: #3f51b5;
+}
+
+.form-extras {
+  display: flex;
+  flex-direction: column;
+  gap: var(--form-item-gap);
+}
+
+.form-extras.collapsed {
+  display: none;
 }
 
 /* Anna's Archive Domain Health Status - Horizontal Row */
 .health-status-row {
   width: 100%;
-  max-width: 360px;
   display: flex;
   gap: 0.5rem;
 }
@@ -88,49 +152,9 @@
   color: white;
 }
 
-/* ─── LEFT column ─────────────────────────────── */
-.search-form {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  gap: var(--form-item-gap);
-  overflow-y: auto;
-  height: 100%;
-}
-
-.search-form form {
-  width: 100%;
-  max-width: 360px;
-  display: flex;
-  flex-direction: column;
-  gap: var(--form-item-gap);
-}
-
-.ai-search-field textarea {
-  resize: vertical;
-}
-
-.ai-toggle {
-  color: #3f51b5;
-}
-
-/* Disabled author dropdown styling */
-:host ::ng-deep .mat-mdc-form-field.mat-form-field-disabled .mat-mdc-text-field-wrapper {
-  background-color: #f5f5f5;
-}
-
-:host ::ng-deep .mat-mdc-form-field.mat-form-field-disabled .mdc-notched-outline__leading,
-:host ::ng-deep .mat-mdc-form-field.mat-form-field-disabled .mdc-notched-outline__notch,
-:host ::ng-deep .mat-mdc-form-field.mat-form-field-disabled .mdc-notched-outline__trailing {
-  border-color: #999 !important;
-}
-
 /* source toggle row */
 .source-toggle-row {
   width: 100%;
-  max-width: 360px;
-  margin-bottom: var(--form-item-gap);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -141,13 +165,14 @@
   font-weight: 500;
 }
 
-/* full-width search button */
-.search-form button {
+/* Buttons inside the extras panel (Find Related Books) stay full-width;
+   the primary Search button above has its own sizing (.search-button). */
+.form-extras button {
   width: 100%;
   height: var(--form-item-height);
 }
 
-.search-form button.halftone {
+.form-extras button.halftone {
   opacity: 0.55;
   filter: grayscale(0.35);
 }
@@ -161,7 +186,6 @@
 
 /* ─── RESPONSIVE: Tablet and Mobile ─────────────── */
 
-/* Small tablets (iPad Mini) and phones: 744px and below - Single column stacked */
 @media (max-width: 744px) {
   .health-status-row {
     gap: 0.4rem;
@@ -181,22 +205,7 @@
   }
 
   .search-form {
-    padding: 4rem 1rem 1rem 1rem;
-    border-bottom: 1px solid #e0e0e0;
-    transition: max-height 0.3s ease-in-out, padding 0.3s ease-in-out, opacity 0.3s ease-in-out;
-    max-height: 1000px;
-    overflow: hidden;
-  }
-
-  .search-form.collapsed {
-    max-height: 0;
-    padding: 0 1rem;
-    opacity: 0;
-    pointer-events: none;
-  }
-
-  .search-form form {
-    max-width: 100%;
+    padding: 1rem;
   }
 }
 
@@ -208,11 +217,7 @@
   }
 
   .search-form {
-    padding: 1rem 0.75rem 0.75rem 0.75rem;
-  }
-
-  .search-form.collapsed {
-    padding: 0 0.75rem;
+    padding: 0.75rem;
   }
 
   .search-form form {

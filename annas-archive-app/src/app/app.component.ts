@@ -29,6 +29,46 @@ import { switchMap, filter } from 'rxjs/operators';
     StorageFooterComponent
   ],
   styles: [`
+    .toolbar-column {
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+    }
+    .toolbar-row {
+      display: flex;
+      align-items: center;
+      width: 100%;
+      min-width: 0;
+      gap: 4px;
+    }
+    .app-title {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      min-width: 0;
+    }
+    .nav-menu-btn {
+      margin-left: 16px;
+      flex-shrink: 0;
+    }
+    .toolbar-spacer {
+      flex: 1 1 0;
+      min-width: 8px;
+    }
+    .toolbar-user {
+      display: flex;
+      align-items: center;
+      flex-shrink: 0;
+    }
+    .user-name {
+      margin-right: 8px;
+      white-space: nowrap;
+    }
+    .toolbar-version {
+      font-size: 12px;
+      opacity: 0.85;
+      padding-top: 2px;
+    }
     .user-activity-indicators {
       display: flex;
       gap: 6px;
@@ -57,20 +97,86 @@ import { switchMap, filter } from 'rxjs/operators';
       background-color: rgba(76, 175, 80, 0.5);
       color: white;
     }
+    .account-menu-btn {
+      display: none;
+    }
+    /* The account menu renders in an overlay, so these can't be scoped :host styles —
+       ::ng-deep with the panel class keeps them from leaking to other menus. */
+    ::ng-deep .account-menu-panel .account-menu-header {
+      padding: 10px 16px;
+      border-bottom: 1px solid #e0e0e0;
+      margin-bottom: 4px;
+    }
+    ::ng-deep .account-menu-panel .account-menu-name {
+      font-weight: 600;
+      font-size: 0.95rem;
+      color: #1f2937;
+    }
+    ::ng-deep .account-menu-panel .account-menu-version {
+      font-size: 0.72rem;
+      color: #6b7280;
+      margin-top: 4px;
+    }
+    ::ng-deep .account-menu-panel .account-menu-activity {
+      display: flex;
+      gap: 6px;
+      margin-top: 8px;
+    }
+    ::ng-deep .account-menu-panel .activity-dot {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: bold;
+      border: 2px solid #4caf50;
+      color: #4caf50;
+    }
+    ::ng-deep .account-menu-panel .activity-dot.full-tone {
+      background-color: #4caf50;
+      color: white;
+    }
+    ::ng-deep .account-menu-panel .activity-dot.half-tone {
+      background-color: rgba(76, 175, 80, 0.5);
+      color: white;
+    }
+    @media (max-width: 720px) {
+      .nav-label {
+        display: none;
+      }
+      .nav-menu-btn {
+        margin-left: 4px;
+        min-width: 0;
+        padding: 0 8px;
+      }
+      .user-name,
+      .logout-btn,
+      .user-activity-indicators,
+      .toolbar-version {
+        display: none;
+      }
+      .account-menu-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+    }
   `],
   template: `
     <mat-toolbar color="primary">
-      <div style="display: flex; flex-direction: column; width: 100%;">
-        <div style="display: flex; align-items: center; width: 100%;">
-          <span>Ferrer Utils</span>
+      <div class="toolbar-column">
+        <div class="toolbar-row">
+          <span class="app-title">Ferrer Utils</span>
 
           <button
             *ngIf="authService.isAuthenticated$ | async"
             mat-button
-            [matMenuTriggerFor]="navigationMenu"
-            style="margin-left: 16px">
+            class="nav-menu-btn"
+            [matMenuTriggerFor]="navigationMenu">
             <mat-icon>menu</mat-icon>
-            Navigation
+            <span class="nav-label">Navigation</span>
           </button>
 
           <mat-menu #navigationMenu="matMenu">
@@ -123,12 +229,12 @@ import { switchMap, filter } from 'rxjs/operators';
         </button>
       </mat-menu>
 
-          <span style="flex: 1"></span>
-          <div *ngIf="authService.isAuthenticated$ | async" style="display: flex; align-items: center;">
-            <span style="margin-right: 8px">
+          <span class="toolbar-spacer"></span>
+          <div *ngIf="authService.isAuthenticated$ | async" class="toolbar-user">
+            <span class="user-name">
               {{ authService.getName() }}
             </span>
-            <button mat-button (click)="logout()">
+            <button mat-button class="logout-btn" (click)="logout()">
               Logout
             </button>
             <div class="user-activity-indicators" *ngIf="userActivity.length > 0">
@@ -141,9 +247,38 @@ import { switchMap, filter } from 'rxjs/operators';
                 {{ activity.initial }}
               </div>
             </div>
+
+            <!-- Mobile-only: name, activity, version, and logout collapse into this menu -->
+            <button
+              mat-icon-button
+              class="account-menu-btn"
+              [matMenuTriggerFor]="accountMenu"
+              aria-label="Account menu">
+              <mat-icon>account_circle</mat-icon>
+            </button>
+            <mat-menu #accountMenu="matMenu" class="account-menu-panel">
+              <div class="account-menu-header" (click)="$event.stopPropagation()">
+                <div class="account-menu-name">{{ authService.getName() }}</div>
+                <div class="account-menu-activity" *ngIf="userActivity.length > 0">
+                  <div
+                    *ngFor="let activity of userActivity"
+                    class="activity-dot"
+                    [class.full-tone]="activity.isFullTone"
+                    [class.half-tone]="activity.isHalfTone"
+                    [matTooltip]="activityTooltip(activity)">
+                    {{ activity.initial }}
+                  </div>
+                </div>
+                <div class="account-menu-version">Version: {{ buildTime }}</div>
+              </div>
+              <button mat-menu-item (click)="logout()">
+                <mat-icon>logout</mat-icon>
+                <span>Logout</span>
+              </button>
+            </mat-menu>
           </div>
         </div>
-        <div style="font-size: 12px; opacity: 0.85; padding-top: 2px;">
+        <div class="toolbar-version">
           Latest Version: {{ buildTime }}
         </div>
       </div>

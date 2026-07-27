@@ -128,7 +128,7 @@ export interface MediaEditDialogResult {
     </div>
   `,
   styles: [`
-    .media-edit-dialog { min-width: 420px; }
+    .media-edit-dialog { min-width: min(420px, calc(100vw - 80px)); }
     .size-label {
       margin: -12px 0 16px;
       font-size: 0.8rem;

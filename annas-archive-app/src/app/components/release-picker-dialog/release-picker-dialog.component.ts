@@ -104,7 +104,7 @@ function formatBytes(bytes: number): string {
     </div>
   `,
   styles: [`
-    .release-picker-dialog { min-width: 520px; max-width: 640px; }
+    .release-picker-dialog { min-width: min(520px, calc(100vw - 80px)); max-width: 640px; }
     .loading {
       display: flex;
       align-items: center;

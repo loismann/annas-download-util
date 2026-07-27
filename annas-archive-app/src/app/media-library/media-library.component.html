@@ -1,5 +1,16 @@
+<!-- Mobile filter FAB (hidden on desktop) -->
+<button class="mobile-sidebar-toggle"
+        mat-icon-button
+        (click)="toggleSidebar()"
+        [attr.aria-label]="sidebarCollapsed ? 'Show filters' : 'Hide filters'">
+  <mat-icon>{{ sidebarCollapsed ? 'filter_list' : 'close' }}</mat-icon>
+</button>
+
+<!-- Mobile-only scrim behind the filter sheet; tap to dismiss -->
+<div class="sidebar-backdrop" *ngIf="!sidebarCollapsed" (click)="toggleSidebar()"></div>
+
 <div class="library-layout">
-  <aside class="library-sidebar">
+  <aside class="library-sidebar" [class.collapsed]="sidebarCollapsed">
     <div class="sidebar-header">
       <h2>Media Library</h2>
       <p>Browse your downloaded shows &amp; movies.</p>

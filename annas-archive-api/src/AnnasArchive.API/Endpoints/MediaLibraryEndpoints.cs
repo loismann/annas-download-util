@@ -57,6 +57,14 @@ public static class MediaLibraryEndpoints
             .RequireAuthorization()
             .RequireRateLimiting("media");
 
+        // HLS fallback for files a plain <video src> can't decode natively (AVI
+        // containers, AC3/DTS audio, etc — see JellyfinService.IsBrowserCompatible).
+        // Only reachable after HandleWatchTv/HandleWatchMovie returns
+        // playbackMode:"transcode" for that item.
+        app.MapGet("/api/media/tv/hls/master.m3u8", HandleTvHlsMaster)
+            .RequireAuthorization()
+            .RequireRateLimiting("media");
+
         app.MapPost("/api/media/tv/progress", HandleSaveTvProgress)
             .RequireAuthorization()
             .RequireRateLimiting("api");
@@ -87,6 +95,18 @@ public static class MediaLibraryEndpoints
             .RequireRateLimiting("api");
 
         app.MapGet("/api/media/movies/stream", HandleStreamMovie)
+            .RequireAuthorization()
+            .RequireRateLimiting("media");
+
+        app.MapGet("/api/media/movies/hls/master.m3u8", HandleMovieHlsMaster)
+            .RequireAuthorization()
+            .RequireRateLimiting("media");
+
+        // Shared HLS sub-resource proxy (the second-level playlist + each .ts
+        // segment) for both movies and episodes alike — by this point the
+        // caller only needs Jellyfin's own opaque itemId (already resolved once
+        // by the master-playlist request above), not tmdbId/tvdbId again.
+        app.MapGet("/api/media/hls/{itemId}/{*subPath}", HandleHlsResource)
             .RequireAuthorization()
             .RequireRateLimiting("media");
 
@@ -199,7 +219,8 @@ public static class MediaLibraryEndpoints
                         durationSeconds = state.DurationSeconds,
                         mediaSourceId = state.MediaSourceId,
                         audioTracks = state.AudioTracks,
-                        subtitleTracks = state.SubtitleTracks
+                        subtitleTracks = state.SubtitleTracks,
+                        playbackMode = state.PlaybackMode
                     });
             }
 
@@ -330,7 +351,8 @@ public static class MediaLibraryEndpoints
                         durationSeconds = state.DurationSeconds,
                         mediaSourceId = state.MediaSourceId,
                         audioTracks = state.AudioTracks,
-                        subtitleTracks = state.SubtitleTracks
+                        subtitleTracks = state.SubtitleTracks,
+                        playbackMode = state.PlaybackMode
                     });
             }
 
@@ -377,6 +399,127 @@ public static class MediaLibraryEndpoints
             if (!context.Response.HasStarted)
                 context.Response.StatusCode = 502;
         }
+    }
+
+    private static async Task<IResult> HandleMovieHlsMaster(HttpContext context, [FromQuery] int tmdbId, IJellyfinService jellyfin)
+    {
+        var owner = LibraryHelpers.ResolveUserDisplayName(context);
+        if (owner is null)
+            return Results.BadRequest(new { error = "Could not resolve the logged-in user." });
+
+        try
+        {
+            var result = await jellyfin.GetMovieHlsMasterAsync(owner, tmdbId, context.RequestAborted);
+            if (result is null)
+                return Results.NotFound(new { error = "Jellyfin hasn't matched this movie yet — it may still be scanning." });
+
+            var accessToken = context.Request.Query["access_token"].ToString();
+            return Results.Text(RewriteHlsPlaylist(result.PlaylistText, result.ItemId, accessToken), "application/vnd.apple.mpegurl");
+        }
+        catch (HttpRequestException ex)
+        {
+            Log.Warning("[MediaLibrary] Jellyfin movie HLS master failed: {Message}", ex.Message);
+            return Results.Json(new { error = "Jellyfin is unavailable" }, statusCode: StatusCodes.Status503ServiceUnavailable);
+        }
+    }
+
+    private static async Task<IResult> HandleTvHlsMaster(
+        HttpContext context, [FromQuery] int tvdbId, [FromQuery] int season, [FromQuery] int episode, IJellyfinService jellyfin)
+    {
+        var owner = LibraryHelpers.ResolveUserDisplayName(context);
+        if (owner is null)
+            return Results.BadRequest(new { error = "Could not resolve the logged-in user." });
+
+        try
+        {
+            var result = await jellyfin.GetEpisodeHlsMasterAsync(owner, tvdbId, season, episode, context.RequestAborted);
+            if (result is null)
+                return Results.NotFound(new { error = "Jellyfin hasn't matched this episode yet — it may still be scanning." });
+
+            var accessToken = context.Request.Query["access_token"].ToString();
+            return Results.Text(RewriteHlsPlaylist(result.PlaylistText, result.ItemId, accessToken), "application/vnd.apple.mpegurl");
+        }
+        catch (HttpRequestException ex)
+        {
+            Log.Warning("[MediaLibrary] Jellyfin episode HLS master failed: {Message}", ex.Message);
+            return Results.Json(new { error = "Jellyfin is unavailable" }, statusCode: StatusCodes.Status503ServiceUnavailable);
+        }
+    }
+
+    /// <summary>Proxies one HLS sub-resource — the second-level "main.m3u8" playlist,
+    /// or a .ts media segment — for whichever itemId a master-playlist request
+    /// already resolved. Playlists get the same URL rewrite as the master
+    /// (RewriteHlsPlaylist); segments are raw bytes, relayed verbatim.</summary>
+    private static async Task HandleHlsResource(HttpContext context, [FromRoute] string itemId, [FromRoute] string subPath, IJellyfinService jellyfin)
+    {
+        try
+        {
+            var rangeHeader = context.Request.Headers.Range.FirstOrDefault();
+            // Everything except our own access_token — Jellyfin doesn't know about
+            // that one; the rest (its own api_key, VideoCodec, etc.) all came from
+            // the playlist Jellyfin itself generated, so it rides back unchanged.
+            var forwardedQuery = string.Join('&', context.Request.Query
+                .Where(q => q.Key != "access_token")
+                .SelectMany(q => q.Value.Select(v => $"{Uri.EscapeDataString(q.Key)}={Uri.EscapeDataString(v ?? "")}")));
+
+            var result = await jellyfin.ProxyHlsResourceAsync(itemId, subPath, forwardedQuery, rangeHeader, context.RequestAborted);
+            if (result is null)
+            {
+                context.Response.StatusCode = 404;
+                return;
+            }
+
+            if (result.ContentType.Contains("mpegurl", StringComparison.OrdinalIgnoreCase))
+            {
+                string text;
+                await using (result.Body)
+                using (var reader = new StreamReader(result.Body))
+                {
+                    text = await reader.ReadToEndAsync();
+                }
+                var accessToken = context.Request.Query["access_token"].ToString();
+                context.Response.ContentType = "application/vnd.apple.mpegurl";
+                await context.Response.WriteAsync(RewriteHlsPlaylist(text, itemId, accessToken), context.RequestAborted);
+                return;
+            }
+
+            await RelayStreamAsync(context, result);
+        }
+        catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
+        {
+            // Player paused/seeked/closed mid-stream — the browser aborts the
+            // in-flight segment request every time. Routine, not an error.
+        }
+        catch (HttpRequestException ex)
+        {
+            Log.Warning("[MediaLibrary] Jellyfin HLS resource proxy failed: {Message}", ex.Message);
+            if (!context.Response.HasStarted)
+                context.Response.StatusCode = 502;
+        }
+    }
+
+    /// <summary>Rewrites every relative URL in a Jellyfin HLS playlist (the master
+    /// playlist's reference to its own second-level playlist, and that playlist's
+    /// references to each .ts segment) to route back through this app's own HLS
+    /// proxy route instead of pointing at Jellyfin directly, which the browser
+    /// can't reach. Carries the same ?access_token= the browser used to reach this
+    /// endpoint, so every follow-up request still passes .RequireAuthorization()
+    /// like every other media route.</summary>
+    private static string RewriteHlsPlaylist(string playlistText, string itemId, string accessToken)
+    {
+        var lines = playlistText.Split('\n');
+        for (var i = 0; i < lines.Length; i++)
+        {
+            var line = lines[i].TrimEnd('\r');
+            if (line.Length == 0 || line.StartsWith('#'))
+            {
+                lines[i] = line;
+                continue;
+            }
+            var sep = line.Contains('?') ? '&' : '?';
+            lines[i] = $"/api/media/hls/{itemId}/{line}{sep}access_token={Uri.EscapeDataString(accessToken)}";
+        }
+        return string.Join('\n', lines);
     }
 
     private static async Task<IResult> HandleSaveMovieProgress(

@@ -1,11 +1,12 @@
-<div class="storage-footer" *ngIf="stats">
+<div class="storage-footer" *ngIf="stats" [class.expanded]="expanded" (click)="toggleExpanded()">
   <span class="stat"><strong>{{ stats.percentFull }}%</strong> full</span>
-  <span class="divider">·</span>
-  <span class="stat">Movies: {{ formatTb(stats.moviesBytes) }}</span>
-  <span class="divider">·</span>
-  <span class="stat">TV: {{ formatTb(stats.tvBytes) }}</span>
-  <span class="divider">·</span>
-  <span class="stat">Books: {{ formatTb(stats.booksBytes) }}</span>
+  <span class="divider detail">·</span>
+  <span class="stat detail">Movies: {{ formatTb(stats.moviesBytes) }}</span>
+  <span class="divider detail">·</span>
+  <span class="stat detail">TV: {{ formatTb(stats.tvBytes) }}</span>
+  <span class="divider detail">·</span>
+  <span class="stat detail">Books: {{ formatTb(stats.booksBytes) }}</span>
   <span class="divider">·</span>
   <span class="stat">Free: {{ formatTb(stats.freeBytes) }}</span>
+  <span class="expand-hint" aria-hidden="true">{{ expanded ? '▾' : '▸' }}</span>
 </div>

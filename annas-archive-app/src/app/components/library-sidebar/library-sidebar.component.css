@@ -9,6 +9,16 @@
   gap: 16px;
 }
 
+/* Inside the mobile bottom sheet the parent provides the surface — drop the
+   card chrome so the panel doesn't render as a bordered card within a sheet. */
+@media (max-width: 768px) {
+  .library-sidebar {
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+  }
+}
+
 .sidebar-header h2 {
   margin: 0;
   font-size: 18px;

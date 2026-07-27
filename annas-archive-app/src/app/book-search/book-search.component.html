@@ -1,29 +1,22 @@
-<div class="search-wrapper">
-  <!-- Mobile collapse toggle button (only visible on mobile) -->
-  <button class="mobile-collapse-toggle"
-          mat-icon-button
-          (click)="toggleSearchPanel()"
-          [attr.aria-label]="searchPanelCollapsed ? 'Expand search' : 'Collapse search'">
-    <mat-icon>{{ searchPanelCollapsed ? 'expand_more' : 'expand_less' }}</mat-icon>
-  </button>
+<div class="book-search-page">
+  <!-- Hero: search form, same shape/position as the movie/TV search page -->
+  <div class="search-hero">
+    <app-search-form
+      [loading]="loading"
+      [error]="error"
+      [annaDomains]="annaDomains"
+      [downloadsLeft]="downloadsLeft"
+      [downloadsPerDay]="downloadsPerDay"
+      [relatedBooksModalOpen]="relatedBooksModalOpen"
+      [collapsed]="searchPanelCollapsed"
+      (search)="onSearchFormSubmit($event)"
+      (openRelatedBooks)="onOpenRelatedBooks($event)"
+      (toggleCollapsed)="toggleSearchPanel()"
+      (formatChange)="onFormatChange($event)"
+    ></app-search-form>
+  </div>
 
-  <!-- LEFT column: form + counter -->
-  <app-search-form
-    class="search-panel"
-    [loading]="loading"
-    [error]="error"
-    [annaDomains]="annaDomains"
-    [downloadsLeft]="downloadsLeft"
-    [downloadsPerDay]="downloadsPerDay"
-    [relatedBooksModalOpen]="relatedBooksModalOpen"
-    [collapsed]="searchPanelCollapsed"
-    (search)="onSearchFormSubmit($event)"
-    (openRelatedBooks)="onOpenRelatedBooks($event)"
-    (toggleCollapsed)="toggleSearchPanel()"
-    (formatChange)="onFormatChange($event)"
-  ></app-search-form>
-
-  <!-- RIGHT column: results -->
+  <!-- Results, full width below the hero -->
   <app-search-results
     class="results-panel"
     [books]="filteredBooks"

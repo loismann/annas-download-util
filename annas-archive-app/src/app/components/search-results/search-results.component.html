@@ -139,6 +139,11 @@
 
     <ng-template #maybeNoResults>
       <p *ngIf="searchPerformed && !loading">No results</p>
+      <div *ngIf="!searchPerformed && !loading" class="pre-search-hint">
+        <mat-icon>auto_stories</mat-icon>
+        <p>Search Anna's Archive for books.</p>
+        <p class="hint-sub">Results will appear here.</p>
+      </div>
     </ng-template>
   </div>
 </div>

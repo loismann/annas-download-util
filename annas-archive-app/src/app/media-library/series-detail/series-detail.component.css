@@ -41,3 +41,27 @@ mat-expansion-panel {
 .ep-title {
   flex: 1 1 auto;
 }
+
+/* Phones: tighter padding, wrap-friendly episode rows, 44px touch targets */
+@media (max-width: 640px) {
+  .series-detail-page {
+    padding: 12px;
+  }
+
+  .episode-row {
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+
+  .ep-title {
+    flex: 1 1 60%;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .episode-row .mat-mdc-icon-button {
+    width: 44px;
+    height: 44px;
+    padding: 0;
+  }
+}

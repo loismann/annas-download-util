@@ -8,24 +8,33 @@
     allow="autoplay; fullscreen"
     allowfullscreen
   ></iframe>
-  <video
-    *ngIf="data.mode === 'native'"
-    #videoEl
-    class="player-frame"
-    [src]="data.streamUrl"
-    controls
-    autoplay
-    (pause)="onPause()"
-    (loadedmetadata)="onLoadedMetadata()"
-  >
-    <track
-      *ngFor="let t of data.subtitleTracks"
-      kind="subtitles"
-      [src]="subtitleUrl(t)"
-      [label]="trackLabel(t)"
-      [srclang]="t.language || 'und'"
-    />
-  </video>
+  <div *ngIf="data.mode === 'native'" class="native-player-wrapper">
+    <video
+      #videoEl
+      class="player-frame"
+      controls
+      (pause)="onPause()"
+      (loadedmetadata)="onLoadedMetadata()"
+    >
+      <track
+        *ngFor="let t of data.subtitleTracks"
+        kind="subtitles"
+        [src]="subtitleUrl(t)"
+        [label]="trackLabel(t)"
+        [srclang]="t.language || 'und'"
+      />
+    </video>
+
+    <div class="resume-overlay" *ngIf="resumeChoicePending">
+      <div class="resume-prompt">
+        <p class="resume-question">Resume from {{ formattedResumeTime() }}?</p>
+        <div class="resume-actions">
+          <button mat-raised-button color="primary" (click)="resumeFromSaved()">Resume</button>
+          <button mat-stroked-button (click)="restartFromBeginning()">Start Over</button>
+        </div>
+      </div>
+    </div>
+  </div>
 </mat-dialog-content>
 
 <div class="track-controls" *ngIf="data.mode === 'native' && (audioTrackOptions.length > 1 || (data.subtitleTracks?.length ?? 0) > 0)">

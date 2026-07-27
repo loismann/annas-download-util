@@ -68,7 +68,7 @@ export interface MediaBulkEditDialogResult {
     </div>
   `,
   styles: [`
-    .media-bulk-edit-dialog { min-width: 420px; }
+    .media-bulk-edit-dialog { min-width: min(420px, calc(100vw - 80px)); }
     .append-toggle {
       display: block;
       margin-top: 12px;

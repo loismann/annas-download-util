@@ -1,54 +1,58 @@
-<div class="search-form" [class.collapsed]="collapsed">
-  <!-- Anna's Archive Domain Health Status -->
-  <div class="health-status-row">
-    <div class="health-item"
-         *ngFor="let domain of annaDomains"
-         [ngClass]="getHealthColorClass(domain.health)">
-      <div class="health-domain">.{{ domain.extension }}</div>
-      <div class="health-percent">{{ domain.health !== null ? (domain.health + '%') : '...' }}</div>
-    </div>
-  </div>
-
+<div class="search-form">
   <form (ngSubmit)="onSubmit()">
-    <!-- Book name -->
-    <mat-form-field
-      appearance="outline"
-      class="w-100 ai-search-field"
-      [floatLabel]="aiSearchExpanded ? 'always' : 'auto'"
-    >
-      <mat-label>Book name</mat-label>
-      <ng-container *ngIf="!aiSearchExpanded; else aiSearchInput">
-        <input
-          matInput
-          [(ngModel)]="searchTerm"
-          (ngModelChange)="onSearchTermChange($event)"
-          name="searchTerm"
-          required
-        />
-      </ng-container>
-      <ng-template #aiSearchInput>
-        <textarea
-          matInput
-          [(ngModel)]="aiSearchQuery"
-          name="aiSearchQuery"
-          rows="4"
-          placeholder="Ask for books, e.g., top-rated Hugo winners from the 1980s"
-        ></textarea>
-      </ng-template>
-      <button
-        mat-icon-button
-        matSuffix
-        type="button"
-        class="ai-toggle"
-        (click)="toggleAiSearch()"
-        [attr.aria-label]="aiSearchExpanded ? 'Close AI search' : 'Open AI search'"
+    <!-- Row 1: book name + Search, same shape as the movie/TV search bar -->
+    <div class="search-bar">
+      <mat-form-field
+        appearance="outline"
+        class="search-field ai-search-field"
+        [floatLabel]="aiSearchExpanded ? 'always' : 'auto'"
       >
-        <mat-icon>{{ aiSearchExpanded ? 'close' : 'smart_toy' }}</mat-icon>
-      </button>
-    </mat-form-field>
+        <mat-label>Book name</mat-label>
+        <ng-container *ngIf="!aiSearchExpanded; else aiSearchInput">
+          <input
+            matInput
+            [(ngModel)]="searchTerm"
+            (ngModelChange)="onSearchTermChange($event)"
+            name="searchTerm"
+            required
+          />
+        </ng-container>
+        <ng-template #aiSearchInput>
+          <textarea
+            matInput
+            [(ngModel)]="aiSearchQuery"
+            name="aiSearchQuery"
+            rows="4"
+            placeholder="Ask for books, e.g., top-rated Hugo winners from the 1980s"
+          ></textarea>
+        </ng-template>
+        <button
+          mat-icon-button
+          matSuffix
+          type="button"
+          class="ai-toggle"
+          (click)="toggleAiSearch()"
+          [attr.aria-label]="aiSearchExpanded ? 'Close AI search' : 'Open AI search'"
+        >
+          <mat-icon>{{ aiSearchExpanded ? 'close' : 'smart_toy' }}</mat-icon>
+        </button>
+      </mat-form-field>
 
-    <!-- Author suggestions -->
-    <mat-form-field appearance="outline" class="w-100 author-dropdown">
+      <button
+        mat-raised-button
+        color="primary"
+        type="submit"
+        class="search-button"
+        [disabled]="loading"
+      >
+        {{ aiSearchExpanded ? 'Ask AI' : 'Search' }}
+      </button>
+    </div>
+
+    <!-- Row 2: Author — always visible, not tucked behind "More options",
+         since narrowing to a known author materially improves match quality
+         rather than being a cosmetic filter. -->
+    <mat-form-field appearance="outline" class="author-dropdown">
       <mat-label>Author</mat-label>
       <mat-select
         [(ngModel)]="selectedAuthor"
@@ -69,49 +73,64 @@
       ></mat-spinner>
     </mat-form-field>
 
-    <!-- Filters row -->
-    <app-search-filters
-      [selectedFormat]="selectedFormat"
-      [availableFormats]="availableFormats"
-      [downloadsLeft]="downloadsLeft"
-      [downloadsPerDay]="downloadsPerDay"
-      [disabled]="relatedBooksModalOpen"
-      (formatChange)="onFormatChange($event)"
-    ></app-search-filters>
-
-    <!-- Search button -->
+    <!-- Everything else collapses behind this, matching the movie/TV page's
+         minimal look — health status, format, source, VPN, Related Books. -->
     <button
-      mat-raised-button
-      color="primary"
-      type="submit"
-      [disabled]="loading"
-    >
-      {{ aiSearchExpanded ? 'Ask AI' : 'Search' }}
-    </button>
-
-    <!-- Find Related Books button -->
-    <button
-      mat-raised-button
-      color="accent"
       type="button"
-      (click)="onOpenRelatedBooks()"
-      [disabled]="!selectedAuthor"
-      [class.halftone]="!selectedAuthor"
+      mat-button
+      class="options-toggle"
+      (click)="onToggleCollapsed()"
+      [attr.aria-expanded]="!collapsed"
     >
-      Find Related Books
+      <mat-icon>{{ collapsed ? 'tune' : 'expand_less' }}</mat-icon>
+      {{ collapsed ? 'More options' : 'Fewer options' }}
     </button>
 
-    <!-- Source toggle -->
-    <div class="source-toggle-row">
-      <mat-slide-toggle
-        [(ngModel)]="useLibGen"
-        name="useLibGen"
-        color="primary">
-        {{ useLibGen ? 'Using LibGen' : 'Using Anna\'s Archive' }}
-      </mat-slide-toggle>
-    </div>
+    <div class="form-extras" [class.collapsed]="collapsed">
+      <!-- Anna's Archive Domain Health Status -->
+      <div class="health-status-row">
+        <div class="health-item"
+             *ngFor="let domain of annaDomains"
+             [ngClass]="getHealthColorClass(domain.health)">
+          <div class="health-domain">.{{ domain.extension }}</div>
+          <div class="health-percent">{{ domain.health !== null ? (domain.health + '%') : '...' }}</div>
+        </div>
+      </div>
 
-    <app-vpn-toggle></app-vpn-toggle>
+      <!-- Filters row -->
+      <app-search-filters
+        [selectedFormat]="selectedFormat"
+        [availableFormats]="availableFormats"
+        [downloadsLeft]="downloadsLeft"
+        [downloadsPerDay]="downloadsPerDay"
+        [disabled]="relatedBooksModalOpen"
+        (formatChange)="onFormatChange($event)"
+      ></app-search-filters>
+
+      <!-- Find Related Books button -->
+      <button
+        mat-raised-button
+        color="accent"
+        type="button"
+        (click)="onOpenRelatedBooks()"
+        [disabled]="!selectedAuthor"
+        [class.halftone]="!selectedAuthor"
+      >
+        Find Related Books
+      </button>
+
+      <!-- Source toggle -->
+      <div class="source-toggle-row">
+        <mat-slide-toggle
+          [(ngModel)]="useLibGen"
+          name="useLibGen"
+          color="primary">
+          {{ useLibGen ? 'Using LibGen' : 'Using Anna\'s Archive' }}
+        </mat-slide-toggle>
+      </div>
+
+      <app-vpn-toggle></app-vpn-toggle>
+    </div>
 
     <!-- Feedback -->
     <div *ngIf="error" class="error">{{ error }}</div>

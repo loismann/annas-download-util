@@ -26,12 +26,51 @@ button {
   word-wrap: break-word;
 }
 
+/* Icon buttons: keep the mat-icon perfectly centered inside its circle.
+   The Material Icons ligature font reports a line-height that offsets the
+   glyph inside MDC's icon-button box on iOS Safari in particular. */
+.mat-mdc-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mat-mdc-icon-button .mat-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  margin: 0;
+}
+
+/* ─── Mobile dialog guard ─────────────────────────────────────────────
+   MatDialog writes width/max-width as inline styles on the overlay pane, so
+   every dialog.open({ width: '480px' }) call would overflow a phone viewport.
+   !important in a stylesheet beats non-important inline styles, making this a
+   single cap for every dialog in the app. */
+@media (max-width: 640px) {
+  .cdk-overlay-pane.mat-mdc-dialog-panel {
+    max-width: calc(100vw - 16px) !important;
+    min-width: 0 !important;
+  }
+
+  .mat-mdc-dialog-container .mdc-dialog__surface {
+    max-width: 100%;
+  }
+
+  /* Dialog actions: allow wrapping instead of overflowing on narrow screens */
+  .mat-mdc-dialog-actions {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+}
+
 /* Material dropdown panel overrides for CDK overlay */
 /* These must be global since panels render outside component scope */
 
 /* Author dropdown panel styling - expand rightward from left edge, max 600px width with wrapping */
 .author-select-panel {
-  max-width: 600px !important;
+  max-width: min(600px, calc(100vw - 16px)) !important;
   transform-origin: top left !important;
   /* No transform needed - panel expands rightward from left edge by default */
 }
@@ -73,9 +112,9 @@ button {
 
 /* Match dropdown panel styling - expand leftwards, 600px width with wrapping */
 .match-select-panel {
-  min-width: 600px !important;
-  max-width: 600px !important;
-  width: 600px !important;
+  min-width: min(600px, calc(100vw - 16px)) !important;
+  max-width: min(600px, calc(100vw - 16px)) !important;
+  width: min(600px, calc(100vw - 16px)) !important;
   transform-origin: top right !important;
   /* xPosition="before" in HTML handles right-alignment */
 }

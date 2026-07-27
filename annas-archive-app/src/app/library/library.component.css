@@ -1,6 +1,6 @@
 :host {
   display: block;
-  height: calc(100vh - 64px);
+  height: calc(100dvh - 64px);
   padding: 36px 36px 28px;
   background: radial-gradient(circle at 10% 20%, #eef2ff 0, #f8fafc 35%, #ffffff 70%);
   box-sizing: border-box;
@@ -14,6 +14,11 @@
 
 /* Mobile sidebar toggle button (hidden on desktop) */
 .mobile-sidebar-toggle {
+  display: none;
+}
+
+/* Mobile-only scrim behind the filter sheet (hidden on desktop) */
+.sidebar-backdrop {
   display: none;
 }
 
@@ -793,13 +798,20 @@
    ═══════════════════════════════════════════════════════════════════════════ */
 
 @media (max-width: 768px) {
-  /* Show the mobile sidebar toggle button - positioned at bottom right for less intrusion */
+  :host {
+    height: calc(100dvh - 56px);
+    padding: 12px 12px 8px;
+  }
+
+  /* Filter FAB: sits above the storage footer + iOS home indicator */
   .mobile-sidebar-toggle {
     display: flex;
+    align-items: center;
+    justify-content: center;
     position: fixed;
-    bottom: 16px;
+    bottom: calc(52px + env(safe-area-inset-bottom));
     right: 16px;
-    z-index: 1000;
+    z-index: 1200;
     background: #3f51b5;
     color: white;
     box-shadow: 0 4px 12px rgba(0,0,0,0.3);
@@ -812,28 +824,79 @@
     background: #303f9f;
   }
 
-  /* Stack layout vertically on mobile */
   .library-layout {
     grid-template-columns: 1fr;
-    gap: 16px;
+    gap: 12px;
   }
 
-  /* Sidebar container styles for mobile */
+  /* Filters become a bottom sheet over the grid instead of pushing it down */
+  .sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.45);
+    z-index: 1150;
+  }
+
   .sidebar-container {
     display: block;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 1160;
+    max-height: 78dvh;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    background: #ffffff;
+    border-radius: 16px 16px 0 0;
+    box-shadow: 0 -8px 30px rgba(15, 23, 42, 0.3);
+    padding-bottom: env(safe-area-inset-bottom);
   }
 
   .sidebar-container.collapsed {
     display: none;
   }
 
-  /* Adjust padding */
-  :host {
-    padding: 16px;
+  .library-panel {
+    height: 100%;
   }
 
-  /* Library panel takes full height when sidebar collapsed */
-  .library-panel {
-    height: calc(100vh - 120px);
+  /* Compact control row: chips + density + sort in as few rows as possible */
+  .library-controls {
+    gap: 8px;
+    padding-bottom: 8px;
+  }
+
+  .owner-filters {
+    flex: 1 1 100%;
+    justify-content: flex-start;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    gap: 8px;
+  }
+
+  .owner-filter {
+    white-space: nowrap;
+    min-height: 36px;
+  }
+
+  .sort-combo {
+    flex: 1 1 auto;
+  }
+
+  .sort-field {
+    width: 100%;
+    min-width: 140px;
+  }
+
+  /* Wider tap targets for the A–Z strip */
+  .alphabet-letter {
+    padding: 2px 10px;
+    font-size: 0.75rem;
+  }
+
+  .alphabet-index {
+    right: 2px;
   }
 }

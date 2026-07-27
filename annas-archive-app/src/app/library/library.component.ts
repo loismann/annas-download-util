@@ -24,7 +24,7 @@ import { LibraryReviewTriggerService } from '../services/library-review-trigger.
 import { LoggerService } from '../services/logger.service';
 import { BATCH_DELAY_MS } from '../constants/timeouts';
 import { TileSizeControlsComponent } from '../components/shared/tile-size-controls/tile-size-controls.component';
-import { BOOK_OWNER_TAGS, ownerToBookTag } from '../constants/owners';
+import { BOOK_OWNER_TAGS, bookTagToOwner, ownerToBookTag } from '../constants/owners';
 
 @Component({
   selector: 'app-library',
@@ -815,6 +815,11 @@ export class LibraryComponent implements OnInit, OnDestroy {
       this.selectedOwnerTags.add(tag);
     }
     this.invalidateFilterCache();
+  }
+
+  /** Chip label: "Paul's Books" → "Paul", matching the media library's chips. */
+  shortOwnerLabel(tag: string): string {
+    return bookTagToOwner(tag) ?? tag;
   }
 
   canSendToKindle(book: LibraryBook): boolean {

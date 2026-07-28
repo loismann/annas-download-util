@@ -335,6 +335,21 @@ services:
       - ../data/radarr:/config
       - /home/pferrer/Media:/data
 
+  # REMOVED — Recyclarr applied TRaSH-Guides quality profiles to Sonarr/Radarr
+  # on a daily schedule. It did its one useful job (creating the custom formats
+  # and the 1080p profiles, which remain in place), but its ongoing sync was
+  # actively harmful here:
+  #
+  #   * TRaSH's quality definitions leave maxSize unlimited, because TRaSH's
+  #     audience wants the best-looking file. That is the opposite of the goal
+  #     for this library, and it is what allowed 25-32 GB Bluray-1080p grabs.
+  #   * Re-running daily meant any manual correction silently reverted overnight,
+  #     which made the whole thing very hard to reason about.
+  #
+  # Quality profiles and size caps are now set explicitly and once, by
+  # scripts/fix-quality-profiles.py — see that file for the full reasoning.
+  # recyclarr/recyclarr.yml is kept for reference only and no longer runs.
+
   # Media server — reads the same library Sonarr/Radarr populate.
   jellyfin:
     image: jellyfin/jellyfin:latest

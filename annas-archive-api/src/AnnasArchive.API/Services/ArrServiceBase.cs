@@ -19,18 +19,21 @@ public abstract class ArrServiceBase
     protected readonly string ServiceName;
     private readonly string _queueQuery;
     private readonly string _rootFolderHint;
+    private readonly string _preferredProfileName;
 
     protected ArrServiceBase(
         HttpClient http,
         IConfiguration configuration,
         string serviceName,
         string queueIncludeParam,
-        string rootFolderHint)
+        string rootFolderHint,
+        string defaultProfileName)
     {
         Http = http;
         ServiceName = serviceName;
         _queueQuery = $"/api/v3/queue?{queueIncludeParam}";
         _rootFolderHint = rootFolderHint;
+        _preferredProfileName = configuration[$"{serviceName}:QualityProfile"] ?? defaultProfileName;
 
         var baseUrl = configuration[$"{serviceName}:BaseUrl"];
         var apiKey = configuration[$"{serviceName}:ApiKey"];
@@ -124,8 +127,28 @@ public abstract class ArrServiceBase
         var profiles = await GetJsonArrayAsync("/api/v3/qualityprofile", ct);
         if (profiles.Count == 0)
             throw new InvalidOperationException($"{ServiceName} has no quality profile configured.");
-        var qualityProfileId = (int)(profiles[0]?["id"] ?? 0);
 
+        // Match the configured profile by name rather than taking profiles[0].
+        // Sonarr/Radarr return profiles in ID order, so profiles[0] is whichever
+        // profile happens to be oldest — on a stock install that's "Any", which
+        // accepts 4K and other oversized releases. Everything added through this
+        // app was silently landing on that profile regardless of the 1080p
+        // profiles the library was migrated onto, so new adds quietly undid the
+        // migration one movie at a time. Falls back to profiles[0] if the name
+        // doesn't resolve, since a wrong profile still beats being unable to add
+        // anything at all.
+        var match = profiles.OfType<JsonObject>().FirstOrDefault(p =>
+            string.Equals(p["name"]?.ToString(), _preferredProfileName, StringComparison.OrdinalIgnoreCase));
+
+        if (match is null)
+        {
+            Log.Warning("[{Service}] Quality profile '{Profile}' not found — falling back to '{Fallback}'. " +
+                        "Set \"{Service}:QualityProfile\" to one of: {Available}",
+                ServiceName, _preferredProfileName, profiles[0]?["name"]?.ToString(),
+                string.Join(", ", profiles.OfType<JsonObject>().Select(p => p["name"]?.ToString())));
+        }
+
+        var qualityProfileId = (int)((match ?? profiles[0] as JsonObject)?["id"] ?? 0);
         return (rootFolderPath, qualityProfileId);
     }
 }

@@ -47,6 +47,18 @@
       <mat-button-toggle [value]="true">Movies</mat-button-toggle>
     </mat-button-toggle-group>
     <div class="ai-hint" *ngIf="aiSearchExpanded">AI search can return both TV shows and movies together</div>
+
+    <!-- Admin-only: /media itself is open to the whole household, and this dialog
+         exposes the Date Night pool option. -->
+    <button
+      mat-stroked-button
+      class="bulk-import-button"
+      *ngIf="searchingMovies && !aiSearchExpanded && authService.isAdmin()"
+      (click)="openBulkImport()"
+    >
+      <mat-icon>upload_file</mat-icon>
+      Bulk import from list
+    </button>
   </div>
 
   <div *ngIf="loading" class="loading">

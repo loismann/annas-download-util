@@ -1,5 +1,12 @@
 /* src/styles.scss */
 
+/* Date Night's 1950s movie-house design language — shared by the announcement,
+   weekly flyer, scheduling handshake, waiting lobby and showtime countdown.
+   Global because it's a theme used across many unrelated components; see that
+   file's header for the composition rules. Must stay at the top: Sass requires
+   @use before any other rule. */
+@use 'styles/theater';
+
 /* Import Angular Material’s Indigo-Pink theme */
 @import '@angular/material/prebuilt-themes/indigo-pink.css';
 
@@ -221,6 +228,30 @@ button {
 
 .video-edit-dialog-panel .mat-mdc-dialog-container {
   overflow: hidden !important;
+}
+
+/* Date Night dialogs are lobby cards, not Material surfaces — strip the default
+   padding and white background so the theater frame reaches the dialog edge.
+   Full-viewport on every device: the poster scales itself to fit inside (see
+   DateNightAnnouncementComponent), so the whole bill is visible at once and
+   nobody dismisses it without having seen the bottom half. */
+.thtr-dialog-panel {
+  max-width: 100vw !important;
+  max-height: 100vh !important;
+}
+.thtr-dialog-panel .mat-mdc-dialog-container .mdc-dialog__surface {
+  width: 100vw;
+  height: 100vh;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  /* The poster is scaled to fit, so nothing should ever need to scroll. */
+  overflow: hidden;
+}
+.thtr-dialog-panel .mat-mdc-dialog-container .mat-mdc-dialog-content {
+  padding: 0;
+  max-height: none;
 }
 
 /* …any other global styles… */

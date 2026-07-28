@@ -457,6 +457,24 @@ public static class ServiceConfiguration
         // their originating HTTP request (see HandleSendToLibrary / HandleLibGenSendToLibrary)
         services.AddSingleton<Services.IBookDownloadJobService, Services.BookDownloadJobService>();
 
+        // Date Night pool availability (see DOCS/DATE_NIGHT_FEATURE.md). Singleton so
+        // its "only one scan at a time" lock is actually shared across requests —
+        // a per-request instance would let every caller start a competing scan.
+        // Resolves IRadarrService per-scope internally, since that's a typed HttpClient.
+        services.AddSingleton<DateNightAvailabilityService>();
+
+        // Weekly cycle, votes, and the four permanent lists (phase 3). Singleton for the
+        // same reason as the availability service above — its lock guards against two
+        // concurrent requests both deciding a new cycle is due.
+        services.AddSingleton<DateNightCycleService>();
+
+        // Flyer AI pitch lines (phase 4) — singleton so its cache reads/writes go
+        // through one instance, same reasoning as the two services above. Depends on
+        // IAiResponseParser/ITokenUsageService/IModelSelectionService, registered
+        // further down — registration order doesn't matter to the DI container, which
+        // resolves the whole graph lazily on first use.
+        services.AddSingleton<DateNightSummaryService>();
+
         services.AddSingleton<IGenreClassificationService, GenreClassificationService>();
         services.AddSingleton<IDuplicateDetectionService, DuplicateDetectionService>();
         services.AddSingleton<IMetadataExtractionService, MetadataExtractionService>();

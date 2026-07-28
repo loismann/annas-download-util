@@ -10,6 +10,8 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { StorageFooterComponent } from './components/storage-footer/storage-footer.component';
 import { AuthService, UserActivity } from './services/auth.service';
 import { LibraryReviewTriggerService } from './services/library-review-trigger.service';
+import { DateNightAnnouncementService } from './services/date-night-announcement.service';
+import { DateNightShowtimeService } from './services/date-night-showtime.service';
 import { LoggerService } from './services/logger.service';
 import { Subscription, interval } from 'rxjs';
 import { switchMap, filter } from 'rxjs/operators';
@@ -216,6 +218,15 @@ import { switchMap, filter } from 'rxjs/operators';
           <mat-icon>video_library</mat-icon>
           <span>Video Library</span>
         </button>
+        <!-- Everyone: this is Mom and Dad's Date Night page. -->
+        <button mat-menu-item routerLink="/date-night">
+          <mat-icon>local_movies</mat-icon>
+          <span>Date Night</span>
+        </button>
+        <button *ngIf="authService.isAdmin()" mat-menu-item routerLink="/date-night/pool">
+          <mat-icon>inventory_2</mat-icon>
+          <span>Date Night pool</span>
+        </button>
       </mat-menu>
 
       <mat-menu #videosMenu="matMenu">
@@ -283,10 +294,14 @@ import { switchMap, filter } from 'rxjs/operators';
         </div>
       </div>
     </mat-toolbar>
-    <div [style.padding-bottom.px]="(authService.isAuthenticated$ | async) ? 32 : 0">
+    <div>
       <router-outlet></router-outlet>
     </div>
-    <app-storage-footer *ngIf="authService.isAuthenticated$ | async"></app-storage-footer>
+    <!-- Storage footer temporarily disabled during the Sonarr/Radarr 1080p
+         library migration — free space is swinging wildly as old files get
+         replaced, which reads as alarming/confusing on every page. Re-enable
+         by restoring the padding-bottom binding above and this element. -->
+    <!-- <app-storage-footer *ngIf="authService.isAuthenticated$ | async"></app-storage-footer> -->
   `
 })
 export class AppComponent implements OnInit, OnDestroy {
@@ -295,13 +310,17 @@ export class AppComponent implements OnInit, OnDestroy {
 
   private activitySubscription?: Subscription;
   private reviewCheckSubscription?: Subscription;
+  private announcementSubscription?: Subscription;
+  private showtimeSubscription?: Subscription;
 
   constructor(
     public authService: AuthService,
     private router: Router,
     private logger: LoggerService,
     private http: HttpClient,
-    private libraryReviewTrigger: LibraryReviewTriggerService
+    private libraryReviewTrigger: LibraryReviewTriggerService,
+    private dateNightAnnouncement: DateNightAnnouncementService,
+    private dateNightShowtime: DateNightShowtimeService
   ) {}
 
   ngOnInit(): void {
@@ -332,11 +351,34 @@ export class AppComponent implements OnInit, OnDestroy {
     this.reviewCheckSubscription = this.authService.isAuthenticated$.pipe(
       filter(isAuth => isAuth && this.authService.isAdmin())
     ).subscribe(() => this.libraryReviewTrigger.checkAndMaybeShow());
+
+    // One-time Date Night "coming soon" splash for Mom/Dad. Fires on the first
+    // authenticated load of any page, so they see it as early as possible rather
+    // than only if they happen to visit a particular screen. The backend decides
+    // per person whether it's still owed, and returns shouldShow=false for
+    // admins, so this costs one cheap request and nothing else.
+    this.announcementSubscription = this.authService.isAuthenticated$.pipe(
+      filter(isAuth => isAuth)
+    ).subscribe(() => this.dateNightAnnouncement.checkAndMaybeShow());
+
+    // Showtime countdown poll — app-wide (not just /date-night), since the popup
+    // needs to appear "on both accounts" regardless of which page they're on.
+    // Polled every 45s rather than tied to any user action, because there's no
+    // push notification to drive this any other way.
+    this.showtimeSubscription = this.authService.isAuthenticated$.pipe(
+      filter(isAuth => isAuth),
+      switchMap(() => {
+        this.dateNightShowtime.checkAndMaybeShow();
+        return interval(45000);
+      })
+    ).subscribe(() => this.dateNightShowtime.checkAndMaybeShow());
   }
 
   ngOnDestroy(): void {
     this.activitySubscription?.unsubscribe();
     this.reviewCheckSubscription?.unsubscribe();
+    this.announcementSubscription?.unsubscribe();
+    this.showtimeSubscription?.unsubscribe();
   }
 
   private fetchUserActivity(): void {

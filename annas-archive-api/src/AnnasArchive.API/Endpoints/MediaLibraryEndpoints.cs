@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using AnnasArchive.API.Constants;
 using AnnasArchive.API.Helpers;
 using AnnasArchive.API.Services;
 using Microsoft.AspNetCore.Mvc;
@@ -319,11 +320,26 @@ public static class MediaLibraryEndpoints
         }
     }
 
+    /// <summary>Hides undownloaded Date Night pool movies from the regular library —
+    /// the pool is a few hundred records deliberately added without files, and showing
+    /// them here would bury the actual library under unwatchable tiles. A pool movie
+    /// that *has* a file is left visible: at that point it's a real, playable movie
+    /// like any other, which is also how a movie graduates out of the pool after a
+    /// date night. See DOCS/DATE_NIGHT_FEATURE.md.</summary>
     private static async Task<IResult> HandleGetDownloadedMovies(IRadarrService radarr, IMediaMetadataService metadata)
     {
         try
         {
             var movies = await radarr.GetAllMoviesAsync();
+
+            var poolTagId = await radarr.EnsureTagAsync(DateNight.PoolTag);
+            var hidden = movies.OfType<JsonObject>()
+                .Where(m => (bool?)m["hasFile"] != true
+                            && (m["tags"] as JsonArray)?.Any(t => (int?)t == poolTagId) == true)
+                .ToList();
+            foreach (var movie in hidden)
+                movies.Remove(movie);
+
             ApplyMetadata(movies, "movie", metadata);
             return Results.Ok(movies);
         }

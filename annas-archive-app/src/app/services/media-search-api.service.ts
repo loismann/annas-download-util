@@ -57,6 +57,25 @@ export interface MediaQueueResponse {
   movies: { records?: MediaQueueItem[] };
 }
 
+/** One row of a bulk-import list — Title+Year find the movie in Radarr,
+ * Genres/Owner classify it once matched. Owner must be a household member
+ * name (see HOUSEHOLD_OWNERS) — same constraint as the single-item editor. */
+export interface BulkImportMovieRow {
+  title: string;
+  year: number | null;
+  genres: string[];
+  owner: string | null;
+}
+
+/** Status is one of: added, already-existed, not-found, ambiguous, invalid, error. */
+export interface BulkImportMovieResult {
+  title: string;
+  year?: number;
+  status: 'added' | 'already-existed' | 'not-found' | 'ambiguous' | 'invalid' | 'error';
+  message?: string;
+  movieId?: number;
+}
+
 /**
  * Service for the TV/movie search-and-acquire page — a thin client for our
  * own backend's proxy in front of Sonarr and Radarr (see
@@ -112,5 +131,13 @@ export class MediaSearchApiService {
 
   getQueue(): Observable<MediaQueueResponse> {
     return this.http.get<MediaQueueResponse>(`${this.baseUrl}/queue`);
+  }
+
+  /** `dateNightPool` registers each movie as a catalog record only — unmonitored,
+   * no search, tagged `date-night-pool` — so a long list can be added without any
+   * of it downloading. See DOCS/DATE_NIGHT_FEATURE.md. */
+  bulkImportMovies(rows: BulkImportMovieRow[], dateNightPool = false): Observable<BulkImportMovieResult[]> {
+    this.logger.log('[MediaSearchApiService] bulkImportMovies', { count: rows.length, dateNightPool });
+    return this.http.post<BulkImportMovieResult[]>(`${this.baseUrl}/movies/bulk-import`, { rows, dateNightPool });
   }
 }

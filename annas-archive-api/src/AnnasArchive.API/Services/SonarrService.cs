@@ -73,7 +73,8 @@ public interface ISonarrService
 public class SonarrService : ArrServiceBase, ISonarrService
 {
     public SonarrService(HttpClient http, IConfiguration configuration)
-        : base(http, configuration, "Sonarr", "includeSeries=true", "/data/TV")
+        : base(http, configuration, "Sonarr", "includeSeries=true", "/data/TV",
+               defaultProfileName: "WEB-1080p")
     {
     }
 

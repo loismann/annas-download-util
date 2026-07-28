@@ -108,6 +108,7 @@ app.MapAiSummarizeEndpoints();
 app.MapAiSectionSummaryEndpoints();
 app.MapVpnSettingsEndpoints();
 app.MapMediaRequestEndpoints();
+app.MapDateNightEndpoints();
 app.MapMediaLibraryEndpoints();
 app.MapAudiobookLibraryEndpoints();
 app.MapAudiobookEnrichmentEndpoints();

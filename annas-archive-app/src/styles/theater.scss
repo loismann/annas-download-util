@@ -1,0 +1,915 @@
+/* =========================================================================
+   DATE NIGHT — 1950s MOVIE HOUSE DESIGN LANGUAGE
+   =========================================================================
+
+   Shared visual vocabulary for every Date Night surface: the coming-soon
+   announcement, the weekly flyer, the scheduling handshake, the pre-show
+   waiting lobby, and the showtime countdown. See DOCS/DATE_NIGHT_FEATURE.md.
+
+   Global rather than component-scoped on purpose. These are theme primitives
+   used by half a dozen unrelated components, and Angular's per-component
+   encapsulation would mean either duplicating ~300 lines in each or disabling
+   encapsulation everywhere. One stylesheet, one place to retune the palette.
+
+   Everything is drawn in CSS. No image assets: nothing to deploy, nothing to
+   404, and it stays crisp at any size. The only remote content anywhere in the
+   feature is TMDB poster thumbnails.
+
+   ── Period accuracy ─────────────────────────────────────────────────────
+   Modelled on actual 1950s drive-in and B-movie advertising conventions
+   rather than a generic "retro" look:
+
+     * Lurid, saturated colour. Creature-feature one-sheets used bright reds,
+       yellows and atomic teals to stop people in a lobby — not the tasteful
+       gilt-on-navy of a prestige picture. The gilt here frames the marquee;
+       the poster content inside is deliberately garish.
+     * Starburst badges. Jagged stars shouting "SHOCK!" or "SEE!" plastered
+       over the artwork are the single most recognisable convention of the era.
+     * "SEE! / THRILL! / GASP!" stacked exclamation copy — the standard
+       structure of B-movie poster text.
+     * Halftone dot texture, from the photomechanical reproduction that
+       replaced hand-painted lithography during the decade.
+     * Art-deco geometric bands, taken from Filmack's snack-bar intermission
+       animations ("Let's All Go to the Lobby", 1957) — the reference for the
+       pre-show waiting lobby in phase 6.
+
+   ── Composition ─────────────────────────────────────────────────────────
+   Wrap content in `.thtr-stage`, then layer as needed:
+
+     .thtr-stage            outer frame, deep-blue house with gilt border
+       .thtr-bulbs          chasing marquee bulbs around the edge
+       .thtr-curtains       red velvet drapes down both sides
+       .thtr-inner          the content well (always put content here)
+         .thtr-searchlight--left / --right   premiere searchlights
+         .thtr-close        dismiss button, top-right
+
+   Content pieces: .thtr-eyebrow  .thtr-title  .thtr-tagline  .thtr-rule
+                   .thtr-card  .thtr-ticket  .thtr-reel  .thtr-btn
+                   .thtr-sprockets  .thtr-blink
+
+   Honour `prefers-reduced-motion` — every animation here is decorative, and
+   flickering bulbs plus a scrolling reel is exactly the combination that
+   causes trouble. All motion is disabled in one block at the bottom.
+   ========================================================================= */
+
+:root {
+  /* The house: marquee frame and auditorium. Restrained on purpose — it's the
+     picture frame, not the picture. */
+  --thtr-gilt: #d9a441;
+  --thtr-gilt-bright: #ffdf7e;
+  --thtr-cream: #ffeec9;
+  --thtr-parchment: #e8dcc0;
+  --thtr-velvet: #7b1113;
+  --thtr-velvet-dark: #4d0a0c;
+  --thtr-house: #101127;
+  --thtr-house-lit: #1d1f3a;
+
+  /* The poster: lurid one-sheet ink. These are the loud ones — used for
+     starbursts, exclamation copy and accents, exactly as a creature-feature
+     one-sheet would. */
+  --thtr-shock-red: #e02b1d;
+  --thtr-scream-yellow: #ffd21e;
+  --thtr-atomic-teal: #2ec4c6;
+  --thtr-radium: #8fe33f;
+  --thtr-magenta: #e0338c;
+  --thtr-neon: #ff8f6b;
+}
+
+/* ── Stage ─────────────────────────────────────────────────────────────── */
+
+.thtr-stage {
+  position: relative;
+  padding: 14px;
+  border-radius: 4px;
+  font-family: Georgia, 'Times New Roman', serif;
+  color: var(--thtr-cream);
+  background: repeating-linear-gradient(
+    135deg,
+    var(--thtr-velvet) 0 24px,
+    #6d0f11 24px 48px
+  );
+}
+
+.thtr-inner {
+  position: relative;
+  z-index: 2;
+  overflow: hidden;
+  padding: 30px 26px 26px;
+  text-align: center;
+  border: 3px solid var(--thtr-gilt);
+  background: radial-gradient(ellipse at top, var(--thtr-house-lit) 0%, var(--thtr-house) 70%);
+}
+
+/* ── Marquee bulbs ─────────────────────────────────────────────────────── */
+
+/* Four edge strips rather than one wrapping row: a single flex container can
+   only ever fill the top edge, so ringing the whole frame needs an element per
+   side. Each uses space-between, so bulb spacing adapts to however tall or wide
+   the card ends up.
+     <div class="thtr-bulbs">
+       <span class="thtr-bulbs-edge thtr-bulbs-edge--top"><i></i>…</span>
+       …--right, --bottom, --left
+     </div> */
+.thtr-bulbs {
+  position: absolute;
+  /* Centres each bulb on the red band's centreline. The band is .thtr-stage's
+     14px padding, so its centre is at 7px; a 9px bulb therefore starts at
+     7 - 9/2 = 2.5px. Keep in step with the stage padding and bulb size below —
+     get this wrong and the bulbs sit on the gilt border instead of the velvet. */
+  inset: 2.5px;
+  z-index: 3;
+  pointer-events: none;
+}
+
+.thtr-bulbs-edge {
+  position: absolute;
+  display: flex;
+  justify-content: space-between;
+}
+
+.thtr-bulbs-edge--top { top: 0; left: 0; right: 0; }
+.thtr-bulbs-edge--bottom { bottom: 0; left: 0; right: 0; }
+
+/* Vertical strips are inset by a bulb's width at each end so they don't stack a
+   second bulb on top of the corner ones, which would flicker out of phase. */
+.thtr-bulbs-edge--left,
+.thtr-bulbs-edge--right {
+  top: 14px;
+  bottom: 14px;
+  flex-direction: column;
+}
+.thtr-bulbs-edge--left { left: 0; }
+.thtr-bulbs-edge--right { right: 0; }
+
+.thtr-bulbs i {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--thtr-gilt-bright);
+  box-shadow: 0 0 7px 2px rgba(255, 214, 102, .8);
+  animation: thtr-flicker 1.6s infinite ease-in-out;
+}
+/* Three-phase chase rather than on/off — reads as a running marquee. */
+.thtr-bulbs i:nth-child(3n + 2) { animation-delay: .53s; }
+.thtr-bulbs i:nth-child(3n + 3) { animation-delay: 1.06s; }
+
+@keyframes thtr-flicker {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .3; }
+}
+
+/* ── Velvet curtains ───────────────────────────────────────────────────── */
+
+.thtr-curtains {
+  position: absolute;
+  inset: 14px;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.thtr-curtains::before,
+.thtr-curtains::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 58px;
+  background:
+    repeating-linear-gradient(90deg,
+      var(--thtr-velvet-dark) 0 7px,
+      var(--thtr-velvet) 7px 15px,
+      #8d1518 15px 22px);
+  box-shadow: inset 0 0 34px rgba(0, 0, 0, .75);
+}
+.thtr-curtains::before {
+  left: 0;
+  border-radius: 0 40% 30% 0 / 0 8% 6% 0;
+}
+.thtr-curtains::after {
+  right: 0;
+  border-radius: 40% 0 0 30% / 8% 0 0 6%;
+}
+
+/* ── Searchlights ──────────────────────────────────────────────────────────
+   A pair of premiere searchlights hinged at the bottom corners of the content
+   well, sweeping back and forth across the sky.
+
+   Both run the same duration, so they sweep at the same angular speed. They are
+   knocked out of phase by a negative animation-delay instead, which is what
+   stops them reading as one mirrored mechanism — real searchlights are two
+   independent machines that drift in and out of step. */
+
+/* The rotating rig.
+
+   Everything inside points STRAIGHT UP; aiming is done purely by rotating this
+   container about its bottom centre. That is what keeps the lamp and the beam
+   parallel and concentric at every angle — an earlier version drew a diagonal
+   beam inside an upright box and bolted an axis-aligned lamp to its base, so
+   the two could never line up no matter how they were nudged.
+
+   Unpainted and unblurred so the crisp lamp and the soft beam can be separate
+   layers; blurring the container would smear the housing into the light. */
+.thtr-searchlight {
+  position: absolute;
+  bottom: 0;
+  z-index: 0;
+  width: 44%;
+  height: 150%;
+  pointer-events: none;
+  transform-origin: 50% 100%;
+  /* Same duration on both = same sweep speed; `alternate` gives the easing at
+     each end that a physical light has when it reverses. */
+  animation: thtr-sweep-left 11s ease-in-out infinite alternate;
+}
+
+/* The beam: a symmetric trapezoid about the rig's vertical centreline. It
+   leaves the lamp at exactly the lamp's width (see BEAM_BASE) and spreads from
+   there, so the light visibly originates from the housing rather than from an
+   invisible point. */
+.thtr-searchlight::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  /* BEAM_BASE: 41%..59%. Must match the lamp's left/width below. */
+  clip-path: polygon(41% 100%, 59% 100%, 96% 0, 4% 0);
+  background: linear-gradient(
+    to top,
+    rgba(255, 236, 190, .13) 0%,
+    rgba(255, 236, 190, .045) 45%,
+    transparent 85%
+  );
+  filter: blur(7px);
+}
+
+/* The lamp: a drum with a bright lens on top, sitting on the rig's centreline
+   and exactly as wide as the beam's base. */
+.thtr-searchlight::after {
+  content: '';
+  position: absolute;
+  left: 41%;
+  width: 18%;
+  height: 20px;
+  bottom: -6px;
+  border-top: 3px solid rgba(255, 244, 214, .92);
+  border-radius: 3px 3px 7px 7px;
+  background: linear-gradient(to top, #211c2b 0%, #4a4055 100%);
+  box-shadow:
+    0 0 18px 5px rgba(255, 236, 190, .25),
+    inset 0 -3px 5px rgba(0, 0, 0, .6);
+}
+
+/* Offset by half the rig's width so the pivot — and therefore the lamp — sits
+   inset from the corner rather than hanging off it. */
+.thtr-searchlight--left { left: -14%; }
+
+.thtr-searchlight--right {
+  right: -14%;
+  animation-name: thtr-sweep-right;
+  /* Out of phase, not slower. */
+  animation-delay: -4.3s;
+}
+
+/* Both sweep inward and upward, away from their own corner. */
+@keyframes thtr-sweep-left {
+  from { transform: rotate(8deg); }
+  to { transform: rotate(44deg); }
+}
+
+@keyframes thtr-sweep-right {
+  from { transform: rotate(-8deg); }
+  to { transform: rotate(-44deg); }
+}
+
+/* ── Type ──────────────────────────────────────────────────────────────────
+   Class names are DOUBLED on every rule that targets a semantic element.
+   index.html carries <body class="mat-typography">, and Angular Material ships:
+
+       .mat-typography h1 { font: 400 24px/32px Roboto; margin: 0 0 16px }
+       .mat-typography p  { margin: 0 0 12px }
+
+   Those are specificity (0,1,1) and beat a plain single class (0,1,0), no matter
+   which stylesheet loads later — Material was silently rendering the marquee
+   title as 24px Roboto and only leaving colour and text-shadow to us. Repeating
+   the class gives (0,2,0), which wins outright. Keep the doubling on any new
+   rule here that styles an h1-h3 or p. */
+
+.thtr-eyebrow.thtr-eyebrow {
+  position: relative;
+  margin: 0 0 6px;
+  font-size: .72rem;
+  letter-spacing: .22em;
+  text-transform: uppercase;
+  color: var(--thtr-gilt);
+}
+
+.thtr-title.thtr-title {
+  position: relative;
+  margin: 0;
+  /* A heavy condensed display face, matching the SEE!/THRILL! copy. Georgia —
+     inherited from the stage — is a book face: far too refined to headline a
+     creature-feature one-sheet, and it made the title the most restrained type
+     on an otherwise lurid poster. */
+  font-family: Impact, 'Haettenschweiler', 'Arial Narrow Bold', 'Arial Black', sans-serif;
+  /* Deliberately not viewport-based. The card is a fixed 720px composition that
+     gets scaled to fit, so vw is the wrong reference frame — it would pin to its
+     own cap on desktop and drift out of proportion with everything around it. */
+  font-size: 5.2rem;
+  line-height: .96;
+  letter-spacing: .015em;
+  color: var(--thtr-gilt-bright);
+  /* Offsets in em so the extrusion stays proportional at any size. In px they
+     were ~6% of the glyph height, which reads as colour misregistration rather
+     than depth. */
+  text-shadow:
+    .045em .045em 0 var(--thtr-velvet),
+    .09em .09em 0 rgba(0, 0, 0, .55),
+    0 0 .3em rgba(255, 200, 80, .4);
+}
+
+.thtr-tagline.thtr-tagline {
+  position: relative;
+  margin: 8px 0 18px;
+  font-size: 1.05rem;
+  font-style: italic;
+  color: var(--thtr-cream);
+}
+
+.thtr-rule {
+  position: relative;
+  height: 1px;
+  margin: 18px 0;
+  border: 0;
+  background: linear-gradient(90deg, transparent, var(--thtr-gilt), transparent);
+}
+
+.thtr-blink.thtr-blink {
+  position: relative;
+  font-size: .74rem;
+  letter-spacing: .16em;
+  color: var(--thtr-neon);
+  animation: thtr-blink 2.4s steps(1) infinite;
+}
+
+@keyframes thtr-blink {
+  0%, 70% { opacity: 1; }
+  71%, 100% { opacity: .35; }
+}
+
+/* ── Poster reel ───────────────────────────────────────────────────────── */
+
+.thtr-reel {
+  position: relative;
+  overflow: hidden;
+  margin: 0 -26px 20px;
+  /* Fade both ends so posters enter and leave rather than popping at the edge. */
+  mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
+}
+
+/* Runs continuously for as long as the poster is on screen — `infinite` with a
+   seamless wrap point, so there is no start or end to notice.
+   The duration is tied to how many posters are in the reel: the track covers a
+   fixed -50% regardless of length, so a longer reel at a fixed duration would
+   simply scroll faster. 70s moves ~24 posters at a steady clip — quick enough to
+   feel alive, slow enough to read a title as it goes past. */
+.thtr-reel-track {
+  display: flex;
+  gap: 10px;
+  width: max-content;
+  animation: thtr-roll 70s linear infinite;
+}
+
+.thtr-reel-track img {
+  height: 165px;
+  width: auto;
+  border: 2px solid var(--thtr-gilt);
+  border-radius: 2px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, .6);
+}
+
+/* The track renders its contents twice; -50% lands on an identical frame. */
+@keyframes thtr-roll {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
+/* ── Film sprockets ────────────────────────────────────────────────────── */
+
+.thtr-sprockets {
+  position: relative;
+  height: 16px;
+  background:
+    repeating-linear-gradient(90deg,
+      transparent 0 9px,
+      rgba(0, 0, 0, .82) 9px 20px),
+    linear-gradient(var(--thtr-gilt), var(--thtr-gilt));
+  opacity: .5;
+}
+
+/* ── Bill cards ────────────────────────────────────────────────────────── */
+
+.thtr-card {
+  padding: 12px 8px;
+  border-top: 1px solid rgba(217, 164, 65, .45);
+  border-bottom: 1px solid rgba(217, 164, 65, .45);
+}
+.thtr-card .thtr-card-icon {
+  display: block;
+  font-size: 1.7rem;
+  line-height: 1;
+  color: var(--thtr-gilt-bright);
+}
+.thtr-card .thtr-card-label {
+  display: block;
+  margin: 6px 0;
+  font-size: .74rem;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--thtr-gilt);
+}
+.thtr-card p {
+  margin: 0;
+  font-size: .85rem;
+  line-height: 1.4;
+  color: var(--thtr-parchment);
+}
+
+/* ── Ticket stub ───────────────────────────────────────────────────────── */
+
+.thtr-ticket {
+  position: relative;
+  display: inline-block;
+  padding: 10px 26px;
+  color: #2a1206;
+  background: linear-gradient(#f4d99a, #e0bd72);
+  font-family: Georgia, serif;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  font-size: .8rem;
+  /* Notches punched out of both ends, like a torn stub. */
+  clip-path: polygon(
+    0 0, 100% 0, 100% 38%, calc(100% - 7px) 50%, 100% 62%, 100% 100%,
+    0 100%, 0 62%, 7px 50%, 0 38%
+  );
+}
+
+/* ── Close button ──────────────────────────────────────────────────────────
+   Deliberately large and high-contrast. This is a full-bleed dark modal with no
+   visible Material chrome, so a small tasteful X would be genuinely hard to
+   find — the exit has to read as an exit at a glance. */
+
+.thtr-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 10;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 2px solid var(--thtr-gilt);
+  border-radius: 50%;
+  background: rgba(10, 8, 16, .72);
+  color: var(--thtr-gilt-bright);
+  font-family: Georgia, serif;
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: background .15s ease, transform .15s ease;
+}
+.thtr-close:hover {
+  background: var(--thtr-shock-red);
+  color: var(--thtr-scream-yellow);
+  transform: scale(1.08);
+}
+.thtr-close:focus-visible {
+  outline: 3px solid var(--thtr-scream-yellow);
+  outline-offset: 2px;
+}
+
+/* ── Call to action ────────────────────────────────────────────────────── */
+
+.thtr-btn.thtr-btn {
+  position: relative;
+  padding: 0 30px;
+  background: var(--thtr-gilt);
+  color: #2a1206;
+  font-family: Georgia, serif;
+  font-size: 1rem;
+  letter-spacing: .04em;
+}
+
+/* ── Starburst badge ───────────────────────────────────────────────────────
+   The jagged "SHOCK!" star slapped across the artwork — the most instantly
+   recognisable device on a 1950s creature-feature one-sheet. Rotate it a few
+   degrees with an inline transform; they were never applied straight. */
+
+.thtr-burst {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 108px;
+  height: 108px;
+  padding: 8px;
+  background: var(--thtr-shock-red);
+  color: var(--thtr-scream-yellow);
+  font-family: Impact, 'Haettenschweiler', 'Arial Black', sans-serif;
+  font-size: .95rem;
+  line-height: 1;
+  letter-spacing: .04em;
+  text-align: center;
+  text-transform: uppercase;
+  /* 16-point star. Alternating radii give the ragged hand-cut edge. */
+  clip-path: polygon(
+    50% 0%, 59% 16%, 71% 6%, 74% 22%, 88% 16%, 85% 32%, 100% 33%, 90% 45%,
+    100% 57%, 85% 62%, 94% 76%, 78% 76%, 81% 92%, 67% 84%, 63% 100%, 50% 88%,
+    37% 100%, 33% 84%, 19% 92%, 22% 76%, 6% 76%, 15% 62%, 0% 57%, 10% 45%,
+    0% 33%, 15% 32%, 12% 16%, 26% 22%, 29% 6%, 41% 16%
+  );
+  animation: thtr-throb 1.9s ease-in-out infinite;
+}
+
+.thtr-burst--teal { background: var(--thtr-atomic-teal); color: #05252b; }
+.thtr-burst--magenta { background: var(--thtr-magenta); color: var(--thtr-scream-yellow); }
+
+@keyframes thtr-throb {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.06); }
+}
+
+/* ── "SEE! THRILL! GASP!" copy ─────────────────────────────────────────────
+   The stacked exclamation structure every B-movie poster used to sell its
+   premise. Each line is a promise the picture almost certainly can't keep. */
+
+.thtr-see {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  text-align: left;
+  display: inline-block;
+}
+
+.thtr-see li {
+  margin: 0 0 4px;
+  font-family: Impact, 'Arial Black', sans-serif;
+  font-size: 1rem;
+  letter-spacing: .03em;
+  text-transform: uppercase;
+  color: var(--thtr-cream);
+  text-shadow: 2px 2px 0 rgba(0, 0, 0, .6);
+}
+
+.thtr-see li::before {
+  content: attr(data-verb) '';
+  margin-right: .5em;
+  color: var(--thtr-scream-yellow);
+  -webkit-text-stroke: 1px var(--thtr-shock-red);
+}
+
+/* ── Halftone ──────────────────────────────────────────────────────────────
+   Benday dots from photomechanical printing. Overlay on any panel; it is
+   pointer-transparent so it never eats clicks. */
+
+.thtr-halftone {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  opacity: .16;
+  background-image: radial-gradient(rgba(255, 255, 255, .85) 1px, transparent 1.4px);
+  background-size: 5px 5px;
+  mix-blend-mode: overlay;
+}
+
+/* ── Art-deco band ─────────────────────────────────────────────────────────
+   The geometric chevron banding used in Filmack snack-bar intermission
+   animations. Good as a section divider on the lobby/countdown screens. */
+
+.thtr-deco {
+  height: 18px;
+  background:
+    repeating-linear-gradient(
+      45deg,
+      var(--thtr-atomic-teal) 0 10px,
+      var(--thtr-scream-yellow) 10px 20px,
+      var(--thtr-shock-red) 20px 30px
+    );
+  opacity: .8;
+}
+
+/* ── Auditorium ────────────────────────────────────────────────────────────
+   A view from the back of a darkened cinema: the lit screen up front, rows of
+   seat silhouettes in the foreground, and the projector's beam overhead.
+
+   The seats are real elements rather than gradient shapes so they read
+   unmistakably as seats — a rounded back, a pair of armrests, and a rim of
+   screen light along the top edge, which is what you actually see when the
+   only light source in the room is in front of you.
+
+   Markup:
+     <div class="thtr-auditorium">
+       <div class="thtr-beam"></div>
+       <div class="thtr-screen"><img src="..." alt=""></div>
+       <div class="thtr-seats thtr-seats--far"><span></span>…</div>
+       <div class="thtr-seats thtr-seats--mid"><span></span>…</div>
+       <div class="thtr-seats thtr-seats--near"><span></span>…</div>
+     </div> */
+
+.thtr-auditorium {
+  position: relative;
+  height: 250px;
+  overflow: hidden;
+  /* Light pools at the screen and falls away toward the back of the house. */
+  background:
+    radial-gradient(ellipse 70% 55% at 50% 22%, #3a2f4d 0%, #1a1526 55%, #0a0810 100%);
+}
+
+/* Screen — the only real light in the room. */
+.thtr-screen {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  z-index: 2;
+  width: 62%;
+  transform: translateX(-50%);
+  border: 5px solid #241d31;
+  border-radius: 2px;
+  background: #000;
+  box-shadow:
+    0 0 70px 18px rgba(255, 232, 186, .28),
+    0 0 24px rgba(255, 232, 186, .5);
+  overflow: hidden;
+}
+
+.thtr-screen img {
+  display: block;
+  width: 100%;
+  height: auto;
+  /* Push toward the blown-out silver of a projected black-and-white print. */
+  filter: grayscale(1) contrast(1.18) brightness(1.12);
+}
+
+/* Projector beam widening from the back of the house toward the screen. */
+.thtr-beam {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  z-index: 1;
+  width: 78%;
+  height: 62%;
+  transform: translateX(-50%);
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(255, 236, 190, .14), transparent 78%);
+  clip-path: polygon(40% 0, 60% 0, 100% 100%, 0 100%);
+}
+
+/* Seat rows. */
+.thtr-seats {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  pointer-events: none;
+}
+
+.thtr-seats span {
+  position: relative;
+  background: #07060d;
+  /* Tall rounded back, squared-off base — a cinema seat in silhouette. */
+  border-radius: 44% 44% 8% 8% / 34% 34% 6% 6%;
+  /* Screen light catching the top edge and shoulders. */
+  box-shadow:
+    inset 0 3px 0 rgba(255, 214, 150, .34),
+    inset 4px 0 6px -4px rgba(255, 214, 150, .22),
+    inset -4px 0 6px -4px rgba(255, 214, 150, .22);
+}
+
+/* Armrests, set low and proud of the seat back on both sides. */
+.thtr-seats span::before,
+.thtr-seats span::after {
+  content: '';
+  position: absolute;
+  bottom: 14%;
+  width: 22%;
+  height: 26%;
+  background: #07060d;
+  border-radius: 40% 40% 20% 20%;
+  box-shadow: inset 0 2px 0 rgba(255, 214, 150, .22);
+}
+.thtr-seats span::before { left: -11%; }
+.thtr-seats span::after { right: -11%; }
+
+
+/* Both rows share one baseline. Raising the back row off the floor made it look
+   like seats hovering in mid-air, and left the lit background showing through
+   underneath. Rows are distinguished by height, width and tone instead — the
+   back row is shorter, so it shows only in the gaps between the front seats,
+   which is exactly what you see standing at the back of a cinema.
+   Spacing is identical between rows so the seats tile as one block. */
+.thtr-seats {
+  bottom: 0;
+  gap: 26px;
+}
+
+/* Three rows receding toward the screen. Each row back is shorter, narrower and
+   a shade lighter, so it shows only in the gaps of the row in front — which is
+   what you actually see standing at the back of a cinema.
+
+   Lighter-as-it-recedes is the physically correct direction here: rows nearer
+   the screen catch more of the only light in the room. Tone does the separating,
+   never opacity — transparency let the lit background bleed through and turned
+   the seats to smoke. */
+
+.thtr-seats--far {
+  z-index: 4;
+}
+.thtr-seats--far span,
+.thtr-seats--far span::before,
+.thtr-seats--far span::after {
+  background: #241f33;
+}
+.thtr-seats--far span {
+  width: 46px;
+  height: 42px;
+}
+
+.thtr-seats--mid {
+  z-index: 5;
+}
+.thtr-seats--mid span,
+.thtr-seats--mid span::before,
+.thtr-seats--mid span::after {
+  background: #171422;
+}
+.thtr-seats--mid span {
+  width: 62px;
+  height: 58px;
+}
+
+/* Nearest the viewer and tallest. */
+.thtr-seats--near {
+  z-index: 6;
+}
+.thtr-seats--near span {
+  width: 92px;
+  height: 96px;
+}
+
+/* Solid floor behind every row, as tall as the middle row. Relying on the rows
+   to interlock perfectly would be fragile — at some widths their centring puts
+   a gap between seats and the lit background shows through. This makes that
+   impossible at any width. */
+.thtr-auditorium::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 3;
+  height: 58px;
+  background: #07060d;
+}
+
+/* ── Flyer carousel ────────────────────────────────────────────────────── */
+/* The weekly draw: one movie card at a time, arrows to cycle. Reuses .thtr-card's
+   shape/tone for the vote strip rather than inventing a new card style. */
+
+.thtr-flyer-track {
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  gap: 10px;
+  margin: 6px 0 18px;
+}
+
+.thtr-flyer-arrow.thtr-flyer-arrow {
+  flex: 0 0 auto;
+  align-self: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 2px solid var(--thtr-gilt);
+  background: var(--thtr-house-lit);
+  color: var(--thtr-gilt-bright);
+  font-size: 1.3rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.thtr-flyer-arrow.thtr-flyer-arrow:disabled {
+  opacity: .35;
+  cursor: default;
+}
+
+.thtr-flyer-card {
+  flex: 1 1 auto;
+  max-width: 360px;
+  padding: 14px;
+  border-radius: 6px;
+  border: 2px solid var(--thtr-gilt);
+  background: rgba(0, 0, 0, .28);
+}
+
+.thtr-flyer-poster {
+  width: 100%;
+  max-width: 200px;
+  margin: 0 auto 10px;
+  border-radius: 3px;
+  border: 2px solid var(--thtr-gilt);
+  display: block;
+}
+
+.thtr-flyer-pitch {
+  margin: 0 0 14px;
+  font-style: italic;
+  color: var(--thtr-scream-yellow);
+  font-size: .92rem;
+}
+
+.thtr-flyer-votes {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+}
+
+.thtr-flyer-vote.thtr-flyer-vote {
+  flex: 0 0 auto;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  border: 2px solid var(--thtr-gilt);
+  background: var(--thtr-house-lit);
+  font-size: 1.2rem;
+  cursor: pointer;
+}
+
+.thtr-flyer-vote.thtr-flyer-vote--active {
+  background: var(--thtr-shock-red);
+  border-color: var(--thtr-scream-yellow);
+}
+
+.thtr-flyer-dots {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin: 10px 0 0;
+}
+
+.thtr-flyer-dots span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(255, 238, 201, .3);
+}
+
+.thtr-flyer-dots span.active { background: var(--thtr-scream-yellow); }
+
+/* ── Countdown ─────────────────────────────────────────────────────────── */
+
+.thtr-countdown-clock {
+  font-family: Impact, 'Haettenschweiler', 'Arial Narrow Bold', sans-serif;
+  font-size: 3.4rem;
+  letter-spacing: .04em;
+  color: var(--thtr-scream-yellow);
+  text-shadow: .04em .04em 0 var(--thtr-velvet);
+  margin: 6px 0 14px;
+}
+
+.thtr-countdown-clock--zero {
+  color: var(--thtr-shock-red);
+  animation: thtr-throb 1.1s ease-in-out infinite;
+}
+
+/* ── Responsive ────────────────────────────────────────────────────────── */
+
+@media (max-width: 620px) {
+  .thtr-inner { padding: 24px 16px 20px; }
+  /* The card lays out at the phone's own width here, so the title needs to come
+     down with it rather than overflow. */
+  .thtr-title.thtr-title { font-size: 3.2rem; }
+  /* Curtains eat too much of a phone screen to be worth their charm. */
+  .thtr-curtains { display: none; }
+  .thtr-reel-track img { height: 125px; }
+
+  .thtr-auditorium { height: 190px; }
+  .thtr-screen { width: 72%; }
+  .thtr-seats { gap: 14px; }
+  .thtr-seats--far span { width: 32px; height: 28px; }
+  .thtr-seats--mid span { width: 44px; height: 40px; }
+  .thtr-seats--near span { width: 64px; height: 66px; }
+  /* Floor tracks the middle row's height. */
+  .thtr-auditorium::after { height: 40px; }
+}
+
+/* ── Reduced motion ────────────────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  .thtr-bulbs > span,
+  .thtr-searchlight,
+  .thtr-reel-track,
+  .thtr-blink,
+  .thtr-burst {
+    animation: none;
+  }
+}

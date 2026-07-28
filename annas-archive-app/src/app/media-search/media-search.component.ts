@@ -19,9 +19,11 @@ import {
   MediaAddState
 } from '../components/media-result-card/media-result-card.component';
 import { SeasonPickerModalComponent, SeasonPickerModalData } from '../season-picker-modal/season-picker-modal.component';
+import { BulkImportMoviesDialogComponent } from '../components/bulk-import-movies-dialog/bulk-import-movies-dialog.component';
 import { MediaLibraryApiService } from '../services/media-library-api.service';
 import { AiApiService, AiMediaSearchItem } from '../services/ai-api.service';
 import { LoggerService } from '../services/logger.service';
+import { AuthService } from '../services/auth.service';
 
 type MediaType = 'tv' | 'movie';
 
@@ -116,13 +118,27 @@ export class MediaSearchComponent implements OnDestroy {
     private libraryApi: MediaLibraryApiService,
     private aiApi: AiApiService,
     private dialog: MatDialog,
-    private logger: LoggerService
+    private logger: LoggerService,
+    // Public: the template gates the admin-only bulk import button on isAdmin().
+    public authService: AuthService
   ) {
     this.queueSub = interval(QUEUE_POLL_MS).subscribe(() => this.refreshQueueStatuses());
   }
 
   ngOnDestroy(): void {
     this.queueSub.unsubscribe();
+  }
+
+  openBulkImport(): void {
+    const dialogRef = this.dialog.open(BulkImportMoviesDialogComponent, { width: '720px' });
+    dialogRef.afterClosed().subscribe(imported => {
+      // Nothing in this page's own result list needs refreshing — imported
+      // movies show up in the library page, not the search results grid —
+      // this just matters for whether to nudge the user afterward.
+      if (imported) {
+        this.logger.log('[MediaSearchComponent] Bulk import finished');
+      }
+    });
   }
 
   toggleAiSearch(): void {

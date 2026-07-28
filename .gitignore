@@ -196,6 +196,9 @@ appsettings.*.json
 **/appsettings.json
 **/appsettings.*.json
 
+# Recyclarr secrets (Sonarr/Radarr API keys) — same treatment as .env/appsettings.json
+recyclarr/secrets.yml
+
 # Build/publish output with secrets
 publish/
 **/publish/

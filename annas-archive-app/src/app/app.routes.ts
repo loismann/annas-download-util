@@ -10,6 +10,8 @@ import { MediaSearchComponent } from './media-search/media-search.component';
 import { MediaLibraryComponent } from './media-library/media-library.component';
 import { SeriesDetailComponent } from './media-library/series-detail/series-detail.component';
 import { AudiobooksComponent } from './audiobooks/audiobooks.component';
+import { DateNightComponent } from './date-night/date-night.component';
+import { DateNightPoolComponent } from './date-night/date-night-pool.component';
 import { authGuard } from './guards/auth.guard';
 import { adminGuard } from './guards/admin.guard';
 
@@ -25,6 +27,12 @@ export const routes: Routes = [
   { path: 'media-library', component: MediaLibraryComponent, canActivate: [authGuard] },
   { path: 'media-library/series/:seriesId', component: SeriesDetailComponent, canActivate: [authGuard] },
   { path: 'audiobooks', component: AudiobooksComponent, canActivate: [authGuard] },
+  // The household-facing Date Night page — where Mom and Dad will pick movies
+  // and agree a night. Shows the announcement poster until phases 3-7 ship.
+  { path: 'date-night', component: DateNightComponent, canActivate: [authGuard] },
+  // Pool administration, admin-only: CSV import, availability scanning, and the
+  // announcement preview. See DOCS/DATE_NIGHT_FEATURE.md.
+  { path: 'date-night/pool', component: DateNightPoolComponent, canActivate: [authGuard, adminGuard] },
   // Legacy routes redirect to main videos page
   { path: 'videos/download', redirectTo: '/videos', pathMatch: 'full' },
   { path: 'youtube', redirectTo: '/videos', pathMatch: 'full' },

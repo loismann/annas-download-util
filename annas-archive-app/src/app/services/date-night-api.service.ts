@@ -49,6 +49,8 @@ export interface AnnouncementRecipient {
 
 /// One of this week's drawn movies, as both the admin panel and the real flyer need
 /// it. `summary` is the AI pitch line — falls back to `overview` if generation failed.
+/// `genre` is up to two of Radarr's own genres joined for display (e.g. "Action ·
+/// Comedy") — not the app's separate household genre tagging.
 export interface CycleMovieView {
   movieId: number;
   title: string;
@@ -56,6 +58,10 @@ export interface CycleMovieView {
   tmdbId?: number;
   overview?: string;
   summary?: string;
+  year?: number;
+  genre?: string;
+  hasFile?: boolean;
+  monitored?: boolean;
   momVote?: string;
   dadVote?: string;
 }
@@ -65,13 +71,25 @@ export interface ProposedSlot {
   time: string; // "HH:mm", Hawaii
 }
 
-/// The propose -> approve -> lock handshake for a resolved week's movie.
+/// The propose -> (counter-propose)* -> lock handshake for a resolved week's movie.
+/// `acknowledgedBy` is who has seen the *current* state (this proposal, or this
+/// cancellation) — drives whether the "your turn"/"cancelled" modal pops again.
 export interface ScheduleState {
-  status: 'AwaitingProposal' | 'AwaitingApproval' | 'Locked' | 'Cancelled';
+  status: 'AwaitingProposal' | 'AwaitingApproval' | 'Locked' | 'Cancelled' | 'Concluded';
   proposedBy?: string;
   proposedSlots: ProposedSlot[];
   lockedSlot?: ProposedSlot;
   lockedUtc?: string;
+  acknowledgedBy: string[];
+  cancelledBy?: string;
+  downloadStatus?: 'NotStarted' | 'Searching' | 'Requested' | 'Monitoring' | 'Failed';
+  downloadMessage?: string;
+  downloadUpdatedUtc?: string;
+  playbackStartedUtc?: string;
+  concludedUtc?: string;
+  conclusionReason?: 'Watched' | 'MissedStart' | 'PlaybackWindowEnded';
+  conclusionTitle?: string;
+  lastReminderShownUtc?: Record<string, string>;
 }
 
 export interface ShowtimeStatus {
@@ -117,6 +135,9 @@ export interface DateNightPoolResponse {
   items: DateNightPoolItem[];
   announcement: AnnouncementRecipient[];
   cycle: CycleAdminView | null;
+  /** The dry run's own cycle — same shape, completely separate storage. Read-only
+   *  here; it's driven from the real /date-night page via admin impersonation. */
+  testCycle: CycleAdminView | null;
 }
 
 /** The one-time "coming soon" splash: whether this person should see it, and
@@ -139,6 +160,7 @@ export interface CycleView {
   resolvedTitle?: string;
   schedule?: ScheduleState;
   shouldShowFlyerToday: boolean;
+  shouldShowScheduleReminderToday: boolean;
   skipped: boolean;
 }
 
@@ -181,6 +203,12 @@ export class DateNightApiService {
     return this.http.post(`${this.baseUrl}/announcement/dismiss`, null);
   }
 
+  /** Recovery for a showing burned by testing on Mom/Dad's own account —
+   *  resets their state as if they'd never seen it. */
+  resetAnnouncement(person: string): Observable<unknown> {
+    return this.http.post(`${this.baseUrl}/announcement/admin/reset`, { person });
+  }
+
   // Person-facing cycle/schedule routes (Mom and Dad).
 
   getCycle(): Observable<CycleView> {
@@ -211,18 +239,35 @@ export class DateNightApiService {
     return this.http.post(`${this.baseUrl}/cycle/schedule/cancel`, null);
   }
 
+  /** Marks that I've seen the schedule's current state (a proposal waiting on me,
+   *  or a cancellation) — stops the modal from reappearing until it changes again. */
+  acknowledgeSchedule(): Observable<unknown> {
+    return this.http.post(`${this.baseUrl}/cycle/schedule/acknowledge`, null);
+  }
+
+  retryDownload(): Observable<unknown> {
+    return this.http.post(`${this.baseUrl}/cycle/download/retry`, null);
+  }
+
   /** Polled app-wide (see AppComponent) since there are no push notifications —
    *  this is how the countdown popup knows when to appear. */
   checkShowtime(): Observable<ShowtimeStatus> {
     return this.http.get<ShowtimeStatus>(`${this.baseUrl}/showtime-check`);
   }
 
+  startShowtime(): Observable<unknown> {
+    return this.http.post(`${this.baseUrl}/cycle/showtime/start`, null);
+  }
+
   markWatched(): Observable<unknown> {
     return this.http.post(`${this.baseUrl}/cycle/mark-watched`, null);
   }
 
-  // Admin-only cycle controls — how phases 3-7 are exercised end to end before the
-  // real flyer/scheduling UI is live for Mom and Dad. See DOCS/DATE_NIGHT_FEATURE.md.
+  // Admin-only real-cycle lifecycle controls. Note there is no vote/propose/
+  // approve/cancel/mark-watched admin bypass anymore — that used to exist here
+  // for testing before the real flyer/lobby UI existed, but mutated this exact
+  // production cycle to do it. The dry run (see the test-cycle methods further
+  // down) now covers all of that safely, against completely separate state.
 
   forceIssueCycle(): Observable<unknown> {
     return this.http.post(`${this.baseUrl}/cycle/admin/force-issue`, null);
@@ -236,10 +281,9 @@ export class DateNightApiService {
     return this.http.post(`${this.baseUrl}/cycle/admin/discard`, null);
   }
 
-  castVoteAsAdmin(person: string, movieId: number, vote: 'Up' | 'Down' | 'Never'): Observable<unknown> {
-    return this.http.post(`${this.baseUrl}/cycle/admin/vote`, { person, movieId, vote });
-  }
-
+  /** Clears whichever exclusion a movie is in (never-show, cooling-off, or
+   *  watched) and puts it back into rotation — watched additionally re-adds the
+   *  real Radarr pool tag that MarkWatchedAsync removed. */
   restoreMovie(movieId: number): Observable<unknown> {
     return this.http.post(`${this.baseUrl}/cycle/admin/restore/${movieId}`, null);
   }
@@ -248,27 +292,17 @@ export class DateNightApiService {
     return this.http.post(`${this.baseUrl}/cycle/admin/skip/clear`, null);
   }
 
-  proposeScheduleAsAdmin(person: string, slots: ProposedSlot[]): Observable<unknown> {
-    return this.http.post(`${this.baseUrl}/cycle/admin/schedule/propose`, { person, slots });
-  }
-
-  approveScheduleAsAdmin(person: string, slot: ProposedSlot): Observable<unknown> {
-    return this.http.post(`${this.baseUrl}/cycle/admin/schedule/approve`, { person, slot });
-  }
-
-  cancelScheduleAsAdmin(person: string): Observable<unknown> {
-    return this.http.post(`${this.baseUrl}/cycle/admin/schedule/cancel`, { person });
-  }
-
-  markWatchedAsAdmin(): Observable<unknown> {
-    return this.http.post(`${this.baseUrl}/cycle/admin/mark-watched`, null);
-  }
-
   goLive(): Observable<unknown> {
     return this.http.post(`${this.baseUrl}/cycle/admin/go-live`, null);
   }
 
   goDark(): Observable<unknown> {
     return this.http.post(`${this.baseUrl}/cycle/admin/go-dark`, null);
+  }
+
+  /** Clears the test cycle *and* its list history (never-show/cooldown/watched
+   *  from prior dry runs) — a full reset back to a clean slate. */
+  resetDryRun(): Observable<unknown> {
+    return this.http.post(`${this.baseUrl}/cycle/admin/test/reset`, null);
   }
 }

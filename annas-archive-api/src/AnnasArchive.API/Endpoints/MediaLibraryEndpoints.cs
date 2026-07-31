@@ -770,6 +770,14 @@ public static class MediaLibraryEndpoints
     {
         try
         {
+            // Interactive search can return an otherwise valid release with a null
+            // movieId when Radarr cannot parse an obscure, alternate-language title
+            // (for example a bilingual Nyaa release). That is precisely the case in
+            // which Radarr says the movie must be "manually provided". The route is
+            // already scoped to the authenticated user's chosen Radarr movie, so bind
+            // that authoritative id before forwarding the raw release. Always
+            // overwrite the client value rather than trusting a posted movieId.
+            release["movieId"] = movieId;
             await radarr.GrabReleaseAsync(release);
             return Results.NoContent();
         }
@@ -800,6 +808,10 @@ public static class MediaLibraryEndpoints
     {
         try
         {
+            // Sonarr's interactive results have the same failure mode for obscure
+            // or alternate-language series names. The route supplies the manual
+            // association its release endpoint needs when parsing did not.
+            release["seriesId"] = seriesId;
             await sonarr.GrabReleaseAsync(release);
             return Results.NoContent();
         }

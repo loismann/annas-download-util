@@ -37,6 +37,7 @@ public class DateNightSummaryService
     private readonly IModelSelectionService _modelSelection;
     private readonly IConfiguration _config;
     private readonly AppDatabase _db;
+    private readonly SemaphoreSlim _generationLock = new(1, 1);
 
     public DateNightSummaryService(
         IHttpClientFactory httpFactory,
@@ -61,24 +62,65 @@ public class DateNightSummaryService
         if (cache.TryGetValue(movieId, out var existing) && !string.IsNullOrWhiteSpace(existing))
             return existing;
 
-        string? generated;
+        await _generationLock.WaitAsync(ct);
         try
         {
-            generated = await GenerateAsync(title, year, overview, attributedTo, ct);
+            // Another background warmer may have filled it while this caller was
+            // waiting. Re-read before spending another OpenAI request.
+            cache = LoadCache();
+            if (cache.TryGetValue(movieId, out existing) && !string.IsNullOrWhiteSpace(existing))
+                return existing;
+
+            string? generated;
+            try
+            {
+                generated = await GenerateAsync(title, year, overview, attributedTo, ct);
+            }
+            catch (Exception ex)
+            {
+                Log.Warning("[DateNight] Summary generation failed for '{Title}': {Message}", title, ex.Message);
+                return null;
+            }
+
+            if (string.IsNullOrWhiteSpace(generated)) return null;
+
+            cache[movieId] = generated;
+            SaveCache(cache);
+            return generated;
         }
-        catch (Exception ex)
+        finally
         {
-            // The flyer works without a pitch line — it just falls back to the plain
-            // overview client-side. Not worth failing the whole cycle read over.
-            Log.Warning("[DateNight] Summary generation failed for '{Title}': {Message}", title, ex.Message);
-            return null;
+            _generationLock.Release();
         }
+    }
 
-        if (string.IsNullOrWhiteSpace(generated)) return null;
+    /// <summary>Read-only fast path used while rendering the flyer. Page reads
+    /// never call OpenAI; issuance/reset guarantees all five selected movies have
+    /// already passed through <see cref="GetOrGenerateSummaryAsync"/>.</summary>
+    public string? GetCachedSummary(int movieId)
+    {
+        var cache = LoadCache();
+        return cache.TryGetValue(movieId, out var summary) && !string.IsNullOrWhiteSpace(summary)
+            ? summary
+            : null;
+    }
 
-        cache[movieId] = generated;
-        SaveCache(cache);
-        return generated;
+    public HashSet<int> GetCachedMovieIds() =>
+        LoadCache()
+            .Where(kv => !string.IsNullOrWhiteSpace(kv.Value))
+            .Select(kv => kv.Key)
+            .ToHashSet();
+
+    public async Task EnsureSummariesAsync(
+        IEnumerable<(int MovieId, string Title, int? Year, string? Overview)> movies,
+        CancellationToken ct = default)
+    {
+        foreach (var movie in movies)
+        {
+            ct.ThrowIfCancellationRequested();
+            await GetOrGenerateSummaryAsync(
+                movie.MovieId, movie.Title, movie.Year, movie.Overview, attributedTo: null, ct);
+        }
     }
 
     private async Task<string?> GenerateAsync(string title, int? year, string? overview, string? attributedTo, CancellationToken ct)

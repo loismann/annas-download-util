@@ -7,6 +7,7 @@ import { routes } from './app.routes';
 import { authInterceptor } from './interceptors/auth.interceptor';
 import { errorInterceptor } from './interceptors/error.interceptor';
 import { mockDataInterceptor } from './interceptors/mock-data.interceptor';
+import { dateNightImpersonationInterceptor } from './interceptors/date-night-impersonation.interceptor';
 import { GlobalErrorHandler } from './services/global-error-handler.service';
 
 export const appConfig: ApplicationConfig = {
@@ -14,7 +15,7 @@ export const appConfig: ApplicationConfig = {
     provideZoneChangeDetection({ eventCoalescing: true }),
     provideRouter(routes, withHashLocation()),  // Add hash-based routing
     provideHttpClient(
-      withInterceptors([mockDataInterceptor, errorInterceptor, authInterceptor]),
+      withInterceptors([mockDataInterceptor, errorInterceptor, authInterceptor, dateNightImpersonationInterceptor]),
       withFetch()
     ),
     provideAnimations(),

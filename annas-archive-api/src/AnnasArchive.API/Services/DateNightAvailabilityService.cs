@@ -2,7 +2,6 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using AnnasArchive.API.Constants;
 using AnnasArchive.API.Data;
-using AnnasArchive.API.Data;
 using Serilog;
 
 namespace AnnasArchive.API.Services;
@@ -354,6 +353,21 @@ public class DateNightAvailabilityService
         };
         SaveAnnouncementState(state);
         Log.Information("[DateNight] {Person} dismissed the announcement", person);
+    }
+
+    /// <summary>Clears one person's announcement state entirely, as if they'd never
+    /// loaded a page since it went live. The recovery path for a showing burned by
+    /// someone testing on that person's account — logging into Dad's account to check
+    /// something triggers exactly the same code path a real Dad would, consuming the
+    /// one genuine showing meant for him.</summary>
+    public void ResetAnnouncement(string person)
+    {
+        var state = LoadAnnouncementState();
+        if (state.Remove(person))
+        {
+            SaveAnnouncementState(state);
+            Log.Information("[DateNight] Announcement reset for {Person}", person);
+        }
     }
 
     /// <summary>Every household member's announcement state, for the admin page —

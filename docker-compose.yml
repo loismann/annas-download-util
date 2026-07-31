@@ -399,6 +399,45 @@ services:
     volumes:
       - ./jellyfin-proxy.conf.template:/etc/nginx/templates/default.conf.template:ro
 
+  # Plex, running alongside Jellyfin against the exact same media folder —
+  # decommissioning the old Synology's Plex, not replacing Jellyfin (this app's
+  # playback still goes through Jellyfin; Plex here is purely for native
+  # client apps — Apple TV etc. — and friend-shared libraries, which live on
+  # the Plex.tv account rather than the server, so signing this container into
+  # the same account is all that's needed to get shared libraries back — no
+  # data migration required).
+  #
+  # Deliberately LAN-exposed rather than tunneled through `tailscale serve`
+  # like Jellyfin/the main app: those are only ever reached through a single
+  # embedded web player, so tunneling made sense. Plex is built around native
+  # apps doing LAN discovery (GDM broadcast) and expects to just sit on the
+  # local network the way the old Synology instance did — forcing it through
+  # Tailscale would mean joining every client device (Apple TV included) to
+  # the tailnet for no real benefit.
+  #
+  # PLEX_CLAIM is a one-time claim token (https://plex.tv/claim, valid 4
+  # minutes) that associates a fresh container with your Plex account on
+  # first boot — set it in .env, start this container, then it can be removed
+  # from .env again since it's single-use.
+  plex:
+    image: plexinc/pms-docker:latest
+    container_name: plex
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Etc/UTC
+      - PLEX_CLAIM=${PLEX_CLAIM:-}
+    volumes:
+      - ../data/plex/config:/config
+      - /home/pferrer/Media:/data
+    # Same Intel Quick Sync passthrough as Jellyfin, for hardware transcoding.
+    # Requires Plex Pass to actually take effect — harmless if not, Plex just
+    # falls back to software transcoding.
+    devices:
+      - /dev/dri:/dev/dri
+
   # Audiobook library — catalogs Media/_audiobook (author/series/book folder
   # parsing, M4B/ID3 chapter metadata, cover art), serves raw audio bytes.
   # annas-archive-api talks to it purely as an HTTP API client (same as

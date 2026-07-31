@@ -1,6 +1,8 @@
 import { Injectable } from '@angular/core';
 import { MatDialog, MatDialogRef } from '@angular/material/dialog';
 import { DateNightApiService } from './date-night-api.service';
+import { AuthService } from './auth.service';
+import { DateNightImpersonationService } from './date-night-impersonation.service';
 import { LoggerService } from './logger.service';
 import {
   DateNightCountdownComponent, DateNightCountdownData
@@ -19,15 +21,14 @@ import {
 @Injectable({ providedIn: 'root' })
 export class DateNightShowtimeService {
   private dialogRef?: MatDialogRef<DateNightCountdownComponent>;
-  /** Once dismissed for a given locked showtime, don't reopen for that same
-   *  showtime again this session — otherwise the next poll (30-60s later) would
-   *  just pop it right back up. Resets naturally: a new lock-in has a new
-   *  showtimeUtc, and a page reload clears this entirely. */
-  private dismissedForShowtimeUtc?: string;
+  /** Fallback for environments where sessionStorage is unavailable. */
+  private dismissedByPerson = new Map<string, string>();
 
   constructor(
     private dialog: MatDialog,
     private api: DateNightApiService,
+    private auth: AuthService,
+    private impersonation: DateNightImpersonationService,
     private logger: LoggerService
   ) {}
 
@@ -37,7 +38,7 @@ export class DateNightShowtimeService {
     this.api.checkShowtime().subscribe({
       next: status => {
         if (!status.imminent || !status.showtimeUtc) return;
-        if (status.showtimeUtc === this.dismissedForShowtimeUtc) return;
+        if (status.showtimeUtc === this.dismissedShowtime()) return;
         this.open(status.showtimeUtc);
       },
       // Fires on every poll tick for every authenticated user — a hiccup here
@@ -47,6 +48,7 @@ export class DateNightShowtimeService {
   }
 
   private open(showtimeUtc: string): void {
+    const personKey = this.personKey();
     // The poll endpoint only returns a movieId — title/tmdbId come from the
     // already-built cycle read rather than duplicating a Radarr lookup here.
     this.api.getCycle().subscribe({
@@ -64,10 +66,32 @@ export class DateNightShowtimeService {
 
         this.dialogRef.afterClosed().subscribe(() => {
           this.dialogRef = undefined;
-          this.dismissedForShowtimeUtc = showtimeUtc;
+          this.rememberDismissal(personKey, showtimeUtc);
         });
       },
       error: err => this.logger.log('[DateNightShowtime] could not load cycle for countdown', err)
     });
+  }
+
+  private personKey(): string {
+    return this.impersonation.current() ?? this.auth.getOwnerName() ?? 'unknown';
+  }
+
+  private dismissedShowtime(): string | undefined {
+    const person = this.personKey();
+    try {
+      return sessionStorage.getItem(`date-night:showtime-dismissed:${person}`) ?? undefined;
+    } catch {
+      return this.dismissedByPerson.get(person);
+    }
+  }
+
+  private rememberDismissal(person: string, showtimeUtc: string): void {
+    this.dismissedByPerson.set(person, showtimeUtc);
+    try {
+      sessionStorage.setItem(`date-night:showtime-dismissed:${person}`, showtimeUtc);
+    } catch {
+      // The in-memory fallback still prevents the 45-second poll from reopening it.
+    }
   }
 }

@@ -2,19 +2,20 @@ import { Component, OnDestroy, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
-import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatButtonToggleModule } from '@angular/material/button-toggle';
+import { MatIconModule } from '@angular/material/icon';
 import { Subscription, interval, startWith, switchMap } from 'rxjs';
 import {
+  CycleAdminView,
   DateNightApiService,
   DateNightPoolItem,
   DateNightPoolResponse,
-  ProposedSlot,
-  ScheduleState
+  ProposedSlot
 } from '../services/date-night-api.service';
 import { DateNightAnnouncementService } from '../services/date-night-announcement.service';
+import { formatCountdown, formatHawaiiSlot, hawaiiSlotToUtcIso, secondsUntil } from './countdown.util';
 
 type PoolFilter = 'all' | 'available' | 'unavailable' | 'unchecked';
 
@@ -27,15 +28,15 @@ type PoolFilter = 'all' | 'available' | 'unavailable' | 'unchecked';
  * fill up with hundreds of tiles nobody can watch.
  *
  * The headline numbers here are the gate on the rest of the feature: a weekly draw
- * of three movies only works if enough of the pool can actually be obtained. See
+ * of five movies only works if enough of the pool can actually be obtained. See
  * DOCS/DATE_NIGHT_FEATURE.md.
  */
 @Component({
   selector: 'app-date-night-pool',
   standalone: true,
   imports: [
-    CommonModule, FormsModule, MatButtonModule, MatIconModule,
-    MatProgressSpinnerModule, MatProgressBarModule, MatButtonToggleModule
+    CommonModule, FormsModule, MatButtonModule,
+    MatProgressSpinnerModule, MatProgressBarModule, MatButtonToggleModule, MatIconModule
   ],
   template: `
     <div class="pool-page">
@@ -127,32 +128,40 @@ type PoolFilter = 'all' | 'available' | 'unavailable' | 'unchecked';
                 Shown {{ r.shownUtc | date: 'MMM d, h:mm a' }}, not closed — will show again
               </span>
               <span *ngIf="!r.shownUtc" class="muted-text">Not seen yet</span>
+              <button
+                mat-button
+                *ngIf="r.shownUtc"
+                (click)="resetAnnouncement(r.person)"
+                title="Clear their state as if they'd never seen it — e.g. after testing on their account"
+              >Reset</button>
             </div>
           </div>
         </section>
 
-        <!-- Phase 3's testable surface: the real flyer/voting UI is phase 4, so this
-             panel is how the weekly cycle state machine gets driven and checked —
-             force a draw, vote as either person, resolve, discard, repeat. -->
-        <section class="cycle-panel" *ngIf="data.cycle as cycle">
-          <h2>Weekly cycle</h2>
-
-          <p *ngIf="cycle.skip.skipUntilUtc" class="skip-banner">
-            Skipped by {{ cycle.skip.setBy }} — resumes {{ cycle.skip.skipUntilUtc | date: 'medium' }}
-            <button mat-button (click)="clearSkip()">Clear skip</button>
+        <!-- One testing surface. The live household cycle is still available below
+             as a collapsed, read-only status check, but it is deliberately not
+             presented as a second set of test controls. -->
+        <section class="cycle-panel dry-run-panel" *ngIf="data.testCycle as testCycle">
+          <h2><mat-icon>science</mat-icon> Test Date Night</h2>
+          <p>
+            This is the isolated test cycle used by “Testing as Mom” and “Testing as
+            Dad” on the Date Night page. Both complete ballots are required; the test
+            picks a mutual favorite automatically when the final vote is saved.
+          </p>
+          <p class="warning-text">
+            Test bookkeeping is isolated, but confirming a showtime still performs
+            the real Radarr download action.
           </p>
 
-          <p *ngIf="cycle.status !== 'None'">
-            <span class="status-badge" [ngClass]="'status-' + cycle.status.toLowerCase()">{{ cycle.status }}</span>
-            <span *ngIf="cycle.deadlineUtc" class="muted-text">
-              &nbsp;deadline {{ cycle.deadlineUtc | date: 'EEE MMM d, h:mm a' }}
-            </span>
+          <p *ngIf="testCycle.status !== 'None'">
+            <span class="status-badge" [ngClass]="'status-' + testCycle.status.toLowerCase()">{{ testCycle.status }}</span>
           </p>
-          <p *ngIf="cycle.status === 'None' && !cycle.skip.skipUntilUtc" class="muted-text">
-            No cycle issued yet.
+          <p *ngIf="testCycle.status === 'None'" class="muted-text">
+            No test is running. Opening the Date Night page and choosing Mom or Dad
+            starts one with five movies.
           </p>
 
-          <table class="cycle-table" *ngIf="cycle.movies.length">
+          <table class="cycle-table" *ngIf="testCycle.movies.length">
             <thead>
               <tr>
                 <th>Movie</th>
@@ -161,80 +170,87 @@ type PoolFilter = 'all' | 'available' | 'unavailable' | 'unchecked';
               </tr>
             </thead>
             <tbody>
-              <tr *ngFor="let m of cycle.movies" [class.resolved-row]="m.movieId === cycle.resolvedMovieId">
+              <tr *ngFor="let m of testCycle.movies" [class.resolved-row]="m.movieId === testCycle.resolvedMovieId">
                 <td>
                   {{ m.title }}
-                  <span *ngIf="m.movieId === cycle.resolvedMovieId" class="ok-text"> — picked!</span>
-                  <p class="pitch-line muted-text" *ngIf="m.summary">"{{ m.summary }}"</p>
+                  <span *ngIf="m.movieId === testCycle.resolvedMovieId" class="ok-text"> — picked!</span>
                 </td>
-                <td>
-                  <span class="vote-mark">{{ voteEmoji(m.momVote) }}</span>
-                  <span class="vote-buttons">
-                    <button mat-icon-button (click)="voteAs('Mom', m.movieId, 'Up')" title="Thumbs up">👍</button>
-                    <button mat-icon-button (click)="voteAs('Mom', m.movieId, 'Down')" title="Thumbs down">👎</button>
-                    <button mat-icon-button (click)="voteAs('Mom', m.movieId, 'Never')" title="Never show again">🚫</button>
-                  </span>
-                </td>
-                <td>
-                  <span class="vote-mark">{{ voteEmoji(m.dadVote) }}</span>
-                  <span class="vote-buttons">
-                    <button mat-icon-button (click)="voteAs('Dad', m.movieId, 'Up')" title="Thumbs up">👍</button>
-                    <button mat-icon-button (click)="voteAs('Dad', m.movieId, 'Down')" title="Thumbs down">👎</button>
-                    <button mat-icon-button (click)="voteAs('Dad', m.movieId, 'Never')" title="Never show again">🚫</button>
-                  </span>
-                </td>
+                <td><span class="vote-mark"><mat-icon>{{ voteIconName(m.momVote) }}</mat-icon></span></td>
+                <td><span class="vote-mark"><mat-icon>{{ voteIconName(m.dadVote) }}</mat-icon></span></td>
               </tr>
             </tbody>
           </table>
 
-          <div class="cycle-actions">
-            <button mat-stroked-button (click)="forceIssue()">Force-issue a test cycle</button>
-            <button mat-stroked-button [disabled]="cycle.status !== 'Active'" (click)="resolveNow()">Resolve now</button>
-            <button mat-stroked-button [disabled]="!cycle.cycleId" (click)="discardCycle()">Discard cycle</button>
-          </div>
-
-          <!-- Schedule handshake test controls (phase 5) — exercises propose ->
-               approve -> lock -> (real Radarr grab) without needing a Mom/Dad login. -->
-          <div class="schedule-panel" *ngIf="cycle.status === 'Resolved' && cycle.schedule as s">
-            <h3>Schedule — {{ s.status }}</h3>
-
-            <div *ngIf="s.status === 'AwaitingProposal'" class="btn-row">
-              <button mat-stroked-button (click)="proposeAsAdmin('Mom')">Propose as Mom (tomorrow 7pm)</button>
-              <button mat-stroked-button (click)="proposeAsAdmin('Dad')">Propose as Dad (tomorrow 7pm)</button>
-            </div>
-
-            <div *ngIf="s.status === 'AwaitingApproval'">
-              <p class="muted-text">Proposed by {{ s.proposedBy }}: {{ formatSlots(s.proposedSlots) }}</p>
-              <div class="btn-row">
-                <button mat-stroked-button (click)="approveAsAdmin(s)">
-                  Approve as {{ s.proposedBy === 'Mom' ? 'Dad' : 'Mom' }} (first slot)
-                </button>
-                <button mat-stroked-button (click)="cancelScheduleAsAdmin(s.proposedBy!)">Cancel</button>
-              </div>
-            </div>
-
-            <div *ngIf="s.status === 'Locked'">
-              <p class="ok-text">Locked: {{ s.lockedSlot ? formatSlots([s.lockedSlot]) : '' }}</p>
-              <div class="btn-row">
-                <button mat-stroked-button (click)="markWatchedAsAdmin()">Mark watched (cleanup)</button>
-                <button mat-stroked-button (click)="cancelScheduleAsAdmin('Mom')">Cancel</button>
-              </div>
-            </div>
-
-            <p *ngIf="s.status === 'Cancelled'" class="muted-text">Cancelled.</p>
-          </div>
-
-          <p class="cycle-list-summary muted-text">
-            {{ cycle.neverShowCount }} never-show &middot; {{ cycle.watchedCount }} watched &middot;
-            {{ cycle.coolingOffCount }} cooling off
+          <p class="muted-text" *ngIf="testCycle.status === 'Resolved' && testCycle.schedule as ts">
+            Schedule: {{ ts.status }}
+            <ng-container *ngIf="ts.status === 'Locked' && ts.lockedSlot"> — {{ formatSlots([ts.lockedSlot]) }}</ng-container>
           </p>
+          <ng-container *ngIf="testCycle.status === 'Resolved' && testCycle.schedule?.status === 'Locked'">
+            <p class="test-download-state">
+              <mat-icon>{{ resolvedTestMovie(testCycle)?.hasFile ? 'download_done' : 'downloading' }}</mat-icon>
+              {{ downloadStatusLabel(testCycle) }}
+            </p>
+            <div class="test-countdown" *ngIf="testCycle.schedule?.lockedSlot">
+              {{ testSecondsLeft > 0 ? 'Showtime in ' + testCountdownLabel : 'Showtime now' }}
+            </div>
+          </ng-container>
 
-          <details class="recoverable" *ngIf="cycle.recoverable.length">
-            <summary>Recoverable ({{ cycle.recoverable.length }})</summary>
-            <div class="recoverable-row" *ngFor="let r of cycle.recoverable">
+          <div class="cycle-actions">
+            <a mat-raised-button color="primary" href="/date-night">Open the test page</a>
+            <button mat-stroked-button [disabled]="preparingTest" (click)="resetDryRun()">
+              {{ preparingTest ? 'Preparing five movies…' : 'Start over with a fresh test' }}
+            </button>
+          </div>
+
+          <details class="recoverable" *ngIf="testCycle.recoverable.length">
+            <summary>Recoverable from testing ({{ testCycle.recoverable.length }})</summary>
+            <div class="recoverable-row" *ngFor="let r of testCycle.recoverable">
               <span>{{ r.title }} — {{ r.reason }} ({{ r.since | date: 'MMM d' }})</span>
               <button mat-button (click)="restoreMovie(r.movieId)">Restore</button>
             </div>
+          </details>
+
+          <details class="live-cycle-status" *ngIf="data.cycle as cycle">
+            <summary>Live household status — not part of this test</summary>
+
+            <p *ngIf="cycle.skip.skipUntilUtc" class="skip-banner">
+              Skipped by {{ cycle.skip.setBy }} — resumes {{ cycle.skip.skipUntilUtc | date: 'medium' }}
+              <button mat-button (click)="clearSkip()">Clear skip</button>
+            </p>
+            <p *ngIf="cycle.status !== 'None'">
+              <span class="status-badge" [ngClass]="'status-' + cycle.status.toLowerCase()">{{ cycle.status }}</span>
+              <span *ngIf="cycle.deadlineUtc" class="muted-text">
+                &nbsp;deadline {{ cycle.deadlineUtc | date: 'EEE MMM d, h:mm a' }}
+              </span>
+            </p>
+            <p *ngIf="cycle.status === 'None' && !cycle.skip.skipUntilUtc" class="muted-text">
+              No live cycle issued yet.
+            </p>
+
+            <table class="cycle-table" *ngIf="cycle.movies.length">
+              <thead>
+                <tr><th>Movie</th><th>Mom</th><th>Dad</th></tr>
+              </thead>
+              <tbody>
+                <tr *ngFor="let m of cycle.movies" [class.resolved-row]="m.movieId === cycle.resolvedMovieId">
+                  <td>{{ m.title }}</td>
+                  <td><span class="vote-mark"><mat-icon>{{ voteIconName(m.momVote) }}</mat-icon></span></td>
+                  <td><span class="vote-mark"><mat-icon>{{ voteIconName(m.dadVote) }}</mat-icon></span></td>
+                </tr>
+              </tbody>
+            </table>
+
+            <p class="cycle-list-summary muted-text">
+              {{ cycle.neverShowCount }} never-show &middot; {{ cycle.watchedCount }} watched &middot;
+              {{ cycle.coolingOffCount }} cooling off
+            </p>
+            <details class="recoverable" *ngIf="cycle.recoverable.length">
+              <summary>Recoverable ({{ cycle.recoverable.length }})</summary>
+              <div class="recoverable-row" *ngFor="let r of cycle.recoverable">
+                <span>{{ r.title }} — {{ r.reason }} ({{ r.since | date: 'MMM d' }})</span>
+                <button mat-button (click)="restoreMovie(r.movieId)">Restore</button>
+              </div>
+            </details>
           </details>
         </section>
 
@@ -325,16 +341,26 @@ type PoolFilter = 'all' | 'available' | 'unavailable' | 'unchecked';
     .cycle-table { width: 100%; border-collapse: collapse; font-size: 0.92em; margin: 10px 0; }
     .cycle-table th, .cycle-table td { text-align: left; padding: 6px 8px; border-bottom: 1px solid rgba(128,128,128,0.2); }
     .cycle-table .resolved-row { background: rgba(46,125,50,0.08); }
-    .vote-mark { display: inline-block; min-width: 1.4em; }
-    .vote-buttons button { width: 30px; height: 30px; line-height: 30px; }
+    .vote-mark { display: inline-flex; min-width: 1.4em; vertical-align: middle; }
+    .vote-mark mat-icon { width: 18px; height: 18px; font-size: 18px; }
+    .dry-run-panel h2 { display: flex; align-items: center; gap: 6px; }
+    .warning-text { color: #8a5a00; font-size: 0.9em; }
+    .live-cycle-status { margin-top: 18px; padding-top: 12px; border-top: 1px solid rgba(128,128,128,0.24); }
+    .live-cycle-status > summary { cursor: pointer; font-weight: 600; }
     .cycle-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+    .test-download-state { display: flex; align-items: center; gap: 6px; margin: 8px 0; }
+    .test-download-state mat-icon { margin: 0; }
+    .test-countdown {
+      display: inline-block; margin: 2px 0 10px; padding: 7px 12px;
+      border-radius: 6px; background: rgba(0,0,0,.07); font-variant-numeric: tabular-nums;
+      font-weight: 600;
+    }
     .cycle-list-summary { margin: 8px 0 0; font-size: 0.85em; }
     .pitch-line { margin: 4px 0 0; font-style: italic; font-size: 0.88em; }
-    .schedule-panel { margin: 12px 0 0; padding: 10px; border-radius: 6px; background: rgba(128,128,128,0.08); }
-    .schedule-panel h3 { margin: 0 0 8px; font-size: 0.9em; }
     .recoverable { margin-top: 10px; font-size: 0.88em; }
     .recoverable summary { cursor: pointer; }
     .recoverable-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 0; }
+    .dry-run-panel { background: rgba(255, 209, 102, 0.08); }
     .filter-toggle { margin-bottom: 12px; flex-wrap: wrap; }
     .pool-table { width: 100%; border-collapse: collapse; font-size: 0.92em; }
     .pool-table th, .pool-table td { text-align: left; padding: 6px 8px; border-bottom: 1px solid rgba(128,128,128,0.2); }
@@ -353,8 +379,11 @@ export class DateNightPoolComponent implements OnInit, OnDestroy {
   loading = true;
   error: string | null = null;
   filter: PoolFilter = 'all';
+  testSecondsLeft = 0;
+  preparingTest = false;
 
   private poll?: Subscription;
+  private testCountdownTimer?: ReturnType<typeof setInterval>;
 
   constructor(
     private api: DateNightApiService,
@@ -369,6 +398,7 @@ export class DateNightPoolComponent implements OnInit, OnDestroy {
       .subscribe({
         next: data => {
           this.data = data;
+          this.syncTestCountdown(data);
           this.loading = false;
           this.error = null;
         },
@@ -381,6 +411,7 @@ export class DateNightPoolComponent implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.poll?.unsubscribe();
+    if (this.testCountdownTimer) clearInterval(this.testCountdownTimer);
   }
 
   get visibleItems(): DateNightPoolItem[] {
@@ -418,38 +449,39 @@ export class DateNightPoolComponent implements OnInit, OnDestroy {
     });
   }
 
-  voteEmoji(vote?: string): string {
+  voteIconName(vote?: string): string {
     switch (vote) {
-      case 'Up': return '👍';
-      case 'Down': return '👎';
-      case 'Never': return '🚫';
-      default: return '—';
+      case 'Up': return 'thumb_up';
+      case 'Down': return 'thumb_down';
+      case 'Never': return 'block';
+      default: return 'remove';
     }
   }
 
-  /** Every cycle action re-fetches immediately rather than waiting on the 15s poll —
-   *  these are admin test actions meant to be driven click by click. */
+  /** Re-fetches immediately rather than waiting on the 15s pool-status poll. */
   private refreshNow(): void {
-    this.api.getPool().subscribe({ next: data => { this.data = data; } });
-  }
-
-  forceIssue(): void {
-    this.api.forceIssueCycle().subscribe({
-      next: () => this.refreshNow(),
-      error: () => { this.error = 'Could not issue a cycle — check that eligible movies exist.'; }
+    this.api.getPool().subscribe({
+      next: data => {
+        this.data = data;
+        this.syncTestCountdown(data);
+      }
     });
   }
 
-  resolveNow(): void {
-    this.api.resolveCycleNow().subscribe({ next: () => this.refreshNow() });
-  }
-
-  discardCycle(): void {
-    this.api.discardCycle().subscribe({ next: () => this.refreshNow() });
-  }
-
-  voteAs(person: string, movieId: number, vote: 'Up' | 'Down' | 'Never'): void {
-    this.api.castVoteAsAdmin(person, movieId, vote).subscribe({ next: () => this.refreshNow() });
+  resetDryRun(): void {
+    if (this.preparingTest) return;
+    this.preparingTest = true;
+    this.error = null;
+    this.api.resetDryRun().subscribe({
+      next: () => {
+        this.preparingTest = false;
+        this.refreshNow();
+      },
+      error: () => {
+        this.preparingTest = false;
+        this.error = 'Could not prepare five movies for the test.';
+      }
+    });
   }
 
   restoreMovie(movieId: number): void {
@@ -458,6 +490,13 @@ export class DateNightPoolComponent implements OnInit, OnDestroy {
 
   clearSkip(): void {
     this.api.clearSkip().subscribe({ next: () => this.refreshNow() });
+  }
+
+  resetAnnouncement(person: string): void {
+    this.api.resetAnnouncement(person).subscribe({
+      next: () => this.refreshNow(),
+      error: () => { this.error = `Could not reset the announcement for ${person}.`; }
+    });
   }
 
   goLive(): void {
@@ -469,37 +508,42 @@ export class DateNightPoolComponent implements OnInit, OnDestroy {
   }
 
   formatSlots(slots: ProposedSlot[]): string {
-    return slots.map(s => `${s.date} ${s.time}`).join(', ');
+    return slots.map(formatHawaiiSlot).join(', ');
   }
 
-  proposeAsAdmin(person: 'Mom' | 'Dad'): void {
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const slot: ProposedSlot = { date: tomorrow.toISOString().slice(0, 10), time: '19:00' };
-    this.api.proposeScheduleAsAdmin(person, [slot]).subscribe({
-      next: () => this.refreshNow(),
-      error: () => { this.error = 'Could not propose that slot.'; }
-    });
+  get testCountdownLabel(): string {
+    return formatCountdown(this.testSecondsLeft);
   }
 
-  approveAsAdmin(schedule: ScheduleState): void {
-    const approver = schedule.proposedBy === 'Mom' ? 'Dad' : 'Mom';
-    const slot = schedule.proposedSlots[0];
-    if (!slot) return;
-    this.api.approveScheduleAsAdmin(approver, slot).subscribe({
-      next: () => this.refreshNow(),
-      error: () => { this.error = 'Could not approve that slot.'; }
-    });
+  resolvedTestMovie(cycle: CycleAdminView) {
+    return cycle.movies.find(movie => movie.movieId === cycle.resolvedMovieId);
   }
 
-  cancelScheduleAsAdmin(person: string): void {
-    this.api.cancelScheduleAsAdmin(person).subscribe({ next: () => this.refreshNow() });
+  downloadStatusLabel(cycle: CycleAdminView): string {
+    if (this.resolvedTestMovie(cycle)?.hasFile) return 'Downloaded and ready to play';
+    switch (cycle.schedule?.downloadStatus) {
+      case 'Searching': return 'Searching Radarr for a release…';
+      case 'Requested': return 'Sent to Radarr — downloading now';
+      case 'Monitoring': return 'Radarr is monitoring it; no acceptable release was available yet';
+      case 'Failed': return 'Radarr could not start this download — retry from the test page';
+      default: return 'Waiting for Radarr download status';
+    }
   }
 
-  markWatchedAsAdmin(): void {
-    this.api.markWatchedAsAdmin().subscribe({
-      next: () => this.refreshNow(),
-      error: () => { this.error = 'Could not mark that watched.'; }
-    });
+  private syncTestCountdown(data: DateNightPoolResponse): void {
+    if (this.testCountdownTimer) clearInterval(this.testCountdownTimer);
+    this.testCountdownTimer = undefined;
+    const slot = data.testCycle?.schedule?.status === 'Locked'
+      ? data.testCycle.schedule.lockedSlot
+      : undefined;
+    if (!slot) {
+      this.testSecondsLeft = 0;
+      return;
+    }
+
+    const targetUtc = hawaiiSlotToUtcIso(slot);
+    const tick = () => { this.testSecondsLeft = secondsUntil(targetUtc); };
+    tick();
+    if (this.testSecondsLeft > 0) this.testCountdownTimer = setInterval(tick, 1000);
   }
 }

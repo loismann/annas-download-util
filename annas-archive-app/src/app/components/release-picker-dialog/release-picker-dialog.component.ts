@@ -82,7 +82,8 @@ function formatBytes(bytes: number): string {
                 class="rejected-badge"
                 [matTooltip]="(release.rejections || []).join('\\n')"
               >
-                <mat-icon>warning</mat-icon> Would normally be skipped
+                <mat-icon>warning</mat-icon>
+                <span>{{ rejectionSummary(release) }}</span>
               </div>
             </div>
             <button
@@ -112,7 +113,7 @@ function formatBytes(bytes: number): string {
       padding: 1.5rem 0;
       color: #64748b;
     }
-    .error { color: #f44336; padding: 1rem 0; }
+    .error { color: #f44336; padding: 1rem 0; overflow-wrap: anywhere; }
     .empty-state { color: #64748b; padding: 1rem 0; }
     .release-list {
       max-height: 50vh;
@@ -157,10 +158,12 @@ function formatBytes(bytes: number): string {
       cursor: help;
     }
     .rejected-badge mat-icon {
+      flex: 0 0 auto;
       font-size: 16px;
       width: 16px;
       height: 16px;
     }
+    .rejected-badge span { overflow-wrap: anywhere; }
   `]
 })
 export class ReleasePickerDialogComponent {
@@ -189,6 +192,12 @@ export class ReleasePickerDialogComponent {
 
   formatSize(bytes: number): string {
     return formatBytes(bytes);
+  }
+
+  rejectionSummary(release: ReleaseInfo): string {
+    const reasons = (release.rejections || []).filter(reason => reason.trim().length > 0);
+    if (reasons.length === 0) return 'Would normally be skipped';
+    return reasons.length === 1 ? reasons[0] : `${reasons[0]} (+${reasons.length - 1} more)`;
   }
 
   grab(release: ReleaseInfo): void {

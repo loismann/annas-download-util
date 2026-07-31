@@ -359,18 +359,19 @@ public static class ServiceConfiguration
         services.AddHttpClient<ISpotifyService, SpotifyService>()
             .AddStandardResilience("Spotify");
 
-        // Sonarr/Radarr — internal Docker network calls (see docker-compose.yml),
-        // so a shorter, LAN-appropriate timeout rather than StandardApiTimeout's
-        // 30s meant for external services.
+        // Sonarr/Radarr — the API is local, but interactive release searches fan
+        // out to external indexers and can legitimately take longer than quick
+        // metadata calls. Give both HttpClient and Polly the same *arr-specific
+        // budget so neither layer cuts a successful search off early.
         services.AddHttpClient<ISonarrService, SonarrService>(c =>
         {
-            c.Timeout = HttpTimeouts.MetadataLookupTimeout;
-        }).AddStandardResilience("Sonarr");
+            c.Timeout = HttpTimeouts.ArrOperationTimeout;
+        }).AddStandardResilience("Sonarr", HttpTimeouts.ArrOperationTimeout);
 
         services.AddHttpClient<IRadarrService, RadarrService>(c =>
         {
-            c.Timeout = HttpTimeouts.MetadataLookupTimeout;
-        }).AddStandardResilience("Radarr");
+            c.Timeout = HttpTimeouts.ArrOperationTimeout;
+        }).AddStandardResilience("Radarr", HttpTimeouts.ArrOperationTimeout);
 
         // Catalog/matching calls are quick, but this same typed client also
         // proxies movie/episode file downloads (MediaLibraryEndpoints' download
@@ -467,6 +468,7 @@ public static class ServiceConfiguration
         // same reason as the availability service above — its lock guards against two
         // concurrent requests both deciding a new cycle is due.
         services.AddSingleton<DateNightCycleService>();
+        services.AddHostedService<DateNightLifecycleService>();
 
         // Flyer AI pitch lines (phase 4) — singleton so its cache reads/writes go
         // through one instance, same reasoning as the two services above. Depends on

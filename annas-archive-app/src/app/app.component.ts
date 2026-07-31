@@ -12,9 +12,10 @@ import { AuthService, UserActivity } from './services/auth.service';
 import { LibraryReviewTriggerService } from './services/library-review-trigger.service';
 import { DateNightAnnouncementService } from './services/date-night-announcement.service';
 import { DateNightShowtimeService } from './services/date-night-showtime.service';
+import { DateNightReminderService } from './services/date-night-reminder.service';
 import { LoggerService } from './services/logger.service';
-import { Subscription, interval } from 'rxjs';
-import { switchMap, filter } from 'rxjs/operators';
+import { EMPTY, Observable, Subscription, fromEvent, interval, merge, of, timer } from 'rxjs';
+import { switchMap, filter, throttleTime } from 'rxjs/operators';
 
 @Component({
   selector: 'app-root',
@@ -311,6 +312,7 @@ export class AppComponent implements OnInit, OnDestroy {
   private activitySubscription?: Subscription;
   private reviewCheckSubscription?: Subscription;
   private announcementSubscription?: Subscription;
+  private dateNightReminderSubscription?: Subscription;
   private showtimeSubscription?: Subscription;
 
   constructor(
@@ -320,6 +322,7 @@ export class AppComponent implements OnInit, OnDestroy {
     private http: HttpClient,
     private libraryReviewTrigger: LibraryReviewTriggerService,
     private dateNightAnnouncement: DateNightAnnouncementService,
+    private dateNightReminder: DateNightReminderService,
     private dateNightShowtime: DateNightShowtimeService
   ) {}
 
@@ -332,10 +335,15 @@ export class AppComponent implements OnInit, OnDestroy {
       error: (err) => this.logger.error('Failed to fetch version.json', err)
     });
 
-    // Poll for user activity every 60 seconds when authenticated
+    // Poll for user activity every 60 seconds only while authenticated. Using
+    // switchMap on the false value is important: filter(isAuth => isAuth) would
+    // leave an interval created during the previous login running after logout.
     this.activitySubscription = this.authService.isAuthenticated$.pipe(
-      filter(isAuth => isAuth),
-      switchMap(() => {
+      switchMap(isAuth => {
+        if (!isAuth) {
+          this.userActivity = [];
+          return EMPTY;
+        }
         // Initial fetch
         this.fetchUserActivity();
         // Then poll every 60 seconds
@@ -361,13 +369,23 @@ export class AppComponent implements OnInit, OnDestroy {
       filter(isAuth => isAuth)
     ).subscribe(() => this.dateNightAnnouncement.checkAndMaybeShow());
 
+    // Daily Date Night nudge, app-wide. The first check waits ten seconds so the
+    // one-time announcement gets first refusal. After that there is no background
+    // polling: checks are driven by real browser activity (focus, returning to the
+    // visible tab, pointer, or keyboard), throttled so sustained use cannot create
+    // request noise. Logging out switches to EMPTY and removes every listener.
+    this.dateNightReminderSubscription = this.authService.isAuthenticated$.pipe(
+      switchMap(isAuth => isAuth ? this.dateNightReminderActivity() : EMPTY)
+    ).subscribe(() => this.dateNightReminder.checkAndMaybeShow());
+
     // Showtime countdown poll — app-wide (not just /date-night), since the popup
     // needs to appear "on both accounts" regardless of which page they're on.
     // Polled every 45s rather than tied to any user action, because there's no
-    // push notification to drive this any other way.
+    // push notification to drive this any other way. Unlike the old filtered
+    // stream, the false branch explicitly cancels the poll at logout.
     this.showtimeSubscription = this.authService.isAuthenticated$.pipe(
-      filter(isAuth => isAuth),
-      switchMap(() => {
+      switchMap(isAuth => {
+        if (!isAuth) return EMPTY;
         this.dateNightShowtime.checkAndMaybeShow();
         return interval(45000);
       })
@@ -378,7 +396,28 @@ export class AppComponent implements OnInit, OnDestroy {
     this.activitySubscription?.unsubscribe();
     this.reviewCheckSubscription?.unsubscribe();
     this.announcementSubscription?.unsubscribe();
+    this.dateNightReminderSubscription?.unsubscribe();
     this.showtimeSubscription?.unsubscribe();
+  }
+
+  /** One initial authenticated check, then only human activity. The fifteen-minute
+   * throttle is not a timer and emits nothing while the device is idle; it merely
+   * caps how often a stream of clicks/keystrokes is allowed to ask the server. */
+  private dateNightReminderActivity(): Observable<unknown> {
+    if (typeof window === 'undefined' || typeof document === 'undefined') return EMPTY;
+
+    const visibleAgain = fromEvent(document, 'visibilitychange').pipe(
+      filter(() => document.visibilityState === 'visible')
+    );
+    return timer(10000).pipe(
+      switchMap(() => merge(
+        of(null),
+        fromEvent(window, 'focus'),
+        visibleAgain,
+        fromEvent(document, 'pointerdown'),
+        fromEvent(document, 'keydown')
+      ).pipe(throttleTime(15 * 60 * 1000)))
+    );
   }
 
   private fetchUserActivity(): void {

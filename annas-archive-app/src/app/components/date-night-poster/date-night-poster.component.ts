@@ -1,5 +1,6 @@
 import { Component, EventEmitter, Input, Output } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { MatIconModule } from '@angular/material/icon';
 
 /**
  * The Date Night lobby card, as a 1950s drive-in poster.
@@ -18,7 +19,7 @@ import { CommonModule } from '@angular/common';
 @Component({
   selector: 'app-date-night-poster',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, MatIconModule],
   template: `
     <div class="thtr-stage">
       <div class="thtr-bulbs" aria-hidden="true">
@@ -49,7 +50,7 @@ import { CommonModule } from '@angular/common';
           class="thtr-close"
           aria-label="Close"
           (click)="closed.emit()"
-        >✕</button>
+        ><mat-icon>close</mat-icon></button>
 
         <div class="content">
           <!-- House lights down, picture already running. Still: Robot Monster
@@ -77,7 +78,7 @@ import { CommonModule } from '@angular/common';
 
           <div class="pitch">
             <ul class="thtr-see">
-              <li data-verb="SEE!">One of Three chillers chosen for you each week!</li>
+              <li data-verb="SEE!">One of Five chillers chosen for you each week!</li>
               <li data-verb="THRILL!">To monsters, kung fu and flying saucers!</li>
               <li data-verb="GASP!">As you both agree on the best B-Movies!</li>
             </ul>
@@ -100,23 +101,23 @@ import { CommonModule } from '@angular/common';
 
           <div class="bill">
             <div class="thtr-card">
-              <span class="thtr-card-icon">🎞️</span>
-              <span class="thtr-card-label">Three Options a Week</span>
+              <mat-icon class="thtr-card-icon">theaters</mat-icon>
+              <span class="thtr-card-label">Five Options a Week</span>
               <p>Hand-picked from a vault of nearly three hundred pictures.</p>
             </div>
             <div class="thtr-card">
-              <span class="thtr-card-icon">👍</span>
+              <mat-icon class="thtr-card-icon">thumb_up</mat-icon>
               <span class="thtr-card-label">You Both Vote</span>
               <p>Thumbs up or down, in secret. Only mutual favourites make the bill.</p>
             </div>
             <div class="thtr-card">
-              <span class="thtr-card-icon">🍿</span>
+              <mat-icon class="thtr-card-icon">local_movies</mat-icon>
               <span class="thtr-card-label">Name the Hour</span>
               <p>Settle on a night together. We'll count you down and roll it.</p>
             </div>
           </div>
 
-          <p class="thtr-blink">★ &nbsp; FIND IT ANY TIME UNDER “DATE NIGHT” IN THE MENU &nbsp; ★</p>
+          <p class="thtr-blink"><mat-icon class="blink-star">star</mat-icon> &nbsp; FIND IT ANY TIME UNDER “DATE NIGHT” IN THE MENU &nbsp; <mat-icon class="blink-star">star</mat-icon></p>
 
           <button *ngIf="dismissible" class="thtr-btn" (click)="closed.emit()">
             Swell — Can't Wait!
@@ -188,11 +189,10 @@ export class DateNightPosterComponent {
    *  the host handles them identically. */
   @Output() closed = new EventEmitter<void>();
 
-  /** Bulb counts per edge. Spacing comes from space-between, so these only set
-   *  density — the vertical edges get more because the card is taller than it
-   *  is wide. */
-  readonly hBulbs = Array.from({ length: 26 });
-  readonly vBulbs = Array.from({ length: 36 });
+  /** Extra bulbs are clipped by each edge, keeping one fixed pitch horizontally
+   *  and vertically regardless of the card's current dimensions. */
+  readonly hBulbs = Array.from({ length: 64 });
+  readonly vBulbs = Array.from({ length: 64 });
   /** Three rows; each row further back holds more, smaller seats so it shows
    *  through the gaps of the row in front and reads as receding. */
   readonly farRow = Array.from({ length: 9 });

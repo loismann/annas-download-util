@@ -39,10 +39,9 @@ public interface ISonarrService
     Task<JsonArray> SearchSeasonReleasesAsync(int seriesId, int seasonNumber, CancellationToken ct = default);
 
     /// <summary>Force-grabs one specific release regardless of the quality
-    /// profile's normal rejections — takes the exact object returned by
-    /// SearchSeasonReleasesAsync for the chosen release, unmodified, since
-    /// Sonarr's grab endpoint expects the full release object back (same
-    /// idiom as AddSeriesAsync).</summary>
+    /// profile's normal rejections — takes the full object returned by
+    /// SearchSeasonReleasesAsync. The caller may add the authoritative route
+    /// seriesId when Sonarr could not infer it from an alternate-language title.</summary>
     Task GrabReleaseAsync(JsonObject release, CancellationToken ct = default);
 
     /// <summary>Per-episode list for a series, including Sonarr's own

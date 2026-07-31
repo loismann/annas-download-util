@@ -50,6 +50,13 @@ public static class HttpTimeouts
     public static readonly TimeSpan MetadataLookupTimeout = TimeSpan.FromSeconds(10);
 
     /// <summary>
+    /// Timeout for Sonarr/Radarr operations (60 seconds). Interactive release
+    /// searches fan out to indexers and routinely take longer than a metadata
+    /// lookup even though the *arr API itself is on the local Docker network.
+    /// </summary>
+    public static readonly TimeSpan ArrOperationTimeout = TimeSpan.FromSeconds(60);
+
+    /// <summary>
     /// Timeout for title extraction from URLs (12 seconds).
     /// </summary>
     public static readonly TimeSpan TitleExtractionTimeout = TimeSpan.FromSeconds(12);

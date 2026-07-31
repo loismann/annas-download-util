@@ -58,10 +58,14 @@ public interface IRadarrService
 
     /// <summary>Force-grabs one specific release regardless of the quality
     /// profile's normal rejections — takes the exact object returned by
-    /// SearchReleasesAsync for the chosen release, unmodified, since Radarr's
-    /// grab endpoint expects the full release object back (same idiom as
-    /// AddMovieAsync).</summary>
+    /// SearchReleasesAsync for the chosen release. The caller preserves the full
+    /// object and may add the authoritative route movieId when Radarr could not
+    /// infer it from an alternate-language release title.</summary>
     Task GrabReleaseAsync(JsonObject release, CancellationToken ct = default);
+
+    /// <summary>Cancels any active queue/download-client job for this movie and
+    /// removes its partial data, without deleting the Radarr movie record.</summary>
+    Task CancelMovieDownloadAsync(int movieId, CancellationToken ct = default);
 
     /// <summary>Every movie already added in Radarr, each with its own
     /// <c>hasFile</c>/<c>tmdbId</c> — used both for the search page's
@@ -235,6 +239,9 @@ public class RadarrService : ArrServiceBase, IRadarrService
 
         Log.Information("[Radarr] Deleted movie {MovieId} and its files", movieId);
     }
+
+    public Task CancelMovieDownloadAsync(int movieId, CancellationToken ct = default) =>
+        RemoveQueueItemsForAsync("movieId", movieId, ct);
 
     public async Task<JsonObject?> GetMovieAsync(int movieId, CancellationToken ct = default)
     {

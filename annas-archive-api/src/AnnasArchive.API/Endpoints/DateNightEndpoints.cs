@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using AnnasArchive.API.Constants;
 using AnnasArchive.API.Helpers;
 using AnnasArchive.API.Services;
 using Microsoft.AspNetCore.Mvc;
@@ -41,8 +42,11 @@ public record DateNightAnnouncement(bool ShouldShow, List<string> Posters, bool 
 /// <summary>One of this week's drawn movies, as both the admin panel and the real
 /// flyer need it. <c>Summary</c> is the AI pitch line — null until generated (lazily,
 /// on first read) or if generation failed, in which case the caller falls back to the
-/// plain overview.</summary>
-public record CycleMovieView(int MovieId, string Title, string? PosterUrl, int? TmdbId, string? Overview, string? Summary, string? MomVote, string? DadVote);
+/// plain overview. <c>Genre</c> is up to two of Radarr's own genres, joined for
+/// display — not the app's separate `customGenres` household tagging.</summary>
+public record CycleMovieView(
+    int MovieId, string Title, string? PosterUrl, int? TmdbId, string? Overview, string? Summary,
+    int? Year, string? Genre, bool HasFile, bool Monitored, string? MomVote, string? DadVote);
 
 /// <summary>A movie sitting in never-show or a disagreement cooling-off — the "collapsed
 /// section" the spec calls for, so a mis-tap has a visible way back.</summary>
@@ -66,12 +70,16 @@ public record CycleAdminView(
     int CoolingOffCount,
     List<RecoverableMovie> Recoverable);
 
+/// <param name="TestCycle">The dry run's own cycle — same shape as <c>Cycle</c>,
+/// sourced from completely separate storage. Read-only here; it's driven from the
+/// real /date-night page via admin impersonation, not from this panel.</param>
 public record DateNightPoolResponse(
     DateNightPoolSummary Summary,
     AvailabilityScanStatus Scan,
     List<DateNightPoolItem> Items,
     List<AnnouncementRecipient> Announcement,
-    CycleAdminView? Cycle);
+    CycleAdminView? Cycle,
+    CycleAdminView? TestCycle);
 
 /// <summary>What Mom or Dad see when they check this week's draw.</summary>
 public record CycleView(
@@ -84,23 +92,21 @@ public record CycleView(
     string? ResolvedTitle,
     ScheduleState? Schedule,
     bool ShouldShowFlyerToday,
+    bool ShouldShowScheduleReminderToday,
     bool Skipped);
 
+public record ResetAnnouncementRequest(string Person);
 public record CastVoteRequest(int MovieId, string Vote);
 public record SetSkipRequest(string Scope);
-public record AdminCastVoteRequest(string Person, int MovieId, string Vote);
 public record ProposeScheduleRequest(List<ProposedSlot> Slots);
 public record ApproveScheduleRequest(ProposedSlot Slot);
-public record AdminProposeScheduleRequest(string Person, List<ProposedSlot> Slots);
-public record AdminApproveScheduleRequest(string Person, ProposedSlot Slot);
-public record AdminCancelScheduleRequest(string Person);
 
 /// <summary>
 /// Date Night pool + availability endpoints. See DOCS/DATE_NIGHT_FEATURE.md.
 ///
 /// Only the pool and its availability pre-pass live here so far — the weekly draw,
 /// voting, and scheduling are later phases, deliberately not built until the real
-/// availability numbers say the pool is big enough to sustain three fresh picks a week.
+/// availability numbers say the pool is big enough to sustain five fresh picks a week.
 /// </summary>
 public static class DateNightEndpoints
 {
@@ -128,6 +134,12 @@ public static class DateNightEndpoints
 
         app.MapPost("/api/date-night/announcement/dismiss", HandleDismissAnnouncement)
             .RequireAuthorization()
+            .RequireRateLimiting("api");
+
+        // Admin recovery path for a showing burned by testing on Mom/Dad's own
+        // account — resets their announcement state as if they'd never seen it.
+        app.MapPost("/api/date-night/announcement/admin/reset", HandleAdminResetAnnouncement)
+            .RequireAuthorization("AdminOnly")
             .RequireRateLimiting("api");
 
         // Weekly cycle routes for Mom and Dad — built now for phase 4 (the flyer) to
@@ -160,9 +172,24 @@ public static class DateNightEndpoints
             .RequireAuthorization()
             .RequireRateLimiting("api");
 
+        // Marks that this person has seen the schedule's current state (a proposal
+        // waiting on them, or a cancellation) — stops the "your turn"/"cancelled"
+        // popup from reappearing on their next load until the state changes again.
+        app.MapPost("/api/date-night/cycle/schedule/acknowledge", HandleAcknowledgeSchedule)
+            .RequireAuthorization()
+            .RequireRateLimiting("api");
+
+        app.MapPost("/api/date-night/cycle/download/retry", HandleRetryDownload)
+            .RequireAuthorization()
+            .RequireRateLimiting("api");
+
         // Polled every 30-60s from AppComponent (any page, not just /date-night) —
         // this app has no push notifications, so this is how the countdown surfaces.
         app.MapGet("/api/date-night/showtime-check", HandleShowtimeCheck)
+            .RequireAuthorization()
+            .RequireRateLimiting("api");
+
+        app.MapPost("/api/date-night/cycle/showtime/start", HandleStartShowtime)
             .RequireAuthorization()
             .RequireRateLimiting("api");
 
@@ -185,31 +212,11 @@ public static class DateNightEndpoints
             .RequireAuthorization("AdminOnly")
             .RequireRateLimiting("api");
 
-        app.MapPost("/api/date-night/cycle/admin/vote", HandleAdminCastVote)
-            .RequireAuthorization("AdminOnly")
-            .RequireRateLimiting("api");
-
         app.MapPost("/api/date-night/cycle/admin/restore/{movieId:int}", HandleAdminRestore)
             .RequireAuthorization("AdminOnly")
             .RequireRateLimiting("api");
 
         app.MapPost("/api/date-night/cycle/admin/skip/clear", HandleAdminClearSkip)
-            .RequireAuthorization("AdminOnly")
-            .RequireRateLimiting("api");
-
-        app.MapPost("/api/date-night/cycle/admin/schedule/propose", HandleAdminProposeSchedule)
-            .RequireAuthorization("AdminOnly")
-            .RequireRateLimiting("api");
-
-        app.MapPost("/api/date-night/cycle/admin/schedule/approve", HandleAdminApproveSchedule)
-            .RequireAuthorization("AdminOnly")
-            .RequireRateLimiting("api");
-
-        app.MapPost("/api/date-night/cycle/admin/schedule/cancel", HandleAdminCancelSchedule)
-            .RequireAuthorization("AdminOnly")
-            .RequireRateLimiting("api");
-
-        app.MapPost("/api/date-night/cycle/admin/mark-watched", HandleAdminMarkWatched)
             .RequireAuthorization("AdminOnly")
             .RequireRateLimiting("api");
 
@@ -219,6 +226,13 @@ public static class DateNightEndpoints
             .RequireRateLimiting("api");
 
         app.MapPost("/api/date-night/cycle/admin/go-dark", HandleAdminGoDark)
+            .RequireAuthorization("AdminOnly")
+            .RequireRateLimiting("api");
+
+        // The dry run has one reset control only. There is deliberately no
+        // resolve-now bypass: both complete Mom/Dad ballots are required, exactly
+        // as they are in the real person-facing flow.
+        app.MapPost("/api/date-night/cycle/admin/test/reset", HandleAdminResetDryRun)
             .RequireAuthorization("AdminOnly")
             .RequireRateLimiting("api");
 
@@ -291,24 +305,58 @@ public static class DateNightEndpoints
         return Results.Ok(new { dismissed = true });
     }
 
+    private static IResult HandleAdminResetAnnouncement(
+        DateNightAvailabilityService availability, [FromBody] ResetAnnouncementRequest request)
+    {
+        availability.ResetAnnouncement(request.Person);
+        return Results.Ok(new { reset = true });
+    }
+
     private static async Task<IResult> HandleGetPool(
-        DateNightAvailabilityService availability, DateNightCycleService cycles, DateNightSummaryService summaries)
+        DateNightAvailabilityService availability, DateNightCycleService cycles, DateNightSummaryService summaries, IRadarrService radarr)
     {
         try
         {
             var movies = await availability.GetPoolMoviesAsync();
             var results = availability.GetAvailability();
 
-            CycleAdminView? cycleView = null;
+            // Recoverable movies can include ones already graduated out of the pool
+            // (watched — their date-night-pool tag is gone), so titleById has to cover
+            // every Radarr movie, not just the currently pool-tagged ones, or a
+            // recovered movie shows up as a bare "#412" with nothing to identify it by.
+            Dictionary<int, string> allTitlesById;
             try
             {
-                cycleView = await BuildCycleAdminViewAsync(cycles, summaries, movies);
+                var allMovies = await radarr.GetAllMoviesAsync();
+                allTitlesById = allMovies.OfType<JsonObject>()
+                    .Where(m => (int?)m["id"] is int)
+                    .ToDictionary(m => (int)m["id"]!, m => m["title"]?.ToString() ?? "");
+            }
+            catch (Exception ex)
+            {
+                Log.Warning("[DateNight] Could not fetch all movies for recoverable-title lookup: {Message}", ex.Message);
+                allTitlesById = new();
+            }
+
+            CycleAdminView? cycleView = null;
+            CycleAdminView? testCycleView = null;
+            try
+            {
+                cycleView = await BuildCycleAdminViewAsync(cycles, summaries, movies, allTitlesById, isTest: false);
             }
             catch (Exception ex)
             {
                 // The pool table is the important part of this page; a cycle-side
                 // hiccup shouldn't take it down too.
                 Log.Warning("[DateNight] Could not build the cycle admin view: {Message}", ex.Message);
+            }
+            try
+            {
+                testCycleView = await BuildCycleAdminViewAsync(cycles, summaries, movies, allTitlesById, isTest: true);
+            }
+            catch (Exception ex)
+            {
+                Log.Warning("[DateNight] Could not build the dry-run admin view: {Message}", ex.Message);
             }
 
             var items = movies.Select(m =>
@@ -339,7 +387,7 @@ public static class DateNightEndpoints
                 items.Count(i => i.HasFile));
 
             return Results.Ok(new DateNightPoolResponse(
-                summary, availability.GetScanStatus(), items, availability.GetAnnouncementStatus(), cycleView));
+                summary, availability.GetScanStatus(), items, availability.GetAnnouncementStatus(), cycleView, testCycleView));
         }
         catch (HttpRequestException ex)
         {
@@ -350,10 +398,10 @@ public static class DateNightEndpoints
 
     /// <summary>Shared between the admin panel and the Mom/Dad cycle view — resolves
     /// this week's drawn movie ids against already-fetched pool metadata (no second
-    /// Radarr call) and attaches each movie's AI pitch line, generating it on first
-    /// read if the cache (<see cref="DateNightSummaryService"/>) doesn't have one yet.</summary>
-    private static async Task<List<CycleMovieView>> ResolveCycleMoviesAsync(
-        WeeklyCycle cycle, List<JsonObject> poolMovies, DateNightSummaryService summaries, string? attributedTo = null)
+    /// Radarr call) and attaches the already-prepared AI pitch. This rendering path
+    /// is deliberately cache-only; cycle issuance maintains a five-movie reserve.</summary>
+    private static List<CycleMovieView> ResolveCycleMovies(
+        WeeklyCycle cycle, List<JsonObject> poolMovies, DateNightSummaryService summaries)
     {
         var byId = poolMovies
             .Where(m => (int?)m["id"] is int)
@@ -373,45 +421,58 @@ public static class DateNightEndpoints
             var overview = movie?["overview"]?.ToString();
             var year = movie is null ? null : (int?)movie["year"];
             var tmdbId = movie is null ? null : (int?)movie["tmdbId"];
-            var summary = await summaries.GetOrGenerateSummaryAsync(id, title, year, overview, attributedTo);
+            var genre = movie is null ? null : GenreLine(movie);
+            var hasFile = movie is not null && ((bool?)movie["hasFile"] ?? false);
+            var monitored = movie is not null && ((bool?)movie["monitored"] ?? false);
+            var summary = summaries.GetCachedSummary(id);
 
             result.Add(new CycleMovieView(
-                id, title, movie is null ? null : PosterUrl(movie), tmdbId, overview, summary, momVote, dadVote));
+                id, title, movie is null ? null : PosterUrl(movie), tmdbId, overview, summary,
+                year, genre, hasFile, monitored, momVote, dadVote));
         }
         return result;
     }
 
     private static async Task<CycleAdminView> BuildCycleAdminViewAsync(
-        DateNightCycleService cycles, DateNightSummaryService summaries, List<JsonObject> poolMovies)
+        DateNightCycleService cycles, DateNightSummaryService summaries, List<JsonObject> poolMovies,
+        Dictionary<int, string> allTitlesById, bool isTest)
     {
-        var cycle = await cycles.GetCurrentCycleAsync();
+        // The real cycle keeps its existing lazy issue/resolve-on-view behavior; the
+        // test cycle is peeked only — see PeekTestCycle for why it must not auto-draw.
+        var cycle = isTest ? cycles.PeekTestCycle() : await cycles.GetCurrentCycleAsync();
         var skip = cycles.GetSkip();
-        var lists = cycles.GetLists();
+        var lists = cycles.GetLists(isTest);
         var coolingCutoff = DateTime.UtcNow - DateNightCycleService.CoolingOff;
 
-        var titleById = poolMovies
-            .Where(m => (int?)m["id"] is int)
-            .ToDictionary(m => (int)m["id"]!, m => m["title"]?.ToString() ?? "");
-
+        // Watched movies have already lost their date-night-pool tag (that's what
+        // MarkWatchedAsync does), so they won't be in poolMovies — allTitlesById
+        // covers every Radarr movie, tagged or not, so a recovered movie still shows
+        // a real title instead of a bare "#412".
         var recoverable = lists
-            .Where(kv => kv.Value.NeverShowAgain || (kv.Value.LastDisagreedUtc is DateTime d && d > coolingCutoff))
+            .Where(kv => kv.Value.NeverShowAgain || kv.Value.Watched ||
+                         (kv.Value.LastDisagreedUtc is DateTime d && d > coolingCutoff))
             .Select(kv =>
             {
                 var (id, entry) = (kv.Key, kv.Value);
-                var title = titleById.TryGetValue(id, out var t) ? t : $"#{id}";
-                return entry.NeverShowAgain
-                    ? new RecoverableMovie(id, title, "Never show again", entry.NeverShowAgainUtc ?? DateTime.UtcNow)
-                    : new RecoverableMovie(id, title, "Disagreed — cooling off", entry.LastDisagreedUtc!.Value);
+                var title = allTitlesById.TryGetValue(id, out var t) ? t : $"#{id}";
+                if (entry.NeverShowAgain)
+                    return new RecoverableMovie(id, title, "Never show again", entry.NeverShowAgainUtc ?? DateTime.UtcNow);
+                if (entry.Watched)
+                    return new RecoverableMovie(id, title, "Watched — retired from pool", entry.WatchedUtc ?? DateTime.UtcNow);
+                return new RecoverableMovie(id, title, "Disagreed — cooling off", entry.LastDisagreedUtc!.Value);
             })
             .OrderByDescending(r => r.Since)
             .ToList();
 
+        // Skip only ever applies to the real cycle — the dry run never shows "Skipped".
+        var noCycleStatus = !isTest && skip.SkipUntilUtc > DateTime.UtcNow ? "Skipped" : "None";
+
         return new CycleAdminView(
             cycle?.CycleId,
-            cycle?.Status ?? (skip.SkipUntilUtc > DateTime.UtcNow ? "Skipped" : "None"),
+            cycle?.Status ?? noCycleStatus,
             cycle?.DeadlineUtc,
             cycle?.ResolvedUtc,
-            cycle is null ? [] : await ResolveCycleMoviesAsync(cycle, poolMovies, summaries, "Paul"),
+            cycle is null ? [] : ResolveCycleMovies(cycle, poolMovies, summaries),
             cycle?.ResolvedMovieId,
             cycle?.Schedule,
             skip,
@@ -426,34 +487,83 @@ public static class DateNightEndpoints
     /// same audience rule as the announcement, so Paul can't accidentally vote and Mom/Dad
     /// can't skip on his behalf.</summary>
     private static bool IsAudience(string? person) =>
-        person is not null && !string.Equals(person, "Paul", StringComparison.OrdinalIgnoreCase);
+        person is not null && HouseholdOwners.Names.Any(n =>
+            !string.Equals(n, "Paul", StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(n, person, StringComparison.OrdinalIgnoreCase));
+
+    private static readonly IResult FeatureDarkResult =
+        Results.Json(new { error = "Date Night is not live yet." }, statusCode: StatusCodes.Status404NotFound);
+
+    private static IResult? AudienceActionGate(DateNightCycleService cycles, string? person, bool isTest)
+    {
+        if (!IsAudience(person)) return NotAudienceResult;
+        return !isTest && !cycles.IsLive() ? FeatureDarkResult : null;
+    }
+
+    private const string ImpersonationHeader = "X-Date-Night-As";
+
+    /// <summary>Admin-only "view as" override so Paul can click through the real
+    /// Mom/Dad voting/scheduling UI from his own logged-in session instead of the
+    /// admin bypass panel. Only takes effect when the *real*, JWT-verified identity
+    /// is Paul — Mom/Dad cannot spoof each other by sending this header themselves,
+    /// since it never overrides an already-resolved Mom/Dad identity.
+    ///
+    /// Impersonating doubles as "this is a dry run": <c>IsTest</c> is true exactly
+    /// when the override applied, which callers use to route every action at the
+    /// completely separate test cycle/lists instead of the real household state —
+    /// see DateNightCycleService's isTest-parametrized methods. Real Mom/Dad sessions
+    /// can never produce IsTest=true.</summary>
+    private static (string? Person, bool IsTest) ResolveDateNightContext(HttpContext context)
+    {
+        var real = LibraryHelpers.ResolveUserDisplayName(context);
+        if (!string.Equals(real, "Paul", StringComparison.OrdinalIgnoreCase))
+            return (real, false);
+
+        if (context.Request.Headers.TryGetValue(ImpersonationHeader, out var impersonate) &&
+            (string.Equals(impersonate, "Mom", StringComparison.OrdinalIgnoreCase) ||
+             string.Equals(impersonate, "Dad", StringComparison.OrdinalIgnoreCase)))
+        {
+            return (impersonate.ToString(), true);
+        }
+
+        return (real, false);
+    }
 
     private static async Task<IResult> HandleGetCycle(
         HttpContext context, DateNightAvailabilityService availability, DateNightCycleService cycles, DateNightSummaryService summaries)
     {
-        var person = LibraryHelpers.ResolveUserDisplayName(context);
+        var (person, isTest) = ResolveDateNightContext(context);
         if (!IsAudience(person))
-            return Results.Ok(new CycleView(null, "None", null, [], new(), null, null, null, false, false));
+            return Results.Ok(new CycleView(null, "None", null, [], new(), null, null, null, false, false, false));
+        if (!isTest && !cycles.IsLive())
+            return Results.Ok(new CycleView(null, "None", null, [], new(), null, null, null, false, false, false));
 
-        var cycle = await cycles.GetCurrentCycleAsync();
+        // The test cycle is lazily drawn on first touch and never skip-gated — a dry
+        // run always has something to show, unlike the real cycle which can be null.
+        var cycle = isTest ? await cycles.GetCurrentTestCycleAsync() : await cycles.GetCurrentCycleAsync();
         if (cycle is null)
         {
             var skip = cycles.GetSkip();
             return Results.Ok(new CycleView(
-                null, "None", null, [], new(), null, null, null, false, skip.SkipUntilUtc > DateTime.UtcNow));
+                null, "None", null, [], new(), null, null, null, false, false, skip.SkipUntilUtc > DateTime.UtcNow));
         }
 
         var poolMovies = await availability.GetPoolMoviesAsync();
-        var moviesView = await ResolveCycleMoviesAsync(cycle, poolMovies, summaries, person);
+        var moviesView = ResolveCycleMovies(cycle, poolMovies, summaries);
         var myVotes = cycle.Votes.TryGetValue(person!, out var votes) ? votes : new Dictionary<int, string>();
-        var resolvedTitle = cycle.ResolvedMovieId is int rid
+        // Finished Watching removes the winner's Date Night pool tag, so it is no
+        // longer present in poolMovies. Prefer the title persisted at conclusion;
+        // otherwise ResolveCycleMovies would supply only its "Movie #id" placeholder.
+        var resolvedTitle = cycle.Schedule?.ConclusionTitle;
+        resolvedTitle ??= cycle.ResolvedMovieId is int rid
             ? moviesView.FirstOrDefault(m => m.MovieId == rid)?.Title
             : null;
 
         return Results.Ok(new CycleView(
             cycle.CycleId, cycle.Status, cycle.DeadlineUtc, moviesView, myVotes,
             cycle.ResolvedMovieId, resolvedTitle, cycle.Schedule,
-            cycles.IsFlyerOwedToday(person!, cycle), false));
+            DateNightCycleService.IsFlyerOwedToday(person!, cycle),
+            cycles.IsScheduleReminderOwedToday(person!, cycle), false));
     }
 
     private static readonly IResult NotAudienceResult =
@@ -461,13 +571,12 @@ public static class DateNightEndpoints
 
     private static async Task<IResult> HandleCastVote(HttpContext context, DateNightCycleService cycles, [FromBody] CastVoteRequest request)
     {
-        var person = LibraryHelpers.ResolveUserDisplayName(context);
-        if (!IsAudience(person))
-            return NotAudienceResult;
+        var (person, isTest) = ResolveDateNightContext(context);
+        if (AudienceActionGate(cycles, person, isTest) is { } blocked) return blocked;
 
         try
         {
-            await cycles.CastVoteAsync(person!, request.MovieId, request.Vote);
+            await cycles.CastVoteAsync(person!, request.MovieId, request.Vote, isTest);
             return Results.Ok(new { voted = true });
         }
         catch (ArgumentException ex)
@@ -482,9 +591,11 @@ public static class DateNightEndpoints
 
     private static IResult HandleSetSkip(HttpContext context, DateNightCycleService cycles, [FromBody] SetSkipRequest request)
     {
-        var person = LibraryHelpers.ResolveUserDisplayName(context);
-        if (!IsAudience(person))
-            return NotAudienceResult;
+        // No test-cycle equivalent — skip is a real, household-wide concept.
+        var (person, isTest) = ResolveDateNightContext(context);
+        if (!IsAudience(person)) return NotAudienceResult;
+        if (isTest) return Results.Conflict(new { error = "Skip is disabled in the isolated dry run." });
+        if (!cycles.IsLive()) return FeatureDarkResult;
 
         if (request.Scope is not ("week" or "month"))
             return Results.BadRequest(new { error = "scope must be \"week\" or \"month\"." });
@@ -495,24 +606,22 @@ public static class DateNightEndpoints
 
     private static async Task<IResult> HandleFlyerShown(HttpContext context, DateNightCycleService cycles)
     {
-        var person = LibraryHelpers.ResolveUserDisplayName(context);
-        if (!IsAudience(person))
-            return NotAudienceResult;
+        var (person, isTest) = ResolveDateNightContext(context);
+        if (AudienceActionGate(cycles, person, isTest) is { } blocked) return blocked;
 
-        await cycles.RecordFlyerShownAsync(person!);
+        await cycles.RecordFlyerShownAsync(person!, isTest);
         return Results.Ok(new { recorded = true });
     }
 
     private static async Task<IResult> HandleProposeSchedule(
         HttpContext context, DateNightCycleService cycles, [FromBody] ProposeScheduleRequest request)
     {
-        var person = LibraryHelpers.ResolveUserDisplayName(context);
-        if (!IsAudience(person))
-            return NotAudienceResult;
+        var (person, isTest) = ResolveDateNightContext(context);
+        if (AudienceActionGate(cycles, person, isTest) is { } blocked) return blocked;
 
         try
         {
-            await cycles.ProposeScheduleAsync(person!, request.Slots);
+            await cycles.ProposeScheduleAsync(person!, request.Slots, isTest);
             return Results.Ok(new { proposed = true });
         }
         catch (ArgumentException ex)
@@ -528,13 +637,12 @@ public static class DateNightEndpoints
     private static async Task<IResult> HandleApproveSchedule(
         HttpContext context, DateNightCycleService cycles, [FromBody] ApproveScheduleRequest request)
     {
-        var person = LibraryHelpers.ResolveUserDisplayName(context);
-        if (!IsAudience(person))
-            return NotAudienceResult;
+        var (person, isTest) = ResolveDateNightContext(context);
+        if (AudienceActionGate(cycles, person, isTest) is { } blocked) return blocked;
 
         try
         {
-            await cycles.ApproveScheduleAsync(person!, request.Slot);
+            await cycles.ApproveScheduleAsync(person!, request.Slot, isTest);
             return Results.Ok(new { locked = true });
         }
         catch (InvalidOperationException ex)
@@ -545,13 +653,12 @@ public static class DateNightEndpoints
 
     private static async Task<IResult> HandleCancelSchedule(HttpContext context, DateNightCycleService cycles)
     {
-        var person = LibraryHelpers.ResolveUserDisplayName(context);
-        if (!IsAudience(person))
-            return NotAudienceResult;
+        var (person, isTest) = ResolveDateNightContext(context);
+        if (AudienceActionGate(cycles, person, isTest) is { } blocked) return blocked;
 
         try
         {
-            await cycles.CancelScheduleAsync(person!);
+            await cycles.CancelScheduleAsync(person!, isTest);
             return Results.Ok(new { cancelled = true });
         }
         catch (InvalidOperationException ex)
@@ -560,20 +667,82 @@ public static class DateNightEndpoints
         }
     }
 
-    private static IResult HandleShowtimeCheck(DateNightCycleService cycles) =>
-        Results.Ok(cycles.GetShowtimeStatus());
+    private static async Task<IResult> HandleAcknowledgeSchedule(HttpContext context, DateNightCycleService cycles)
+    {
+        var (person, isTest) = ResolveDateNightContext(context);
+        if (AudienceActionGate(cycles, person, isTest) is { } blocked) return blocked;
+
+        try
+        {
+            await cycles.AcknowledgeScheduleAsync(person!, isTest);
+            return Results.Ok(new { acknowledged = true });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.Conflict(new { error = ex.Message });
+        }
+    }
+
+    private static async Task<IResult> HandleRetryDownload(HttpContext context, DateNightCycleService cycles)
+    {
+        var (person, isTest) = ResolveDateNightContext(context);
+        if (AudienceActionGate(cycles, person, isTest) is { } blocked) return blocked;
+
+        try
+        {
+            var cycle = await cycles.RetryDownloadAsync(isTest);
+            return Results.Ok(new
+            {
+                status = cycle.Schedule?.DownloadStatus,
+                message = cycle.Schedule?.DownloadMessage
+            });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.Conflict(new { error = ex.Message });
+        }
+    }
+
+    /// <summary>Every household member's session polls this, so it must stay
+    /// person-aware even though the real version doesn't need a person at all — only
+    /// this way can a dry-run countdown ever surface for Paul without also leaking to
+    /// a real Mom/Dad poll (which never carries the impersonation header).</summary>
+    private static async Task<IResult> HandleShowtimeCheck(HttpContext context, DateNightCycleService cycles)
+    {
+        var (person, isTest) = ResolveDateNightContext(context);
+        if (!IsAudience(person) || (!isTest && !cycles.IsLive()))
+            return Results.Ok(new ShowtimeStatus(false, null, null));
+        return Results.Ok(await cycles.GetShowtimeStatusAsync(isTest));
+    }
+
+    private static async Task<IResult> HandleStartShowtime(HttpContext context, DateNightCycleService cycles)
+    {
+        var (person, isTest) = ResolveDateNightContext(context);
+        if (AudienceActionGate(cycles, person, isTest) is { } blocked) return blocked;
+
+        try
+        {
+            await cycles.StartShowtimeAsync(isTest);
+            return Results.Ok(new { started = true });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.Conflict(new { error = ex.Message });
+        }
+    }
 
     private static async Task<IResult> HandleMarkWatched(HttpContext context, DateNightCycleService cycles)
     {
-        var person = LibraryHelpers.ResolveUserDisplayName(context);
-        if (!IsAudience(person))
-            return NotAudienceResult;
+        var (person, isTest) = ResolveDateNightContext(context);
+        if (AudienceActionGate(cycles, person, isTest) is { } blocked) return blocked;
 
-        var cycle = await cycles.GetCurrentCycleAsync();
+        var cycle = isTest ? await cycles.GetCurrentTestCycleAsync() : await cycles.GetCurrentCycleAsync();
         if (cycle?.Schedule?.Status != "Locked" || cycle.ResolvedMovieId is not int movieId)
             return Results.Conflict(new { error = "Nothing locked in to mark watched." });
+        if (cycle.Schedule.PlaybackStartedUtc is null)
+            return Results.Conflict(new { error = "Start the movie before marking it watched." });
 
-        await cycles.MarkWatchedAsync(movieId);
+        await cycles.MarkWatchedAsync(movieId, isTest);
         return Results.Ok(new { watched = true });
     }
 
@@ -599,26 +768,9 @@ public static class DateNightEndpoints
         return Results.Ok(new { discarded = true });
     }
 
-    private static async Task<IResult> HandleAdminCastVote(DateNightCycleService cycles, [FromBody] AdminCastVoteRequest request)
+    private static async Task<IResult> HandleAdminRestore(DateNightCycleService cycles, int movieId)
     {
-        try
-        {
-            await cycles.CastVoteAsync(request.Person, request.MovieId, request.Vote);
-            return Results.Ok(new { voted = true });
-        }
-        catch (ArgumentException ex)
-        {
-            return Results.BadRequest(new { error = ex.Message });
-        }
-        catch (InvalidOperationException ex)
-        {
-            return Results.Conflict(new { error = ex.Message });
-        }
-    }
-
-    private static IResult HandleAdminRestore(DateNightCycleService cycles, int movieId)
-    {
-        cycles.RestoreMovie(movieId);
+        await cycles.RestoreMovieAsync(movieId);
         return Results.Ok(new { restored = true });
     }
 
@@ -626,62 +778,6 @@ public static class DateNightEndpoints
     {
         cycles.ClearSkip();
         return Results.Ok(new { cleared = true });
-    }
-
-    private static async Task<IResult> HandleAdminProposeSchedule(
-        DateNightCycleService cycles, [FromBody] AdminProposeScheduleRequest request)
-    {
-        try
-        {
-            await cycles.ProposeScheduleAsync(request.Person, request.Slots);
-            return Results.Ok(new { proposed = true });
-        }
-        catch (ArgumentException ex)
-        {
-            return Results.BadRequest(new { error = ex.Message });
-        }
-        catch (InvalidOperationException ex)
-        {
-            return Results.Conflict(new { error = ex.Message });
-        }
-    }
-
-    private static async Task<IResult> HandleAdminApproveSchedule(
-        DateNightCycleService cycles, [FromBody] AdminApproveScheduleRequest request)
-    {
-        try
-        {
-            await cycles.ApproveScheduleAsync(request.Person, request.Slot);
-            return Results.Ok(new { locked = true });
-        }
-        catch (InvalidOperationException ex)
-        {
-            return Results.Conflict(new { error = ex.Message });
-        }
-    }
-
-    private static async Task<IResult> HandleAdminCancelSchedule(
-        DateNightCycleService cycles, [FromBody] AdminCancelScheduleRequest request)
-    {
-        try
-        {
-            await cycles.CancelScheduleAsync(request.Person);
-            return Results.Ok(new { cancelled = true });
-        }
-        catch (InvalidOperationException ex)
-        {
-            return Results.Conflict(new { error = ex.Message });
-        }
-    }
-
-    private static async Task<IResult> HandleAdminMarkWatched(DateNightCycleService cycles)
-    {
-        var cycle = await cycles.GetCurrentCycleAsync();
-        if (cycle?.Schedule?.Status != "Locked" || cycle.ResolvedMovieId is not int movieId)
-            return Results.Conflict(new { error = "Nothing locked in to mark watched." });
-
-        await cycles.MarkWatchedAsync(movieId);
-        return Results.Ok(new { watched = true });
     }
 
     private static IResult HandleAdminGoLive(DateNightCycleService cycles)
@@ -694,6 +790,19 @@ public static class DateNightEndpoints
     {
         cycles.SetLive(false);
         return Results.Ok(new { live = false });
+    }
+
+    private static async Task<IResult> HandleAdminResetDryRun(DateNightCycleService cycles)
+    {
+        try
+        {
+            var cycle = await cycles.ResetDryRunAsync();
+            return Results.Ok(new { reset = true, cycleId = cycle.CycleId, movieCount = cycle.MovieIds.Count });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.Conflict(new { error = ex.Message });
+        }
     }
 
     /// <summary>Kicks the scan off and returns immediately — a full pass is deliberately
@@ -723,6 +832,20 @@ public static class DateNightEndpoints
         });
 
         return Results.Accepted(value: new { started = true });
+    }
+
+    /// <summary>Up to two of Radarr's own genres for the movie, joined for display —
+    /// e.g. "Action · Comedy". Radarr returns this natively (this app's own household
+    /// genre tagging deliberately lives under the separate "customGenres" key to avoid
+    /// colliding with it — see MediaLibraryEndpoints).</summary>
+    private static string? GenreLine(JsonObject movie)
+    {
+        var genres = (movie["genres"] as JsonArray)?
+            .Select(g => g?.ToString())
+            .Where(g => !string.IsNullOrWhiteSpace(g))
+            .Take(2)
+            .ToList();
+        return genres is { Count: > 0 } ? string.Join(" · ", genres) : null;
     }
 
     /// <summary>Radarr serves posters from its own host; the remote (TMDB) URL is the

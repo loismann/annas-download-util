@@ -63,11 +63,17 @@
   --thtr-velvet-dark: #4d0a0c;
   --thtr-house: #101127;
   --thtr-house-lit: #1d1f3a;
+  /* One shared bulb size and gap gives all four marquee edges the same pitch. */
+  --thtr-bulb-size: 9px;
+  --thtr-bulb-gap: 12px;
 
   /* The poster: lurid one-sheet ink. These are the loud ones — used for
      starbursts, exclamation copy and accents, exactly as a creature-feature
      one-sheet would. */
   --thtr-shock-red: #e02b1d;
+  /* Dark enough to carry small cream/yellow type at WCAG AA contrast. Keep the
+     brighter shock red for large display accents that do not carry body text. */
+  --thtr-action-red: #a61716;
   --thtr-scream-yellow: #ffd21e;
   --thtr-atomic-teal: #2ec4c6;
   --thtr-radium: #8fe33f;
@@ -104,8 +110,8 @@
 
 /* Four edge strips rather than one wrapping row: a single flex container can
    only ever fill the top edge, so ringing the whole frame needs an element per
-   side. Each uses space-between, so bulb spacing adapts to however tall or wide
-   the card ends up.
+   side. Each uses the same fixed pitch; excess bulbs are clipped to the current
+   card dimensions.
      <div class="thtr-bulbs">
        <span class="thtr-bulbs-edge thtr-bulbs-edge--top"><i></i>…</span>
        …--right, --bottom, --left
@@ -124,26 +130,31 @@
 .thtr-bulbs-edge {
   position: absolute;
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-start;
+  gap: var(--thtr-bulb-gap);
+  overflow: hidden;
 }
 
-.thtr-bulbs-edge--top { top: 0; left: 0; right: 0; }
-.thtr-bulbs-edge--bottom { bottom: 0; left: 0; right: 0; }
+.thtr-bulbs-edge--top { top: 0; left: 0; right: 0; height: var(--thtr-bulb-size); }
+.thtr-bulbs-edge--bottom { bottom: 0; left: 0; right: 0; height: var(--thtr-bulb-size); }
 
-/* Vertical strips are inset by a bulb's width at each end so they don't stack a
-   second bulb on top of the corner ones, which would flicker out of phase. */
+/* Every edge uses the same fixed bulb gap. The vertical strips begin one full
+   pitch after the horizontal corner bulbs so corners do not overlap; overflow
+   clips the extra rendered bulbs at whatever size a modal happens to be. */
 .thtr-bulbs-edge--left,
 .thtr-bulbs-edge--right {
-  top: 14px;
-  bottom: 14px;
+  top: calc(var(--thtr-bulb-size) + var(--thtr-bulb-gap));
+  bottom: calc(var(--thtr-bulb-size) + var(--thtr-bulb-gap));
+  width: var(--thtr-bulb-size);
   flex-direction: column;
 }
 .thtr-bulbs-edge--left { left: 0; }
 .thtr-bulbs-edge--right { right: 0; }
 
 .thtr-bulbs i {
-  width: 9px;
-  height: 9px;
+  flex: 0 0 var(--thtr-bulb-size);
+  width: var(--thtr-bulb-size);
+  height: var(--thtr-bulb-size);
   border-radius: 50%;
   background: var(--thtr-gilt-bright);
   box-shadow: 0 0 7px 2px rgba(255, 214, 102, .8);
@@ -350,6 +361,13 @@
   animation: thtr-blink 2.4s steps(1) infinite;
 }
 
+.thtr-blink .blink-star {
+  width: 14px;
+  height: 14px;
+  font-size: 14px;
+  vertical-align: -2px;
+}
+
 @keyframes thtr-blink {
   0%, 70% { opacity: 1; }
   71%, 100% { opacity: .35; }
@@ -415,7 +433,10 @@
 }
 .thtr-card .thtr-card-icon {
   display: block;
-  font-size: 1.7rem;
+  margin: 0 auto;
+  width: 28px;
+  height: 28px;
+  font-size: 28px;
   line-height: 1;
   color: var(--thtr-gilt-bright);
 }
@@ -463,6 +484,9 @@
   top: 10px;
   right: 10px;
   z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 44px;
   height: 44px;
   padding: 0;
@@ -470,12 +494,10 @@
   border-radius: 50%;
   background: rgba(10, 8, 16, .72);
   color: var(--thtr-gilt-bright);
-  font-family: Georgia, serif;
-  font-size: 1.5rem;
-  line-height: 1;
   cursor: pointer;
   transition: background .15s ease, transform .15s ease;
 }
+.thtr-close mat-icon { font-size: 22px; width: 22px; height: 22px; }
 .thtr-close:hover {
   background: var(--thtr-shock-red);
   color: var(--thtr-scream-yellow);
@@ -490,12 +512,86 @@
 
 .thtr-btn.thtr-btn {
   position: relative;
-  padding: 0 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 44px;
+  padding: 9px 30px;
+  border: 2px solid var(--thtr-gilt-bright);
+  border-radius: 2px;
   background: var(--thtr-gilt);
   color: #2a1206;
   font-family: Georgia, serif;
   font-size: 1rem;
+  font-weight: 700;
+  line-height: 1.2;
   letter-spacing: .04em;
+  text-decoration: none;
+  box-shadow: 4px 4px 0 rgba(0, 0, 0, .42);
+  cursor: pointer;
+}
+.thtr-btn.thtr-btn mat-icon { margin: 0; }
+.thtr-btn.thtr-btn:hover:not(:disabled) {
+  background: var(--thtr-gilt-bright);
+}
+.thtr-btn.thtr-btn:focus-visible,
+.thtr-secondary-btn.thtr-secondary-btn:focus-visible,
+.thtr-link:focus-visible {
+  outline: 3px solid var(--thtr-scream-yellow);
+  outline-offset: 3px;
+}
+.thtr-btn.thtr-btn:disabled,
+.thtr-secondary-btn.thtr-secondary-btn:disabled {
+  opacity: .5;
+  cursor: default;
+}
+
+/* An outlined secondary action that owns its colors instead of inheriting the
+   light Material theme's black label. This is the safe choice for every button
+   placed directly on a navy theater panel. */
+.thtr-secondary-btn.thtr-secondary-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 42px;
+  padding: 8px 20px;
+  border: 2px solid var(--thtr-gilt);
+  border-radius: 2px;
+  background: rgba(16, 17, 39, .88);
+  color: var(--thtr-cream);
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: .9rem;
+  font-weight: 700;
+  line-height: 1.2;
+  cursor: pointer;
+}
+.thtr-secondary-btn.thtr-secondary-btn:hover:not(:disabled) {
+  border-color: var(--thtr-gilt-bright);
+  background: var(--thtr-house-lit);
+  color: var(--thtr-gilt-bright);
+}
+.thtr-secondary-btn.thtr-secondary-btn mat-icon { margin: 0; }
+
+/* A quieter, secondary action next to a .thtr-btn — "propose different"/
+   "cancel" next to "approve", where a second gilt button would compete with
+   the primary action instead of stepping back from it. */
+.thtr-link {
+  background: none;
+  border: none;
+  padding: 4px;
+  color: var(--thtr-gilt-bright);
+  font-family: Georgia, serif;
+  font-size: .85rem;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.thtr-link:hover { color: var(--thtr-scream-yellow); }
+.thtr-link:disabled,
+.thtr-close:disabled {
+  opacity: .45;
+  cursor: default;
 }
 
 /* ── Starburst badge ───────────────────────────────────────────────────────
@@ -510,7 +606,7 @@
   width: 108px;
   height: 108px;
   padding: 8px;
-  background: var(--thtr-shock-red);
+  background: var(--thtr-action-red);
   color: var(--thtr-scream-yellow);
   font-family: Impact, 'Haettenschweiler', 'Arial Black', sans-serif;
   font-size: .95rem;
@@ -529,11 +625,57 @@
 }
 
 .thtr-burst--teal { background: var(--thtr-atomic-teal); color: #05252b; }
-.thtr-burst--magenta { background: var(--thtr-magenta); color: var(--thtr-scream-yellow); }
+.thtr-burst--magenta { background: var(--thtr-magenta); color: #050612; }
 
 @keyframes thtr-throb {
   0%, 100% { transform: scale(1); }
   50% { transform: scale(1.06); }
+}
+
+/* ── Fanfare ────────────────────────────────────────────────────────────
+   The winner-reveal moment (the resolved-cycle hero on /date-night): a
+   radiating sunburst behind the poster plus a pair of .thtr-burst badges
+   pinned to its top corners. CSS-only, same as everything else here — the
+   sunburst is a conic-gradient rather than an image. */
+
+.thtr-fanfare {
+  position: relative;
+  height: 0;
+}
+
+.thtr-fanfare::before {
+  content: '';
+  position: absolute;
+  top: -18px;
+  left: 50%;
+  z-index: 0;
+  width: 340px;
+  height: 340px;
+  transform: translateX(-50%);
+  background: conic-gradient(
+    from 0deg,
+    rgba(255, 223, 126, .22) 0deg 10deg, transparent 10deg 20deg
+  );
+  border-radius: 50%;
+  animation: thtr-sunburst-spin 40s linear infinite;
+  pointer-events: none;
+}
+
+.thtr-fanfare .thtr-burst {
+  position: absolute;
+  z-index: 2;
+  width: 84px;
+  height: 84px;
+  font-size: .68rem;
+  top: -10px;
+}
+
+.thtr-fanfare .thtr-burst:first-child { left: -6px; transform: rotate(-12deg); }
+.thtr-fanfare .thtr-burst:last-child { right: -6px; transform: rotate(10deg); }
+
+@keyframes thtr-sunburst-spin {
+  from { transform: translateX(-50%) rotate(0deg); }
+  to { transform: translateX(-50%) rotate(360deg); }
 }
 
 /* ── "SEE! THRILL! GASP!" copy ─────────────────────────────────────────────
@@ -784,6 +926,9 @@
 }
 
 .thtr-flyer-arrow.thtr-flyer-arrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   flex: 0 0 auto;
   align-self: center;
   width: 40px;
@@ -792,8 +937,6 @@
   border: 2px solid var(--thtr-gilt);
   background: var(--thtr-house-lit);
   color: var(--thtr-gilt-bright);
-  font-size: 1.3rem;
-  line-height: 1;
   cursor: pointer;
 }
 
@@ -811,20 +954,49 @@
   background: rgba(0, 0, 0, .28);
 }
 
-.thtr-flyer-poster {
-  width: 100%;
-  max-width: 200px;
+/* Poster, meta line and pitch text are all given fixed dimensions rather than
+   sizing to their own content — different movies have different-length AI
+   pitches and not every movie has a poster/year/genre, and letting any of
+   those vary the card's height was what made the modal visibly resize as
+   Paul paged between movies. */
+.thtr-flyer-poster,
+.thtr-flyer-poster-placeholder {
+  width: 200px;
+  height: 300px;
   margin: 0 auto 10px;
   border-radius: 3px;
   border: 2px solid var(--thtr-gilt);
   display: block;
 }
 
+.thtr-flyer-poster {
+  object-fit: cover;
+}
+
+.thtr-flyer-poster-placeholder {
+  background: var(--thtr-house-lit);
+}
+
+.thtr-flyer-meta.thtr-flyer-meta {
+  min-height: 1.1em;
+  margin: 0 0 8px;
+  font-size: .78rem;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--thtr-gilt);
+}
+
 .thtr-flyer-pitch {
+  min-height: calc(.92rem * 1.4 * 4);
   margin: 0 0 14px;
   font-style: italic;
   color: var(--thtr-scream-yellow);
   font-size: .92rem;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .thtr-flyer-votes {
@@ -834,19 +1006,23 @@
 }
 
 .thtr-flyer-vote.thtr-flyer-vote {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   flex: 0 0 auto;
   width: 46px;
   height: 46px;
   border-radius: 50%;
   border: 2px solid var(--thtr-gilt);
   background: var(--thtr-house-lit);
-  font-size: 1.2rem;
+  color: var(--thtr-cream);
   cursor: pointer;
 }
 
 .thtr-flyer-vote.thtr-flyer-vote--active {
-  background: var(--thtr-shock-red);
+  background: var(--thtr-action-red);
   border-color: var(--thtr-scream-yellow);
+  color: var(--thtr-scream-yellow);
 }
 
 .thtr-flyer-dots {
@@ -864,6 +1040,76 @@
 }
 
 .thtr-flyer-dots span.active { background: var(--thtr-scream-yellow); }
+
+/* ── Schedule picker chips ─────────────────────────────────────────────── */
+/* The day/time toggles in DateNightScheduleFormComponent — same gilt-outline
+   language as .thtr-flyer-vote, just rectangular since these carry text. */
+
+.thtr-chip {
+  padding: 8px 14px;
+  border-radius: 20px;
+  border: 2px solid var(--thtr-gilt);
+  background: var(--thtr-house-lit);
+  color: var(--thtr-cream);
+  font-size: .85rem;
+  cursor: pointer;
+}
+
+.thtr-chip--time { padding: 6px 10px; font-size: .78rem; }
+
+.thtr-chip--active {
+  background: var(--thtr-action-red);
+  border-color: var(--thtr-scream-yellow);
+  color: var(--thtr-scream-yellow);
+}
+
+.thtr-chip:disabled {
+  opacity: .35;
+  cursor: default;
+}
+
+/* ── Calendar day cell ─────────────────────────────────────────────────── */
+/* The day half of the schedule picker, styled to read as a small calendar
+   strip (weekday + a big date number) rather than a plain text pill — the
+   time-of-day half stays .thtr-chip--time, which doesn't need this. */
+
+.thtr-day-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  width: 56px;
+  padding: 8px 4px 10px;
+  border-radius: 8px;
+  border: 2px solid var(--thtr-gilt);
+  background: var(--thtr-house-lit);
+  color: var(--thtr-cream);
+  cursor: pointer;
+}
+
+.thtr-day-cell-weekday {
+  font-size: .68rem;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  opacity: .75;
+}
+
+.thtr-day-cell-num {
+  font-family: Impact, 'Haettenschweiler', 'Arial Narrow Bold', sans-serif;
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+.thtr-day-cell--active {
+  background: var(--thtr-action-red);
+  border-color: var(--thtr-scream-yellow);
+  color: var(--thtr-scream-yellow);
+}
+
+.thtr-day-cell:disabled {
+  opacity: .35;
+  cursor: default;
+}
 
 /* ── Countdown ─────────────────────────────────────────────────────────── */
 
@@ -909,7 +1155,8 @@
   .thtr-searchlight,
   .thtr-reel-track,
   .thtr-blink,
-  .thtr-burst {
+  .thtr-burst,
+  .thtr-fanfare::before {
     animation: none;
   }
 }

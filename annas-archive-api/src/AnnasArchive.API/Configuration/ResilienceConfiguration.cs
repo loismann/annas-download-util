@@ -16,7 +16,10 @@ public static class ResilienceConfiguration
     /// Adds standard resilience handler to an HTTP client builder.
     /// Includes retry (3 attempts with exponential backoff), circuit breaker, and timeout.
     /// </summary>
-    public static IHttpClientBuilder AddStandardResilience(this IHttpClientBuilder builder, string serviceName)
+    public static IHttpClientBuilder AddStandardResilience(
+        this IHttpClientBuilder builder,
+        string serviceName,
+        TimeSpan? requestTimeout = null)
     {
         builder.AddResilienceHandler($"{serviceName}-resilience", (resilienceBuilder) =>
         {
@@ -66,7 +69,7 @@ public static class ResilienceConfiguration
             });
 
             // Request timeout (per-request, not total)
-            resilienceBuilder.AddTimeout(HttpTimeouts.StandardApiTimeout);
+            resilienceBuilder.AddTimeout(requestTimeout ?? HttpTimeouts.StandardApiTimeout);
         });
 
         return builder;

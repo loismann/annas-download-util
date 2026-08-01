@@ -1,4 +1,5 @@
 using AnnasArchive.Core.Services;
+using Microsoft.Extensions.Caching.Memory;
 using AnnasArchive.Core.Models;
 using Moq.Protected;
 using System.Net.Http;
@@ -49,7 +50,7 @@ public class AnnaArchiveServiceHtmlParsingTests
 
         var mockHandler = CreateMockHandler(mockHtml);
         var httpClient = new HttpClient(mockHandler.Object) { BaseAddress = new Uri("https://annas-archive.org") };
-        var service = new AnnaArchiveService(httpClient);
+        var service = new AnnaArchiveService(httpClient, new MemoryCache(new MemoryCacheOptions()));
 
         // Act
         var results = await service.SearchAsync("test", limit: 10);
@@ -78,7 +79,7 @@ public class AnnaArchiveServiceHtmlParsingTests
 
         var mockHandler = CreateMockHandler(mockHtml);
         var httpClient = new HttpClient(mockHandler.Object) { BaseAddress = new Uri("https://annas-archive.org") };
-        var service = new AnnaArchiveService(httpClient);
+        var service = new AnnaArchiveService(httpClient, new MemoryCache(new MemoryCacheOptions()));
 
         // Act
         var results = await service.SearchAsync("test", limit: 10);
@@ -119,7 +120,7 @@ public class AnnaArchiveServiceHtmlParsingTests
 
         var mockHandler = CreateMockHandler(mockHtml);
         var httpClient = new HttpClient(mockHandler.Object) { BaseAddress = new Uri("https://annas-archive.org") };
-        var service = new AnnaArchiveService(httpClient);
+        var service = new AnnaArchiveService(httpClient, new MemoryCache(new MemoryCacheOptions()));
 
         // Act
         var results = await service.SearchAsync("test", limit: 3);
@@ -161,7 +162,7 @@ public class AnnaArchiveServiceHtmlParsingTests
 
         var mockHandler = CreateMockHandler(mockHtml);
         var httpClient = new HttpClient(mockHandler.Object) { BaseAddress = new Uri("https://annas-archive.org") };
-        var service = new AnnaArchiveService(httpClient);
+        var service = new AnnaArchiveService(httpClient, new MemoryCache(new MemoryCacheOptions()));
 
         // Act
         var results = await service.SearchAsync("test", limit: 3);
@@ -210,7 +211,7 @@ public class AnnaArchiveServiceHtmlParsingTests
 
         var mockHandler = CreateMockHandler(mockHtml);
         var httpClient = new HttpClient(mockHandler.Object) { BaseAddress = new Uri("https://annas-archive.org") };
-        var service = new AnnaArchiveService(httpClient);
+        var service = new AnnaArchiveService(httpClient, new MemoryCache(new MemoryCacheOptions()));
 
         // Act
         var results = await service.SearchAsync("test", limit: 4);
@@ -253,7 +254,7 @@ public class AnnaArchiveServiceHtmlParsingTests
 
         var mockHandler = CreateMockHandler(mockHtml);
         var httpClient = new HttpClient(mockHandler.Object) { BaseAddress = new Uri("https://annas-archive.org") };
-        var service = new AnnaArchiveService(httpClient);
+        var service = new AnnaArchiveService(httpClient, new MemoryCache(new MemoryCacheOptions()));
 
         // Act
         var results = await service.SearchAsync("test", limit: 3);
@@ -282,7 +283,7 @@ public class AnnaArchiveServiceHtmlParsingTests
 
         var mockHandler = CreateMockHandler(mockHtml);
         var httpClient = new HttpClient(mockHandler.Object) { BaseAddress = new Uri("https://annas-archive.org") };
-        var service = new AnnaArchiveService(httpClient);
+        var service = new AnnaArchiveService(httpClient, new MemoryCache(new MemoryCacheOptions()));
 
         // Act
         var results = await service.SearchAsync("test", limit: 10);
@@ -308,7 +309,7 @@ public class AnnaArchiveServiceHtmlParsingTests
 
         var mockHandler = CreateMockHandler(mockHtml);
         var httpClient = new HttpClient(mockHandler.Object) { BaseAddress = new Uri("https://annas-archive.org") };
-        var service = new AnnaArchiveService(httpClient);
+        var service = new AnnaArchiveService(httpClient, new MemoryCache(new MemoryCacheOptions()));
 
         // Act
         var results = await service.SearchAsync("test", limit: 10);
@@ -338,7 +339,7 @@ public class AnnaArchiveServiceHtmlParsingTests
 
         var mockHandler = CreateMockHandler(mockHtml);
         var httpClient = new HttpClient(mockHandler.Object) { BaseAddress = new Uri("https://annas-archive.org") };
-        var service = new AnnaArchiveService(httpClient);
+        var service = new AnnaArchiveService(httpClient, new MemoryCache(new MemoryCacheOptions()));
 
         // Act
         var results = await service.SearchAsync("test", limit: 10);
@@ -367,7 +368,7 @@ public class AnnaArchiveServiceHtmlParsingTests
 
         var mockHandler = CreateMockHandler(mockHtml);
         var httpClient = new HttpClient(mockHandler.Object) { BaseAddress = new Uri("https://annas-archive.org") };
-        var service = new AnnaArchiveService(httpClient);
+        var service = new AnnaArchiveService(httpClient, new MemoryCache(new MemoryCacheOptions()));
 
         // Act
         var results = await service.SearchAsync("test", limit: 10);

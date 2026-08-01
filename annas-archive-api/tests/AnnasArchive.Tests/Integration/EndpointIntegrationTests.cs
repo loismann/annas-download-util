@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -136,7 +137,7 @@ public class EndpointIntegrationTests : IClassFixture<WebApplicationFactory<Prog
 
                 // Remove typed HTTP client registrations and add mock services
                 services.RemoveAll<AnnaArchiveService>();
-                services.AddSingleton(new AnnaArchiveService(mockHttpClient));
+                services.AddSingleton(new AnnaArchiveService(mockHttpClient, new MemoryCache(new MemoryCacheOptions())));
 
                 services.RemoveAll<LibGenService>();
                 services.AddSingleton(new LibGenService(mockHttpClient));

@@ -32,7 +32,7 @@ public sealed class BookPersonalization
 /// SQLite-backed store for user personalization of library books — the write
 /// target for every edit endpoint. The enrichment watcher never touches this
 /// table, which is what makes the old "re-enrichment clobbers user edits"
-/// failure structurally impossible (DOCS/PROJECT_AUDIT.md §8.6).
+/// failure structurally impossible (DOCS/reference/PROJECT_AUDIT.md §8.6).
 /// </summary>
 public class BookPersonalizationStore
 {

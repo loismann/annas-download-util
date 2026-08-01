@@ -70,7 +70,7 @@ public class MediaMetadataService : IMediaMetadataService
     /// Persists to the SQLite app_state table (persistent /app/state mount). The legacy
     /// JSON file path, if given, is imported once on first read and then left alone —
     /// this data lived on the ephemeral container filesystem before 2026-07-23 and was
-    /// wiped by every deploy (DOCS/PROJECT_AUDIT.md §8.6b).
+    /// wiped by every deploy (DOCS/reference/PROJECT_AUDIT.md §8.6b).
     /// </summary>
     public MediaMetadataService(Data.AppDatabase db, string? legacyFilePath = null)
     {

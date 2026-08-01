@@ -24,8 +24,10 @@ public static class AiBookSearchEndpoints
     // ConfigureCache below — that setting existed, was documented and had a
     // default, but nothing ever read it, so this cache previously grew without
     // limit for the life of the process.
-    private static TtlCache<List<AuthorSuggestion>> _openLibraryAuthorCache =
-        new(capacity: 500, ttl: HttpTimeouts.AuthorCacheTtl);
+    // Keys are book titles typed by a person, so they must match case-insensitively
+    // — otherwise "Dune" and "dune" are two entries and one is a needless API call.
+    private static LruCache<string, List<AuthorSuggestion>> _openLibraryAuthorCache =
+        new(capacity: 500, ttl: HttpTimeouts.AuthorCacheTtl, keyComparer: StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// Applies the configured capacity. Mirrors LibraryEpubCache.ConfigureCache
@@ -35,7 +37,7 @@ public static class AiBookSearchEndpoints
     {
         if (capacity > 0)
         {
-            _openLibraryAuthorCache = new TtlCache<List<AuthorSuggestion>>(capacity, HttpTimeouts.AuthorCacheTtl);
+            _openLibraryAuthorCache = new LruCache<string, List<AuthorSuggestion>>(capacity, HttpTimeouts.AuthorCacheTtl, StringComparer.OrdinalIgnoreCase);
             Log.Information("[AiBookSearch] Author suggestion cache configured with capacity {Capacity}", capacity);
         }
     }
@@ -1149,11 +1151,11 @@ Each inner array is a list of indices that are the same book.";
     #region OpenLibrary Author Cache Helpers
 
     // The cache compares keys case-insensitively itself, so these only need to
-    // trim. TTL and eviction now live in TtlCache rather than being re-checked
+    // trim. TTL and eviction now live in LruCache rather than being re-checked
     // by hand at each call site.
     private static bool TryGetOpenLibraryAuthorCache(string title, out List<AuthorSuggestion> authors)
     {
-        if (_openLibraryAuthorCache.TryGet(title.Trim(), out var cached))
+        if (_openLibraryAuthorCache.TryGetValue(title.Trim(), out var cached))
         {
             authors = cached;
             return true;

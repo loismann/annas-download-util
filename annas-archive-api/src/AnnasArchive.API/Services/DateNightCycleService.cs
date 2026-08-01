@@ -64,7 +64,7 @@ public sealed record MovieListEntry(
 public sealed record SkipState(DateTime? SkipUntilUtc, string? SetBy, DateTime? SetUtc);
 
 /// <summary>
-/// The weekly draw, voting, and the four permanent lists (see DOCS/DATE_NIGHT_FEATURE.md).
+/// The weekly draw, voting, and the four permanent lists (see DOCS/features/DATE_NIGHT.md).
 ///
 /// Weekly issuance and the voting deadline are *lazy* — evaluated on whichever request
 /// touches the cycle next. Locked-showtime cleanup is different because it changes
@@ -91,7 +91,7 @@ public class DateNightCycleService
     /// draws from the same pool and triggers the same real Radarr actions, but never
     /// touches the real household's cycle/lists, so testing can't consume this week's
     /// real draw or leave real movies in a cooldown/ban Mom and Dad didn't cause. See
-    /// DOCS/DATE_NIGHT_FEATURE.md and REFACTORING_TODO.md.</summary>
+    /// DOCS/features/DATE_NIGHT.md and DOCS/REFACTORING_TODO.md.</summary>
     private const string TestCycleStateKey = "date-night:test-cycle";
     private const string TestListsStateKey = "date-night:test-lists";
     private const string TestSummaryReserveStateKey = "date-night:test-summary-reserve";

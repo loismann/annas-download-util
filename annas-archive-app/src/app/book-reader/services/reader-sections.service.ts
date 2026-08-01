@@ -25,7 +25,7 @@ export interface AnnotateOptions {
  * Holds the two genuinely pure pieces of the section feature. Everything else
  * about sections (fetching boundaries, generating summaries, caching them) is
  * assignment to reader state and stays in the component — see the book-reader
- * notes in REFACTORING_TODO.md.
+ * notes in DOCS/REFACTORING_TODO.md.
  *
  * Worth having on its own because both functions are index arithmetic over two
  * different coordinate systems — chapter-absolute word offsets and page-relative

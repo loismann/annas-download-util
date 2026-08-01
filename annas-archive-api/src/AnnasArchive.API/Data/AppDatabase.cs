@@ -3,7 +3,7 @@ using Microsoft.Data.Sqlite;
 namespace AnnasArchive.API.Data;
 
 /// <summary>
-/// The single SQLite database for user state (see DOCS/PROJECT_AUDIT.md §8.6/§9.0):
+/// The single SQLite database for user state (see DOCS/reference/PROJECT_AUDIT.md §8.6/§9.0):
 /// book personalization lives in its own table, and single-document state
 /// (media metadata, review progress) lives in the app_state key/value table.
 /// Enrichment facts stay in the .meta.json sidecars, written only by the

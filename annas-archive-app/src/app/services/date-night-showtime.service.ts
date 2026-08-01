@@ -16,7 +16,7 @@ import {
  * There's no push notification in this app, so polling while a tab happens to be
  * open is the only way this can appear "10 minutes before showtime, on both
  * accounts" — it can't fire if nobody has the app open, which is a known,
- * accepted limitation (see DOCS/DATE_NIGHT_FEATURE.md's technical constraints).
+ * accepted limitation (see DOCS/features/DATE_NIGHT.md's technical constraints).
  */
 @Injectable({ providedIn: 'root' })
 export class DateNightShowtimeService {

@@ -85,7 +85,14 @@ if (app.Configuration.GetValue<bool>("Gaming:Enabled", false))
     app.MapGamingEndpoints();
 }
 app.MapMediaEndpoints();
-app.MapYouTubeDownloadEndpoints();
+// Parked, not deleted. The UI route was removed but the feature is intact and
+// wanted later; gating it keeps the endpoints off the public surface without
+// letting the code rot out of the build. Same pattern as Gaming above.
+// Re-enable with "YouTube": { "Enabled": true } — no code change needed.
+if (app.Configuration.GetValue<bool>("YouTube:Enabled", false))
+{
+    app.MapYouTubeDownloadEndpoints();
+}
 app.MapSpotifyEndpoints();
 app.MapVideoLibraryBrowserEndpoints();
 app.MapVideoLibraryMetadataEndpoints();

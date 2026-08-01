@@ -462,7 +462,7 @@ public static class ServiceConfiguration
 
         // User-state SQLite database (persistent /app/state mount in prod) + the
         // book personalization store — the write target for all user edits, kept
-        // structurally separate from the enrichment sidecars. See DOCS/PROJECT_AUDIT.md §8.6.
+        // structurally separate from the enrichment sidecars. See DOCS/reference/PROJECT_AUDIT.md §8.6.
         services.AddSingleton<Data.AppDatabase>();
         services.AddSingleton<Data.BookPersonalizationStore>();
 
@@ -478,7 +478,7 @@ public static class ServiceConfiguration
         // their originating HTTP request (see HandleSendToLibrary / HandleLibGenSendToLibrary)
         services.AddSingleton<Services.IBookDownloadJobService, Services.BookDownloadJobService>();
 
-        // Date Night pool availability (see DOCS/DATE_NIGHT_FEATURE.md). Singleton so
+        // Date Night pool availability (see DOCS/features/DATE_NIGHT.md). Singleton so
         // its "only one scan at a time" lock is actually shared across requests —
         // a per-request instance would let every caller start a competing scan.
         // Resolves IRadarrService per-scope internally, since that's a typed HttpClient.

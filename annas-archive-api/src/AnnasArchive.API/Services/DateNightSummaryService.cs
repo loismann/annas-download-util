@@ -7,7 +7,7 @@ namespace AnnasArchive.API.Services;
 
 /// <summary>
 /// Generates the flyer's "sensationalist" one-line pitch for a pool movie and caches
-/// it permanently — per DOCS/DATE_NIGHT_FEATURE.md: "generated once per movie and
+/// it permanently — per DOCS/features/DATE_NIGHT.md: "generated once per movie and
 /// cached... so re-showing the same movie daily doesn't re-bill OpenAI." The cache is
 /// keyed by movie, not by week, since the same ~289-movie pool cycles through for
 /// years — once a movie has a pitch, it never needs a new one.

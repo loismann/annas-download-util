@@ -29,7 +29,7 @@ type PoolFilter = 'all' | 'available' | 'unavailable' | 'unchecked';
  *
  * The headline numbers here are the gate on the rest of the feature: a weekly draw
  * of five movies only works if enough of the pool can actually be obtained. See
- * DOCS/DATE_NIGHT_FEATURE.md.
+ * DOCS/features/DATE_NIGHT.md.
  */
 @Component({
   selector: 'app-date-night-pool',

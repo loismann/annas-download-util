@@ -370,7 +370,7 @@ public class AnnaArchiveService
     private static readonly Regex IsbnRx =
         new(@"ISBN(?:-1[03])?:?\s*([0-9Xx\-]{10,17})", RegexOptions.IgnoreCase);
 
-    private static readonly TtlCache<string?> IsbnCoverCache =
+    private static readonly LruCache<string, string?> IsbnCoverCache =
         new(capacity: 2000, ttl: TimeSpan.FromHours(12));
 
     /// <summary>
@@ -388,7 +388,7 @@ public class AnnaArchiveService
             return null;
 
         var key = md5.ToLowerInvariant();
-        if (IsbnCoverCache.TryGet(key, out var cachedCoverUrl))
+        if (IsbnCoverCache.TryGetValue(key, out var cachedCoverUrl))
             return cachedCoverUrl;
 
         string? coverUrl = null;

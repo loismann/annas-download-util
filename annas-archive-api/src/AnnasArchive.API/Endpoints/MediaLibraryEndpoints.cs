@@ -325,7 +325,7 @@ public static class MediaLibraryEndpoints
     /// them here would bury the actual library under unwatchable tiles. A pool movie
     /// that *has* a file is left visible: at that point it's a real, playable movie
     /// like any other, which is also how a movie graduates out of the pool after a
-    /// date night. See DOCS/DATE_NIGHT_FEATURE.md.</summary>
+    /// date night. See DOCS/features/DATE_NIGHT.md.</summary>
     private static async Task<IResult> HandleGetDownloadedMovies(IRadarrService radarr, IMediaMetadataService metadata)
     {
         try

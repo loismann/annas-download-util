@@ -2,7 +2,7 @@
  * Characterization tests for BookReaderComponent.
  *
  * These pin what the reader does *today*, against a real component fixture.
- * They are a safety net for the ongoing split (see REFACTORING_TODO.md), not a
+ * They are a safety net for the ongoing split (see DOCS/REFACTORING_TODO.md), not a
  * statement of what the behaviour ought to be — where current behaviour looks
  * questionable it is pinned anyway and called out in a comment.
  *

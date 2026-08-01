@@ -135,7 +135,7 @@ export class MediaSearchApiService {
 
   /** `dateNightPool` registers each movie as a catalog record only — unmonitored,
    * no search, tagged `date-night-pool` — so a long list can be added without any
-   * of it downloading. See DOCS/DATE_NIGHT_FEATURE.md. */
+   * of it downloading. See DOCS/features/DATE_NIGHT.md. */
   bulkImportMovies(rows: BulkImportMovieRow[], dateNightPool = false): Observable<BulkImportMovieResult[]> {
     this.logger.log('[MediaSearchApiService] bulkImportMovies', { count: rows.length, dateNightPool });
     return this.http.post<BulkImportMovieResult[]>(`${this.baseUrl}/movies/bulk-import`, { rows, dateNightPool });

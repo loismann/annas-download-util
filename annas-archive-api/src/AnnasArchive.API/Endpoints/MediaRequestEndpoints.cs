@@ -24,7 +24,7 @@ public record BulkImportMovieRow(string Title, int? Year, List<string>? Genres, 
 /// <summary>When <paramref name="DateNightPool"/> is set, movies are registered as
 /// catalog records only — unmonitored, no search, tagged <c>date-night-pool</c> — so a
 /// 300-title list can be added without any of it downloading. See
-/// DOCS/DATE_NIGHT_FEATURE.md.</summary>
+/// DOCS/features/DATE_NIGHT.md.</summary>
 public record BulkImportMoviesRequest(List<BulkImportMovieRow> Rows, bool DateNightPool = false);
 
 /// <summary>Status is one of: added, already-existed, not-found, ambiguous, invalid, error.</summary>

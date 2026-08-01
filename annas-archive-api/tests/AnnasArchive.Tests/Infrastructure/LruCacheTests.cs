@@ -1,4 +1,4 @@
-using AnnasArchive.API.Infrastructure;
+using AnnasArchive.Core.Helpers;
 
 namespace AnnasArchive.Tests.Infrastructure;
 
@@ -335,5 +335,131 @@ public class LruCacheTests
 
         // Cache should be in a consistent state
         cache.Count.Should().BeLessThanOrEqualTo(100);
+    }
+
+    // ─── TTL ──────────────────────────────────────────────────────────────────
+    // These cover the behaviour absorbed from the former TtlCache, which shipped
+    // with no tests of its own despite backing ISBN cover lookups and author
+    // suggestions.
+
+    [Fact]
+    public void Ttl_ReturnsValue_BeforeExpiry()
+    {
+        var cache = new LruCache<string, string>(10, TimeSpan.FromMinutes(5));
+        cache.Set("k", "v");
+
+        cache.TryGetValue("k", out var value).Should().BeTrue();
+        value.Should().Be("v");
+    }
+
+    [Fact]
+    public void Ttl_TreatsExpiredEntryAsMiss()
+    {
+        var cache = new LruCache<string, string>(10, TimeSpan.FromMilliseconds(30));
+        cache.Set("k", "v");
+
+        Thread.Sleep(80);
+
+        cache.TryGetValue("k", out var value).Should().BeFalse();
+        value.Should().BeNull();
+    }
+
+    [Fact]
+    public void Ttl_DropsExpiredEntry_OnLookup()
+    {
+        var cache = new LruCache<string, string>(10, TimeSpan.FromMilliseconds(30));
+        cache.Set("k", "v");
+        Thread.Sleep(80);
+
+        cache.TryGetValue("k", out _);
+
+        // A miss must not leave the stale entry occupying a slot.
+        cache.Count.Should().Be(0);
+    }
+
+    [Fact]
+    public void Ttl_CountsExpiryAsMiss_NotHit()
+    {
+        var cache = new LruCache<string, string>(10, TimeSpan.FromMilliseconds(30));
+        cache.Set("k", "v");
+        Thread.Sleep(80);
+
+        cache.TryGetValue("k", out _);
+
+        cache.Hits.Should().Be(0);
+        cache.Misses.Should().Be(1);
+    }
+
+    [Fact]
+    public void Ttl_ResetsExpiry_OnOverwrite()
+    {
+        var cache = new LruCache<string, string>(10, TimeSpan.FromMilliseconds(120));
+        cache.Set("k", "v1");
+        Thread.Sleep(70);
+        cache.Set("k", "v2");
+        Thread.Sleep(70);
+
+        // Without the reset the entry would be 140ms old and expired.
+        cache.TryGetValue("k", out var value).Should().BeTrue();
+        value.Should().Be("v2");
+    }
+
+    [Fact]
+    public void Ttl_EvictsExpiredEntries_BeforeLiveOnes()
+    {
+        // The expired entry must not be the LRU one, or plain LRU eviction would
+        // remove it anyway and this would pass without the expiry check.
+        var cache = new LruCache<string, string>(2, TimeSpan.FromMilliseconds(150));
+        cache.Set("stale", "1");
+        Thread.Sleep(100);
+        cache.Set("live", "2");
+        cache.TryGetValue("stale", out _);   // "stale" is now most-recently-used
+        Thread.Sleep(100);                   // "stale" expires; "live" does not
+
+        cache.Set("newcomer", "3");          // at capacity: something must go
+
+        // The expired entry is the one that should have been dropped, even though
+        // the live entry is older in LRU order.
+        cache.TryGetValue("live", out _).Should().BeTrue();
+        cache.TryGetValue("newcomer", out _).Should().BeTrue();
+        cache.TryGetValue("stale", out _).Should().BeFalse();
+    }
+
+    [Fact]
+    public void WithoutTtl_EntriesNeverExpire()
+    {
+        var cache = new LruCache<string, string>(10);
+        cache.Set("k", "v");
+        Thread.Sleep(50);
+
+        cache.TryGetValue("k", out var value).Should().BeTrue();
+        value.Should().Be("v");
+    }
+
+    [Fact]
+    public void Constructor_RejectsNonPositiveTtl()
+    {
+        var act = () => new LruCache<string, string>(10, TimeSpan.Zero);
+        act.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    [Fact]
+    public void KeyComparer_MakesLookupsCaseInsensitive_WhenRequested()
+    {
+        // The author-suggestion cache relies on this: titles are typed by a person.
+        var cache = new LruCache<string, string>(10, null, StringComparer.OrdinalIgnoreCase);
+        cache.Set("Dune", "Herbert");
+
+        cache.TryGetValue("dune", out var value).Should().BeTrue();
+        value.Should().Be("Herbert");
+    }
+
+    [Fact]
+    public void KeyComparer_IsCaseSensitive_ByDefault()
+    {
+        var cache = new LruCache<string, string>(10);
+        cache.Set("Dune", "Herbert");
+
+        cache.TryGetValue("dune", out _).Should().BeFalse();
     }
 }

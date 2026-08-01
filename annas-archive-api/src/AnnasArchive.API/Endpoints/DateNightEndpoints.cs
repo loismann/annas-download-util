@@ -102,7 +102,7 @@ public record ProposeScheduleRequest(List<ProposedSlot> Slots);
 public record ApproveScheduleRequest(ProposedSlot Slot);
 
 /// <summary>
-/// Date Night pool + availability endpoints. See DOCS/DATE_NIGHT_FEATURE.md.
+/// Date Night pool + availability endpoints. See DOCS/features/DATE_NIGHT.md.
 ///
 /// Only the pool and its availability pre-pass live here so far — the weekly draw,
 /// voting, and scheduling are later phases, deliberately not built until the real
@@ -199,7 +199,7 @@ public static class DateNightEndpoints
 
         // Admin-only cycle controls — how phase 3 (and now 4-7) is exercised end to
         // end before the real flyer/scheduling UI is live for Mom and Dad. See
-        // DOCS/DATE_NIGHT_FEATURE.md.
+        // DOCS/features/DATE_NIGHT.md.
         app.MapPost("/api/date-night/cycle/admin/force-issue", HandleAdminForceIssue)
             .RequireAuthorization("AdminOnly")
             .RequireRateLimiting("api");

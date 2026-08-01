@@ -6,7 +6,7 @@ import { apiBase } from './api-base';
 
 /** One movie in the Date Night pool. `available` is null when it has never been
  * checked — distinct from false, which means it was checked and nothing grabbable
- * came back. See DOCS/DATE_NIGHT_FEATURE.md. */
+ * came back. See DOCS/features/DATE_NIGHT.md. */
 export interface DateNightPoolItem {
   movieId: number;
   title: string;

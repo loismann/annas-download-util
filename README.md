@@ -102,6 +102,7 @@ in your shell.
 
 ## Documentation
 
-- [DOCS/DATE_NIGHT_FEATURE.md](DOCS/DATE_NIGHT_FEATURE.md) — the weekly movie-picker feature
-- [DOCS/PROJECT_AUDIT.md](DOCS/PROJECT_AUDIT.md) — security/duplication findings, reference material
-- [REFACTORING_TODO.md](REFACTORING_TODO.md) — the single tracked list of open work
+- [DOCS/features/DATE_NIGHT.md](DOCS/features/DATE_NIGHT.md) — the weekly movie-picker feature
+- [DOCS/reference/PROJECT_AUDIT.md](DOCS/reference/PROJECT_AUDIT.md) — repo audit; counts are unreliable, verify against source
+- [DOCS/REFACTORING_TODO.md](DOCS/REFACTORING_TODO.md) — open work only; empty means everything is done
+- [DOCS/ASSERTIONS_AND_ASSUMPTIONS.md](DOCS/ASSERTIONS_AND_ASSUMPTIONS.md) — what we learned and must not re-litigate

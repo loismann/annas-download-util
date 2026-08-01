@@ -1,7 +1,7 @@
 namespace AnnasArchive.API.Constants;
 
 /// <summary>
-/// Shared identifiers for the Date Night feature (see DOCS/DATE_NIGHT_FEATURE.md).
+/// Shared identifiers for the Date Night feature (see DOCS/features/DATE_NIGHT.md).
 ///
 /// The pool tag lives in Radarr rather than in our own database on purpose: Radarr
 /// is already the source of truth for which movies exist, and a tag there survives

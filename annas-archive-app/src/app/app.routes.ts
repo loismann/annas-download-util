@@ -68,7 +68,7 @@ export const routes: Routes = [
     canActivate: [authGuard]
   },
   // The household-facing Date Night page — where Mom and Dad pick movies and
-  // agree a night. See DOCS/DATE_NIGHT_FEATURE.md.
+  // agree a night. See DOCS/features/DATE_NIGHT.md.
   {
     path: 'date-night',
     loadComponent: () => import('./date-night/date-night.component').then(m => m.DateNightComponent),

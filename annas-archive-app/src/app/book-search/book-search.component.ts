@@ -33,16 +33,12 @@ import { BookGroup } from '../models/book-group.model';
 import { BookSummaryModalComponent } from '../components/book-summary-modal/book-summary-modal.component';
 import { SlumHealthEntry, MirrorHealthEntry, SlumHealthResponse, MirrorHealthResponse } from '../models/health-check.model';
 import { DISPLAYABLE_BOOK_FORMATS } from '../constants/book-formats';
-import {
-  AUTO_COVER_FETCH_LIMIT,
-  AUTO_DESCRIPTION_FETCH_LIMIT,
-  COVER_LOOKUP_STAGGER_MS,
-  DESCRIPTION_FETCH_STAGGER_MS
-} from '../constants';
 import { Subject } from 'rxjs';
 import { debounceTime, distinctUntilChanged, takeUntil, tap } from 'rxjs/operators';
 import { RelatedBooksModalComponent } from '../related-books-modal/related-books-modal.component';
 import { SearchFormComponent, DomainHealth, SearchFormSubmitEvent } from '../components/search-form/search-form.component';
+import { BookCoverLookupService } from './book-cover-lookup.service';
+import { BookDescriptionLookupService } from './book-description-lookup.service';
 import {
   SearchResultsComponent,
   DisplayGroup,
@@ -76,6 +72,9 @@ import {
   ],
   templateUrl: './book-search.component.html',
   styleUrls: ['./book-search.component.css'],
+  // Component-scoped, not root: the lookup queue owns setTimeout handles and
+  // must be torn down with the page, not shared across it.
+  providers: [BookCoverLookupService, BookDescriptionLookupService],
 })
 export class BookSearchComponent implements OnInit, OnDestroy {
   placeholderUrl = '/assets/placeholder.jpg';
@@ -122,18 +121,6 @@ export class BookSearchComponent implements OnInit, OnDestroy {
   private searchTermSubject = new Subject<string>();
   private destroy$ = new Subject<void>();
   private latestAuthorQuery = '';
-  private coverLookupsInFlight = new Set<string>();
-  /** Staggers cover lookups triggered by broken images (onCoverError) —
-   *  without this, the grid view can have a dozen-plus cards' images fail
-   *  within the same animation frame (many more cards visible at once than
-   *  the old one-per-row list), each firing its own fallback lookup
-   *  immediately. That burst of simultaneous requests to Anna's
-   *  Archive/OpenLibrary/Google Books is what was making search feel like
-   *  it hung — later requests queue up behind earlier ones and each one
-   *  individually gets slower as the pile grows. Same COVER_LOOKUP_STAGGER_MS
-   *  spacing the (currently disabled) auto-fetch path already used. */
-  private coverLookupQueue: BookDto[] = [];
-  private coverLookupQueuePumping = false;
 
   constructor(
     private aiApi: AiApiService,
@@ -141,7 +128,9 @@ export class BookSearchComponent implements OnInit, OnDestroy {
     public authService: AuthService,
     private dialog: MatDialog,
     private http: HttpClient,
-    private logger: LoggerService
+    private logger: LoggerService,
+    private coverLookup: BookCoverLookupService,
+    private descriptionLookup: BookDescriptionLookupService
   ) {
     // Set up debounced author fetching
     this.searchTermSubject.pipe(
@@ -537,8 +526,8 @@ export class BookSearchComponent implements OnInit, OnDestroy {
           this.books = books;
           this.books.forEach(initIdleState);
           this.loading = false;
-          this.queueCoverLookups();
-          this.fetchBookDescriptions();
+          this.coverLookup.queueForBooks(this.books, this.useLibGen);
+          this.descriptionLookup.queueForBooks(this.books);
           this.regroupBooks();
         },
         error: err => this.handleSearchError(err),
@@ -555,8 +544,8 @@ export class BookSearchComponent implements OnInit, OnDestroy {
         this.books = books;
         this.books.forEach(initIdleState);
         this.loading = false;
-        this.queueCoverLookups();
-        this.fetchBookDescriptions();
+        this.coverLookup.queueForBooks(this.books, this.useLibGen);
+        this.descriptionLookup.queueForBooks(this.books);
         this.regroupBooks();
 
         this.bookSearchApi.searchBooks(searchQuery, false, 2).subscribe({
@@ -570,7 +559,7 @@ export class BookSearchComponent implements OnInit, OnDestroy {
             // which page 1 alone already covers, and calling it again would
             // risk double-firing an in-flight fetch for a page-1 book that
             // hasn't resolved yet (no in-flight guard on that path).
-            this.queueCoverLookups();
+            this.coverLookup.queueForBooks(this.books, this.useLibGen);
             // Re-group over the combined set — page 2 may add more
             // duplicates of page-1 books, or entirely new ones. The old
             // groups stay on screen until this response replaces them.
@@ -787,143 +776,11 @@ export class BookSearchComponent implements OnInit, OnDestroy {
         // no more external covers → fall back
         book.coverCandidates = [];
         img.src = this.placeholderUrl;
-        this.enqueueCoverLookup(book);
+        this.coverLookup.enqueue(book, this.useLibGen);
       }
     }
 
-  private queueCoverLookups(): void {
-    const missing = this.books.filter(b => this.needsExternalCoverLookup(b));
-    missing.slice(0, AUTO_COVER_FETCH_LIMIT).forEach(book => this.enqueueCoverLookup(book));
-  }
-
-  /** Adds a book to the staggered cover-lookup queue rather than firing the
-   *  lookup immediately — see coverLookupQueue's doc comment for why. */
-  private enqueueCoverLookup(book: BookDto): void {
-    if (this.coverLookupQueue.includes(book) || this.coverLookupsInFlight.has(book.md5)) return;
-    this.coverLookupQueue.push(book);
-    this.pumpCoverLookupQueue();
-  }
-
-  private pumpCoverLookupQueue(): void {
-    if (this.coverLookupQueuePumping) return;
-    const next = this.coverLookupQueue.shift();
-    if (!next) return;
-
-    this.coverLookupQueuePumping = true;
-    this.lookupCoverForBook(next);
-    setTimeout(() => {
-      this.coverLookupQueuePumping = false;
-      this.pumpCoverLookupQueue();
-    }, COVER_LOOKUP_STAGGER_MS);
-  }
-
-  private lookupCoverForBook(book: BookDto): void {
-    if (!this.needsExternalCoverLookup(book)) {
-      return;
-    }
-
-    if (this.coverLookupsInFlight.has(book.md5)) {
-      return;
-    }
-
-    this.coverLookupsInFlight.add(book.md5);
-    const author = book.authors?.[0];
-
-    const addCoverAndFinish = (coverUrl: string) => {
-      if (!book.coverCandidates) {
-        book.coverCandidates = [];
-      }
-      book.coverCandidates.unshift(coverUrl);
-      this.coverLookupsInFlight.delete(book.md5);
-    };
-
-    const fallbackToTitleSearch = () => {
-      this.bookSearchApi.fetchCover(book.title, author).subscribe({
-        next: (resp) => {
-          if (resp.coverUrl) {
-            addCoverAndFinish(resp.coverUrl);
-          } else {
-            this.coverLookupsInFlight.delete(book.md5);
-          }
-        },
-        error: () => this.coverLookupsInFlight.delete(book.md5)
-      });
-    };
-
-    // Try MD5-based ISBN lookup first — independent of OpenLibrary's search
-    // API and Google Books' quota, so it works even when those don't. Falls
-    // back to the title/author search only if this doesn't find anything.
-    this.bookSearchApi.fetchCoverByMd5(book.md5).subscribe({
-      next: (resp) => {
-        if (resp.coverUrl) {
-          addCoverAndFinish(resp.coverUrl);
-        } else {
-          fallbackToTitleSearch();
-        }
-      },
-      error: () => fallbackToTitleSearch()
-    });
-  }
-
-  /**
-   * Staggered, best-effort cover fetch for AI Book Search results — these
-   * are AI-suggested titles with no MD5 yet (nothing's been matched to a
-   * real download), so this uses the title/author lookup rather than the
-   * MD5-based one. Failures are silent; a missing cover just stays a
-   * placeholder, same as everywhere else covers are optional.
-   */
-  private queueAiCoverLookups(results: { title: string; author?: string; coverUrl?: string }[]): void {
-    results.forEach((book, index) => {
-      if (book.coverUrl) return;
-      setTimeout(() => {
-        this.bookSearchApi.fetchCover(book.title, book.author).subscribe({
-          next: (resp) => {
-            if (resp.coverUrl) {
-              book.coverUrl = resp.coverUrl;
-            }
-          },
-          error: () => { /* no-op — placeholder stays */ }
-        });
-      }, index * COVER_LOOKUP_STAGGER_MS);
-    });
-  }
-
-  private needsExternalCoverLookup(book: BookDto): boolean {
-    if (!book.coverCandidates || book.coverCandidates.length === 0) {
-      return true;
-    }
-
-    if (!this.useLibGen && !book.source?.startsWith('libgen')) {
-      return false;
-    }
-
-    const hasNonLibGenCover = book.coverCandidates.some(url => !this.isLibGenCoverUrl(url));
-    return !hasNonLibGenCover;
-  }
-
-  private isLibGenCoverUrl(url: string): boolean {
-    const normalized = url.toLowerCase();
-    return normalized.includes('libgen.') && normalized.includes('/covers');
-  }
-
-  /* ───────── book description fetching ───────── */
-  private fetchBookDescriptions(): void {
-    // Fetch descriptions for first N books automatically
-    const booksToFetch = this.books.slice(0, AUTO_DESCRIPTION_FETCH_LIMIT);
-
-    booksToFetch.forEach((book, index) => {
-      // Stagger requests slightly to avoid overwhelming the APIs
-      setTimeout(() => this.fetchDescriptionForBook(book), index * DESCRIPTION_FETCH_STAGGER_MS);
-    });
-  }
-
-  fetchDescriptionOnDemand(book: BookDto): void {
-    if (book.description) {
-      return; // Already has description
-    }
-    this.fetchDescriptionForBook(book);
-  }
-
+  /* ───────── description card expansion ───────── */
   toggleCardExpansion(bookMd5: string): void {
     if (this.expandedCards.has(bookMd5)) {
       this.expandedCards.delete(bookMd5);
@@ -942,83 +799,10 @@ export class BookSearchComponent implements OnInit, OnDestroy {
     return !!description && description.length > 150;
   }
 
-  private fetchDescriptionForBook(book: BookDto): void {
-    if (book.description) {
-      return; // Already has a description
-    }
-
-    const author = book.authors?.[0];
-
-    // Try Google Books first
-    this.bookSearchApi.fetchDescriptionFromGoogleBooks(book.title, author).subscribe({
-      next: (resp) => {
-        if (resp.description) {
-          book.description = resp.description;
-          book.descriptionSource = 'googlebooks';
-        } else {
-          // If Google Books fails, try OpenLibrary
-          this.tryOpenLibrary(book);
-        }
-      },
-      error: () => {
-        // If Google Books fails, try OpenLibrary
-        this.tryOpenLibrary(book);
-      }
-    });
+  fetchDescriptionOnDemand(book: BookDto): void {
+    this.descriptionLookup.fetchOnDemand(book);
   }
 
-  private tryOpenLibrary(book: BookDto): void {
-    const author = book.authors?.[0];
-
-    this.bookSearchApi.fetchDescriptionFromOpenLibrary(book.title, author).subscribe({
-      next: (resp) => {
-        if (resp.description) {
-          book.description = resp.description;
-          book.descriptionSource = 'openlibrary';
-        } else {
-          this.tryWikipedia(book);
-        }
-      },
-      error: () => this.tryWikipedia(book)
-    });
-  }
-
-  private tryWikipedia(book: BookDto): void {
-    const author = book.authors?.[0];
-
-    this.bookSearchApi.fetchDescriptionFromWikipedia(book.title, author).subscribe({
-      next: (resp) => {
-        if (resp.description) {
-          book.description = resp.description;
-          book.descriptionSource = 'wikipedia';
-        } else {
-          // Last resort — only reachable if Wikipedia has no real article
-          // for this title either.
-          this.tryGPT4(book);
-        }
-      },
-      error: () => this.tryGPT4(book)
-    });
-  }
-
-  private tryGPT4(book: BookDto): void {
-    const author = book.authors?.[0];
-
-    this.bookSearchApi.fetchDescriptionFromGPT4(book.title, author).subscribe({
-      next: (resp) => {
-        if (resp.description) {
-          book.description = resp.description;
-          book.descriptionSource = 'gpt';
-        }
-      },
-      error: (err) => {
-        this.logger.error('Failed to fetch description from GPT-4', err);
-        // No more fallbacks - book will remain without description
-      }
-    });
-  }
-
-  /* ───────── author suggestion methods ───────── */
   onSearchTermChange(newTerm: string): void {
     if (this.aiSearchExpanded) {
       return;
@@ -1215,7 +999,7 @@ export class BookSearchComponent implements OnInit, OnDestroy {
         // backend up front — the AI response now returns almost instantly
         // instead of waiting on per-book description/cover lookups against
         // OpenLibrary/Google Books for every result.
-        this.queueAiCoverLookups(results);
+        this.coverLookup.queueAiResults(results);
       },
       error: (err) => {
         this.loading = false;

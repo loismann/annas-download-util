@@ -69,9 +69,14 @@ describe('BookSearchComponent', () => {
       'getMirrorHealth',
       'getSlumHealth',
       'fetchCover',
+      'fetchCoverByMd5',
       'fetchDescriptionFromGoogleBooks',
       'fetchDescriptionFromOpenLibrary',
-      'fetchDescriptionFromGPT4'
+      'fetchDescriptionFromGPT4',
+      // Not called by BookSearchComponent itself — VpnToggleComponent renders
+      // inside SearchFormComponent and calls this in its ngOnInit. Omitting it
+      // fails the parent's specs, which is confusing enough to be worth a note.
+      'getVpnSettings'
     ]);
 
     mockAuthService = jasmine.createSpyObj('AuthService', ['isAuthenticated', 'isAdmin']);
@@ -97,6 +102,13 @@ describe('BookSearchComponent', () => {
     mockBookSearchApiService.getDownloadStatus.and.returnValue(of({
       accountFastInfo: { downloadsLeft: 50, downloadsPerDay: 100 }
     }));
+
+    mockBookSearchApiService.getVpnSettings.and.returnValue(of({
+      enabled: false, region: 'us', availableRegions: ['us']
+    }));
+
+    mockBookSearchApiService.fetchCover.and.returnValue(of({ coverUrl: null }));
+    mockBookSearchApiService.fetchCoverByMd5.and.returnValue(of({ coverUrl: null }));
 
     mockBookSearchApiService.getMirrorHealth.and.returnValue(of([
       { extension: 'gl', health: 95 },
@@ -131,8 +143,13 @@ describe('BookSearchComponent', () => {
         { provide: MatDialog, useValue: mockDialog }
       ]
     })
+    // `add`, not `set` — `set` REPLACES the component's own providers array,
+    // which silently drops anything the component declares for itself (it did
+    // exactly that to BookCoverLookupService, failing all 74 specs with
+    // "No provider for BookCoverLookupService"). `add` layers this on top,
+    // and a later provider wins, so the mock still takes precedence.
     .overrideComponent(BookSearchComponent, {
-      set: {
+      add: {
         providers: [
           { provide: MatDialog, useValue: mockDialog }
         ]
@@ -488,17 +505,17 @@ describe('BookSearchComponent', () => {
   });
 
   describe('Available formats', () => {
-    it('should return static list of available formats', () => {
+    it('offers only the formats every household device can open', () => {
       // Act
       const formats = component.availableFormats;
 
-      // Assert
-      expect(formats).toContain('EPUB');
-      expect(formats).toContain('MOBI');
-      expect(formats).toContain('PDF');
-      expect(formats).toContain('AZW3');
-      expect(formats).toContain('FB2');
-      expect(formats).toContain('TXT');
+      // Assert — deliberately narrowed to DISPLAYABLE_BOOK_FORMATS. Search
+      // results still come back as AZW3/FB2/TXT/LIT; they are just not
+      // offered as filter options, so this is a narrowing, not a bug.
+      expect(formats).toEqual(['EPUB', 'PDF', 'MOBI']);
+      expect(formats).not.toContain('AZW3');
+      expect(formats).not.toContain('FB2');
+      expect(formats).not.toContain('TXT');
     });
   });
 
@@ -689,7 +706,7 @@ describe('BookSearchComponent', () => {
 
       component.onSearch();
 
-      expect(mockBookSearchApiService.searchBooks).toHaveBeenCalledWith('Test Book', false);
+      expect(mockBookSearchApiService.searchBooks).toHaveBeenCalledWith('Test Book', false, 1);
     });
 
     it('should handle search term with special characters', () => {
@@ -699,7 +716,7 @@ describe('BookSearchComponent', () => {
 
       component.onSearch();
 
-      expect(mockBookSearchApiService.searchBooks).toHaveBeenCalledWith("Harry Potter & the Philosopher's Stone", false);
+      expect(mockBookSearchApiService.searchBooks).toHaveBeenCalledWith("Harry Potter & the Philosopher's Stone", false, 1);
     });
 
     it('should handle search term with unicode characters', () => {
@@ -709,7 +726,7 @@ describe('BookSearchComponent', () => {
 
       component.onSearch();
 
-      expect(mockBookSearchApiService.searchBooks).toHaveBeenCalledWith('日本語の本 — Émile Zola', false);
+      expect(mockBookSearchApiService.searchBooks).toHaveBeenCalledWith('日本語の本 — Émile Zola', false, 1);
     });
 
     it('should handle very long search term', () => {
@@ -719,7 +736,7 @@ describe('BookSearchComponent', () => {
 
       component.onSearch();
 
-      expect(mockBookSearchApiService.searchBooks).toHaveBeenCalledWith('A'.repeat(500), false);
+      expect(mockBookSearchApiService.searchBooks).toHaveBeenCalledWith('A'.repeat(500), false, 1);
     });
   });
 

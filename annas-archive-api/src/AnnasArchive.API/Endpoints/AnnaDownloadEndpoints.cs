@@ -99,7 +99,7 @@ public static class AnnaDownloadEndpoints
 
     private static async Task<IResult> HandleDownloadLinks(
         [FromRoute] string md5,
-        AnnaArchiveService svc,
+        AnnasArchiveDownloads svc,
         IValidationService validation)
     {
         if (!validation.IsValidMd5(md5))
@@ -121,7 +121,7 @@ public static class AnnaDownloadEndpoints
         [FromQuery] string? format,
         [FromQuery] string? fileSize,
         [FromQuery] string? source,
-        AnnaArchiveService anna,
+        AnnasArchiveDownloads anna,
         IValidationService validation,
         IEbookCoverService coverService,
         IDownloadTrackingService downloadTracking,
@@ -143,7 +143,7 @@ public static class AnnaDownloadEndpoints
             ?? "unknown";
 
         // Use shared helper to download book from Anna's Archive
-        var (resp, fileName, acctInfo, errorMessage) = await AnnaDownloadHelpers.DownloadBookFromAnnaArchiveAsync(md5, title, anna, memberKey);
+        var (resp, fileName, acctInfo, errorMessage) = await AnnaDownloadHelpers.DownloadBookFromAnnasArchiveAsync(md5, title, anna, memberKey);
 
         if (errorMessage != null)
         {
@@ -221,19 +221,19 @@ public static class AnnaDownloadEndpoints
 
         // Fire-and-forget: large books can take several minutes to download, far
         // longer than it's reasonable to hold the client's HTTP connection open
-        // for. Runs in its own DI scope (AnnaArchiveService is request-scoped —
+        // for. Runs in its own DI scope (AnnasArchiveDownloads is request-scoped —
         // this request's scope is disposed the moment we return the jobId below)
         // and is intentionally not awaited; the frontend polls job status instead.
         _ = Task.Run(async () =>
         {
             using var scope = scopeFactory.CreateScope();
-            var anna = scope.ServiceProvider.GetRequiredService<AnnaArchiveService>();
+            var anna = scope.ServiceProvider.GetRequiredService<AnnasArchiveDownloads>();
             var coverService = scope.ServiceProvider.GetRequiredService<IEbookCoverService>();
 
             try
             {
                 var (resp, fileName, _, errorMessage) =
-                    await AnnaDownloadHelpers.DownloadBookFromAnnaArchiveAsync(md5, title, anna, memberKey);
+                    await AnnaDownloadHelpers.DownloadBookFromAnnasArchiveAsync(md5, title, anna, memberKey);
 
                 if (errorMessage != null || resp == null || fileName == null)
                 {
@@ -299,7 +299,7 @@ public static class AnnaDownloadEndpoints
         [FromQuery] string? title,
         [FromQuery] string? coverUrl,
         IValidationService validation,
-        AnnaArchiveService anna,
+        AnnasArchiveDownloads anna,
         IEbookCoverService coverService,
         DropboxClient dropbox,
         IConfiguration cfg,
@@ -317,7 +317,7 @@ public static class AnnaDownloadEndpoints
             ?? throw new InvalidOperationException("Missing Anna:MemberKey.");
 
         // Use shared helper to download book from Anna's Archive
-        var (resp, fileName, acctInfo, errorMessage) = await AnnaDownloadHelpers.DownloadBookFromAnnaArchiveAsync(md5, title, anna, memberKey);
+        var (resp, fileName, acctInfo, errorMessage) = await AnnaDownloadHelpers.DownloadBookFromAnnasArchiveAsync(md5, title, anna, memberKey);
 
         if (errorMessage != null)
         {
@@ -451,7 +451,7 @@ public static class AnnaDownloadEndpoints
         [FromQuery] string? title,
         [FromQuery] string? target,
         [FromQuery] string? coverUrl,
-        AnnaArchiveService anna,
+        AnnasArchiveDownloads anna,
         IEmailService emailService,
         IEbookCoverService coverService,
         DropboxClient dropbox,
@@ -473,7 +473,7 @@ public static class AnnaDownloadEndpoints
             ?? throw new InvalidOperationException("Missing Anna:MemberKey.");
 
         // Use shared helper to download book from Anna's Archive
-        var (resp, fileName, acctInfo, errorMessage) = await AnnaDownloadHelpers.DownloadBookFromAnnaArchiveAsync(md5, title, anna, memberKey);
+        var (resp, fileName, acctInfo, errorMessage) = await AnnaDownloadHelpers.DownloadBookFromAnnasArchiveAsync(md5, title, anna, memberKey);
 
         if (errorMessage != null)
         {

@@ -7,7 +7,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{827E0CD3-B72
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AnnasArchive.Core", "src\AnnasArchive.Core\AnnasArchive.Core.csproj", "{05052762-4450-4D5A-A71F-5765AB6396D4}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AnnasArchive.Api", "src\AnnasArchive.Api\AnnasArchive.Api.csproj", "{FBC9C304-5C5F-45E9-AAB0-DFDEB6210641}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AnnasArchive.Api", "src\AnnasArchive.API\AnnasArchive.Api.csproj", "{FBC9C304-5C5F-45E9-AAB0-DFDEB6210641}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

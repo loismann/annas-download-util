@@ -249,7 +249,7 @@ public static class ServiceConfiguration
             c.DefaultRequestHeaders.Add("Cache-Control", "max-age=0");
         })
         // Routes only Anna's Archive traffic through the Gluetun/PIA proxy
-        // (AnnaArchiveProxy:Url, e.g. http://gluetun:8888) when configured
+        // (AnnasArchiveProxy:Url, e.g. http://gluetun:8888) when configured
         // AND the live VPN toggle (IVpnSettingsService) is enabled —
         // everything else the app calls (OpenAI, Wikipedia, LibGen, Seq)
         // stays on a normal direct connection. DynamicVpnProxy checks the
@@ -258,7 +258,7 @@ public static class ServiceConfiguration
         .ConfigurePrimaryHttpMessageHandler(provider =>
         {
             var configuration = provider.GetRequiredService<IConfiguration>();
-            var proxyUrl = configuration["AnnaArchiveProxy:Url"];
+            var proxyUrl = configuration["AnnasArchiveProxy:Url"];
             var handler = new HttpClientHandler();
             if (!string.IsNullOrWhiteSpace(proxyUrl))
             {
@@ -283,19 +283,31 @@ public static class ServiceConfiguration
             c.Timeout = TimeSpan.FromSeconds(15);
         });
 
-        // Anna's Archive service with Playwright integration
-        services.AddScoped<AnnaArchiveService>(provider =>
+        // Anna's Archive transport with Playwright integration — the mirror
+        // fallback everything else on Anna's Archive is built on.
+        services.AddScoped<AnnasArchiveTransport>(provider =>
         {
             var httpClientFactory = provider.GetRequiredService<IHttpClientFactory>();
             var httpClient = httpClientFactory.CreateClient("AnnasArchive");
             var bypassService = provider.GetRequiredService<ICloudflareBypassService>();
-            var cache = provider.GetRequiredService<IMemoryCache>();
 
             // Create delegate that uses Playwright for HTML fetching
             Func<string, Task<string>> playwrightFetcher = url => bypassService.FetchHtmlAsync(url);
 
-            return new AnnaArchiveService(httpClient, cache, playwrightFetcher);
+            return new AnnasArchiveTransport(httpClient, playwrightFetcher);
         });
+
+        // Search + covers, and fast downloads. Separate registrations so a
+        // caller that only downloads never pulls in the search service.
+        // Constructed by hand rather than by convention: AnnasArchiveService
+        // keeps a second (HttpClient, IMemoryCache, ...) constructor for tests,
+        // and letting the container choose between the two is exactly the kind
+        // of ambiguity that only shows up at runtime.
+        services.AddScoped<AnnasArchiveService>(provider => new AnnasArchiveService(
+            provider.GetRequiredService<AnnasArchiveTransport>(),
+            provider.GetRequiredService<IMemoryCache>()));
+        services.AddScoped<AnnasArchiveDownloads>(provider => new AnnasArchiveDownloads(
+            provider.GetRequiredService<AnnasArchiveTransport>()));
 
         // LibGen HTTP client (scraping with domain fallback)
         services.AddHttpClient<LibGenService>(c =>
@@ -333,7 +345,7 @@ public static class ServiceConfiguration
         {
             client.BaseAddress = new Uri("https://openlibrary.org/");
             client.Timeout = HttpTimeouts.StandardApiTimeout;
-            client.DefaultRequestHeaders.Add("User-Agent", "AnnaArchive/1.0");
+            client.DefaultRequestHeaders.Add("User-Agent", "AnnasArchive/1.0");
         })
         .AddStandardResilience("OpenLibrary");
 
@@ -342,7 +354,7 @@ public static class ServiceConfiguration
         {
             client.BaseAddress = new Uri("https://www.googleapis.com/");
             client.Timeout = HttpTimeouts.StandardApiTimeout;
-            client.DefaultRequestHeaders.Add("User-Agent", "AnnaArchive/1.0");
+            client.DefaultRequestHeaders.Add("User-Agent", "AnnasArchive/1.0");
         })
         .AddStandardResilience("GoogleBooks");
 
@@ -353,7 +365,7 @@ public static class ServiceConfiguration
         services.AddHttpClient("Wikipedia", client =>
         {
             client.Timeout = HttpTimeouts.StandardApiTimeout;
-            client.DefaultRequestHeaders.Add("User-Agent", "AnnaArchiveApp/1.0 (personal self-hosted library tool)");
+            client.DefaultRequestHeaders.Add("User-Agent", "AnnasArchiveApp/1.0 (personal self-hosted library tool)");
         })
         .AddStandardResilience("Wikipedia");
         services.AddSingleton<IWikipediaService, WikipediaService>();
@@ -507,7 +519,7 @@ public static class ServiceConfiguration
         services.AddSingleton<IGoogleBooksService, GoogleBooksService>();
         services.AddSingleton<Services.IDescriptionFetcherService, Services.DescriptionFetcherService>();
         // Scoped, not Singleton — CoverLookupService now depends on the
-        // Scoped AnnaArchiveService (for the Anna's-Archive-thumbnail cover
+        // Scoped AnnasArchiveService (for the Anna's-Archive-thumbnail cover
         // path), and a Singleton can't safely consume a Scoped dependency
         // without capturing it forever across requests.
         services.AddScoped<Services.ICoverLookupService, Services.CoverLookupService>();

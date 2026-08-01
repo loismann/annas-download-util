@@ -16,7 +16,7 @@ public static class AnnaDownloadHelpers
     /// </summary>
     /// <param name="md5">The MD5 hash of the book</param>
     /// <param name="title">Optional title for the file name</param>
-    /// <param name="anna">The Anna's Archive service</param>
+    /// <param name="anna">The Anna's Archive download client</param>
     /// <param name="memberKey">The member key for authentication</param>
     /// <returns>
     /// - response: The HttpResponseMessage with the file content (caller must dispose)
@@ -25,10 +25,10 @@ public static class AnnaDownloadHelpers
     /// - errorMessage: Error message if something went wrong (null on success)
     /// </returns>
     public static async Task<(HttpResponseMessage? response, string? fileName, AccountFastDownloadInfoDto? accountInfo, string? errorMessage)>
-        DownloadBookFromAnnaArchiveAsync(
+        DownloadBookFromAnnasArchiveAsync(
             string md5,
             string? title,
-            AnnaArchiveService anna,
+            AnnasArchiveDownloads anna,
             string memberKey)
     {
         // Get download document from Anna's Archive

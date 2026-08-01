@@ -229,7 +229,7 @@ Do NOT include any markdown formatting, explanations, or text outside the JSON a
     private static async Task<IResult> HandleRelatedBooks(
         HttpContext context,
         [FromBody] RelatedBooksRequest request,
-        AnnaArchiveService annaArchiveService,
+        AnnasArchiveService annaArchiveService,
         IHttpClientFactory httpFactory,
         IConfiguration cfg,
         ITokenUsageService tokenUsage,

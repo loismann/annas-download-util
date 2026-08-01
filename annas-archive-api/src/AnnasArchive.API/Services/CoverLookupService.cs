@@ -12,12 +12,12 @@ public class CoverLookupService : ICoverLookupService
 {
     private readonly IOpenLibraryService _openLibraryService;
     private readonly IGoogleBooksService _googleBooksService;
-    private readonly AnnaArchiveService _annaArchiveService;
+    private readonly AnnasArchiveService _annaArchiveService;
 
     public CoverLookupService(
         IOpenLibraryService openLibraryService,
         IGoogleBooksService googleBooksService,
-        AnnaArchiveService annaArchiveService)
+        AnnasArchiveService annaArchiveService)
     {
         _openLibraryService = openLibraryService;
         _googleBooksService = googleBooksService;

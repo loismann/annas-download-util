@@ -118,7 +118,7 @@ public class EndpointIntegrationTests : IClassFixture<WebApplicationFactory<Prog
                 services.RemoveAll<IEmailService>();
                 services.AddSingleton(emailServiceMock.Object);
 
-                // Replace AnnaArchiveService with a mock to prevent HTTP calls
+                // Replace AnnasArchiveService with a mock to prevent HTTP calls
                 // Create a mock HttpClient that returns empty responses
                 var mockHandler = new Mock<HttpMessageHandler>();
                 mockHandler.Protected()
@@ -136,8 +136,8 @@ public class EndpointIntegrationTests : IClassFixture<WebApplicationFactory<Prog
                 };
 
                 // Remove typed HTTP client registrations and add mock services
-                services.RemoveAll<AnnaArchiveService>();
-                services.AddSingleton(new AnnaArchiveService(mockHttpClient, new MemoryCache(new MemoryCacheOptions())));
+                services.RemoveAll<AnnasArchiveService>();
+                services.AddSingleton(new AnnasArchiveService(mockHttpClient, new MemoryCache(new MemoryCacheOptions())));
 
                 services.RemoveAll<LibGenService>();
                 services.AddSingleton(new LibGenService(mockHttpClient));
@@ -500,7 +500,7 @@ public class EndpointIntegrationTests : IClassFixture<WebApplicationFactory<Prog
     }
 
     // ─── Send to Kindle Endpoint Tests ────────────────────────────────────────
-    // Note: Heavy DI services (DropboxClient, AnnaArchiveService, IEmailService) are now mocked
+    // Note: Heavy DI services (DropboxClient, AnnasArchiveService, IEmailService) are now mocked
     // in ConfigureTestServices, enabling these tests to run without hanging.
 
     [Fact]

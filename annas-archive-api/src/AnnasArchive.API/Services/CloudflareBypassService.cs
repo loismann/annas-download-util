@@ -69,11 +69,11 @@ public class CloudflareBypassService : ICloudflareBypassService
         _browserLock = new SemaphoreSlim(maxConcurrent, maxConcurrent);
 
         // Routes this browser's traffic through the Gluetun/PIA proxy when
-        // configured (AnnaArchiveProxy:Url, e.g. http://gluetun:8888) — this
+        // configured (AnnasArchiveProxy:Url, e.g. http://gluetun:8888) — this
         // is the part that actually matters for "only Anna's Archive goes
         // through the VPN", since the real scraping traffic goes through
         // this Playwright browser, not the plain HttpClient fallback.
-        _proxyUrl = configuration["AnnaArchiveProxy:Url"];
+        _proxyUrl = configuration["AnnasArchiveProxy:Url"];
     }
 
     private static readonly string[] UserAgents =

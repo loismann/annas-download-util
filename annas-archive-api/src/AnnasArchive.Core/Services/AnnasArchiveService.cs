@@ -18,12 +18,16 @@ using Microsoft.Extensions.Caching.Memory;
 
 namespace AnnasArchive.Core.Services;
 
-public class AnnaArchiveService
+/// <summary>
+/// Searching Anna's Archive, and finding covers for what it returns. Fetching
+/// lives in <see cref="AnnasArchiveTransport"/> and downloading in
+/// <see cref="AnnasArchiveDownloads"/>.
+/// </summary>
+public class AnnasArchiveService
 {
-    private readonly HttpClient _http;
     private readonly IMemoryCache _cache;
-    private readonly Func<string, Task<string>>? _playwrightFetcher;
-    public HttpClient HttpClient => _http;               // expose for streaming
+    private readonly AnnasArchiveTransport _transport;
+    public HttpClient HttpClient => _transport.HttpClient;   // expose for streaming
 
     // Short TTL — this is purely to avoid re-scraping (several seconds
     // through Playwright/Cloudflare) for an identical repeated search
@@ -32,22 +36,16 @@ public class AnnaArchiveService
     // meant to serve stale results for long.
     private static readonly TimeSpan SearchCacheDuration = TimeSpan.FromMinutes(5);
 
-    public AnnaArchiveService(HttpClient http, IMemoryCache cache, Func<string, Task<string>>? playwrightFetcher = null)
+    public AnnasArchiveService(HttpClient http, IMemoryCache cache, Func<string, Task<string>>? playwrightFetcher = null)
+        : this(new AnnasArchiveTransport(http, playwrightFetcher), cache)
     {
-        _http = http;
-        _cache = cache;
-        _playwrightFetcher = playwrightFetcher;
     }
 
-    // Public so callers like the /api/anna/mirror-health endpoint check the
-    // exact same domains this service actually uses, instead of maintaining
-    // a second hardcoded copy that drifts out of sync.
-    public static readonly string[] BaseDomains =
+    public AnnasArchiveService(AnnasArchiveTransport transport, IMemoryCache cache)
     {
-        "https://annas-archive.gl",
-        "https://annas-archive.pk",
-        "https://annas-archive.gd"
-    };
+        _transport = transport;
+        _cache = cache;
+    }
 
     /// <summary>
     /// <paramref name="startPage"/> lets a caller resume scraping from a
@@ -72,14 +70,14 @@ public class AnnaArchiveService
 
         var collected = new List<HtmlNode>();   // parent containers for each book
         var page = Math.Max(1, startPage);
-        var advancedQuery = BuildSearchQuery(trimmedQuery, exact);
+        var advancedQuery = AnnasArchiveHtmlParser.BuildSearchQuery(trimmedQuery, exact);
         var effectiveQuery = advancedQuery;
         var fallbackAttempted = false;
 
         /* 1️⃣  keep fetching pages until we have >= limit books or no more pages */
         while (collected.Count < limit)
         {
-            var html = await GetStringWithFallbackAsync(
+            var html = await _transport.GetStringAsync(
                 $"/search?index=&page={page}&q={Uri.EscapeDataString(effectiveQuery)}&display=&sort=");
             page++;
 
@@ -103,7 +101,7 @@ public class AnnaArchiveService
                     || html.Contains("cf-spinner", StringComparison.OrdinalIgnoreCase)
                     || html.Contains("Checking your browser", StringComparison.OrdinalIgnoreCase);
                 Console.WriteLine(
-                    $"[AnnaArchiveService] 0 book containers found for query='{effectiveQuery}' page={page - 1} " +
+                    $"[AnnasArchiveService] 0 book containers found for query='{effectiveQuery}' page={page - 1} " +
                     $"htmlLength={html.Length} looksLikeCloudflareChallenge={looksLikeChallenge}");
 
                 // Dump the raw HTML so it can be inspected directly — this is a
@@ -115,11 +113,11 @@ public class AnnaArchiveService
                     Directory.CreateDirectory(debugDir);
                     var debugPath = Path.Combine(debugDir, $"debug-search-empty-{DateTime.UtcNow:yyyyMMdd-HHmmss}.html");
                     File.WriteAllText(debugPath, html);
-                    Console.WriteLine($"[AnnaArchiveService] Dumped raw HTML to {debugPath}");
+                    Console.WriteLine($"[AnnasArchiveService] Dumped raw HTML to {debugPath}");
                 }
                 catch (Exception dumpEx)
                 {
-                    Console.WriteLine($"[AnnaArchiveService] Failed to dump debug HTML: {dumpEx.Message}");
+                    Console.WriteLine($"[AnnasArchiveService] Failed to dump debug HTML: {dumpEx.Message}");
                 }
 
                 if (!fallbackAttempted && !string.Equals(effectiveQuery, trimmedQuery, StringComparison.Ordinal) && page == 2)
@@ -161,7 +159,7 @@ public class AnnaArchiveService
                 var md5 = Path.GetFileName(coverLink.GetAttributeValue("href", ""))
                             .ToLowerInvariant();
 
-                var dto = BuildDtoFromAnchor(container, md5);
+                var dto = AnnasArchiveHtmlParser.BuildDtoFromAnchor(container, md5);
 
                 // Free thumbnail, if the listing page includes one — no extra
                 // request needed, it's already part of the HTML we fetched.
@@ -184,7 +182,7 @@ public class AnnaArchiveService
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[AnnaArchiveService] Failed to build DTO for container index={index}: {ex}");
+                Console.WriteLine($"[AnnasArchiveService] Failed to build DTO for container index={index}: {ex}");
                 return null;
             }
         });
@@ -214,159 +212,6 @@ public class AnnaArchiveService
         return results.FirstOrDefault(r => r.CoverCandidates.Count > 0)?.CoverCandidates.FirstOrDefault();
     }
 
-    private static string BuildSearchQuery(string query, bool exact)
-    {
-        var trimmed = query.Trim();
-        if (string.IsNullOrWhiteSpace(trimmed))
-            return trimmed;
-
-        if (exact)
-            return $"\"{trimmed}\"";
-
-        return trimmed;
-    }
-
-    private static BookDto BuildDtoFromAnchor(HtmlNode container, string md5)
-    {
-        // New HTML structure:
-        // <a class="line-clamp-[3] ... js-vim-focus">TITLE</a>
-        // <a class="line-clamp-[2] ... text-sm" href="/search?q=AUTHORS">AUTHORS</a>
-        // <a class="line-clamp-[2] ... text-sm" href="/search?q=PUBLISHER">PUBLISHER, SERIES, YEAR</a>
-        // <div class="text-gray-800 dark:text-slate-400 ...">LANG [code] · FORMAT · SIZE · YEAR · TYPE · SOURCES</div>
-
-        // Extract title
-        var titleNode = container.SelectSingleNode(".//a[contains(@class,'js-vim-focus')]")
-            ?? container.SelectSingleNode(".//a[contains(@class,'line-clamp') and not(.//img)]")
-            ?? container.SelectSingleNode(".//a[contains(@href,'/md5/') and string-length(normalize-space(text()))>0]")
-            ?? container.SelectSingleNode(".//a[not(contains(@href,'/search')) and string-length(normalize-space(text()))>0]")
-            ?? container.SelectSingleNode(".//a[contains(@href,'/md5/')]");
-
-        var rawTitle = titleNode?.InnerText?.Trim();
-        if (string.IsNullOrWhiteSpace(rawTitle))
-            rawTitle = titleNode?.GetAttributeValue("title", null);
-        if (string.IsNullOrWhiteSpace(rawTitle))
-            rawTitle = $"Unknown Title ({md5})";
-
-        var title = HtmlEntity.DeEntitize(rawTitle);
-
-        // Extract authors (has user-edit icon)
-        var authorNode = container.SelectSingleNode(".//a[contains(@class,'text-sm')]/span[contains(@class,'icon-[mdi--user-edit]')]/parent::a");
-        if (authorNode == null)
-        {
-            authorNode = container.SelectNodes(".//a[contains(@class,'text-sm') and contains(@href,'/search')]")
-                ?.FirstOrDefault();
-        }
-        var rawAuthorText = authorNode?.InnerText?.Trim() ?? "";
-        var authorText = HtmlEntity.DeEntitize(rawAuthorText);
-        var authors = string.IsNullOrEmpty(authorText)
-            ? new List<string>()
-            : authorText.Split(new[] { ';', ',' }, StringSplitOptions.RemoveEmptyEntries)
-                       .Select(a => a.Trim())
-                       .Where(a => a.Length > 0)
-                       .ToList();
-
-        // Extract publisher/series/year (has company icon)
-        var publisherNode = container.SelectSingleNode(".//a[contains(@class,'text-sm')]/span[contains(@class,'icon-[mdi--company]')]/parent::a");
-        if (publisherNode == null)
-        {
-            publisherNode = container.SelectNodes(".//a[contains(@class,'text-sm') and contains(@href,'/search')]")
-                ?.Skip(1)
-                .FirstOrDefault();
-        }
-        var rawPublisherText = publisherNode?.InnerText?.Trim() ?? "";
-        var publisherText = HtmlEntity.DeEntitize(rawPublisherText);
-
-        // Parse publisher text: "Publisher, Series X, Year"
-        var publisherParts = publisherText.Split(',').Select(p => p.Trim()).ToArray();
-        var publisher = publisherParts.ElementAtOrDefault(0) ?? "";
-
-        int? year = null;
-        foreach (var part in publisherParts.Reverse())
-        {
-            if (int.TryParse(part, out var y) && y > 1000 && y < 3000)
-            {
-                year = y;
-                break;
-            }
-        }
-
-        // Extract metadata line: "English [en] · MOBI · 0.3MB · 2015 · 📕 Book (fiction) · 🚀/lgli/lgrs/upload/zlib"
-        var metadataNode = container.SelectSingleNode(".//div[contains(@class,'text-gray-800') or contains(@class,'text-slate-400')]");
-        var rawMetadataText = metadataNode?.InnerText?.Trim() ?? "";
-        var metadataText = HtmlEntity.DeEntitize(rawMetadataText);
-
-        var metaParts = metadataText.Split('·').Select(p => p.Trim()).Where(p => !string.IsNullOrWhiteSpace(p)).ToArray();
-
-        var language = "";
-        var format = "";
-        var fileSize = "";
-        var bookType = "";
-        var source = "";
-
-        foreach (var part in metaParts)
-        {
-            if (part.Contains("[") && part.Contains("]"))
-            {
-                // Language: "English [en]"
-                language = part.Split('[')[0].Trim();
-            }
-            else if (part.Contains("Book") || part.Contains("book") || part.Contains("📕") || part.Contains("magazine") || part.Contains("comic"))
-            {
-                // Book type: "📕 Book (fiction)", "Book (non-fiction)", "magazine"
-                // Check this BEFORE fileSize because "Book" might contain "B"
-                bookType = part.Replace("📕", "").Replace("🚀", "").Trim();
-            }
-            else if (part.Contains("MB") || part.Contains("KB") || part.Contains("GB"))
-            {
-                // File size: "0.3MB", "125KB", "1.2GB"
-                fileSize = part;
-            }
-            else if (part.Contains("/"))
-            {
-                // Source: "/lgli/lgrs/upload/zlib" or "🚀/lgli/lgrs/upload/zlib"
-                source = part.Replace("🚀", "").Trim();
-            }
-            else if (int.TryParse(part, out var y) && y > 1000 && y < 3000 && year == null)
-            {
-                // Year in metadata if not found in publisher
-                year = y;
-            }
-            else if (string.IsNullOrEmpty(format) && part.Length <= 10 && !part.Contains(" "))
-            {
-                // Format: "MOBI", "PDF", "EPUB", "AZW3", etc.
-                // This should be the first unmatched short token without spaces
-                format = part;
-            }
-        }
-
-        var dto = new BookDto(
-            title,
-            md5,
-            authors,
-            language,
-            format,
-            source,
-            fileSize,
-            bookType,
-            publisher,
-            year,
-            null,
-            null
-        );
-
-        // No speculative guessed cover URLs here anymore — they were unverified
-        // (zlibcdn/zlibcdn2 domains, arbitrary {domain}/covers/{md5}.jpg
-        // patterns against the search domains) and confirmed dead via browser
-        // testing (ERR_SSL_PROTOCOL_ERROR). Leaving CoverCandidates empty when
-        // there's no free listing-page thumbnail lets the frontend's
-        // needsExternalCoverLookup() correctly detect "needs a cover" and
-        // immediately use the reliable MD5→ISBN→OpenLibrary-CDN lookup
-        // (GetCoverByMd5Async) instead of wasting a cascade of failed
-        // image loads on dead guesses first.
-
-        return dto;
-    }
-
     private static readonly Regex IsbnRx =
         new(@"ISBN(?:-1[03])?:?\s*([0-9Xx\-]{10,17})", RegexOptions.IgnoreCase);
 
@@ -394,22 +239,22 @@ public class AnnaArchiveService
         string? coverUrl = null;
         try
         {
-            var html = await GetStringWithFallbackAsync($"/md5/{key}");
+            var html = await _transport.GetStringAsync($"/md5/{key}");
             var match = IsbnRx.Match(html);
             if (match.Success)
             {
                 var isbn = match.Groups[1].Value.Replace("-", "");
                 coverUrl = $"https://covers.openlibrary.org/b/isbn/{isbn}-L.jpg?default=false";
-                Console.WriteLine($"[AnnaArchiveService] GetCoverByMd5Async md5={key} found ISBN={isbn} coverUrl={coverUrl}");
+                Console.WriteLine($"[AnnasArchiveService] GetCoverByMd5Async md5={key} found ISBN={isbn} coverUrl={coverUrl}");
             }
             else
             {
-                Console.WriteLine($"[AnnaArchiveService] GetCoverByMd5Async md5={key} no ISBN found on detail page (htmlLength={html.Length})");
+                Console.WriteLine($"[AnnasArchiveService] GetCoverByMd5Async md5={key} no ISBN found on detail page (htmlLength={html.Length})");
             }
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[AnnaArchiveService] GetCoverByMd5Async md5={key} failed: {ex.GetType().Name}: {ex.Message}");
+            Console.WriteLine($"[AnnasArchiveService] GetCoverByMd5Async md5={key} failed: {ex.GetType().Name}: {ex.Message}");
         }
 
         // Negative results are cached too: a book with no ISBN on its detail
@@ -419,281 +264,5 @@ public class AnnaArchiveService
         return coverUrl;
     }
 
-    public async Task<List<string>> GetDownloadLinksAsync(string md5)
-    {
-        var links = await GetJsonWithFallbackAsync<List<string>>(
-            $"/dyn/api/fast_download.json?md5={Uri.EscapeDataString(md5)}");
-        return links ?? new List<string>();
-    }
-
-    public async Task<List<string>> GetMemberDownloadLinksAsync(string md5, string key)
-    {
-        var url = $"/dyn/api/fast_download.json?md5={Uri.EscapeDataString(md5)}"
-                + $"&key={Uri.EscapeDataString(key)}"
-                + "&path_index=0&domain_index=0";
-
-        var doc = await GetJsonElementWithFallbackAsync(url);
-        if (doc.ValueKind != JsonValueKind.Object) return new List<string>();
-
-        var results = new List<string>();
-        if (doc.TryGetProperty("download_url", out var token))
-        {
-            if (token.ValueKind == JsonValueKind.Array)
-            {
-                results.AddRange(token.EnumerateArray()
-                                      .Select(e => e.GetString()!)
-                                      .Where(s => !string.IsNullOrEmpty(s)));
-            }
-            else if (token.ValueKind == JsonValueKind.String)
-            {
-                var s = token.GetString();
-                if (!string.IsNullOrEmpty(s)) results.Add(s);
-            }
-        }
-
-        return results;
-    }
-
-    public async Task<JsonElement> GetMemberDownloadDocumentAsync(string md5, string key)
-    {
-        var url = $"/dyn/api/fast_download.json"
-                + $"?md5={Uri.EscapeDataString(md5)}"
-                + $"&key={Uri.EscapeDataString(key)}"
-                + "&path_index=0&domain_index=0";
-
-        try
-        {
-            var doc = await GetJsonElementWithFallbackAsync(url);
-            if (doc.ValueKind == JsonValueKind.Undefined)
-                throw new InvalidOperationException("Failed to fetch download document.");
-            return doc;
-        }
-        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
-        {
-            throw new InvalidOperationException("Rate limit exceeded. Please wait before trying again.", ex);
-        }
-    }
-
-    /// <summary>
-    /// Scrapes the Anna's Archive account page to get download counter information.
-    /// Returns (downloadsLeft, downloadsPerDay) or null if not found.
-    /// </summary>
-    public async Task<(int downloadsLeft, int downloadsPerDay)?> GetDownloadCounterFromProfileAsync()
-    {
-        try
-        {
-            // Try the /account page first
-            var html = await GetStringWithFallbackAsync("/account");
-
-            var doc = new HtmlDocument();
-            doc.LoadHtml(html);
-
-            // Look for download counter text patterns in the page
-            // Common patterns: "X downloads left today", "X / Y downloads", "X out of Y", etc.
-            var allText = doc.DocumentNode.InnerText;
-
-            // Pattern 1: "X downloads left" or "X fast downloads left"
-            var leftMatch = Regex.Match(allText, @"(\d+)\s+(?:fast\s+)?downloads?\s+left", RegexOptions.IgnoreCase);
-
-            // Pattern 2: "X / Y" or "X out of Y" for downloads
-            var ratioMatch = Regex.Match(allText, @"(\d+)\s*[/\\]\s*(\d+)\s+(?:fast\s+)?downloads?", RegexOptions.IgnoreCase);
-
-            // Pattern 3: Look for specific elements that might contain the counter
-            // Try to find divs or spans that mention "download" and contain numbers
-            var downloadNodes = doc.DocumentNode.SelectNodes("//div[contains(translate(., 'DOWNLOAD', 'download'), 'download')] | //span[contains(translate(., 'DOWNLOAD', 'download'), 'download')] | //p[contains(translate(., 'DOWNLOAD', 'download'), 'download')]");
-
-            int? downloadsLeft = null;
-            int? downloadsPerDay = null;
-
-            if (ratioMatch.Success && ratioMatch.Groups.Count >= 3)
-            {
-                // Found "X / Y downloads" pattern
-                downloadsLeft = int.Parse(ratioMatch.Groups[1].Value);
-                downloadsPerDay = int.Parse(ratioMatch.Groups[2].Value);
-            }
-            else if (leftMatch.Success)
-            {
-                // Found "X downloads left" pattern
-                downloadsLeft = int.Parse(leftMatch.Groups[1].Value);
-
-                // Try to find the total downloads per day
-                var totalMatch = Regex.Match(allText, @"(\d+)\s+(?:fast\s+)?downloads?\s+per\s+day", RegexOptions.IgnoreCase);
-                if (totalMatch.Success)
-                {
-                    downloadsPerDay = int.Parse(totalMatch.Groups[1].Value);
-                }
-            }
-
-            // If we found at least the downloads left, return what we have
-            if (downloadsLeft.HasValue && downloadsPerDay.HasValue)
-            {
-                return (downloadsLeft.Value, downloadsPerDay.Value);
-            }
-
-            return null;
-        }
-        catch (ArgumentException ex)
-        {
-            Console.Error.WriteLine($"Invalid argument scraping download counter: {ex.ParamName}");
-            return null;
-        }
-        catch (Exception ex)
-        {
-            // Log the error but don't crash
-            Console.Error.WriteLine($"Failed to scrape download counter from profile: {ex.Message}");
-            return null;
-        }
-    }
-
-    public async Task<HttpResponseMessage?> GetDownloadResponseWithFallbackAsync(
-        string downloadUrl,
-        HttpCompletionOption completionOption)
-    {
-        var candidates = BuildDownloadFallbackUris(downloadUrl);
-        foreach (var candidate in candidates)
-        {
-            HttpResponseMessage? resp = null;
-            try
-            {
-                resp = await _http.GetAsync(candidate, completionOption);
-                if (resp.IsSuccessStatusCode)
-                    return resp;
-            }
-            catch
-            {
-                resp?.Dispose();
-                continue;
-            }
-
-            resp?.Dispose();
-        }
-
-        return null;
-    }
-
-    private static IEnumerable<Uri> BuildDownloadFallbackUris(string downloadUrl)
-    {
-        if (!Uri.TryCreate(downloadUrl, UriKind.Absolute, out var uri))
-            return Enumerable.Empty<Uri>();
-
-        if (!IsAnnaArchiveHost(uri.Host))
-            return new[] { uri };
-
-        return BaseDomains
-            .Select(domain => new Uri($"{domain}{uri.PathAndQuery}"));
-    }
-
-    private static bool IsAnnaArchiveHost(string host)
-    {
-        return BaseDomains.Any(domain =>
-            host.EndsWith(new Uri(domain).Host, StringComparison.OrdinalIgnoreCase));
-    }
-
-    private async Task<string> GetStringWithFallbackAsync(string pathAndQuery)
-    {
-        // Use Playwright fetcher if available (bypasses Cloudflare)
-        if (_playwrightFetcher != null)
-        {
-            var fallbackSw = Stopwatch.StartNew();
-            // Try each domain with Playwright — sequential by necessity today
-            // (no racing), so each failed/slow domain pays its full latency
-            // before the next is even attempted. This loop's total duration
-            // is exactly that cost.
-            foreach (var domain in BaseDomains)
-            {
-                var domainSw = Stopwatch.StartNew();
-                try
-                {
-                    var url = $"{domain}{pathAndQuery}";
-                    var html = await _playwrightFetcher(url);
-                    if (!string.IsNullOrEmpty(html) && !html.Contains("challenge-running"))
-                    {
-                        Console.WriteLine($"[AnnasArchive] Playwright successfully fetched from {domain}");
-                        PerfLog.Record("AnnasArchive.DomainFetch", domainSw.Elapsed.TotalMilliseconds, true, ("Domain", domain));
-                        PerfLog.Record("AnnasArchive.DomainFallback", fallbackSw.Elapsed.TotalMilliseconds, true, ("WinningDomain", domain));
-                        return html;
-                    }
-                    PerfLog.Record("AnnasArchive.DomainFetch", domainSw.Elapsed.TotalMilliseconds, false, ("Domain", domain), ("Reason", "empty or challenge page"));
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"[AnnasArchive] Playwright failed for {domain}: {ex.Message}");
-                    PerfLog.Record("AnnasArchive.DomainFetch", domainSw.Elapsed.TotalMilliseconds, false, ("Domain", domain), ("Error", ex.Message));
-                }
-            }
-            // Fall through to HttpClient if Playwright fails for all domains
-            Console.WriteLine("[AnnasArchive] Playwright failed for all domains, falling back to HttpClient");
-            PerfLog.Record("AnnasArchive.DomainFallback", fallbackSw.Elapsed.TotalMilliseconds, false, ("Reason", "all domains failed via Playwright"));
-        }
-
-        using var resp = await GetWithFallbackAsync(pathAndQuery);
-        return await resp.Content.ReadAsStringAsync();
-    }
-
-    private async Task<T?> GetJsonWithFallbackAsync<T>(string pathAndQuery)
-    {
-        using var resp = await GetWithFallbackAsync(pathAndQuery);
-        return await resp.Content.ReadFromJsonAsync<T>();
-    }
-
-    private async Task<JsonElement> GetJsonElementWithFallbackAsync(string pathAndQuery)
-    {
-        using var resp = await GetWithFallbackAsync(pathAndQuery);
-        var doc = await resp.Content.ReadFromJsonAsync<JsonElement>();
-        return doc;
-    }
-
-    private async Task<HttpResponseMessage> GetWithFallbackAsync(string pathAndQuery)
-    {
-        HttpResponseMessage? lastResponse = null;
-        Exception? lastException = null;
-        var fallbackSw = Stopwatch.StartNew();
-
-        for (var i = 0; i < BaseDomains.Length; i++)
-        {
-            var domain = BaseDomains[i];
-            var uri = new Uri($"{domain}{pathAndQuery}");
-            var domainSw = Stopwatch.StartNew();
-            try
-            {
-                var resp = await _http.GetAsync(uri);
-                if (resp.IsSuccessStatusCode)
-                {
-                    if (i > 0)
-                    {
-                        // Log successful fallback
-                        Console.WriteLine($"[AnnasArchive] Successfully connected via fallback domain: {domain}");
-                    }
-                    PerfLog.Record("AnnasArchive.DomainFetch", domainSw.Elapsed.TotalMilliseconds, true, ("Domain", domain), ("Via", "HttpClient"));
-                    PerfLog.Record("AnnasArchive.DomainFallback", fallbackSw.Elapsed.TotalMilliseconds, true, ("WinningDomain", domain), ("Via", "HttpClient"));
-                    return resp;
-                }
-
-                lastResponse?.Dispose();
-                lastResponse = resp;
-                PerfLog.Record("AnnasArchive.DomainFetch", domainSw.Elapsed.TotalMilliseconds, false, ("Domain", domain), ("Via", "HttpClient"), ("StatusCode", (int)resp.StatusCode));
-                Console.WriteLine($"[AnnasArchive] Domain {domain} returned {(int)resp.StatusCode}, trying next...");
-            }
-            catch (Exception ex)
-            {
-                lastException = ex;
-                PerfLog.Record("AnnasArchive.DomainFetch", domainSw.Elapsed.TotalMilliseconds, false, ("Domain", domain), ("Via", "HttpClient"), ("Error", ex.Message));
-                Console.WriteLine($"[AnnasArchive] Domain {domain} failed: {ex.Message}, trying next...");
-                // continue to next domain
-            }
-        }
-
-        PerfLog.Record("AnnasArchive.DomainFallback", fallbackSw.Elapsed.TotalMilliseconds, false, ("Via", "HttpClient"), ("Reason", "all domains failed"));
-
-        if (lastResponse != null)
-        {
-            var status = (int)lastResponse.StatusCode;
-            lastResponse.Dispose();
-            throw new HttpRequestException($"Request failed with status {status}");
-        }
-
-        throw new HttpRequestException(
-            $"Request failed for all Anna's Archive domains. Last error: {lastException?.Message ?? "Unknown"}");
-    }
 }
 #nullable restore

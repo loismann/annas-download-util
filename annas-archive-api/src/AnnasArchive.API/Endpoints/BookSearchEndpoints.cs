@@ -84,7 +84,7 @@ public static class BookSearchEndpoints
 
     private static async Task<IResult> HandleBookSearch(
         [FromQuery] string? name,
-        AnnaArchiveService svc,
+        AnnasArchiveService svc,
         IValidationService validation,
         IConfiguration cfg,
         [FromQuery] bool exact = false,
@@ -205,7 +205,7 @@ public static class BookSearchEndpoints
 
     private static async Task<IResult> HandleCoverByIsbn(
         [FromRoute] string md5,
-        AnnaArchiveService annaService,
+        AnnasArchiveService annaService,
         IValidationService validation)
     {
         if (!validation.IsValidMd5(md5))
@@ -342,10 +342,10 @@ public static class BookSearchEndpoints
         var client = httpFactory.CreateClient();
         client.Timeout = HttpTimeouts.ShortScraperTimeout;
 
-        // Sourced from AnnaArchiveService.BaseDomains so this health check always
+        // Sourced from AnnasArchiveTransport.BaseDomains so this health check always
         // reflects the exact domains actually used for search/download, rather
         // than a second hardcoded list that can silently drift out of sync.
-        var mirrors = AnnaArchiveService.BaseDomains
+        var mirrors = AnnasArchiveTransport.BaseDomains
             .Select(domain =>
             {
                 var host = new Uri(domain).Host;

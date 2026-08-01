@@ -8,10 +8,10 @@ using System.Threading;
 namespace AnnasArchive.Tests.Services;
 
 /// <summary>
-/// Comprehensive tests for AnnaArchiveService to ensure search, download, and scraping functionality
+/// Comprehensive tests for AnnasArchiveService to ensure search, download, and scraping functionality
 /// remains intact through refactoring.
 /// </summary>
-public class AnnaArchiveServiceTests
+public class AnnasArchiveServiceTests
 {
     private Mock<HttpMessageHandler> CreateMockHttpMessageHandler(string responseContent, HttpStatusCode statusCode = HttpStatusCode.OK)
     {
@@ -32,13 +32,13 @@ public class AnnaArchiveServiceTests
     }
 
     [Fact]
-    public void AnnaArchiveService_Constructor_ShouldInitializeHttpClient()
+    public void AnnasArchiveService_Constructor_ShouldInitializeHttpClient()
     {
         // Arrange
         var httpClient = new HttpClient { BaseAddress = new Uri("https://annas-archive.org") };
 
         // Act
-        var service = new AnnaArchiveService(httpClient, new MemoryCache(new MemoryCacheOptions()));
+        var service = new AnnasArchiveService(httpClient, new MemoryCache(new MemoryCacheOptions()));
 
         // Assert
         service.Should().NotBeNull();
@@ -52,7 +52,7 @@ public class AnnaArchiveServiceTests
         var mockHtml = "<html><body>No results</body></html>";
         var mockHandler = CreateMockHttpMessageHandler(mockHtml);
         var httpClient = new HttpClient(mockHandler.Object) { BaseAddress = new Uri("https://annas-archive.org") };
-        var service = new AnnaArchiveService(httpClient, new MemoryCache(new MemoryCacheOptions()));
+        var service = new AnnasArchiveService(httpClient, new MemoryCache(new MemoryCacheOptions()));
 
         // Act
         var results = await service.SearchAsync("nonexistent", limit: 10);
@@ -86,7 +86,7 @@ public class AnnaArchiveServiceTests
 
         var mockHandler = CreateMockHttpMessageHandler(mockHtml);
         var httpClient = new HttpClient(mockHandler.Object) { BaseAddress = new Uri("https://annas-archive.org") };
-        var service = new AnnaArchiveService(httpClient, new MemoryCache(new MemoryCacheOptions()));
+        var service = new AnnasArchiveService(httpClient, new MemoryCache(new MemoryCacheOptions()));
 
         // Act
         var results = await service.SearchAsync("test", limit: 2);
@@ -102,10 +102,10 @@ public class AnnaArchiveServiceTests
         var mockJson = @"[""https://download1.com/file"", ""https://download2.com/file""]";
         var mockHandler = CreateMockHttpMessageHandler(mockJson);
         var httpClient = new HttpClient(mockHandler.Object) { BaseAddress = new Uri("https://annas-archive.org") };
-        var service = new AnnaArchiveService(httpClient, new MemoryCache(new MemoryCacheOptions()));
+        var downloads = new AnnasArchiveDownloads(new AnnasArchiveTransport(httpClient));
 
         // Act
-        var links = await service.GetDownloadLinksAsync("abc123def456789012345678901234ab");
+        var links = await downloads.GetDownloadLinksAsync("abc123def456789012345678901234ab");
 
         // Assert
         links.Should().NotBeNull();
@@ -121,10 +121,10 @@ public class AnnaArchiveServiceTests
         var mockJson = @"[]";
         var mockHandler = CreateMockHttpMessageHandler(mockJson);
         var httpClient = new HttpClient(mockHandler.Object) { BaseAddress = new Uri("https://annas-archive.org") };
-        var service = new AnnaArchiveService(httpClient, new MemoryCache(new MemoryCacheOptions()));
+        var downloads = new AnnasArchiveDownloads(new AnnasArchiveTransport(httpClient));
 
         // Act
-        var links = await service.GetDownloadLinksAsync("abc123def456789012345678901234ab");
+        var links = await downloads.GetDownloadLinksAsync("abc123def456789012345678901234ab");
 
         // Assert
         links.Should().NotBeNull();
@@ -138,10 +138,10 @@ public class AnnaArchiveServiceTests
         var mockJson = @"{""download_url"": [""https://member-download.com/file""]}";
         var mockHandler = CreateMockHttpMessageHandler(mockJson);
         var httpClient = new HttpClient(mockHandler.Object) { BaseAddress = new Uri("https://annas-archive.org") };
-        var service = new AnnaArchiveService(httpClient, new MemoryCache(new MemoryCacheOptions()));
+        var downloads = new AnnasArchiveDownloads(new AnnasArchiveTransport(httpClient));
 
         // Act
-        var links = await service.GetMemberDownloadLinksAsync("abc123def456789012345678901234ab", "test-key");
+        var links = await downloads.GetMemberDownloadLinksAsync("abc123def456789012345678901234ab", "test-key");
 
         // Assert
         links.Should().NotBeNull();
@@ -156,10 +156,10 @@ public class AnnaArchiveServiceTests
         var mockJson = @"{""download_url"": ""https://member-download.com/file""}";
         var mockHandler = CreateMockHttpMessageHandler(mockJson);
         var httpClient = new HttpClient(mockHandler.Object) { BaseAddress = new Uri("https://annas-archive.org") };
-        var service = new AnnaArchiveService(httpClient, new MemoryCache(new MemoryCacheOptions()));
+        var downloads = new AnnasArchiveDownloads(new AnnasArchiveTransport(httpClient));
 
         // Act
-        var links = await service.GetMemberDownloadLinksAsync("abc123def456789012345678901234ab", "test-key");
+        var links = await downloads.GetMemberDownloadLinksAsync("abc123def456789012345678901234ab", "test-key");
 
         // Assert
         links.Should().NotBeNull();
@@ -174,10 +174,10 @@ public class AnnaArchiveServiceTests
         var mockJson = @"{""download_url"": ""https://download.com/file"", ""account_fast_download_info"": {""downloads_left"": 10}}";
         var mockHandler = CreateMockHttpMessageHandler(mockJson);
         var httpClient = new HttpClient(mockHandler.Object) { BaseAddress = new Uri("https://annas-archive.org") };
-        var service = new AnnaArchiveService(httpClient, new MemoryCache(new MemoryCacheOptions()));
+        var downloads = new AnnasArchiveDownloads(new AnnasArchiveTransport(httpClient));
 
         // Act
-        var doc = await service.GetMemberDownloadDocumentAsync("abc123def456789012345678901234ab", "test-key");
+        var doc = await downloads.GetMemberDownloadDocumentAsync("abc123def456789012345678901234ab", "test-key");
 
         // Assert
         doc.ValueKind.Should().Be(JsonValueKind.Object);
@@ -193,7 +193,7 @@ public class AnnaArchiveServiceTests
     {
         // Arrange
         var httpClient = new HttpClient { BaseAddress = new Uri("https://annas-archive.org") };
-        var service = new AnnaArchiveService(httpClient, new MemoryCache(new MemoryCacheOptions()));
+        var service = new AnnasArchiveService(httpClient, new MemoryCache(new MemoryCacheOptions()));
 
         // Act & Assert - just verify the service accepts it
         var normalized = md5.ToLowerInvariant();

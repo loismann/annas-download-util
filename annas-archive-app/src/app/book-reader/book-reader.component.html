@@ -370,7 +370,7 @@
                             placeholder="Select section">
                   <mat-option *ngFor="let chunk of chunkBoundaries.chunks; let i = index" [value]="i">
                     Section {{ i + 1 }} ({{ chunk.start }}-{{ chunk.end }})
-                    <span *ngIf="hasSectionSummary(i)" class="section-checkmark">✓</span>
+                    <mat-icon *ngIf="hasSectionSummary(i)" class="section-checkmark">check</mat-icon>
                   </mat-option>
                 </mat-select>
               </div>

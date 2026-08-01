@@ -21,7 +21,13 @@
       [disabled]="addState === 'adding' || addState === 'added'">
       <ng-container [ngSwitch]="addState">
         <span *ngSwitchCase="'adding'">Adding…</span>
-        <span *ngSwitchCase="'added'">{{ progressLabel || 'Added ✔' }}</span>
+        <!-- progressLabel is live download text when present; the icon is only
+             the idle "already added" state, so it renders beside it rather than
+             inside the interpolation. -->
+        <span *ngSwitchCase="'added'">
+          <ng-container *ngIf="progressLabel; else addedDone">{{ progressLabel }}</ng-container>
+          <ng-template #addedDone>Added <mat-icon inline>check</mat-icon></ng-template>
+        </span>
         <span *ngSwitchCase="'error'">Retry</span>
         <span *ngSwitchDefault>{{ buttonLabel }}</span>
       </ng-container>

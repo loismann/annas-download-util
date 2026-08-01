@@ -4,31 +4,23 @@ import { MatCardModule } from '@angular/material/card';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatCheckboxModule } from '@angular/material/checkbox';
+import { LibraryBook as ApiLibraryBook } from '../../services/library-api.service';
 
-export interface LibraryBook {
-  title: string;
-  authors: string[];
-  format: string;
-  fileSize: string;
-  fileName: string;
-  coverUrl?: string | null;
-  source?: string | null;
-  savedAt?: string | null;
-  primaryGenre?: string | null;
-  tags?: string[];
-  series?: string | null;
-  publishedDate?: string | null;
-  pages?: string | null;
-  md5?: string | null;
-  goodreadsRating?: number | null;
-  personalRating?: number | null;
-  /** Names of household members who have favorited this book — per-owner, not a shared flag. */
-  favoritedBy?: string[];
-  readerEnabled?: boolean | null;
-  description?: string | null;
-  dadsKindleState?: 'idle' | 'sending' | 'success' | 'error';
-  momsKindleState?: 'idle' | 'sending' | 'success' | 'error';
-  dropboxState?: 'idle' | 'sending' | 'success' | 'error';
+/** Per-button send state, held on the card while a request is in flight. */
+export type SendState = 'idle' | 'sending' | 'success' | 'error';
+
+/**
+ * The API's book plus the transient state this card renders.
+ *
+ * This used to redeclare all ~20 fields of the API model by hand, and the two
+ * copies had already drifted apart. Extending means a field added to the API
+ * model shows up here automatically, and the only thing declared locally is the
+ * state that exists purely for the duration of a click.
+ */
+export interface LibraryBook extends ApiLibraryBook {
+  dadsKindleState?: SendState;
+  momsKindleState?: SendState;
+  dropboxState?: SendState;
 }
 
 @Component({

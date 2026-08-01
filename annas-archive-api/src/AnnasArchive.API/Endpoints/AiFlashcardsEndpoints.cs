@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using AnnasArchive.API.Helpers;
 using AnnasArchive.API.Models;
+using AnnasArchive.Core.Helpers;
 using AnnasArchive.Core.Services;
 using Microsoft.AspNetCore.Mvc;
 using Serilog;
@@ -172,12 +173,7 @@ Return JSON array of flashcards for individual terms found in the passage.";
             try
             {
                 // Try to clean the content first - remove markdown code blocks if present
-                var cleanedContent = content.Trim();
-                if (cleanedContent.StartsWith("```"))
-                {
-                    var lines = cleanedContent.Split('\n');
-                    cleanedContent = string.Join('\n', lines.Skip(1).SkipLast(1));
-                }
+                var cleanedContent = AiText.StripCodeFences(content);
 
                 // Try to extract JSON array from the content
                 var jsonMatch = Regex.Match(cleanedContent, @"\[[\s\S]*\]");

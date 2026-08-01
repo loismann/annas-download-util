@@ -1,3 +1,4 @@
+using AnnasArchive.Core.Helpers;
 using Serilog;
 
 namespace AnnasArchive.API.Helpers.Cache;
@@ -18,22 +19,16 @@ public static class AiCacheBase
         return env ?? Path.Combine(Directory.GetCurrentDirectory(), "ai-cache");
     }
 
-    // Cross-platform invalid filename characters (union of Windows + Unix restrictions)
-    // This ensures cache files are portable between operating systems
-    private static readonly HashSet<char> InvalidFileNameChars = new(
-        Path.GetInvalidFileNameChars().Concat(new[] { '<', '>', ':', '"', '/', '\\', '|', '?', '*' })
-    );
-
     /// <summary>
     /// Sanitizes a string to be safe for use as a filename on any platform.
-    /// Uses a consistent set of invalid characters for cross-platform compatibility.
+    ///
+    /// Delegates to the shared <see cref="SafeFileName.ForKey"/>, which is the
+    /// identity-preserving variant on purpose: the value returned here becomes
+    /// the on-disk cache folder name for a book, so it must stay byte-for-byte
+    /// what it has always been. Switching this to the path-stripping variant
+    /// would orphan every cached summary and re-bill regenerating them.
     /// </summary>
-    public static string SanitizeForFilename(string input)
-    {
-        var sanitized = new string(input.Select(c => InvalidFileNameChars.Contains(c) ? '_' : c).ToArray());
-        if (sanitized.Length > 200) sanitized = sanitized.Substring(0, 200);
-        return sanitized;
-    }
+    public static string SanitizeForFilename(string input) => SafeFileName.ForKey(input);
 
     /// <summary>
     /// Public wrapper for filename sanitization.

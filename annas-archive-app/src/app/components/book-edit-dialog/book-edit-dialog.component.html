@@ -25,24 +25,24 @@
           <button mat-raised-button color="primary" type="button" (click)="sendToKindle('dad')" [disabled]="!data.canSendToKindle || dadsKindleState === 'sending'">
             <ng-container [ngSwitch]="dadsKindleState">
               <span *ngSwitchCase="'sending'">Sending…</span>
-              <span *ngSwitchCase="'success'">✔ Sent</span>
-              <span *ngSwitchCase="'error'">✖ Retry</span>
+              <span *ngSwitchCase="'success'"><mat-icon inline>check</mat-icon> Sent</span>
+              <span *ngSwitchCase="'error'"><mat-icon inline>refresh</mat-icon> Retry</span>
               <span *ngSwitchDefault>Dad's Kindle</span>
             </ng-container>
           </button>
           <button mat-raised-button color="primary" type="button" (click)="sendToKindle('mom')" [disabled]="!data.canSendToKindle || momsKindleState === 'sending'">
             <ng-container [ngSwitch]="momsKindleState">
               <span *ngSwitchCase="'sending'">Sending…</span>
-              <span *ngSwitchCase="'success'">✔ Sent</span>
-              <span *ngSwitchCase="'error'">✖ Retry</span>
+              <span *ngSwitchCase="'success'"><mat-icon inline>check</mat-icon> Sent</span>
+              <span *ngSwitchCase="'error'"><mat-icon inline>refresh</mat-icon> Retry</span>
               <span *ngSwitchDefault>Mom's Kindle</span>
             </ng-container>
           </button>
           <button mat-raised-button color="primary" type="button" (click)="sendToDropbox()" [disabled]="!data.canSendToKindle || dropboxState === 'sending'">
             <ng-container [ngSwitch]="dropboxState">
               <span *ngSwitchCase="'sending'">Sending…</span>
-              <span *ngSwitchCase="'success'">✔ Sent</span>
-              <span *ngSwitchCase="'error'">✖ Retry</span>
+              <span *ngSwitchCase="'success'"><mat-icon inline>check</mat-icon> Sent</span>
+              <span *ngSwitchCase="'error'"><mat-icon inline>refresh</mat-icon> Retry</span>
               <span *ngSwitchDefault>Dropbox</span>
             </ng-container>
           </button>
@@ -50,7 +50,7 @@
             [disabled]="!data.fileName || readerState === 'sending'">
             <ng-container [ngSwitch]="readerState">
               <span *ngSwitchCase="'sending'">Adding…</span>
-              <span *ngSwitchCase="'error'">✖ Retry</span>
+              <span *ngSwitchCase="'error'"><mat-icon inline>refresh</mat-icon> Retry</span>
               <span *ngSwitchDefault>{{ data.readerEnabled ? 'View in ereader' : 'Add to ebook reader' }}</span>
             </ng-container>
           </button>

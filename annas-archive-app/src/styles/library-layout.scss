@@ -1,0 +1,123 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   Shared "sidebar + panel" library layout
+
+   Used by the ebook library, TV & movie library, audiobooks and video library.
+   All four had their own copy of these rules; the copies were identical in the
+   parts that matter and had drifted only in incidental ones, which meant a fix
+   to the mobile bottom sheet had to be made four times to actually land.
+
+   Scope rule for this file: it holds only what is genuinely common to every
+   page. Anything one page does differently — the ebook library fills its
+   container height, the others centre a max-width column — deliberately stays
+   in that component's own stylesheet, where it overrides these. Global styles
+   load before component styles, so a component rule of equal specificity still
+   wins; that is what makes the split safe.
+
+   These are global rather than a shared component because Angular's emulated
+   encapsulation would otherwise stop them applying to each component's own
+   markup.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.library-layout {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  gap: 24px;
+}
+
+.library-sidebar,
+.library-panel {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.06);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+}
+
+.library-sidebar {
+  gap: 16px;
+}
+
+.sidebar-header h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.sidebar-header p {
+  margin: 6px 0 0;
+  color: #64748b;
+  font-size: 0.85rem;
+}
+
+/* Desktop: the filter FAB and its scrim exist only for the phone bottom sheet. */
+.mobile-sidebar-toggle,
+.sidebar-backdrop {
+  display: none;
+}
+
+/* Tablets: one column, sidebar stacks above the panel. */
+@media (max-width: 900px) {
+  .library-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Phones: filters collapse into a bottom sheet behind the filter FAB. */
+@media (max-width: 768px) {
+  .library-layout {
+    padding: 12px;
+    gap: 12px;
+  }
+
+  .mobile-sidebar-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: fixed;
+    /* Sits just above the safe area. This used to add 52px to clear the bottom
+       tab bar, which no longer exists — navigation moved to the sidebar. */
+    bottom: calc(16px + env(safe-area-inset-bottom));
+    right: 16px;
+    z-index: 1200;
+    background: #3f51b5;
+    color: white;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+  }
+
+  .mobile-sidebar-toggle:hover {
+    background: #303f9f;
+  }
+
+  .sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.45);
+    z-index: 1150;
+  }
+
+  .library-sidebar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 1160;
+    max-height: 78dvh;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    border: none;
+    border-radius: 16px 16px 0 0;
+    box-shadow: 0 -8px 30px rgba(15, 23, 42, 0.3);
+    padding-bottom: calc(16px + env(safe-area-inset-bottom));
+  }
+
+  .library-sidebar.collapsed {
+    display: none;
+  }
+}

@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using System.Threading.RateLimiting;
 using AnnasArchive.API.Constants;
+using AnnasArchive.API.Endpoints;
 using AnnasArchive.API.Helpers;
 using AnnasArchive.API.Infrastructure;
 using AnnasArchive.API.Services;
@@ -54,8 +55,13 @@ public static class ServiceConfiguration
         // Configure LibraryEpubCache chapter content cache
         LibraryEpubCache.ConfigureCache(cacheConfig.ChapterContentCacheSize);
 
-        Log.Information("[Caching] Caches configured - ChapterContent: {ChapterSize} items",
-            cacheConfig.ChapterContentCacheSize);
+        // AuthorSuggestionCacheSize was configured and documented but never
+        // actually read, leaving that cache unbounded. Now wired up.
+        AiBookSearchEndpoints.ConfigureCache(cacheConfig.AuthorSuggestionCacheSize);
+
+        Log.Information("[Caching] Caches configured - ChapterContent: {ChapterSize} items, AuthorSuggestions: {AuthorSize} items",
+            cacheConfig.ChapterContentCacheSize,
+            cacheConfig.AuthorSuggestionCacheSize);
 
         return services;
     }

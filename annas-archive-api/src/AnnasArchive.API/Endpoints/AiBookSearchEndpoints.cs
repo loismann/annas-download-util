@@ -6,6 +6,7 @@ using AnnasArchive.API.Constants;
 using AnnasArchive.API.Helpers;
 using AnnasArchive.API.Models;
 using AnnasArchive.API.Services;
+using AnnasArchive.Core.Helpers;
 using AnnasArchive.Core.Services;
 using AnnasArchive.Core.Telemetry;
 using Microsoft.AspNetCore.Mvc;
@@ -18,9 +19,26 @@ namespace AnnasArchive.API.Endpoints;
 /// </summary>
 public static class AiBookSearchEndpoints
 {
-    // OpenLibrary author cache for suggest-authors endpoint
-    private static readonly Dictionary<string, (DateTime fetchedAt, List<AuthorSuggestion> authors)> OpenLibraryAuthorCache = new();
-    private static readonly object OpenLibraryAuthorCacheLock = new();
+    // OpenLibrary author cache for the suggest-authors endpoint. Bounded, and
+    // sized from the Caching:AuthorSuggestionCacheSize setting via
+    // ConfigureCache below — that setting existed, was documented and had a
+    // default, but nothing ever read it, so this cache previously grew without
+    // limit for the life of the process.
+    private static TtlCache<List<AuthorSuggestion>> _openLibraryAuthorCache =
+        new(capacity: 500, ttl: HttpTimeouts.AuthorCacheTtl);
+
+    /// <summary>
+    /// Applies the configured capacity. Mirrors LibraryEpubCache.ConfigureCache
+    /// and is called from ServiceConfiguration.ConfigureCaches at startup.
+    /// </summary>
+    public static void ConfigureCache(int capacity)
+    {
+        if (capacity > 0)
+        {
+            _openLibraryAuthorCache = new TtlCache<List<AuthorSuggestion>>(capacity, HttpTimeouts.AuthorCacheTtl);
+            Log.Information("[AiBookSearch] Author suggestion cache configured with capacity {Capacity}", capacity);
+        }
+    }
 
     /// <summary>
     /// Maps AI Book Search endpoints to the application.
@@ -161,14 +179,7 @@ Do NOT include any markdown formatting, explanations, or text outside the JSON a
                 try
                 {
                     // Remove markdown code blocks if present
-                    var cleanedText = rawText.Trim();
-                    if (cleanedText.StartsWith("```"))
-                    {
-                        cleanedText = cleanedText
-                            .Replace("```json", "")
-                            .Replace("```", "")
-                            .Trim();
-                    }
+                    var cleanedText = AiText.StripCodeFences(rawText);
 
                     // If the model adds extra text, extract the JSON array.
                     var arrayMatch = Regex.Match(cleanedText, @"\[[\s\S]*\]");
@@ -325,14 +336,7 @@ Rules:
                 try
                 {
                     // Remove markdown code blocks if present
-                    var cleanedText = rawText.Trim();
-                    if (cleanedText.StartsWith("```"))
-                    {
-                        cleanedText = cleanedText
-                            .Replace("```json", "")
-                            .Replace("```", "")
-                            .Trim();
-                    }
+                    var cleanedText = AiText.StripCodeFences(rawText);
 
                     var relatedDoc = JsonDocument.Parse(cleanedText);
 
@@ -691,14 +695,7 @@ Rules:
             if (string.IsNullOrWhiteSpace(rawText))
                 return Results.Problem("AI search returned empty response.");
 
-            var cleaned = rawText.Trim();
-            if (cleaned.StartsWith("```"))
-            {
-                cleaned = cleaned
-                    .Replace("```json", "")
-                    .Replace("```", "")
-                    .Trim();
-            }
+            var cleaned = AiText.StripCodeFences(rawText);
 
             JsonDocument resultDoc;
             try
@@ -795,14 +792,7 @@ Rules:
                     var retryText = aiResponseParser.ExtractText(retryDoc.RootElement);
                     if (!string.IsNullOrWhiteSpace(retryText))
                     {
-                        var retryClean = retryText.Trim();
-                        if (retryClean.StartsWith("```"))
-                        {
-                            retryClean = retryClean
-                                .Replace("```json", "")
-                                .Replace("```", "")
-                                .Trim();
-                        }
+                        var retryClean = AiText.StripCodeFences(retryText);
 
                         var retryResultDoc = JsonDocument.Parse(retryClean);
                         var retryRoot = retryResultDoc.RootElement;
@@ -952,14 +942,7 @@ Rules:
                 try
                 {
                     // Remove markdown code blocks if present
-                    var cleanedText = rawText.Trim();
-                    if (cleanedText.StartsWith("```"))
-                    {
-                        cleanedText = cleanedText
-                            .Replace("```json", "")
-                            .Replace("```", "")
-                            .Trim();
-                    }
+                    var cleanedText = AiText.StripCodeFences(rawText);
 
                     var matchDoc = JsonDocument.Parse(cleanedText);
 
@@ -1125,11 +1108,7 @@ Each inner array is a list of indices that are the same book.";
         {
             try
             {
-                var cleanedText = rawText.Trim();
-                if (cleanedText.StartsWith("```"))
-                {
-                    cleanedText = cleanedText.Replace("```json", "").Replace("```", "").Trim();
-                }
+                var cleanedText = AiText.StripCodeFences(rawText);
 
                 var groupDoc = JsonDocument.Parse(cleanedText);
                 if (groupDoc.RootElement.TryGetProperty("groups", out var groupsArray) && groupsArray.ValueKind == JsonValueKind.Array)
@@ -1169,34 +1148,23 @@ Each inner array is a list of indices that are the same book.";
 
     #region OpenLibrary Author Cache Helpers
 
+    // The cache compares keys case-insensitively itself, so these only need to
+    // trim. TTL and eviction now live in TtlCache rather than being re-checked
+    // by hand at each call site.
     private static bool TryGetOpenLibraryAuthorCache(string title, out List<AuthorSuggestion> authors)
     {
-        var key = title.Trim().ToLowerInvariant();
-        lock (OpenLibraryAuthorCacheLock)
+        if (_openLibraryAuthorCache.TryGet(title.Trim(), out var cached))
         {
-            if (OpenLibraryAuthorCache.TryGetValue(key, out var entry))
-            {
-                if (DateTime.UtcNow - entry.fetchedAt <= HttpTimeouts.AuthorCacheTtl)
-                {
-                    authors = entry.authors;
-                    return true;
-                }
-                OpenLibraryAuthorCache.Remove(key);
-            }
+            authors = cached;
+            return true;
         }
 
         authors = new List<AuthorSuggestion>();
         return false;
     }
 
-    private static void SetOpenLibraryAuthorCache(string title, List<AuthorSuggestion> authors)
-    {
-        var key = title.Trim().ToLowerInvariant();
-        lock (OpenLibraryAuthorCacheLock)
-        {
-            OpenLibraryAuthorCache[key] = (DateTime.UtcNow, authors);
-        }
-    }
+    private static void SetOpenLibraryAuthorCache(string title, List<AuthorSuggestion> authors) =>
+        _openLibraryAuthorCache.Set(title.Trim(), authors);
 
     private static async Task<List<AuthorSuggestion>> FetchAuthorsFromOpenLibraryAsync(string title, IHttpClientFactory httpFactory)
     {

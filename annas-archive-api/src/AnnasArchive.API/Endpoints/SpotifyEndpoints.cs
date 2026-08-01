@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using AnnasArchive.API.Models;
 using AnnasArchive.API.Services;
+using AnnasArchive.Core.Helpers;
 using AnnasArchive.Core.Services;
 using Microsoft.AspNetCore.Mvc;
 using Serilog;
@@ -264,12 +265,7 @@ public static class SpotifyEndpoints
             .GetString() ?? "{}";
 
         // Clean up potential markdown code blocks
-        messageContent = messageContent.Trim();
-        if (messageContent.StartsWith("```"))
-        {
-            var lines = messageContent.Split('\n');
-            messageContent = string.Join('\n', lines.Skip(1).TakeWhile(l => !l.StartsWith("```")));
-        }
+        messageContent = AiText.StripCodeFences(messageContent);
 
         var parsed = JsonSerializer.Deserialize<ParsedSpotifyCommand>(messageContent, new JsonSerializerOptions
         {
@@ -496,12 +492,7 @@ public static class SpotifyEndpoints
             .GetString() ?? "{}";
 
         // Clean up potential markdown code blocks
-        messageContent = messageContent.Trim();
-        if (messageContent.StartsWith("```"))
-        {
-            var lines = messageContent.Split('\n');
-            messageContent = string.Join('\n', lines.Skip(1).TakeWhile(l => !l.StartsWith("```")));
-        }
+        messageContent = AiText.StripCodeFences(messageContent);
 
         // Parse the AI response
         using var aiResponse = JsonDocument.Parse(messageContent);

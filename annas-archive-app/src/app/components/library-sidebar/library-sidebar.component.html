@@ -123,7 +123,7 @@
   <div class="admin-section" *ngIf="isAdmin">
     <button type="button" class="admin-toggle" (click)="onAdminToggle()">
       <span>Admin</span>
-      <span class="admin-caret">{{ adminOpen ? '▾' : '▸' }}</span>
+      <mat-icon class="admin-caret">{{ adminOpen ? 'expand_more' : 'chevron_right' }}</mat-icon>
     </button>
 
     <div class="admin-panel" *ngIf="adminOpen">

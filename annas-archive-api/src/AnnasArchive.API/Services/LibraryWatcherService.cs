@@ -13,6 +13,7 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Xml.Linq;
+using AnnasArchive.Core.Helpers;
 using AnnasArchive.API.Configuration;
 using AnnasArchive.API.Services.Library;
 using Microsoft.Extensions.Configuration;
@@ -627,80 +628,41 @@ public class LibraryWatcherService : BackgroundService
 
     private async Task<OpenLibraryData?> FetchOpenLibraryDataAsync(string title, string[] authors, CancellationToken token)
     {
-        try
-        {
-            using var http = _httpFactory.CreateClient();
-            http.Timeout = TimeSpan.FromSeconds(5);
+        // The named client, so this shares the retry/backoff/circuit-breaker
+        // policy. This used to call CreateClient() with a hand-set 5s timeout,
+        // which opted out of all of it — a transient OpenLibrary blip just lost
+        // the book's metadata.
+        var result = await OpenLibrarySearch.FindBestMatchAsync(
+            _httpFactory.CreateClient("OpenLibrary"), title, authors, token);
 
-            var author = authors.FirstOrDefault(a => !string.IsNullOrWhiteSpace(a));
-            var url = string.IsNullOrWhiteSpace(author)
-                ? $"https://openlibrary.org/search.json?title={Uri.EscapeDataString(title)}&limit=10"
-                : $"https://openlibrary.org/search.json?title={Uri.EscapeDataString(title)}&author={Uri.EscapeDataString(author)}&limit=10";
-            using var resp = await http.GetAsync(url, token);
-            if (!resp.IsSuccessStatusCode)
-                return null;
-
-            using var stream = await resp.Content.ReadAsStreamAsync(token);
-            using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: token);
-            if (!doc.RootElement.TryGetProperty("docs", out var docs) || docs.ValueKind != JsonValueKind.Array)
-                return null;
-
-            var best = (OpenLibraryData?)null;
-            foreach (var item in docs.EnumerateArray())
-            {
-                if (item.ValueKind != JsonValueKind.Object)
-                    continue;
-
-                var candidateTitle = item.TryGetProperty("title", out var titleProp) ? titleProp.GetString() : null;
-                var candidateAuthors = ExtractStringArray(item, "author_name");
-                var titleScore = TitleMatchScorer.TokenSimilarity(title, candidateTitle);
-                var authorScore = TitleMatchScorer.CandidateAuthorScore(authors, candidateAuthors);
-                var confidence = Math.Round((titleScore * 0.7) + (authorScore * 0.3), 3);
-
-                if (best == null || confidence > best.Confidence)
-                {
-                    string? coverUrl = null;
-                    if (item.TryGetProperty("cover_i", out var coverProp) && coverProp.ValueKind == JsonValueKind.Number)
-                    {
-                        var coverId = coverProp.GetInt32();
-                        coverUrl = $"https://covers.openlibrary.org/b/id/{coverId}-L.jpg";
-                    }
-
-                    var subjects = ExtractStringArray(item, "subject");
-                    var subjectFacets = ExtractStringArray(item, "subject_facet");
-                    var rawTags = subjectFacets.Length > 0 ? subjectFacets : subjects;
-
-                    // Map Open Library subjects to standard genre
-                    var primaryGenre = _genreClassification.ClassifyGenre(rawTags);
-
-                    // Extract useful tags (filter out generic terms and the primary genre)
-                    var tags = _genreClassification.ExtractTags(rawTags, primaryGenre, limit: 5);
-                    var series = ExtractStringArray(item, "series").FirstOrDefault();
-                    int? publishYear = null;
-                    if (item.TryGetProperty("first_publish_year", out var yearProp) && yearProp.ValueKind == JsonValueKind.Number)
-                        publishYear = yearProp.GetInt32();
-
-                    var isbns = ExtractStringArray(item, "isbn");
-                    best = new OpenLibraryData(
-                        coverUrl,
-                        primaryGenre,
-                        tags,
-                        series,
-                        candidateTitle,
-                        candidateAuthors,
-                        publishYear,
-                        confidence,
-                        isbns
-                    );
-                }
-            }
-
-            return best;
-        }
-        catch
-        {
+        if (result.BestDoc is not { } doc)
             return null;
-        }
+
+        string? coverUrl = null;
+        if (OpenLibrarySearch.ExtractInt(doc, "cover_i") is { } coverId)
+            coverUrl = $"https://covers.openlibrary.org/b/id/{coverId}-L.jpg";
+
+        var subjects = OpenLibrarySearch.ExtractStringArray(doc, "subject");
+        var subjectFacets = OpenLibrarySearch.ExtractStringArray(doc, "subject_facet");
+        var rawTags = subjectFacets.Length > 0 ? subjectFacets : subjects;
+
+        // Map Open Library subjects to standard genre
+        var primaryGenre = _genreClassification.ClassifyGenre(rawTags);
+
+        // Extract useful tags (filter out generic terms and the primary genre)
+        var tags = _genreClassification.ExtractTags(rawTags, primaryGenre, limit: 5);
+
+        return new OpenLibraryData(
+            coverUrl,
+            primaryGenre,
+            tags,
+            OpenLibrarySearch.ExtractStringArray(doc, "series").FirstOrDefault(),
+            doc.TryGetProperty("title", out var titleProp) ? titleProp.GetString() : null,
+            OpenLibrarySearch.ExtractStringArray(doc, "author_name"),
+            OpenLibrarySearch.ExtractInt(doc, "first_publish_year"),
+            result.Confidence,
+            OpenLibrarySearch.ExtractStringArray(doc, "isbn")
+        );
     }
 
     private async Task<string?> FetchGoogleBooksCoverAsync(string title, string[] authors, CancellationToken token)
@@ -953,14 +915,7 @@ Return JSON:
             if (string.IsNullOrWhiteSpace(text))
                 return null;
 
-            var cleaned = text.Trim();
-            if (cleaned.StartsWith("```"))
-            {
-                cleaned = cleaned
-                    .Replace("```json", "")
-                    .Replace("```", "")
-                    .Trim();
-            }
+            var cleaned = AiText.StripCodeFences(text);
 
             using var resultDoc = JsonDocument.Parse(cleaned);
             var root = resultDoc.RootElement;
@@ -1025,18 +980,10 @@ Return JSON:
         string? Url,
         double Score);
 
-    private static string[] ExtractStringArray(JsonElement element, string propertyName)
-    {
-        if (!element.TryGetProperty(propertyName, out var prop) || prop.ValueKind != JsonValueKind.Array)
-            return Array.Empty<string>();
-
-        return prop.EnumerateArray()
-            .Select(v => v.GetString())
-            .Where(v => !string.IsNullOrWhiteSpace(v))
-            .Select(v => v!.Trim())
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-    }
+    // Still needed for parsing the AI's JSON replies below; the OpenLibrary
+    // path now goes through OpenLibrarySearch directly.
+    private static string[] ExtractStringArray(JsonElement element, string propertyName) =>
+        OpenLibrarySearch.ExtractStringArray(element, propertyName);
 
     private static double? TryGetDouble(JsonElement element, string propertyName)
     {
@@ -1178,14 +1125,7 @@ Return JSON with:
             if (string.IsNullOrWhiteSpace(text))
                 return null;
 
-            var cleaned = text.Trim();
-            if (cleaned.StartsWith("```"))
-            {
-                cleaned = cleaned
-                    .Replace("```json", "")
-                    .Replace("```", "")
-                    .Trim();
-            }
+            var cleaned = AiText.StripCodeFences(text);
 
             using var resultDoc = JsonDocument.Parse(cleaned);
             var root = resultDoc.RootElement;

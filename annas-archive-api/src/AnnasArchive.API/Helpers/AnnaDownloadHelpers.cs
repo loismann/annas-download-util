@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using AnnasArchive.Core.Helpers;
 using AnnasArchive.Core.Models;
 using AnnasArchive.Core.Services;
 
@@ -70,9 +71,9 @@ public static class AnnaDownloadHelpers
         if (resp == null || !resp.IsSuccessStatusCode)
             return (null, null, acctInfo, "Download failed.");
 
-        // Sanitize title
+        // Sanitize title — untrusted, it comes from the Anna's Archive listing.
         var rawTitle  = !string.IsNullOrWhiteSpace(title) ? title : md5;
-        var safeTitle = Regex.Replace(rawTitle, $"[{Regex.Escape(new string(Path.GetInvalidFileNameChars()))}]", "_");
+        var safeTitle = SafeFileName.ForUserInput(rawTitle, fallback: md5);
 
         // Determine file extension
         var ext = Path.GetExtension(new Uri(downloadUrl).AbsolutePath);

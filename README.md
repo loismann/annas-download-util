@@ -1,102 +1,107 @@
 # Anna's Archive Download Utility
 
-Full-stack application for managing Anna's Archive downloads with automated testing and deployment.
+A self-hosted media stack for a single household: ebook search and download,
+an in-app EPUB/PDF reader with AI summaries, audiobooks, TV/movie management,
+and a weekly "Date Night" movie picker.
 
-## Quick Start
-
-### One-Time Setup
-
-Add to your shell profile (`~/.zshrc` or `~/.bash_profile`):
-
-```bash
-export E2E_ACCESS_CODE=your-access-code
-export SYNOLOGY_USER=your-user
-export SYNOLOGY_HOST=your-host
-export SYNOLOGY_PASS=your-password
-```
-
-Reload: `source ~/.zshrc`
-
-### Commands
-
-Run from **any directory**:
-
-```bash
-# Run E2E tests (headless, with file selection)
-./scripts/test-e2e.sh
-
-# Run unit tests only (backend + frontend)
-./scripts/test-unit.sh
-
-# Deploy with unit tests only (faster)
-./scripts/deploy-unit-only.sh
-
-# Deploy with all tests (unit + E2E)
-./scripts/deploy-full.sh
-```
-
-## What These Commands Do
-
-**test-e2e.sh** - E2E testing with file selection
-- Interactive file selection - choose specific tests or run all
-- Starts API (ports 5050, 5001) with test rate limits
-- Starts frontend (port 4200)
-- Runs selected E2E tests (including GPT-4 live tests)
-- Cleans up automatically (even on Ctrl+C)
-
-**test-unit.sh** - Unit tests only
-- Runs backend unit tests (87+ tests)
-- Runs frontend unit tests (103+ tests)
-- Fast execution, no external dependencies
-- No API/frontend startup required
-
-**deploy-unit-only.sh** - Deploy with unit tests only
-1. Runs backend unit tests (87+ tests)
-2. Runs frontend unit tests (103+ tests)
-3. Builds backend + deploys to Synology
-4. Restarts API with production rate limits
-5. Builds frontend + deploys to Synology
-- Faster than full deploy, good for quick iterations
-
-**deploy-full.sh** - Full deployment with all tests (Recommended)
-1. Runs backend unit tests (87+ tests)
-2. Runs frontend unit tests (103+ tests)
-3. Runs E2E tests with file selection (including GPT-4 live tests)
-4. Builds backend + deploys to Synology
-5. Restarts API with production rate limits
-6. Builds frontend + deploys to Synology
-- Comprehensive validation before deployment
-
-## Features
-
-- **Automatic Setup**: Starts API, frontend, manages ports, creates cache directories
-- **Graceful Shutdown**: Ctrl+C cleans up all processes
-- **Higher Rate Limits for Testing**: API: 200/min, Login: 100/min (vs production 300/30)
-- **Interactive Test Selection**: Choose specific E2E test files or run all tests
-- **AI Tests**: GPT-4 live tests included with automatic retry logic for rate limiting
-- **Comprehensive Logging**: All output saved to `test-logs/` or `deployment-logs/`
-
-## Documentation
-
-See [DOCS/DEPLOYMENT_GUIDE.md](DOCS/DEPLOYMENT_GUIDE.md) for detailed information including:
-- Manual deployment steps
-- Security configuration
-- Synology infrastructure setup
-- Troubleshooting guide
+Angular 19 frontend + .NET 8 API, deployed as a Docker Compose stack on a
+UGREEN NAS and reachable only over a private Tailscale network.
 
 ## Architecture
 
-**Production:**
-- Frontend: Angular 19 (SSR) → https://fs01pfbooks.synology.me
-- API: .NET 8 → https://fs01pfbooks.synology.me:5051
-- Reverse Proxy: Synology Nginx (SSL termination)
-- SSL Certificate: Let's Encrypt (auto-renewed)
+Everything runs as one Compose stack. The app container publishes to
+**loopback only** (`127.0.0.1:8080`) and is never exposed on the LAN —
+`tailscale serve` proxies from the tailnet to that port, so the only way in
+is from a device on your own tailnet.
 
-**Local Development:**
-- Frontend: http://localhost:4200
-- API: http://localhost:5050 (auth), http://localhost:5001 (API)
+| Service | Role |
+| --- | --- |
+| `annas-archive` | The app itself (Angular frontend + .NET 8 API in one image) |
+| `gluetun` | VPN gateway. Only the Anna's Archive HTTP client and the Playwright browser route through it |
+| `gluetun-torrent` | Separate VPN gateway for the torrent path, with its own region |
+| `qbittorrent`, `sabnzbd` | Download clients, behind `gluetun-torrent` |
+| `prowlarr`, `sonarr`, `radarr` | Indexer + TV/movie automation |
+| `jellyfin`, `jellyfin-proxy` | Media server and the nginx proxy the embedded player's iframe points at |
+| `plex` | Second media server (optional) |
+| `audiobookshelf` | Audiobook library and streaming |
+| `seq` | Structured log ingestion, internal network only |
+| `autoheal` | Restarts containers that report unhealthy |
 
-**Testing:**
-- E2E Tests: Playwright with Chrome (5 live GPT-4 tests with retry logic)
-- Unit Tests: Backend (.NET 8 xUnit) + Frontend (Karma/Jasmine)
-- Total: 195+ tests (87+ backend unit, 103+ frontend unit, 5+ E2E)
+## Setup
+
+### 1. Configuration
+
+Two files hold all secrets. Both are gitignored — never commit a filled-in copy.
+
+```bash
+# Stack-level config (VPN, *arr API keys, Tailscale hostname)
+cp .env.example .env
+
+# App-level config (OpenAI, Dropbox, access codes, SMTP)
+cp annas-archive-api/src/AnnasArchive.API/appsettings.Template.json \
+   annas-archive-api/src/AnnasArchive.API/appsettings.json
+```
+
+Both templates document every field inline, including which ones are optional
+and which can only be filled in *after* a first deploy (Sonarr, Radarr,
+Jellyfin and Audiobookshelf each generate their own API key on first boot —
+deploy once, collect the keys from their web UIs, fill them in, redeploy).
+
+Access codes must be BCrypt hashes at cost 12. Plaintext codes are not
+supported.
+
+### 2. Tailscale
+
+Set `TAILSCALE_HOSTNAME` in `.env` to this machine's MagicDNS name (`tailscale
+status` will show it). It is used to build the Jellyfin embed URL and to scope
+the CSP header that permits that iframe, so the embedded player will not work
+until it is set.
+
+Then, on the NAS:
+
+```bash
+tailscale serve --bg 8080
+```
+
+### 3. Deploy
+
+```bash
+npm run deploy:docker
+```
+
+This rsyncs the source tree to the NAS over SSH and builds there — a native
+x86_64 build, avoiding cross-architecture emulation from an Apple Silicon Mac.
+Logs land in `deployment-logs/` (gitignored).
+
+The script uses `set -eo pipefail` deliberately: every remote command is piped
+through `tee`, and without `pipefail` a failed remote build would be masked by
+`tee`'s successful exit and reported as a successful deploy.
+
+## Local development
+
+```bash
+# Frontend — http://localhost:4200
+cd annas-archive-app && npm start
+
+# API — http://localhost:5050
+cd annas-archive-api/src/AnnasArchive.API && dotnet run
+```
+
+The frontend proxies API calls in development, so both must be running.
+
+## Tests
+
+```bash
+npm run test:unit    # backend (xUnit) + frontend (Karma/Jasmine)
+npm run test:e2e     # Playwright, interactive test selection
+```
+
+`test:e2e` starts its own API and frontend with relaxed rate limits, then
+cleans up on exit (including on Ctrl+C). It needs `E2E_ACCESS_CODE` exported
+in your shell.
+
+## Documentation
+
+- [DOCS/DATE_NIGHT_FEATURE.md](DOCS/DATE_NIGHT_FEATURE.md) — the weekly movie-picker feature
+- [DOCS/PROJECT_AUDIT.md](DOCS/PROJECT_AUDIT.md) — security/duplication findings, reference material
+- [REFACTORING_TODO.md](REFACTORING_TODO.md) — the single tracked list of open work

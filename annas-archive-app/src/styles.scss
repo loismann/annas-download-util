@@ -7,6 +7,12 @@
    @use before any other rule. */
 @use 'styles/theater';
 
+/* The sidebar+panel layout shared by the ebook library, TV & movie library,
+   audiobooks and video library. Global for the same reason as above: Angular's
+   emulated encapsulation would stop a component stylesheet from reaching four
+   different components' markup. */
+@use 'styles/library-layout';
+
 /* Import Angular Material’s Indigo-Pink theme */
 @import '@angular/material/prebuilt-themes/indigo-pink.css';
 

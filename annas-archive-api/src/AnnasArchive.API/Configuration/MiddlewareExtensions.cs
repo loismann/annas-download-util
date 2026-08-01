@@ -1,6 +1,7 @@
 using System.Net;
 using System.Security.Claims;
 using System.Text.Json;
+using AnnasArchive.API.Constants;
 using AnnasArchive.API.Services;
 using AnnasArchive.Core.Exceptions;
 using Serilog;
@@ -63,9 +64,15 @@ public static class MiddlewareExtensions
     }
 
     /// <summary>
-    /// Adds request body size limit middleware (10MB for JSON payloads).
+    /// Adds request body size limit middleware.
+    ///
+    /// The default is <see cref="Limits.MaxRequestBodySize"/> so it agrees with
+    /// Kestrel's own limit. It used to default to 10 MB — below both the
+    /// Kestrel limit and the upload endpoint's — which meant any caller that
+    /// forgot to pass a value would silently reject uploads Kestrel had already
+    /// accepted.
     /// </summary>
-    public static WebApplication UseRequestBodySizeLimit(this WebApplication app, long maxBodySize = 10 * 1024 * 1024)
+    public static WebApplication UseRequestBodySizeLimit(this WebApplication app, long maxBodySize = Limits.MaxRequestBodySize)
     {
         app.Use(async (context, next) =>
         {

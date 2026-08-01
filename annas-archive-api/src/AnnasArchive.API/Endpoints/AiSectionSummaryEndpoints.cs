@@ -3,6 +3,7 @@ using System.Text.RegularExpressions;
 using AnnasArchive.API.Configuration;
 using AnnasArchive.API.Helpers;
 using AnnasArchive.API.Models;
+using AnnasArchive.Core.Helpers;
 using AnnasArchive.Core.Services;
 using Dropbox.Api;
 using Microsoft.AspNetCore.Mvc;
@@ -363,14 +364,7 @@ Return format (JSON only, no explanation):
                     try
                     {
                         // Try to extract JSON from response (handle markdown code blocks)
-                        var cleanedText = aiText.Trim();
-
-                        // Remove markdown code blocks if present
-                        if (cleanedText.StartsWith("```"))
-                        {
-                            var lines = cleanedText.Split('\n');
-                            cleanedText = string.Join('\n', lines.Skip(1).SkipLast(1));
-                        }
+                        var cleanedText = AiText.StripCodeFences(aiText);
 
                         // Try direct JSON parse first
                         JsonDocument? jsonDoc = null;

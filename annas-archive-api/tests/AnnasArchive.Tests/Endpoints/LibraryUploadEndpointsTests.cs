@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using AnnasArchive.Core.Helpers;
 using Xunit;
 
 namespace AnnasArchive.Tests.Endpoints;
@@ -55,15 +56,25 @@ public class LibraryUploadEndpointsTests
         Assert.Equal(string.Empty, result);
     }
 
-    // TODO: Investigate why this test fails - the logic appears correct
-    // [Fact]
-    // public void SanitizeFileName_ControlCharacters_Removed()
-    // {
-    //     var result = SanitizeFileName("book\x00\x1f.epub");
-    //     Assert.Equal("book.epub", result);
-    //     Assert.DoesNotContain("\x00", result);
-    //     Assert.DoesNotContain("\x1f", result);
-    // }
+    [Fact]
+    public void SanitizeFileName_ControlCharacters_Removed()
+    {
+        // Note the explicit \x0000 / \x001f: C#'s \x escape is variable-length
+        // and greedily eats up to four hex digits, so "\x00\x1f" does not mean
+        // what it looks like it means. That ambiguity is the likeliest reason
+        // this test was originally written as failing and commented out.
+        var result = SanitizeFileName("book\x0000\x001f.epub");
+
+        Assert.Equal("book.epub", result);
+    }
+
+    [Fact]
+    public void SanitizeFileName_DeleteCharacter_Removed()
+    {
+        // 0x7F sits above the 0x20 floor the old implementation checked, so it
+        // used to survive into the filename.
+        Assert.Equal("book.epub", SanitizeFileName("book\x007f.epub"));
+    }
 
     [Fact]
     public void SanitizeFileName_VeryLongFilename_Truncated()
@@ -181,47 +192,16 @@ public class LibraryUploadEndpointsTests
     #endregion
 
     /// <summary>
-    /// Helper: Sanitizes a filename (mirrors the endpoint logic).
+    /// Calls the real sanitiser the upload endpoint uses.
+    ///
+    /// This used to be a hand-copied "mirrors the endpoint logic" duplicate,
+    /// which meant these tests asserted against the copy and would have passed
+    /// even if the endpoint's own sanitisation were deleted outright. The empty
+    /// fallback matches what the endpoint passes, since it treats a blank result
+    /// as "reject this upload".
     /// </summary>
-    private static string SanitizeFileName(string fileName)
-    {
-        if (string.IsNullOrWhiteSpace(fileName))
-            return string.Empty;
-
-        // Handle both Unix and Windows path separators for cross-platform compatibility
-        var name = fileName;
-        var lastSlash = Math.Max(name.LastIndexOf('/'), name.LastIndexOf('\\'));
-        if (lastSlash >= 0)
-            name = name.Substring(lastSlash + 1);
-
-        // Remove control characters (0x00-0x1F)
-        var sb = new System.Text.StringBuilder();
-        foreach (var c in name)
-        {
-            if (c >= 0x20) // Only keep characters >= space
-                sb.Append(c);
-        }
-        name = sb.ToString();
-
-        var invalidChars = Path.GetInvalidFileNameChars();
-        foreach (var c in invalidChars)
-        {
-            name = name.Replace(c, '_');
-        }
-
-        name = name.Replace("..", "_");
-        name = name.Trim().Trim('.');
-
-        if (name.Length > 255)
-        {
-            var ext = Path.GetExtension(name);
-            var baseName = Path.GetFileNameWithoutExtension(name);
-            var maxBaseLength = 255 - ext.Length;
-            name = baseName.Substring(0, Math.Min(baseName.Length, maxBaseLength)) + ext;
-        }
-
-        return name;
-    }
+    private static string SanitizeFileName(string fileName) =>
+        SafeFileName.ForUserInput(fileName, fallback: string.Empty);
 
     /// <summary>
     /// Helper: Gets file extension from filename.

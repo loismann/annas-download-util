@@ -44,9 +44,16 @@ public static class Limits
     // ========================================================================
 
     /// <summary>
-    /// Maximum request body size in bytes (20 MB).
+    /// Maximum request body size in bytes (500 MB).
+    ///
+    /// The single source of truth for this, referenced by Kestrel's limit, the
+    /// body-size middleware and the upload endpoint alike. It is sized for the
+    /// largest thing anyone actually posts — an ebook upload.
+    ///
+    /// This constant previously said 20 MB while nothing read it and the three
+    /// real limits were set independently to 500 MB, 500 MB and 10 MB.
     /// </summary>
-    public const int MaxRequestBodySize = 20 * 1024 * 1024;
+    public const long MaxRequestBodySize = 500L * 1024 * 1024;
 
     /// <summary>
     /// Maximum cover candidates to return from lookup.

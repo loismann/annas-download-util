@@ -29,11 +29,6 @@ public class LibGenService
         "https://libgen.vg"
     };
 
-    private const int MaxDetailFetches = 5;
-    private static readonly TimeSpan DetailCacheTtl = TimeSpan.FromHours(12);
-    private static readonly Dictionary<string, (DateTime fetchedAt, string? isbn, string? cover)> DetailCache = new();
-    private static readonly object DetailCacheLock = new();
-
     public async Task<IEnumerable<BookDto>> SearchAsync(string query, int limit = 50, bool exact = false)
     {
         Log.Information("[LibGen] SearchAsync called with query={Query}, limit={Limit}, exact={Exact}", query, limit, exact);

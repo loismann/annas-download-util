@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using AnnasArchive.API.Helpers;
 using AnnasArchive.API.Models;
+using AnnasArchive.Core.Helpers;
 using Serilog;
 
 namespace AnnasArchive.API.Services;
@@ -615,12 +616,11 @@ public class YouTubeDownloadService : IYouTubeDownloadService, IDisposable
         }
     }
 
-    private static string SanitizeFileName(string name)
-    {
-        var invalid = Path.GetInvalidFileNameChars();
-        var sanitized = new string(name.Select(c => invalid.Contains(c) ? '_' : c).ToArray());
-        return sanitized.Length > 200 ? sanitized[..200] : sanitized;
-    }
+    // Video titles are attacker-controlled in the general case, so this takes
+    // the path-stripping variant. 200 rather than the 255 default to leave room
+    // for the suffixes yt-dlp appends (format id, extension).
+    private static string SanitizeFileName(string name) =>
+        SafeFileName.ForUserInput(name, maxLength: 200, fallback: "video");
 
     public DownloadJob? GetJobStatus(string jobId)
     {

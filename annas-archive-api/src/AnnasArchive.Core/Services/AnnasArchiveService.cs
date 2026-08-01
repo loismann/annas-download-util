@@ -11,6 +11,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Diagnostics;
 using HtmlAgilityPack;
+using AnnasArchive.Core.Helpers;
 using AnnasArchive.Core.Models;
 using AnnasArchive.Core.Telemetry;
 using Microsoft.Extensions.Caching.Memory;
@@ -369,10 +370,8 @@ public class AnnaArchiveService
     private static readonly Regex IsbnRx =
         new(@"ISBN(?:-1[03])?:?\s*([0-9Xx\-]{10,17})", RegexOptions.IgnoreCase);
 
-    private const int IsbnCoverCacheLimit = 2000;
-    private static readonly Dictionary<string, (DateTime fetchedAt, string? coverUrl)> IsbnCoverCache = new();
-    private static readonly object IsbnCoverCacheLock = new();
-    private static readonly TimeSpan IsbnCoverCacheTtl = TimeSpan.FromHours(12);
+    private static readonly TtlCache<string?> IsbnCoverCache =
+        new(capacity: 2000, ttl: TimeSpan.FromHours(12));
 
     /// <summary>
     /// Looks up a book's cover via its ISBN, extracted from Anna's Archive's
@@ -389,14 +388,8 @@ public class AnnaArchiveService
             return null;
 
         var key = md5.ToLowerInvariant();
-        lock (IsbnCoverCacheLock)
-        {
-            if (IsbnCoverCache.TryGetValue(key, out var cached) &&
-                DateTime.UtcNow - cached.fetchedAt <= IsbnCoverCacheTtl)
-            {
-                return cached.coverUrl;
-            }
-        }
+        if (IsbnCoverCache.TryGet(key, out var cachedCoverUrl))
+            return cachedCoverUrl;
 
         string? coverUrl = null;
         try
@@ -419,15 +412,9 @@ public class AnnaArchiveService
             Console.WriteLine($"[AnnaArchiveService] GetCoverByMd5Async md5={key} failed: {ex.GetType().Name}: {ex.Message}");
         }
 
-        lock (IsbnCoverCacheLock)
-        {
-            // Simple unbounded-growth guard — this is a lazy best-effort cache,
-            // not something that needs LRU precision.
-            if (IsbnCoverCache.Count >= IsbnCoverCacheLimit)
-                IsbnCoverCache.Clear();
-
-            IsbnCoverCache[key] = (DateTime.UtcNow, coverUrl);
-        }
+        // Negative results are cached too: a book with no ISBN on its detail
+        // page would otherwise re-fetch that page on every single render.
+        IsbnCoverCache.Set(key, coverUrl);
 
         return coverUrl;
     }

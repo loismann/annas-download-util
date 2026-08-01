@@ -69,8 +69,8 @@
       [disabled]="!book.fileName || !canSendToKindle || book.dadsKindleState === 'sending'">
       <ng-container [ngSwitch]="book.dadsKindleState">
         <span *ngSwitchCase="'sending'">Sending…</span>
-        <span *ngSwitchCase="'success'">✔ Sent</span>
-        <span *ngSwitchCase="'error'">✖ Retry</span>
+        <span *ngSwitchCase="'success'"><mat-icon inline>check</mat-icon> Sent</span>
+        <span *ngSwitchCase="'error'"><mat-icon inline>refresh</mat-icon> Retry</span>
         <ng-container *ngSwitchDefault>
           <span class="kindle-btn-full">Dad's Kindle</span>
           <span class="kindle-btn-compact"><mat-icon>send</mat-icon>D</span>
@@ -84,8 +84,8 @@
       [disabled]="!book.fileName || !canSendToKindle || book.momsKindleState === 'sending'">
       <ng-container [ngSwitch]="book.momsKindleState">
         <span *ngSwitchCase="'sending'">Sending…</span>
-        <span *ngSwitchCase="'success'">✔ Sent</span>
-        <span *ngSwitchCase="'error'">✖ Retry</span>
+        <span *ngSwitchCase="'success'"><mat-icon inline>check</mat-icon> Sent</span>
+        <span *ngSwitchCase="'error'"><mat-icon inline>refresh</mat-icon> Retry</span>
         <ng-container *ngSwitchDefault>
           <span class="kindle-btn-full">Mom's Kindle</span>
           <span class="kindle-btn-compact"><mat-icon>send</mat-icon>M</span>
@@ -111,8 +111,8 @@
       [disabled]="!book.fileName || !canSendToKindle || book.dropboxState === 'sending'">
       <ng-container [ngSwitch]="book.dropboxState">
         <span *ngSwitchCase="'sending'">Sending…</span>
-        <span *ngSwitchCase="'success'">✔ Sent to Dropbox</span>
-        <span *ngSwitchCase="'error'">✖ Retry Dropbox</span>
+        <span *ngSwitchCase="'success'"><mat-icon inline>check</mat-icon> Sent to Dropbox</span>
+        <span *ngSwitchCase="'error'"><mat-icon inline>refresh</mat-icon> Retry Dropbox</span>
         <span *ngSwitchDefault>Dropbox</span>
       </ng-container>
     </button>

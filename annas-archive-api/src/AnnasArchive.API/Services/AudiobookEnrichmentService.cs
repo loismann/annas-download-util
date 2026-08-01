@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Net.Http.Json;
 using System.Text.Json;
+using AnnasArchive.Core.Helpers;
 using AnnasArchive.API.Configuration;
 using AnnasArchive.API.Services.Library;
 using Serilog;
@@ -466,52 +467,32 @@ public class AudiobookEnrichmentService : BackgroundService
     {
         if (rateLimits.IsTripped("OpenLibrary")) return null;
 
-        try
+        // Named, resilience-wrapped client (retry + exponential backoff + circuit
+        // breaker via .AddStandardResilience("OpenLibrary") in
+        // ServiceConfiguration.cs) — same pattern GoogleBooks/OpenAI below use.
+        var result = await OpenLibrarySearch.FindBestMatchAsync(
+            _httpFactory.CreateClient("OpenLibrary"), title, authors, token);
+
+        rateLimits.RecordResult("OpenLibrary", result.RequestSucceeded);
+
+        if (!result.RequestSucceeded)
         {
-            // Named, resilience-wrapped client (retry + exponential backoff + circuit breaker
-            // via .AddStandardResilience("OpenLibrary") in ServiceConfiguration.cs) — same
-            // pattern GoogleBooks/OpenAI below already use.
-            var http = _httpFactory.CreateClient("OpenLibrary");
-
-            var author = authors.FirstOrDefault();
-            var url = string.IsNullOrWhiteSpace(author)
-                ? $"search.json?title={Uri.EscapeDataString(title)}&limit=10"
-                : $"search.json?title={Uri.EscapeDataString(title)}&author={Uri.EscapeDataString(author)}&limit=10";
-
-            using var resp = await http.GetAsync(url, token);
-            rateLimits.RecordResult("OpenLibrary", resp.IsSuccessStatusCode);
-            if (!resp.IsSuccessStatusCode) return null;
-
-            using var stream = await resp.Content.ReadAsStreamAsync(token);
-            using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: token);
-            if (!doc.RootElement.TryGetProperty("docs", out var docs) || docs.ValueKind != JsonValueKind.Array)
-                return null;
-
-            AudiobookMatch? best = null;
-            foreach (var item in docs.EnumerateArray())
-            {
-                if (item.ValueKind != JsonValueKind.Object) continue;
-                var candidateTitle = item.TryGetProperty("title", out var t) ? t.GetString() : null;
-                var candidateAuthors = item.TryGetProperty("author_name", out var a) && a.ValueKind == JsonValueKind.Array
-                    ? a.EnumerateArray().Select(x => x.GetString()).Where(x => x is not null).Select(x => x!).ToArray()
-                    : Array.Empty<string>();
-
-                var confidence = TitleMatchScorer.Confidence(title, candidateTitle, authors, candidateAuthors);
-                if (best is null || confidence > best.Confidence)
-                {
-                    int? year = item.TryGetProperty("first_publish_year", out var y) && y.ValueKind == JsonValueKind.Number
-                        ? y.GetInt32() : null;
-                    best = new AudiobookMatch(candidateTitle ?? title, candidateAuthors.FirstOrDefault(), year, "OpenLibrary", confidence);
-                }
-            }
-            return best;
-        }
-        catch (Exception ex)
-        {
-            rateLimits.RecordResult("OpenLibrary", success: false);
-            Log.Debug("[AudiobookEnrichment] OpenLibrary lookup failed for '{Title}': {Message}", title, ex.Message);
+            Log.Debug("[AudiobookEnrichment] OpenLibrary lookup failed for '{Title}'", title);
             return null;
         }
+
+        if (result.BestDoc is not { } doc)
+            return null;
+
+        var candidateTitle = doc.TryGetProperty("title", out var t) ? t.GetString() : null;
+        var candidateAuthors = OpenLibrarySearch.ExtractStringArray(doc, "author_name");
+
+        return new AudiobookMatch(
+            candidateTitle ?? title,
+            candidateAuthors.FirstOrDefault(),
+            OpenLibrarySearch.ExtractInt(doc, "first_publish_year"),
+            "OpenLibrary",
+            result.Confidence);
     }
 
     private async Task<AudiobookMatch?> FetchGoogleBooksMatchAsync(string title, string[] authors, ScanRateLimitState rateLimits, CancellationToken token)
@@ -646,9 +627,7 @@ Confidence rubric — use the actual scale, don't default to round numbers:
                 return null;
             }
 
-            var cleaned = text.Trim();
-            if (cleaned.StartsWith("```"))
-                cleaned = cleaned.Replace("```json", "").Replace("```", "").Trim();
+            var cleaned = AiText.StripCodeFences(text);
 
             using var resultDoc = JsonDocument.Parse(cleaned);
             var root = resultDoc.RootElement;

@@ -4,6 +4,7 @@ using AnnasArchive.API.Configuration;
 using AnnasArchive.API.Helpers;
 using AnnasArchive.API.Models;
 using AnnasArchive.API.Services;
+using AnnasArchive.Core.Helpers;
 using AnnasArchive.Core.Services;
 using AnnasArchive.Core.Telemetry;
 using Microsoft.AspNetCore.Mvc;
@@ -118,11 +119,7 @@ Rules:
             if (string.IsNullOrWhiteSpace(rawText))
                 return Results.Problem("AI search returned empty response.");
 
-            var cleaned = rawText.Trim();
-            if (cleaned.StartsWith("```"))
-            {
-                cleaned = cleaned.Replace("```json", "").Replace("```", "").Trim();
-            }
+            var cleaned = AiText.StripCodeFences(rawText);
 
             JsonDocument resultDoc;
             try
@@ -188,11 +185,7 @@ Rules:
                     var retryText = aiResponseParser.ExtractText(retryDoc.RootElement);
                     if (!string.IsNullOrWhiteSpace(retryText))
                     {
-                        var retryClean = retryText.Trim();
-                        if (retryClean.StartsWith("```"))
-                        {
-                            retryClean = retryClean.Replace("```json", "").Replace("```", "").Trim();
-                        }
+                        var retryClean = AiText.StripCodeFences(retryText);
 
                         var retryResultDoc = JsonDocument.Parse(retryClean);
                         var retryRoot = retryResultDoc.RootElement;

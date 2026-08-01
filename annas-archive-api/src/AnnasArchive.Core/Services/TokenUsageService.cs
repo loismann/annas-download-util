@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using AnnasArchive.Core.Helpers;
 using Serilog;
 
 namespace AnnasArchive.Core.Services;
@@ -34,8 +35,10 @@ public class TokenUsageService : ITokenUsageService
 
     private string GetUserFilePath(string userId)
     {
-        // Sanitize userId for file system
-        var sanitized = string.Join("_", userId.Split(Path.GetInvalidFileNameChars()));
+        // ForKey, not ForUserInput: this filename is where a person's running
+        // monthly AI spend lives, so the mapping from userId to file must stay
+        // stable. Changing it would silently hand everyone a fresh allowance.
+        var sanitized = SafeFileName.ForKey(userId);
         return Path.Combine(_storageDirectory, $"{sanitized}.json");
     }
 

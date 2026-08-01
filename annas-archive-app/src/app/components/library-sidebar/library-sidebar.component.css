@@ -108,6 +108,15 @@
   margin-top: 4px;
 }
 
+/* Sized down from mat-icon's 24px default so the caret stays proportional to
+   the 0.85rem label beside it, matching the ▾/▸ glyph it replaced. */
+.admin-caret {
+  font-size: 18px;
+  width: 18px;
+  height: 18px;
+  color: #64748b;
+}
+
 .admin-toggle {
   width: 100%;
   display: flex;

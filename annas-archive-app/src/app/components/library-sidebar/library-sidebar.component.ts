@@ -6,6 +6,7 @@ import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCheckboxModule } from '@angular/material/checkbox';
+import { MatIconModule } from '@angular/material/icon';
 
 export interface AdminFilters {
   filterMissingAuthor: boolean;
@@ -25,7 +26,8 @@ export interface AdminFilters {
     MatInputModule,
     MatSelectModule,
     MatButtonModule,
-    MatCheckboxModule
+    MatCheckboxModule,
+    MatIconModule
   ],
   templateUrl: './library-sidebar.component.html',
   styleUrls: ['./library-sidebar.component.css']

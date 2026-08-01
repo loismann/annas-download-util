@@ -1,6 +1,7 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
+using AnnasArchive.API.Helpers;
 using AnnasArchive.API.Models;
 using AnnasArchive.API.Services;
 using Microsoft.IdentityModel.Tokens;
@@ -108,25 +109,10 @@ public static class AuthEndpoints
         var currentUser = context.User?.FindFirst(ClaimTypes.Name)?.Value ?? "";
         var now = DateTime.UtcNow;
 
-        // Get access codes from config to find actual user names
-        var codesSection = cfg.GetSection("Auth:AccessCodes");
-        var codes = codesSection.Get<List<AccessCode>>() ?? new List<AccessCode>();
-
-        // Build user mappings dynamically: find users whose names contain "(Mom)" or "(Dad)"
-        // Map: actual full name -> display initial
-        var userInitials = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-
-        foreach (var code in codes)
-        {
-            if (code.Name.Contains("(Mom)", StringComparison.OrdinalIgnoreCase))
-            {
-                userInitials[code.Name] = "M";
-            }
-            else if (code.Name.Contains("(Dad)", StringComparison.OrdinalIgnoreCase))
-            {
-                userInitials[code.Name] = "D";
-            }
-        }
+        // Full account name -> the initial shown in the presence indicator.
+        // Driven by Auth:AccessCodes[].Initial where configured; see
+        // UserHelpers.GetPresenceInitials for the legacy fallback.
+        var userInitials = UserHelpers.GetPresenceInitials(cfg);
 
         var activityList = new List<object>();
 

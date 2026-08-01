@@ -1,5 +1,7 @@
+using AnnasArchive.API.Constants;
 using AnnasArchive.API.Helpers;
 using AnnasArchive.API.Services.Library;
+using AnnasArchive.Core.Helpers;
 using Microsoft.AspNetCore.Mvc;
 using Serilog;
 
@@ -16,7 +18,9 @@ public static class LibraryUploadEndpoints
         ".epub", ".pdf", ".mobi", ".azw3", ".azw", ".kfx", ".pobi", ".fb2", ".txt", ".rtf", ".lit", ".djvu"
     };
 
-    private const long MaxFileSizeBytes = 500 * 1024 * 1024; // 500MB
+    // Same ceiling as Kestrel and the body-size middleware, so a file that gets
+    // past the transport is never rejected here for a different reason.
+    private const long MaxFileSizeBytes = Limits.MaxRequestBodySize;
 
     /// <summary>
     /// Maps Library upload endpoints to the application.
@@ -180,49 +184,11 @@ public static class LibraryUploadEndpoints
 
     /// <summary>
     /// Sanitizes a filename to prevent directory traversal and remove unsafe characters.
+    ///
+    /// An empty fallback rather than the shared default: the caller treats a
+    /// blank result as "reject this upload", so a name that sanitises away to
+    /// nothing must stay blank instead of becoming a plausible-looking file.
     /// </summary>
-    private static string SanitizeFileName(string fileName)
-    {
-        if (string.IsNullOrWhiteSpace(fileName))
-            return string.Empty;
-
-        // Handle both Unix and Windows path separators for cross-platform compatibility
-        var name = fileName;
-        var lastSlash = Math.Max(name.LastIndexOf('/'), name.LastIndexOf('\\'));
-        if (lastSlash >= 0)
-            name = name.Substring(lastSlash + 1);
-
-        // Remove any null bytes or control characters (0x00-0x1F)
-        var sb = new System.Text.StringBuilder();
-        foreach (var c in name)
-        {
-            if (c >= 0x20) // Only keep characters >= space
-                sb.Append(c);
-        }
-        name = sb.ToString();
-
-        // Replace problematic characters with safe alternatives
-        var invalidChars = Path.GetInvalidFileNameChars();
-        foreach (var c in invalidChars)
-        {
-            name = name.Replace(c, '_');
-        }
-
-        // Prevent directory traversal attempts
-        name = name.Replace("..", "_");
-
-        // Trim whitespace and dots from start/end
-        name = name.Trim().Trim('.');
-
-        // Limit filename length
-        if (name.Length > 255)
-        {
-            var ext = Path.GetExtension(name);
-            var baseName = Path.GetFileNameWithoutExtension(name);
-            var maxBaseLength = 255 - ext.Length;
-            name = baseName.Substring(0, Math.Min(baseName.Length, maxBaseLength)) + ext;
-        }
-
-        return name;
-    }
+    private static string SanitizeFileName(string fileName) =>
+        SafeFileName.ForUserInput(fileName, fallback: string.Empty);
 }

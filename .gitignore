@@ -196,6 +196,12 @@ appsettings.*.json
 **/appsettings.json
 **/appsettings.*.json
 
+# ...except the placeholders-only template, which a fresh clone needs in order to
+# boot. It is only ever loaded if ASPNETCORE_ENVIRONMENT=Template, so it cannot
+# shadow real config by accident. Keep it free of real values.
+!appsettings.Template.json
+!**/appsettings.Template.json
+
 # Recyclarr secrets (Sonarr/Radarr API keys) — same treatment as .env/appsettings.json
 recyclarr/secrets.yml
 

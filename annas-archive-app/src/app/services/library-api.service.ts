@@ -13,6 +13,16 @@ import {
 import { apiBase } from './api-base';
 
 /* ─────────────── Library book response shapes ──────────────── */
+/**
+ * A book as the API returns it — the single source of truth for that shape.
+ *
+ * There used to be a second, near-identical `LibraryBook` declared in
+ * book-card.component.ts. The two had drifted (each carried fields the other
+ * lacked, and `readerEnabled` was `boolean` in one and `boolean | null` in the
+ * other), to the point that library.component.spec.ts imported both at once
+ * under an alias. book-card now extends this instead, adding only the transient
+ * view state that has no business being in a wire model.
+ */
 export interface LibraryBook {
   fileName: string;
   title: string;
@@ -27,8 +37,15 @@ export interface LibraryBook {
   personalRating?: number | null;
   /** Names of household members who have favorited this book — per-owner, not a shared flag. */
   favoritedBy?: string[];
-  readerEnabled?: boolean;
+  /** Null where the backend has no opinion yet, as opposed to a definite false. */
+  readerEnabled?: boolean | null;
   dateAdded?: string;
+  source?: string | null;
+  savedAt?: string | null;
+  publishedDate?: string | null;
+  pages?: string | null;
+  md5?: string | null;
+  description?: string | null;
 }
 
 export interface LibraryBookMetadata {

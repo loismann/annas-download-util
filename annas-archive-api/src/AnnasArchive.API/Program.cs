@@ -1,4 +1,5 @@
 using AnnasArchive.API.Configuration;
+using AnnasArchive.API.Constants;
 using AnnasArchive.API.Endpoints;
 using Serilog;
 
@@ -24,7 +25,7 @@ builder.Services.AddHealthCheckServices(builder.Configuration);
 // ─── Configure Kestrel for large file uploads ────────────────────────────
 builder.WebHost.ConfigureKestrel(options =>
 {
-    options.Limits.MaxRequestBodySize = 500 * 1024 * 1024; // 500MB
+    options.Limits.MaxRequestBodySize = Limits.MaxRequestBodySize;
 });
 
 var app = builder.Build();
@@ -65,7 +66,7 @@ var staticFileOptions = new StaticFileOptions
 };
 app.UseStaticFiles(staticFileOptions);
 app.UseSecurityHeaders();
-app.UseRequestBodySizeLimit(maxBodySize: 500 * 1024 * 1024); // 500MB to match upload endpoint
+app.UseRequestBodySizeLimit();
 app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();

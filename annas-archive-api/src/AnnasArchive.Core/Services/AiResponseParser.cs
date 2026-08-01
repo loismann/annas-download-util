@@ -1,4 +1,5 @@
 using System.Text.Json;
+using AnnasArchive.Core.Helpers;
 
 namespace AnnasArchive.Core.Services;
 
@@ -65,4 +66,7 @@ public class AiResponseParser : IAiResponseParser
         }
         return null;
     }
+
+    /// <inheritdoc />
+    public string StripCodeFences(string? text) => AiText.StripCodeFences(text);
 }

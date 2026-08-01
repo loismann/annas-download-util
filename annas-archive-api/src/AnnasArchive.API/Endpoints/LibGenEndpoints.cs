@@ -2,6 +2,7 @@ using System.Security.Claims;
 using System.Text.RegularExpressions;
 using AnnasArchive.API.Helpers;
 using AnnasArchive.API.Models;
+using AnnasArchive.Core.Helpers;
 using AnnasArchive.Core.Models;
 using AnnasArchive.Core.Services;
 using Microsoft.AspNetCore.Mvc;
@@ -66,7 +67,8 @@ public static class LibGenEndpoints
         HttpResponseMessage resp)
     {
         var rawTitle = !string.IsNullOrWhiteSpace(title) ? title : md5;
-        var safeTitle = Regex.Replace(rawTitle, $"[{Regex.Escape(new string(Path.GetInvalidFileNameChars()))}]", "_");
+        // Titles come from a third-party index, so they are untrusted input.
+        var safeTitle = SafeFileName.ForUserInput(rawTitle, fallback: md5);
 
         var ext = !string.IsNullOrEmpty(downloadUrl)
             ? Path.GetExtension(new Uri(downloadUrl).AbsolutePath)

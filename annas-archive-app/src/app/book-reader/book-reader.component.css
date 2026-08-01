@@ -2296,8 +2296,13 @@
 
 .section-checkmark {
   color: #22c55e;
-  font-weight: bold;
   margin-left: 8px;
+  /* Matches the option text it sits beside; mat-icon defaults to 24px, which
+     would push the row taller than the un-ticked options next to it. */
+  font-size: 18px;
+  width: 18px;
+  height: 18px;
+  vertical-align: middle;
 }
 
 .section-summary-header h4 {

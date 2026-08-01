@@ -99,8 +99,8 @@
               <button mat-raised-button color="primary" (click)="onSendToLibrary(dg.active)">
                 <ng-container [ngSwitch]="dg.active.libraryState">
                   <span *ngSwitchCase="'sending'">Saving…</span>
-                  <span *ngSwitchCase="'success'">✓ Saved</span>
-                  <span *ngSwitchCase="'error'">✖ Retry</span>
+                  <span *ngSwitchCase="'success'"><mat-icon inline>check</mat-icon> Saved</span>
+                  <span *ngSwitchCase="'error'"><mat-icon inline>refresh</mat-icon> Retry</span>
                   <span *ngSwitchDefault class="button-label-with-icon">
                     <mat-icon class="inline-icon">menu_book</mat-icon>
                     Library
@@ -116,9 +116,9 @@
               >
                 <ng-container [ngSwitch]="dg.active.sendState">
                   <span *ngSwitchCase="'sending'">Uploading…</span>
-                  <span *ngSwitchCase="'success'">✓ Uploaded!</span>
-                  <span *ngSwitchCase="'error'">✖ Retry</span>
-                  <span *ngSwitchDefault>📤 Dropbox</span>
+                  <span *ngSwitchCase="'success'"><mat-icon inline>check</mat-icon> Uploaded!</span>
+                  <span *ngSwitchCase="'error'"><mat-icon inline>refresh</mat-icon> Retry</span>
+                  <span *ngSwitchDefault><mat-icon inline>upload</mat-icon> Dropbox</span>
                 </ng-container>
               </button>
 
@@ -130,8 +130,8 @@
               >
                 <ng-container [ngSwitch]="dg.active.dadsKindleState">
                   <span *ngSwitchCase="'sending'">Sending…</span>
-                  <span *ngSwitchCase="'success'">✔ Sent!</span>
-                  <span *ngSwitchCase="'error'">✖ Retry</span>
+                  <span *ngSwitchCase="'success'"><mat-icon inline>check</mat-icon> Sent!</span>
+                  <span *ngSwitchCase="'error'"><mat-icon inline>refresh</mat-icon> Retry</span>
                   <span *ngSwitchDefault>Dad's Kindle</span>
                 </ng-container>
               </button>
@@ -144,8 +144,8 @@
               >
                 <ng-container [ngSwitch]="dg.active.momsKindleState">
                   <span *ngSwitchCase="'sending'">Sending…</span>
-                  <span *ngSwitchCase="'success'">✔ Sent!</span>
-                  <span *ngSwitchCase="'error'">✖ Retry</span>
+                  <span *ngSwitchCase="'success'"><mat-icon inline>check</mat-icon> Sent!</span>
+                  <span *ngSwitchCase="'error'"><mat-icon inline>refresh</mat-icon> Retry</span>
                   <span *ngSwitchDefault>Mom's Kindle</span>
                 </ng-container>
               </button>

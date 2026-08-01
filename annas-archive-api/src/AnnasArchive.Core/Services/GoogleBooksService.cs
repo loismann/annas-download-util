@@ -4,7 +4,9 @@ using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Globalization;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Caching.Memory;
 using Serilog;
@@ -22,6 +24,80 @@ public class GoogleBooksService : IGoogleBooksService
     {
         _httpFactory = httpFactory;
         _cache = cache;
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<GoogleBooksVolume>?> SearchVolumesAsync(
+        string query, int maxResults = 5, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(query))
+            return Array.Empty<GoogleBooksVolume>();
+
+        try
+        {
+            var http = _httpFactory.CreateClient("GoogleBooks");
+            var url = $"/books/v1/volumes?q={Uri.EscapeDataString(query)}&maxResults={maxResults}";
+
+            using var response = await http.GetAsync(url, cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                Log.Debug("[GoogleBooks] Volume search for {Query} returned {Status}", query, response.StatusCode);
+                return null;   // request failed — distinct from "no matches"
+            }
+
+            using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+            using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+
+            if (!doc.RootElement.TryGetProperty("items", out var items) || items.ValueKind != JsonValueKind.Array)
+                return Array.Empty<GoogleBooksVolume>();
+
+            var volumes = new List<GoogleBooksVolume>();
+            foreach (var item in items.EnumerateArray())
+            {
+                if (!item.TryGetProperty("volumeInfo", out var info)) continue;
+                volumes.Add(ReadVolume(info));
+            }
+
+            return volumes;
+        }
+        catch (Exception ex)
+        {
+            Log.Debug("[GoogleBooks] Volume search for {Query} failed: {Message}", query, ex.Message);
+            return null;
+        }
+    }
+
+    private static GoogleBooksVolume ReadVolume(JsonElement info)
+    {
+        var title = info.TryGetProperty("title", out var t) ? t.GetString() : null;
+
+        var authors = info.TryGetProperty("authors", out var a) && a.ValueKind == JsonValueKind.Array
+            ? a.EnumerateArray().Select(x => x.GetString()).Where(x => x is not null).Select(x => x!).ToArray()
+            : Array.Empty<string>();
+
+        int? year = null;
+        if (info.TryGetProperty("publishedDate", out var pd) && pd.ValueKind == JsonValueKind.String)
+        {
+            // "1965", "1965-06" and "1965-06-01" all appear; the year is the first part.
+            var yearPart = pd.GetString()?.Split('-').FirstOrDefault();
+            if (int.TryParse(yearPart, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
+                year = parsed;
+        }
+
+        string? thumbnail = null;
+        if (info.TryGetProperty("imageLinks", out var images))
+        {
+            if (images.TryGetProperty("thumbnail", out var thumb))
+                thumbnail = thumb.GetString();
+            else if (images.TryGetProperty("smallThumbnail", out var small))
+                thumbnail = small.GetString();
+        }
+
+        return new GoogleBooksVolume(
+            title,
+            authors,
+            year,
+            thumbnail?.Replace("http://", "https://", StringComparison.OrdinalIgnoreCase));
     }
 
     #region Book Description

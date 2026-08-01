@@ -6,6 +6,8 @@ using AnnasArchive.API.Configuration;
 using AnnasArchive.API.Services.Library;
 using Serilog;
 
+using AnnasArchive.Core.Services;
+
 namespace AnnasArchive.API.Services;
 
 public sealed record AudiobookScanOptions(bool DryRun, int? Limit);
@@ -91,15 +93,18 @@ public class AudiobookEnrichmentService : BackgroundService
     private readonly IHttpClientFactory _httpFactory;
     private readonly IConfiguration _configuration;
     private readonly IEnrichmentStatsService _statsService;
+    private readonly IGoogleBooksService _googleBooks;
 
     public AudiobookEnrichmentService(
         IHttpClientFactory httpFactory,
         IConfiguration configuration,
-        IEnrichmentStatsService statsService)
+        IEnrichmentStatsService statsService,
+        IGoogleBooksService googleBooks)
     {
         _httpFactory = httpFactory;
         _configuration = configuration;
         _statsService = statsService;
+        _googleBooks = googleBooks;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -495,61 +500,51 @@ public class AudiobookEnrichmentService : BackgroundService
             result.Confidence);
     }
 
+    /// <summary>
+    /// Scores Google Books candidates against the parsed folder name. The HTTP call
+    /// itself now lives in <see cref="IGoogleBooksService.SearchVolumesAsync"/> — this
+    /// used to hand-roll it, which is how the watcher's copy drifted into sending no
+    /// API key. What stays here is what is genuinely local: the confidence scoring and
+    /// the per-scan rate-limit bookkeeping.
+    ///
+    /// Freeform query rather than <c>intitle:</c>/<c>inauthor:</c> — more forgiving
+    /// against messy candidate strings, same reasoning GoogleBooksService uses for its
+    /// own description lookups.
+    /// </summary>
     private async Task<AudiobookMatch?> FetchGoogleBooksMatchAsync(string title, string[] authors, ScanRateLimitState rateLimits, CancellationToken token)
     {
         if (rateLimits.IsTripped("GoogleBooks")) return null;
 
-        try
+        var author = authors.FirstOrDefault();
+        var query = string.IsNullOrWhiteSpace(author) ? title : $"{title} {author}";
+
+        var volumes = await _googleBooks.SearchVolumesAsync(query, maxResults: 5, token);
+
+        // null means the request failed; an empty list means it answered with nothing.
+        // Only the former should count against the rate limiter.
+        rateLimits.RecordResult("GoogleBooks", success: volumes is not null);
+        if (volumes is null)
         {
-            var http = _httpFactory.CreateClient("GoogleBooks");
-            var author = authors.FirstOrDefault();
-            // Freeform query (not intitle:/inauthor:) — more forgiving against
-            // messy candidate strings, same reasoning GoogleBooksService uses
-            // for its own description lookups.
-            var query = string.IsNullOrWhiteSpace(author) ? title : $"{title} {author}";
-            var apiKey = _configuration["GoogleBooks:ApiKey"];
-            var url = $"/books/v1/volumes?q={Uri.EscapeDataString(query)}&maxResults=5"
-                + (string.IsNullOrWhiteSpace(apiKey) ? "" : $"&key={Uri.EscapeDataString(apiKey)}");
-
-            using var resp = await http.GetAsync(url, token);
-            rateLimits.RecordResult("GoogleBooks", resp.IsSuccessStatusCode);
-            if (!resp.IsSuccessStatusCode) return null;
-
-            using var stream = await resp.Content.ReadAsStreamAsync(token);
-            using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: token);
-            if (!doc.RootElement.TryGetProperty("items", out var items) || items.ValueKind != JsonValueKind.Array)
-                return null;
-
-            AudiobookMatch? best = null;
-            foreach (var item in items.EnumerateArray())
-            {
-                if (!item.TryGetProperty("volumeInfo", out var info)) continue;
-                var candidateTitle = info.TryGetProperty("title", out var t) ? t.GetString() : null;
-                var candidateAuthors = info.TryGetProperty("authors", out var a) && a.ValueKind == JsonValueKind.Array
-                    ? a.EnumerateArray().Select(x => x.GetString()).Where(x => x is not null).Select(x => x!).ToArray()
-                    : Array.Empty<string>();
-
-                var confidence = TitleMatchScorer.Confidence(title, candidateTitle, authors, candidateAuthors);
-                if (best is null || confidence > best.Confidence)
-                {
-                    int? year = null;
-                    if (info.TryGetProperty("publishedDate", out var pd) && pd.ValueKind == JsonValueKind.String)
-                    {
-                        var yearStr = pd.GetString()?.Split('-').FirstOrDefault();
-                        if (int.TryParse(yearStr, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedYear))
-                            year = parsedYear;
-                    }
-                    best = new AudiobookMatch(candidateTitle ?? title, candidateAuthors.FirstOrDefault(), year, "GoogleBooks", confidence);
-                }
-            }
-            return best;
-        }
-        catch (Exception ex)
-        {
-            rateLimits.RecordResult("GoogleBooks", success: false);
-            Log.Debug("[AudiobookEnrichment] Google Books lookup failed for '{Title}': {Message}", title, ex.Message);
+            Log.Debug("[AudiobookEnrichment] Google Books lookup failed for '{Title}'", title);
             return null;
         }
+
+        AudiobookMatch? best = null;
+        foreach (var volume in volumes)
+        {
+            var confidence = TitleMatchScorer.Confidence(title, volume.Title, authors, volume.Authors);
+            if (best is null || confidence > best.Confidence)
+            {
+                best = new AudiobookMatch(
+                    volume.Title ?? title,
+                    volume.Authors.FirstOrDefault(),
+                    volume.Year,
+                    "GoogleBooks",
+                    confidence);
+            }
+        }
+
+        return best;
     }
 
     /// <summary>Joins up to the nearest 2 parent folder names (excluding the book's own leaf

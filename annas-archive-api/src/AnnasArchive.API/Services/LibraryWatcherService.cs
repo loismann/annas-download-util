@@ -16,6 +16,7 @@ using System.Xml.Linq;
 using AnnasArchive.Core.Helpers;
 using AnnasArchive.API.Configuration;
 using AnnasArchive.API.Services.Library;
+using AnnasArchive.Core.Services;
 using Microsoft.Extensions.Configuration;
 using Serilog;
 using HtmlAgilityPack;
@@ -35,6 +36,7 @@ public class LibraryWatcherService : BackgroundService
     private readonly IDuplicateDetectionService _duplicateDetection;
     private readonly IMetadataExtractionService _metadataExtraction;
     private readonly IEnrichmentStatsService _statsService;
+    private readonly IGoogleBooksService _googleBooks;
     private readonly string? _autoTagNewBooks;
     private FileSystemWatcher? _watcher;
     private int _processedSinceLastSave;
@@ -45,7 +47,8 @@ public class LibraryWatcherService : BackgroundService
         IGenreClassificationService genreClassification,
         IDuplicateDetectionService duplicateDetection,
         IMetadataExtractionService metadataExtraction,
-        IEnrichmentStatsService statsService)
+        IEnrichmentStatsService statsService,
+        IGoogleBooksService googleBooks)
     {
         _httpFactory = httpFactory;
         _configuration = configuration;
@@ -53,6 +56,7 @@ public class LibraryWatcherService : BackgroundService
         _duplicateDetection = duplicateDetection;
         _metadataExtraction = metadataExtraction;
         _statsService = statsService;
+        _googleBooks = googleBooks;
         _autoTagNewBooks = configuration["LibraryWatcher:AutoTagNewBooks"];
     }
 
@@ -629,50 +633,26 @@ public class LibraryWatcherService : BackgroundService
         );
     }
 
-    private async Task<string?> FetchGoogleBooksCoverAsync(string title, string[] authors, CancellationToken token)
+    /// <summary>
+    /// Delegates to the shared <see cref="IGoogleBooksService"/> rather than calling
+    /// the API directly. The hand-rolled version this replaces used an unnamed
+    /// HttpClient — so it missed the base address, timeout and resilience policy
+    /// registered for the "GoogleBooks" client, and the API key the handler on that
+    /// client now attaches. The shared one also caches (positive and negative), tries
+    /// several title spellings, falls back to smallThumbnail, and retries without the
+    /// author. All of that was missing here.
+    ///
+    /// <paramref name="token"/> is unused: the shared service has no cancellation
+    /// overload. Cancellation still bounds the loop that calls this, and the named
+    /// client carries its own timeout.
+    /// </summary>
+    private Task<string?> FetchGoogleBooksCoverAsync(string title, string[] authors, CancellationToken token)
     {
-        var author = authors.FirstOrDefault(a => !string.IsNullOrWhiteSpace(a));
         if (string.IsNullOrWhiteSpace(title))
-            return null;
+            return Task.FromResult<string?>(null);
 
-        try
-        {
-            using var http = _httpFactory.CreateClient();
-            http.Timeout = TimeSpan.FromSeconds(5);
-
-            var query = string.IsNullOrWhiteSpace(author)
-                ? $"intitle:{title}"
-                : $"intitle:{title} inauthor:{author}";
-            var url = $"https://www.googleapis.com/books/v1/volumes?q={Uri.EscapeDataString(query)}&maxResults=5";
-            using var resp = await http.GetAsync(url, token);
-            if (!resp.IsSuccessStatusCode)
-                return null;
-
-            using var stream = await resp.Content.ReadAsStreamAsync(token);
-            using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: token);
-            if (!doc.RootElement.TryGetProperty("items", out var items) || items.ValueKind != JsonValueKind.Array)
-                return null;
-
-            foreach (var item in items.EnumerateArray())
-            {
-                if (!item.TryGetProperty("volumeInfo", out var info))
-                    continue;
-
-                if (info.TryGetProperty("imageLinks", out var images) &&
-                    images.TryGetProperty("thumbnail", out var thumbProp))
-                {
-                    var thumb = thumbProp.GetString();
-                    if (!string.IsNullOrWhiteSpace(thumb))
-                        return thumb.Replace("http:", "https:");
-                }
-            }
-        }
-        catch
-        {
-            return null;
-        }
-
-        return null;
+        var author = authors.FirstOrDefault(a => !string.IsNullOrWhiteSpace(a));
+        return _googleBooks.GetCoverUrlAsync(title, author);
     }
 
     private async Task<double?> FetchGoodreadsRatingAsync(

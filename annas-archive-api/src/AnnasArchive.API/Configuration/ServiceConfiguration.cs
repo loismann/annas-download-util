@@ -350,12 +350,15 @@ public static class ServiceConfiguration
         .AddStandardResilience("OpenLibrary");
 
         // Google Books HTTP Client (external API)
+        services.AddTransient<GoogleBooksApiKeyHandler>();
         services.AddHttpClient("GoogleBooks", client =>
         {
             client.BaseAddress = new Uri("https://www.googleapis.com/");
             client.Timeout = HttpTimeouts.StandardApiTimeout;
             client.DefaultRequestHeaders.Add("User-Agent", "AnnasArchive/1.0");
         })
+        // Before the resilience handler, so a retried request still carries the key.
+        .AddHttpMessageHandler<GoogleBooksApiKeyHandler>()
         .AddStandardResilience("GoogleBooks");
 
         // Wikipedia HTTP Client (external API) — real-data fallback for

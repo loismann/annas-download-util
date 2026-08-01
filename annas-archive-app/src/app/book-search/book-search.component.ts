@@ -475,7 +475,7 @@ export class BookSearchComponent implements OnInit, OnDestroy {
             this.books = [...this.books, ...more];
             // queueCoverLookups() re-filters this.books for whatever still
             // needs a lookup, so it naturally picks up page 2's additions.
-            // fetchBookDescriptions() isn't re-called here — it always
+            // The description lookup isn't re-queued here — it always
             // targets the first AUTO_DESCRIPTION_FETCH_LIMIT books by index,
             // which page 1 alone already covers, and calling it again would
             // risk double-firing an in-flight fetch for a page-1 book that

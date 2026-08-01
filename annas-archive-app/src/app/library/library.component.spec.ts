@@ -30,7 +30,8 @@ describe('LibraryComponent', () => {
     ]);
 
     mockDialog = jasmine.createSpyObj('MatDialog', ['open']);
-    mockAuthService = jasmine.createSpyObj('AuthService', ['isAdmin']);
+    mockAuthService = jasmine.createSpyObj('AuthService', ['isAdmin', 'getOwnerName']);
+    mockAuthService.getOwnerName.and.returnValue('Paul');
 
     // Default mock returns
     mockLibraryApiService.getLibraryBooks.and.returnValue(of([]));

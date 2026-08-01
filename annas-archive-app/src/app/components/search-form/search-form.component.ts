@@ -16,6 +16,7 @@ import { AiApiService, AuthorSuggestion } from '../../services/ai-api.service';
 import { LoggerService } from '../../services/logger.service';
 import { SearchFiltersComponent } from '../search-filters/search-filters.component';
 import { VpnToggleComponent } from '../vpn-toggle/vpn-toggle.component';
+import { getHealthColorClass } from '../../book-search/domain-health';
 
 export interface DomainHealth {
   name: string;
@@ -155,12 +156,11 @@ export class SearchFormComponent implements OnDestroy {
     }
   }
 
+  /** Delegates to the shared helper — this used to be a byte-identical copy of
+   *  the one in BookSearchComponent. It stays a method because the template
+   *  binds to it. */
   getHealthColorClass(health: number | null): string {
-    if (health === null) return 'health-unknown';
-    if (health >= 90) return 'health-green';
-    if (health >= 70) return 'health-yellow';
-    if (health >= 50) return 'health-orange';
-    return 'health-red';
+    return getHealthColorClass(health);
   }
 
   private fetchAuthorSuggestions(bookTitle: string): void {

@@ -85,8 +85,13 @@ describe('SearchResultsComponent', () => {
       component.groups = [];
       component.searchPerformed = false;
       fixture.detectChanges();
-      const noResults = fixture.nativeElement.querySelector('.results-inner p');
-      expect(noResults).toBeNull();
+      // Assert on the text, not on "is there any <p>" — before a search the
+      // pre-search hint legitimately renders its own paragraphs, so a bare
+      // `.results-inner p` selector matches those and reads as a failure.
+      const paragraphs = Array.from(
+        fixture.nativeElement.querySelectorAll('.results-inner p')
+      ) as HTMLElement[];
+      expect(paragraphs.some(p => p.textContent?.trim() === 'No results')).toBe(false);
     });
 
     it('should show a grouping indicator while grouping and nothing has landed yet', () => {

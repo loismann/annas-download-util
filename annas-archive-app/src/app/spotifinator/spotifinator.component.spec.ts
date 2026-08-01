@@ -1,6 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
+import { provideRouter } from '@angular/router';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { SpotifinatorComponent } from './spotifinator.component';
 
@@ -10,7 +11,10 @@ describe('SpotifinatorComponent', () => {
       imports: [SpotifinatorComponent, NoopAnimationsModule],
       providers: [
         provideHttpClient(),
-        provideHttpClientTesting()
+        provideHttpClientTesting(),
+        // The component reads route params; without this the standalone
+        // injector has no ActivatedRoute at all.
+        provideRouter([])
       ]
     }).compileComponents();
   });

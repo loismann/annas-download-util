@@ -518,33 +518,6 @@ describe('BookSearchComponent', () => {
       expect(formats).not.toContain('TXT');
     });
   });
-
-  describe('Health status', () => {
-    it('should return health-green for health >= 90', () => {
-      expect(component.getHealthColorClass(95)).toBe('health-green');
-      expect(component.getHealthColorClass(90)).toBe('health-green');
-    });
-
-    it('should return health-yellow for health >= 70 and < 90', () => {
-      expect(component.getHealthColorClass(85)).toBe('health-yellow');
-      expect(component.getHealthColorClass(70)).toBe('health-yellow');
-    });
-
-    it('should return health-orange for health >= 50 and < 70', () => {
-      expect(component.getHealthColorClass(65)).toBe('health-orange');
-      expect(component.getHealthColorClass(50)).toBe('health-orange');
-    });
-
-    it('should return health-red for health < 50', () => {
-      expect(component.getHealthColorClass(45)).toBe('health-red');
-      expect(component.getHealthColorClass(0)).toBe('health-red');
-    });
-
-    it('should return health-unknown for null health', () => {
-      expect(component.getHealthColorClass(null)).toBe('health-unknown');
-    });
-  });
-
   describe('Format dropdown locking during matching', () => {
     it('should have format dropdown enabled by default', () => {
       expect(component.relatedBooksModalOpen).toBe(false);
@@ -848,37 +821,6 @@ describe('BookSearchComponent', () => {
       expect(component.books.length).toBe(40);
     });
   });
-
-  describe('Boundary tests - Health status exact thresholds', () => {
-    it('should return green at exactly 90%', () => {
-      expect(component.getHealthColorClass(90)).toBe('health-green');
-    });
-
-    it('should return yellow at exactly 89% (just below green)', () => {
-      expect(component.getHealthColorClass(89)).toBe('health-yellow');
-    });
-
-    it('should return yellow at exactly 70%', () => {
-      expect(component.getHealthColorClass(70)).toBe('health-yellow');
-    });
-
-    it('should return orange at exactly 69% (just below yellow)', () => {
-      expect(component.getHealthColorClass(69)).toBe('health-orange');
-    });
-
-    it('should return orange at exactly 50%', () => {
-      expect(component.getHealthColorClass(50)).toBe('health-orange');
-    });
-
-    it('should return red at exactly 49% (just below orange)', () => {
-      expect(component.getHealthColorClass(49)).toBe('health-red');
-    });
-
-    it('should return green at exactly 100%', () => {
-      expect(component.getHealthColorClass(100)).toBe('health-green');
-    });
-  });
-
   describe('AI Book Search - Description Source Mapping', () => {
     beforeEach(() => {
       mockAiApiService.aiBookSearch = jasmine.createSpy('aiBookSearch');

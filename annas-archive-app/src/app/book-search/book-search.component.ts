@@ -31,12 +31,12 @@ import { LoggerService } from '../services/logger.service';
 import { BookDto } from '../models/book-dto.model';
 import { BookGroup } from '../models/book-group.model';
 import { BookSummaryModalComponent } from '../components/book-summary-modal/book-summary-modal.component';
-import { SlumHealthEntry, MirrorHealthEntry, SlumHealthResponse, MirrorHealthResponse } from '../models/health-check.model';
 import { DISPLAYABLE_BOOK_FORMATS } from '../constants/book-formats';
-import { Subject } from 'rxjs';
-import { debounceTime, distinctUntilChanged, takeUntil, tap } from 'rxjs/operators';
+import { Observable, Subject } from 'rxjs';
+import { debounceTime, distinctUntilChanged, takeUntil } from 'rxjs/operators';
 import { RelatedBooksModalComponent } from '../related-books-modal/related-books-modal.component';
 import { SearchFormComponent, DomainHealth, SearchFormSubmitEvent } from '../components/search-form/search-form.component';
+import { applyMirrorHealth, applySlumHealth } from './domain-health';
 import { BookCoverLookupService } from './book-cover-lookup.service';
 import { BookDescriptionLookupService } from './book-description-lookup.service';
 import {
@@ -171,95 +171,16 @@ export class BookSearchComponent implements OnInit, OnDestroy {
   /* ───────── domain health management ───────── */
   private fetchDomainHealth(): void {
     this.bookSearchApi.getSlumHealth().subscribe({
-      next: (data) => {
-        this.parseDomainHealth(data);
-      },
-      error: (err) => {
-        this.logger.error('[domain-health] Failed to fetch SLUM data', err);
-      }
+      next: data => applySlumHealth(this.annaDomains, data),
+      error: err => this.logger.error('[domain-health] Failed to fetch SLUM data', err)
     });
-  }
-
-  private fetchDomainHealthObservable() {
-    return this.bookSearchApi.getSlumHealth().pipe(
-      tap((data: SlumHealthResponse) => this.parseDomainHealth(data))
-    );
   }
 
   private fetchMirrorHealth(): void {
     this.bookSearchApi.getMirrorHealth().subscribe({
-      next: (data) => {
-        this.parseMirrorHealth(data);
-      },
-      error: (err) => {
-        this.logger.error('[domain-health] Failed to fetch mirror health data', err);
-      }
+      next: data => applyMirrorHealth(this.annaDomains, data),
+      error: err => this.logger.error('[domain-health] Failed to fetch mirror health data', err)
     });
-  }
-
-  private parseMirrorHealth(data: MirrorHealthResponse): void {
-    if (!data || !Array.isArray(data)) return;
-
-    data.forEach((entry: MirrorHealthEntry) => {
-      if (!entry?.extension) return;
-      const domain = this.annaDomains.find(d => d.extension === entry.extension);
-      if (!domain) return;
-
-      domain.health = typeof entry.health === 'number' ? entry.health : null;
-    });
-  }
-
-  private parseDomainHealth(data: SlumHealthResponse): void {
-    if (!data || !Array.isArray(data)) return;
-
-    // Best-effort: this data comes from a third-party status monitor
-    // (open-slum.org) we don't control, so these entries only populate if
-    // that service happens to track the current domains. mirror-health
-    // (our own backend, hitting the domains directly) is the reliable
-    // source — this is a bonus enrichment layered on top when available.
-    const glEntry = data.find((entry: SlumHealthEntry) => entry.name === "Anna's Archive GL");
-    const pkEntry = data.find((entry: SlumHealthEntry) => entry.name === "Anna's Archive PK");
-    const gdEntry = data.find((entry: SlumHealthEntry) => entry.name === "Anna's Archive GD");
-
-    if (glEntry) {
-      this.updateDomainHealth('gl', glEntry);
-    }
-
-    if (pkEntry) {
-      this.updateDomainHealth('pk', pkEntry);
-    }
-
-    if (gdEntry) {
-      this.updateDomainHealth('gd', gdEntry);
-    }
-  }
-
-  private parseHealthPercentage(healthString: string): number | null {
-    if (!healthString) return null;
-    const match = healthString.match(/(\d+\.?\d*)%/);
-    return match ? parseFloat(match[1]) : null;
-  }
-
-  private parseCertExpiry(certExp: string): number | null {
-    if (!certExp) return null;
-    const match = certExp.match(/(\d+)\s*days?/);
-    return match ? parseInt(match[1], 10) : null;
-  }
-
-  private updateDomainHealth(extension: string, entry: SlumHealthEntry): void {
-    const domain = this.annaDomains.find(d => d.extension === extension);
-    if (!domain) return;
-
-    domain.health = this.parseHealthPercentage(entry.health);
-    domain.certExpDays = this.parseCertExpiry(entry.cert_exp);
-  }
-
-  getHealthColorClass(health: number | null): string {
-    if (health === null) return 'health-unknown';
-    if (health >= 90) return 'health-green';
-    if (health >= 70) return 'health-yellow';
-    if (health >= 50) return 'health-orange';
-    return 'health-red';
   }
 
   /* ───────── download counter management ───────── */
@@ -594,162 +515,101 @@ export class BookSearchComponent implements OnInit, OnDestroy {
   }
 
   /* ───────── download button ───────── */
+  /* ───────── send-to-target buttons ───────── */
+
+  /** LibGen and Anna's Archive take an identical argument list here — only the
+   *  endpoint differs, so the choice is which function to call, not what to
+   *  pass it. */
+  private libraryRequest(book: BookDto, coverUrl?: string) {
+    const send = this.useLibGen
+      ? this.bookSearchApi.sendToLibraryLibGen.bind(this.bookSearchApi)
+      : this.bookSearchApi.sendToLibrary.bind(this.bookSearchApi);
+
+    return send(
+      book.md5,
+      book.title,
+      coverUrl,
+      book.authors?.join(';'),
+      book.format,
+      book.fileSize,
+      book.source,
+      book.description ?? undefined
+    );
+  }
+
+  /** `surfaceError` is the only difference between the user pressing "Save to
+   *  library" and the copy every send-to-device button makes on the way past:
+   *  the explicit action reports a failure, the incidental one stays quiet. */
+  private saveToLibrary(book: BookDto, coverUrl: string | undefined, surfaceError: boolean): void {
+    this.libraryRequest(book, coverUrl).subscribe({
+      next: () => {
+        book.libraryState = 'success';
+      },
+      error: err => {
+        this.logger.error('Send-to-library failed', err);
+        book.libraryState = 'error';
+        if (surfaceError) {
+          this.error = 'Send to library failed.';
+        }
+      }
+    });
+  }
+
   sendToLibrary(book: BookDto): void {
     if (book.libraryState === 'sending') return;
     book.libraryState = 'sending';
-
-    // Get the cover URL if available
-    const coverUrl = book.coverCandidates && book.coverCandidates.length > 0
-      ? book.coverCandidates[0]
-      : undefined;
-
-    const authorString = book.authors?.join(';');
-
-    const libraryObservable = this.useLibGen
-      ? this.bookSearchApi.sendToLibraryLibGen(
-          book.md5,
-          book.title,
-          coverUrl,
-          authorString,
-          book.format,
-          book.fileSize,
-          book.source,
-          book.description ?? undefined
-        )
-      : this.bookSearchApi.sendToLibrary(
-          book.md5,
-          book.title,
-          coverUrl,
-          authorString,
-          book.format,
-          book.fileSize,
-          book.source,
-          book.description ?? undefined
-        );
-
-    libraryObservable.subscribe({
-      next: () => {
-        book.libraryState = 'success';
-      },
-      error: err => {
-        this.logger.error('Send-to-library failed', err);
-        book.libraryState = 'error';
-        this.error = 'Send to library failed.';
-      }
-    });
+    this.saveToLibrary(book, this.coverUrlFor(book), true);
   }
 
-  private sendToLibrarySilently(book: BookDto, coverUrl?: string): void {
-    const authorString = book.authors?.join(';');
-    const libraryObservable = this.useLibGen
-      ? this.bookSearchApi.sendToLibraryLibGen(
-          book.md5,
-          book.title,
-          coverUrl,
-          authorString,
-          book.format,
-          book.fileSize,
-          book.source,
-          book.description ?? undefined
-        )
-      : this.bookSearchApi.sendToLibrary(
-          book.md5,
-          book.title,
-          coverUrl,
-          authorString,
-          book.format,
-          book.fileSize,
-          book.source,
-          book.description ?? undefined
-        );
-
-    libraryObservable.subscribe({
-      next: () => {
-        book.libraryState = 'success';
-      },
-      error: err => {
-        this.logger.error('Send-to-library failed', err);
-        book.libraryState = 'error';
-      }
-    });
-  }
-
-  /* ───────── send-to-boox button (via Dropbox) ───────── */
   sendToBoox(book: BookDto): void {
-    if (book.sendState === 'sending') return;  // guard double-click
-    book.sendState = 'sending';
-
-    // Get the cover URL if available
-    const coverUrl = book.coverCandidates && book.coverCandidates.length > 0
-      ? book.coverCandidates[0]
-      : undefined;
-
-    this.sendToLibrarySilently(book, coverUrl);
-
-    this.bookSearchApi.sendToBoox(book.md5, book.title, coverUrl).subscribe({
-      next: (resp: SendToTargetResponse) => {
-        if (resp.accountFastInfo) {
-          this.updateFromServer(resp.accountFastInfo.downloadsLeft, resp.accountFastInfo.downloadsPerDay);
-        }
-        book.sendState = resp.success ? 'success' : 'error';
-      },
-      error: err => {
-        this.logger.error('Send-to-Boox failed', err);
-        book.sendState = 'error';
-      }
-    });
+    this.sendToDevice(book, 'sendState', 'Send-to-Boox',
+      (md5, title, cover) => this.bookSearchApi.sendToBoox(md5, title, cover));
   }
 
-  /* ───────── send-to-dad's-kindle button ───────── */
   sendToDadsKindle(book: BookDto): void {
-    if (book.dadsKindleState === 'sending') return;  // guard double-click
-    book.dadsKindleState = 'sending';
+    this.sendToDevice(book, 'dadsKindleState', "Send-to-Dad's-Kindle",
+      (md5, title, cover) => this.bookSearchApi.sendToKindle(md5, title, 'dad', cover));
+  }
 
-    // Get the cover URL if available
-    const coverUrl = book.coverCandidates && book.coverCandidates.length > 0
-      ? book.coverCandidates[0]
-      : undefined;
+  sendToMomsKindle(book: BookDto): void {
+    this.sendToDevice(book, 'momsKindleState', "Send-to-Mom's-Kindle",
+      (md5, title, cover) => this.bookSearchApi.sendToKindle(md5, title, 'mom', cover));
+  }
 
-    this.sendToLibrarySilently(book, coverUrl);
+  /**
+   * Every send-to-device button does the same five things: guard the
+   * double-click, mark itself sending, quietly save a copy to the library, fire
+   * the device request, and fold the response's download counter back in. Only
+   * the per-book state field, the log label and the request itself differ.
+   */
+  private sendToDevice(
+    book: BookDto,
+    stateKey: 'sendState' | 'dadsKindleState' | 'momsKindleState',
+    label: string,
+    send: (md5: string, title: string, coverUrl?: string) => Observable<SendToTargetResponse>
+  ): void {
+    if (book[stateKey] === 'sending') return;  // guard double-click
+    book[stateKey] = 'sending';
 
-    this.bookSearchApi.sendToKindle(book.md5, book.title, 'dad', coverUrl).subscribe({
+    const coverUrl = this.coverUrlFor(book);
+    this.saveToLibrary(book, coverUrl, false);
+
+    send(book.md5, book.title, coverUrl).subscribe({
       next: (resp: SendToTargetResponse) => {
         if (resp.accountFastInfo) {
           this.updateFromServer(resp.accountFastInfo.downloadsLeft, resp.accountFastInfo.downloadsPerDay);
         }
-        book.dadsKindleState = resp.success ? 'success' : 'error';
+        book[stateKey] = resp.success ? 'success' : 'error';
       },
       error: err => {
-        this.logger.error('Send-to-Dad\'s-Kindle failed', err);
-        book.dadsKindleState = 'error';
+        this.logger.error(`${label} failed`, err);
+        book[stateKey] = 'error';
       }
     });
   }
 
-  /* ───────── send-to-mom's-kindle button ───────── */
-  sendToMomsKindle(book: BookDto): void {
-    if (book.momsKindleState === 'sending') return;  // guard double-click
-    book.momsKindleState = 'sending';
-
-    // Get the cover URL if available
-    const coverUrl = book.coverCandidates && book.coverCandidates.length > 0
-      ? book.coverCandidates[0]
-      : undefined;
-
-    this.sendToLibrarySilently(book, coverUrl);
-
-    this.bookSearchApi.sendToKindle(book.md5, book.title, 'mom', coverUrl).subscribe({
-      next: (resp: SendToTargetResponse) => {
-        if (resp.accountFastInfo) {
-          this.updateFromServer(resp.accountFastInfo.downloadsLeft, resp.accountFastInfo.downloadsPerDay);
-        }
-        book.momsKindleState = resp.success ? 'success' : 'error';
-      },
-      error: err => {
-        this.logger.error('Send-to-Mom\'s-Kindle failed', err);
-        book.momsKindleState = 'error';
-      }
-    });
+  private coverUrlFor(book: BookDto): string | undefined {
+    return book.coverCandidates?.[0];
   }
 
   /* ───────── remove book from results ───────── */

@@ -3,6 +3,8 @@ import { SearchFormComponent, DomainHealth, SearchFormSubmitEvent } from './sear
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { AiApiService } from '../../services/ai-api.service';
 import { LoggerService } from '../../services/logger.service';
+import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { of, throwError } from 'rxjs';
 
 describe('SearchFormComponent', () => {
@@ -27,7 +29,12 @@ describe('SearchFormComponent', () => {
       imports: [SearchFormComponent, NoopAnimationsModule],
       providers: [
         { provide: AiApiService, useValue: mockAiApiService },
-        { provide: LoggerService, useValue: mockLoggerService }
+        { provide: LoggerService, useValue: mockLoggerService },
+        // SearchFormComponent renders VpnToggleComponent, which injects
+        // BookSearchApiService -> HttpClient. A child's dependency is the
+        // parent's TestBed problem.
+        provideHttpClient(),
+        provideHttpClientTesting()
       ]
     }).compileComponents();
 
@@ -65,8 +72,10 @@ describe('SearchFormComponent', () => {
     it('should apply collapsed class when collapsed', () => {
       component.collapsed = true;
       fixture.detectChanges();
-      const form = fixture.nativeElement.querySelector('.search-form');
-      expect(form.classList.contains('collapsed')).toBe(true);
+      // The class goes on .form-extras — collapsing hides the optional
+      // controls, not the whole form. The outer .search-form never collapses.
+      const extras = fixture.nativeElement.querySelector('.form-extras');
+      expect(extras.classList.contains('collapsed')).toBe(true);
     });
   });
 

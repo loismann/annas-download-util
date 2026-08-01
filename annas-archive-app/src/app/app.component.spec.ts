@@ -32,6 +32,12 @@ describe('AppComponent', () => {
   });
 
   afterEach(() => {
+    // ngOnInit fetches the build stamp on every rendered fixture. It is
+    // incidental to everything asserted here, so drain it rather than making
+    // each individual test expect it. `match` returns [] for the specs that
+    // never call detectChanges, so this is safe for all of them.
+    httpMock.match('/assets/version.json')
+      .forEach(req => req.flush({ buildTime: '2026-01-01T00:00:00Z' }));
     httpMock.verify();
   });
 
@@ -87,6 +93,10 @@ describe('AppComponent', () => {
     const fixture = TestBed.createComponent(AppComponent);
     const component = fixture.componentInstance;
 
+    // Render first: ngOnInit resets userActivity to [] while unauthenticated,
+    // so assigning before the initial detectChanges is silently undone.
+    fixture.detectChanges();
+
     component.userActivity = [
       { initial: 'M', userName: 'Mom', minutesAgo: 10, isFullTone: true, isHalfTone: false, lastAction: 'Reading a book', activeForMinutes: 20 }
     ];
@@ -101,6 +111,10 @@ describe('AppComponent', () => {
   it('should apply half-tone class for activity between 30-60 minutes', () => {
     const fixture = TestBed.createComponent(AppComponent);
     const component = fixture.componentInstance;
+
+    // Render first: ngOnInit resets userActivity to [] while unauthenticated,
+    // so assigning before the initial detectChanges is silently undone.
+    fixture.detectChanges();
 
     component.userActivity = [
       { initial: 'D', userName: 'Dad', minutesAgo: 45, isFullTone: false, isHalfTone: true, lastAction: null, activeForMinutes: null }

@@ -3,6 +3,8 @@ import { BookEditDialogComponent, BookEditDialogData } from './book-edit-dialog.
 import { MAT_DIALOG_DATA, MatDialog, MatDialogRef } from '@angular/material/dialog';
 import { LibraryApiService } from '../../services/library-api.service';
 import { Router } from '@angular/router';
+import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { of, throwError } from 'rxjs';
 import { BrowserAnimationsModule } from '@angular/platform-browser/animations';
 
@@ -44,7 +46,10 @@ describe('BookEditDialogComponent', () => {
         { provide: MatDialogRef, useValue: mockDialogRef },
         { provide: MAT_DIALOG_DATA, useValue: testDialogData },
         { provide: LibraryApiService, useValue: mockLibraryApiService },
-        { provide: Router, useValue: mockRouter }
+        { provide: Router, useValue: mockRouter },
+        // AuthService -> HttpClient.
+        provideHttpClient(),
+        provideHttpClientTesting()
       ]
     }).compileComponents();
 

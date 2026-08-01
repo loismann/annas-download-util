@@ -76,7 +76,7 @@ public static class DropboxReaderEndpoints
         }
         catch (Exception ex)
         {
-            Log.Information("❌ Failed to list Dropbox EPUBs: {ex.Message}");
+            Log.Information("❌ Failed to list Dropbox EPUBs: {ExMessage}", ex.Message);
             return ApiResponse.InternalError("Unable to list Dropbox files right now.");
         }
     }
@@ -129,7 +129,7 @@ public static class DropboxReaderEndpoints
         }
         catch (ApiException<DownloadError> ex)
         {
-            Log.Information("❌ Dropbox download failed: {ex.ErrorResponse}");
+            Log.Information("❌ Dropbox download failed: {ExErrorResponse}", ex.ErrorResponse);
             return ApiResponse.InternalError("Unable to download EPUB from Dropbox.");
         }
         catch (ArgumentException ex)
@@ -139,7 +139,7 @@ public static class DropboxReaderEndpoints
         }
         catch (Exception ex)
         {
-            Log.Information("❌ Failed to load EPUB: {ex.Message}");
+            Log.Information("❌ Failed to load EPUB: {ExMessage}", ex.Message);
             return ApiResponse.InternalError("Unable to read the EPUB file.");
         }
     }
@@ -188,7 +188,7 @@ public static class DropboxReaderEndpoints
         }
         catch (ApiException<DownloadError> ex)
         {
-            Log.Information("❌ Dropbox download failed: {ex.ErrorResponse}");
+            Log.Information("❌ Dropbox download failed: {ExErrorResponse}", ex.ErrorResponse);
             return ApiResponse.InternalError("Unable to download EPUB from Dropbox.");
         }
         catch (ArgumentException ex)
@@ -198,7 +198,7 @@ public static class DropboxReaderEndpoints
         }
         catch (Exception ex)
         {
-            Log.Information("❌ Failed to load EPUB: {ex.Message}");
+            Log.Information("❌ Failed to load EPUB: {ExMessage}", ex.Message);
             return ApiResponse.InternalError("Unable to read the EPUB file.");
         }
     }
@@ -228,7 +228,7 @@ public static class DropboxReaderEndpoints
         }
         catch (Exception ex)
         {
-            Log.Information("❌ Failed to read cache status: {ex.Message}");
+            Log.Information("❌ Failed to read cache status: {ExMessage}", ex.Message);
             return ApiResponse.InternalError("Unable to fetch cache status.");
         }
     }
@@ -260,7 +260,7 @@ public static class DropboxReaderEndpoints
         }
         catch (Exception ex)
         {
-            Log.Information("❌ Failed to start indexing: {ex.Message}");
+            Log.Information("❌ Failed to start indexing: {ExMessage}", ex.Message);
             return ApiResponse.InternalError("Unable to start indexing for this book.");
         }
     }
@@ -281,7 +281,7 @@ public static class DropboxReaderEndpoints
             // Delete AI cache (summaries, vocab, chunk boundaries, character graph)
             var aiRemoved = AiContentCache.DeleteAllAiCacheForBook(path);
 
-            Log.Information("🗑️ Cache deletion: EPUB={epubRemoved}, AI={aiRemoved}");
+            Log.Information("🗑️ Cache deletion: EPUB={EpubRemoved}, AI={AiRemoved}", epubRemoved, aiRemoved);
             return Results.Ok(new { epubCacheRemoved = epubRemoved, aiCacheRemoved = aiRemoved });
         }
         catch (ArgumentException ex)
@@ -291,7 +291,7 @@ public static class DropboxReaderEndpoints
         }
         catch (Exception ex)
         {
-            Log.Information("❌ Failed to delete cache: {ex.Message}");
+            Log.Information("❌ Failed to delete cache: {ExMessage}", ex.Message);
             return ApiResponse.InternalError("Unable to delete cache for this book.");
         }
     }
@@ -330,7 +330,7 @@ public static class DropboxReaderEndpoints
         }
         catch (Exception ex)
         {
-            Log.Information("❌ Failed to search EPUB cache: {ex.Message}");
+            Log.Information("❌ Failed to search EPUB cache: {ExMessage}", ex.Message);
             return ApiResponse.InternalError("Unable to search this book right now.");
         }
     }

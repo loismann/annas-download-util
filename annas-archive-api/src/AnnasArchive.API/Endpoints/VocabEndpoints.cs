@@ -57,13 +57,13 @@ public static class VocabEndpoints
     {
         Log.Information("🔍 [GET /api/vocab/known] Loading known words from server...");
         var knownWords = AiContentCache.LoadKnownWordsWithBooks();
-        Log.Information("📊 [GET /api/vocab/known] Returning {knownWords.Count} known words with book associations");
+        Log.Information("📊 [GET /api/vocab/known] Returning {KnownWordsCount} known words with book associations", knownWords.Count);
         return Results.Ok(knownWords);
     }
 
     private static IResult HandleAddKnownWord([FromBody] AddVocabWordRequest request)
     {
-        Log.Information("➕ [POST /api/vocab/known] Request received: term='{request?.Term}', bookId='{request?.BookId}'");
+        Log.Information("➕ [POST /api/vocab/known] Request received: term='{Term}', bookId='{BookId}'", request?.Term, request?.BookId);
 
         if (request is null || string.IsNullOrWhiteSpace(request.Term))
         {
@@ -74,7 +74,7 @@ public static class VocabEndpoints
         var knownWords = AiContentCache.LoadKnownWordsWithBooks();
         var normalized = request.Term.Trim().ToLowerInvariant();
         var bookId = request.BookId ?? "global";
-        Log.Information("🔤 [POST /api/vocab/known] Normalized term: '{normalized}', bookId: '{bookId}'");
+        Log.Information("🔤 [POST /api/vocab/known] Normalized term: '{Normalized}', bookId: '{BookId}'", normalized, bookId);
 
         // Get or create the list of books for this term
         if (!knownWords.ContainsKey(normalized))
@@ -88,7 +88,7 @@ public static class VocabEndpoints
         {
             books.Add(bookId);
             AiContentCache.SaveKnownWordsWithBooks(knownWords);
-            Log.Information("💾 [POST /api/vocab/known] Saved to file. Term now known in {books.Count} books");
+            Log.Information("💾 [POST /api/vocab/known] Saved to file. Term now known in {BooksCount} books", books.Count);
         }
 
         // Remove from study list if it was there
@@ -100,17 +100,17 @@ public static class VocabEndpoints
             if (studyInfo.books.Count == 0)
             {
                 studyWords.Remove(normalized);
-                Log.Information("🔄 [POST /api/vocab/known] Removed '{normalized}' from study list entirely");
+                Log.Information("🔄 [POST /api/vocab/known] Removed '{Normalized}' from study list entirely", normalized);
             }
             else
             {
                 studyWords[normalized] = studyInfo;
-                Log.Information("🔄 [POST /api/vocab/known] Removed book '{bookId}' from study list for '{normalized}'");
+                Log.Information("🔄 [POST /api/vocab/known] Removed book '{BookId}' from study list for '{Normalized}'", bookId, normalized);
             }
             AiContentCache.SaveStudyWordsWithBooks(studyWords);
         }
 
-        Log.Information("✅ [POST /api/vocab/known] Added '{normalized}' to known words for book '{bookId}' (total: {knownWords.Count} unique terms)");
+        Log.Information("✅ [POST /api/vocab/known] Added '{Normalized}' to known words for book '{BookId}' (total: {KnownWordsCount} unique terms)", normalized, bookId, knownWords.Count);
         return Results.Ok(new { success = true, word = normalized, bookId, totalKnown = knownWords.Count, wasNew });
     }
 
@@ -125,7 +125,7 @@ public static class VocabEndpoints
         if (knownWords.Remove(normalized))
         {
             AiContentCache.SaveKnownWordsWithBooks(knownWords);
-            Log.Information("🗑️ Removed '{normalized}' from known words entirely");
+            Log.Information("🗑️ Removed '{Normalized}' from known words entirely", normalized);
             return Results.Ok(new { success = true, word = normalized, totalKnown = knownWords.Count });
         }
 
@@ -144,13 +144,14 @@ public static class VocabEndpoints
             response[kvp.Key] = new { definition = kvp.Value.definition, books = kvp.Value.books };
         }
 
-        Log.Information("📊 [GET /api/vocab/study] Returning {studyWords.Count} study words with book associations");
+        Log.Information("📊 [GET /api/vocab/study] Returning {StudyWordsCount} study words with book associations", studyWords.Count);
         return Results.Ok(response);
     }
 
     private static IResult HandleAddStudyWord([FromBody] AddStudyWordRequest request)
     {
-        Log.Information("➕ [POST /api/vocab/study] Request received: term='{request?.Term}', definition='{request?.Definition}', bookId='{request?.BookId}'");
+        Log.Information("➕ [POST /api/vocab/study] Request received: term='{Term}', definition='{Definition}', bookId='{BookId}'",
+            request?.Term, request?.Definition, request?.BookId);
 
         if (request is null || string.IsNullOrWhiteSpace(request.Term))
         {
@@ -162,7 +163,7 @@ public static class VocabEndpoints
         var normalized = request.Term.Trim().ToLowerInvariant();
         var definition = request.Definition?.Trim() ?? "";
         var bookId = request.BookId ?? "global";
-        Log.Information("🔤 [POST /api/vocab/study] Normalized term: '{normalized}', bookId: '{bookId}'");
+        Log.Information("🔤 [POST /api/vocab/study] Normalized term: '{Normalized}', bookId: '{BookId}'", normalized, bookId);
 
         // Get or create the entry for this term
         if (!studyWords.ContainsKey(normalized))
@@ -184,7 +185,7 @@ public static class VocabEndpoints
         studyWords[normalized] = (existingDef, books);
 
         AiContentCache.SaveStudyWordsWithBooks(studyWords);
-        Log.Information("💾 [POST /api/vocab/study] Saved to file. Term now studied in {books.Count} books");
+        Log.Information("💾 [POST /api/vocab/study] Saved to file. Term now studied in {BooksCount} books", books.Count);
 
         // Remove from known list if it was there
         var knownWords = AiContentCache.LoadKnownWordsWithBooks();
@@ -195,17 +196,17 @@ public static class VocabEndpoints
             if (knownBooks.Count == 0)
             {
                 knownWords.Remove(normalized);
-                Log.Information("🔄 [POST /api/vocab/study] Removed '{normalized}' from known list entirely");
+                Log.Information("🔄 [POST /api/vocab/study] Removed '{Normalized}' from known list entirely", normalized);
             }
             else
             {
                 knownWords[normalized] = knownBooks;
-                Log.Information("🔄 [POST /api/vocab/study] Removed book '{bookId}' from known list for '{normalized}'");
+                Log.Information("🔄 [POST /api/vocab/study] Removed book '{BookId}' from known list for '{Normalized}'", bookId, normalized);
             }
             AiContentCache.SaveKnownWordsWithBooks(knownWords);
         }
 
-        Log.Information("✅ [POST /api/vocab/study] Added '{normalized}' to study list for book '{bookId}' (total: {studyWords.Count} unique terms)");
+        Log.Information("✅ [POST /api/vocab/study] Added '{Normalized}' to study list for book '{BookId}' (total: {StudyWordsCount} unique terms)", normalized, bookId, studyWords.Count);
         return Results.Ok(new { success = true, word = normalized, definition = existingDef, bookId, totalStudy = studyWords.Count, wasNew });
     }
 
@@ -220,7 +221,7 @@ public static class VocabEndpoints
         if (studyWords.Remove(normalized))
         {
             AiContentCache.SaveStudyWordsWithBooks(studyWords);
-            Log.Information("🗑️ Removed '{normalized}' from study list entirely");
+            Log.Information("🗑️ Removed '{Normalized}' from study list entirely", normalized);
             return Results.Ok(new { success = true, word = normalized, totalStudy = studyWords.Count });
         }
 
@@ -229,7 +230,7 @@ public static class VocabEndpoints
 
     private static IResult HandleDeleteBookVocab(string bookId)
     {
-        Log.Information("🗑️ [DELETE /api/vocab/book/{bookId}] Deleting all vocabulary for book '{bookId}'");
+        Log.Information("🗑️ [DELETE /api/vocab/book/{BookId}] Deleting all vocabulary for book '{BookId}'", bookId, bookId);
 
         if (string.IsNullOrWhiteSpace(bookId))
         {
@@ -261,7 +262,7 @@ public static class VocabEndpoints
         }
 
         AiContentCache.SaveKnownWordsWithBooks(knownWords);
-        Log.Information("🗑️ [DELETE /api/vocab/book/{bookId}] Removed {knownRemoved} known words (deleted {knownToRemove.Count} entirely)");
+        Log.Information("🗑️ [DELETE /api/vocab/book/{BookId}] Removed {KnownRemoved} known words (deleted {KnownToRemoveCount} entirely)", bookId, knownRemoved, knownToRemove.Count);
 
         // Remove book from study words
         var studyWords = AiContentCache.LoadStudyWordsWithBooks();
@@ -289,9 +290,9 @@ public static class VocabEndpoints
         }
 
         AiContentCache.SaveStudyWordsWithBooks(studyWords);
-        Log.Information("🗑️ [DELETE /api/vocab/book/{bookId}] Removed {studyRemoved} study words (deleted {studyToRemove.Count} entirely)");
+        Log.Information("🗑️ [DELETE /api/vocab/book/{BookId}] Removed {StudyRemoved} study words (deleted {StudyToRemoveCount} entirely)", bookId, studyRemoved, studyToRemove.Count);
 
-        Log.Information("✅ [DELETE /api/vocab/book/{bookId}] Cleanup complete: {knownRemoved} known + {studyRemoved} study words affected");
+        Log.Information("✅ [DELETE /api/vocab/book/{BookId}] Cleanup complete: {KnownRemoved} known + {StudyRemoved} study words affected", bookId, knownRemoved, studyRemoved);
         return Results.Ok(new {
             success = true,
             bookId,

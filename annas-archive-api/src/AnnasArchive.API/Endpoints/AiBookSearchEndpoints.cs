@@ -136,7 +136,7 @@ Do NOT include any markdown formatting, explanations, or text outside the JSON a
             if (!response.IsSuccessStatusCode)
             {
                 var body = await response.Content.ReadAsStringAsync();
-                Log.Information("❌ OpenAI suggest-authors failed status={(int)response.StatusCode} body={body}");
+                Log.Information("❌ OpenAI suggest-authors failed status={(int)response.StatusCode} body={Body}", body);
                 return Results.Problem($"OpenAI request failed: {(int)response.StatusCode}");
             }
 
@@ -192,8 +192,8 @@ Do NOT include any markdown formatting, explanations, or text outside the JSON a
                 }
                 catch (JsonException ex)
                 {
-                    Log.Information("⚠️ Failed to parse author suggestions JSON: {ex.Message}");
-                    Log.Information("Raw text: {rawText}");
+                    Log.Information("⚠️ Failed to parse author suggestions JSON: {ExMessage}", ex.Message);
+                    Log.Information("Raw text: {RawText}", rawText);
                     // Return empty array on parse failure
                 }
             }
@@ -295,7 +295,7 @@ Rules:
             if (!response.IsSuccessStatusCode)
             {
                 var body = await response.Content.ReadAsStringAsync();
-                Log.Information("❌ OpenAI related-books failed status={(int)response.StatusCode} body={body}");
+                Log.Information("❌ OpenAI related-books failed status={(int)response.StatusCode} body={Body}", body);
                 return Results.Problem($"OpenAI request failed: {(int)response.StatusCode}");
             }
 
@@ -413,8 +413,8 @@ Rules:
                 }
                 catch (JsonException ex)
                 {
-                    Log.Information("⚠️ Failed to parse related books JSON: {ex.Message}");
-                    Log.Information("Raw text: {rawText}");
+                    Log.Information("⚠️ Failed to parse related books JSON: {ExMessage}", ex.Message);
+                    Log.Information("Raw text: {RawText}", rawText);
                 }
             }
 
@@ -447,12 +447,12 @@ Rules:
                     if (matches.Count > sameSeries.Count)
                     {
                         sameSeries = matches;
-                        Log.Information("✅ Series expanded via search: {matches.Count} titles");
+                        Log.Information("✅ Series expanded via search: {MatchesCount} titles", matches.Count);
                     }
                 }
                 catch (Exception ex)
                 {
-                    Log.Information("⚠️ Series expansion failed: {ex.Message}");
+                    Log.Information("⚠️ Series expansion failed: {ExMessage}", ex.Message);
                 }
             }
 
@@ -487,7 +487,7 @@ Rules:
                     if (!string.IsNullOrWhiteSpace(wikiDescription))
                     {
                         sameSeries[i] = new SeriesBook(book.Title, book.Order, wikiDescription, book.CoverUrl, "wikipedia");
-                        Log.Information("[Wikipedia] ✓ Got description for '{book.Title}'");
+                        Log.Information("[Wikipedia] ✓ Got description for '{BookTitle}'", book.Title);
                     }
                     else
                     {
@@ -495,7 +495,7 @@ Rules:
                         var gptDescription = await AiDescriptionHelpers.GenerateNoSpoilerDescriptionAsync(
                             book.Title, request.Author, http, model, modelHelper, aiResponseParser);
                         sameSeries[i] = new SeriesBook(book.Title, book.Order, gptDescription, book.CoverUrl, "gpt");
-                        Log.Information("[GPT-4] ✓ Generated description for '{book.Title}'");
+                        Log.Information("[GPT-4] ✓ Generated description for '{BookTitle}'", book.Title);
                     }
 
                     sameSeriesProcessed++;
@@ -539,14 +539,14 @@ Rules:
                         if (!string.IsNullOrWhiteSpace(wikiDescription))
                         {
                             updatedBooks.Add(new SeriesBook(book.Title, book.Order, wikiDescription, book.CoverUrl, "wikipedia"));
-                            Log.Information("[Wikipedia] ✓ Got description for '{book.Title}'");
+                            Log.Information("[Wikipedia] ✓ Got description for '{BookTitle}'", book.Title);
                         }
                         else
                         {
                             var gptDescription = await AiDescriptionHelpers.GenerateNoSpoilerDescriptionAsync(
                                 book.Title, request.Author, http, model, modelHelper, aiResponseParser);
                             updatedBooks.Add(new SeriesBook(book.Title, book.Order, gptDescription, book.CoverUrl, "gpt"));
-                            Log.Information("[GPT-4] ✓ Generated description for '{book.Title}'");
+                            Log.Information("[GPT-4] ✓ Generated description for '{BookTitle}'", book.Title);
                         }
 
                         otherSeriesProcessed++;
@@ -572,7 +572,7 @@ Rules:
             PerfLog.Record("RelatedBooks.DescriptionLoop", descriptionLoopSw.Elapsed.TotalMilliseconds, true,
                 ("TotalDescriptions", totalDescriptions), ("SameSeries", sameSeriesProcessed), ("OtherSeries", otherSeriesProcessed));
 
-            Log.Information("✅ Related books for '{request.BookTitle}': {sameSeries.Count} series books, {otherSeries.Count} other series");
+            Log.Information("✅ Related books for '{RequestBookTitle}': {SameSeriesCount} series books, {OtherSeriesCount} other series", request.BookTitle, sameSeries.Count, otherSeries.Count);
 
             return Results.Ok(new RelatedBooksResponse(sameSeries, otherSeries, seriesSummary));
         }
@@ -583,7 +583,7 @@ Rules:
         }
         catch (Exception ex)
         {
-            Log.Information("❌ OpenAI related-books failed: {ex.Message}");
+            Log.Information("❌ OpenAI related-books failed: {ExMessage}", ex.Message);
             return ApiResponse.InternalError("Failed to get related books.");
         }
     }
@@ -671,7 +671,7 @@ Rules:
             if (!response.IsSuccessStatusCode)
             {
                 var body = await response.Content.ReadAsStringAsync();
-                Log.Information("❌ OpenAI book-search failed status={(int)response.StatusCode} body={body}");
+                Log.Information("❌ OpenAI book-search failed status={(int)response.StatusCode} body={Body}", body);
                 return Results.Problem($"OpenAI request failed: {(int)response.StatusCode}");
             }
 
@@ -709,9 +709,9 @@ Rules:
             {
                 var rawPreview = rawText.Length > 2000 ? rawText[..2000] + "…" : rawText;
                 var cleanPreview = cleaned.Length > 2000 ? cleaned[..2000] + "…" : cleaned;
-                Log.Information("❌ AI book-search JSON parse failed: {ex.Message}");
-                Log.Information("❌ AI book-search raw preview: {rawPreview}");
-                Log.Information("❌ AI book-search cleaned preview: {cleanPreview}");
+                Log.Information("❌ AI book-search JSON parse failed: {ExMessage}", ex.Message);
+                Log.Information("❌ AI book-search raw preview: {RawPreview}", rawPreview);
+                Log.Information("❌ AI book-search cleaned preview: {CleanPreview}", cleanPreview);
                 return Results.BadRequest(new { error = "AI response could not be parsed. Try again or simplify the query." });
             }
 
@@ -838,7 +838,7 @@ Rules:
         }
         catch (Exception ex)
         {
-            Log.Information("❌ OpenAI book-search failed: {ex.Message}");
+            Log.Information("❌ OpenAI book-search failed: {ExMessage}", ex.Message);
             return ApiResponse.InternalError("Failed to run AI book search.");
         }
     }
@@ -926,7 +926,7 @@ Rules:
             if (!response.IsSuccessStatusCode)
             {
                 var body = await response.Content.ReadAsStringAsync();
-                Log.Information("❌ OpenAI match-series-books failed status={(int)response.StatusCode} body={body}");
+                Log.Information("❌ OpenAI match-series-books failed status={(int)response.StatusCode} body={Body}", body);
                 return Results.Problem($"OpenAI request failed: {(int)response.StatusCode}");
             }
 
@@ -982,8 +982,8 @@ Rules:
                 }
                 catch (JsonException ex)
                 {
-                    Log.Information("⚠️ Failed to parse series match JSON: {ex.Message}");
-                    Log.Information("Raw text: {rawText}");
+                    Log.Information("⚠️ Failed to parse series match JSON: {ExMessage}", ex.Message);
+                    Log.Information("Raw text: {RawText}", rawText);
                 }
             }
 

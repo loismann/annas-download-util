@@ -71,7 +71,7 @@ public static class AnnaDownloadEndpoints
         var tokenLimitResult = TokenLimitHelpers.CheckTokenLimit(cfg, tokenUsage, context);
         if (tokenLimitResult is not null) return tokenLimitResult;
 
-        Log.Information("📖 GPT-4 description lookup: title='{title}', author='{author}'");
+        Log.Information("📖 GPT-4 description lookup: title='{Title}', author='{Author}'", title, author);
 
         using var http = httpFactory.CreateClient("OpenAI");
         var model = modelSelection.GetModelFast();
@@ -396,7 +396,7 @@ public static class AnnaDownloadEndpoints
             catch (Dropbox.Api.HttpException ex)
             {
                 var details = ex.ToString();
-                Log.Warning(" Dropbox upload failed (HTTP {ex.StatusCode}): {ex.Message} | Uri: {ex.RequestUri} | Details: {details}");
+                Log.Warning(" Dropbox upload failed (HTTP {ExStatusCode}): {ExMessage} | Uri: {ExRequestUri} | Details: {Details}", ex.StatusCode, ex.Message, ex.RequestUri, details);
                 return Results.Ok(new
                 {
                     success         = false,
@@ -406,7 +406,7 @@ public static class AnnaDownloadEndpoints
             }
             catch (Dropbox.Api.DropboxException ex)
             {
-                Log.Warning(" Dropbox upload failed (DropboxException): {ex}");
+                Log.Warning(" Dropbox upload failed (DropboxException): {Ex}", ex);
                 return Results.Ok(new
                 {
                     success         = false,
@@ -416,7 +416,7 @@ public static class AnnaDownloadEndpoints
             }
             catch (HttpRequestException ex)
             {
-                Log.Warning(" Dropbox upload failed (HTTP): {ex}");
+                Log.Warning(" Dropbox upload failed (HTTP): {Ex}", ex);
                 return Results.Ok(new
                 {
                     success         = false,
@@ -431,7 +431,7 @@ public static class AnnaDownloadEndpoints
             }
             catch (Exception ex)
             {
-                Log.Warning(" Dropbox upload failed: {ex.Message}");
+                Log.Warning(" Dropbox upload failed: {ExMessage}", ex.Message);
 
                 return Results.Ok(new
                 {
@@ -594,7 +594,7 @@ public static class AnnaDownloadEndpoints
             }
             catch (Exception ex)
             {
-                Log.Warning(" Send to Kindle failed: {ex.Message}");
+                Log.Warning(" Send to Kindle failed: {ExMessage}", ex.Message);
                 return Results.Ok(new
                 {
                     success         = false,

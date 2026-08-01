@@ -153,7 +153,11 @@ services:
       # at volume (see the health check notes above), and this service can
       # make several hundred lookups on its first pass through the backlog.
       - GoogleBooks__ApiKey=${GOOGLE_BOOKS_API_KEY:-}
+      # Gaming PC wake/sleep control. Off here; when enabled, Gaming__PcIp must
+      # be set too (the status endpoint reports "not configured" without it) —
+      # it lives in .env rather than tracked source so no LAN address is committed.
       - Gaming__Enabled=false
+      - Gaming__PcIp=${GAMING_PC_IP:-}
       - API_RATE_LIMIT=300
       - LOGIN_RATE_LIMIT=30
     volumes:

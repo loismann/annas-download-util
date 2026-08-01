@@ -101,7 +101,7 @@ Relevant passage/context: {request.Context ?? "(none)"}";
             if (!response.IsSuccessStatusCode)
             {
                 var body = await response.Content.ReadAsStringAsync();
-                Log.Information("❌ OpenAI learn-more failed status={(int)response.StatusCode} body={body}");
+                Log.Information("❌ OpenAI learn-more failed status={(int)response.StatusCode} body={Body}", body);
                 return Results.Problem($"OpenAI request failed: {(int)response.StatusCode}");
             }
 
@@ -128,7 +128,7 @@ Relevant passage/context: {request.Context ?? "(none)"}";
         }
         catch (Exception ex)
         {
-            Log.Information("❌ OpenAI learn-more failed: {ex.Message}");
+            Log.Information("❌ OpenAI learn-more failed: {ExMessage}", ex.Message);
             return ApiResponse.InternalError("Failed to fetch details.");
         }
     }
@@ -142,7 +142,7 @@ Relevant passage/context: {request.Context ?? "(none)"}";
         if (request.Vocab == null)
             return Results.BadRequest(new { error = "vocab is required." });
 
-        Log.Information("💾 Saving {request.Vocab.Count} vocab cards for chapter {request.ChapterId}, section {request.SectionIndex}");
+        Log.Information("💾 Saving {RequestVocabCount} vocab cards for chapter {RequestChapterId}, section {RequestSectionIndex}", request.Vocab.Count, request.ChapterId, request.SectionIndex);
 
         AiContentCache.SaveSectionVocab(request.DropboxPath, request.ChapterId, request.SectionIndex, request.Vocab);
 

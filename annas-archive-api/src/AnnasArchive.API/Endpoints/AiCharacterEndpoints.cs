@@ -47,7 +47,7 @@ public static class AiCharacterEndpoints
         if (string.IsNullOrWhiteSpace(request.DropboxPath))
             return Results.BadRequest(new { error = "DropboxPath is required." });
 
-        Log.Information("📊 Generating character graph for {request.BookTitle ?? request.DropboxPath}...");
+        Log.Information("📊 Generating character graph for {Book}...", request.BookTitle ?? request.DropboxPath);
 
         // Gather all existing summaries (both chapter and section) for this book
         var chapterSummaries = AiContentCache.GetAllChapterSummariesAsStrings(request.DropboxPath);
@@ -59,7 +59,7 @@ public static class AiCharacterEndpoints
             return Results.BadRequest(new { error = "No summaries found. Please generate chapter or section summaries as you read the book first." });
         }
 
-        Log.Information("📚 Found {chapterSummaries.Count} chapter summaries and {sectionSummaries.Count} section summaries to analyze");
+        Log.Information("📚 Found {ChapterSummariesCount} chapter summaries and {SectionSummariesCount} section summaries to analyze", chapterSummaries.Count, sectionSummaries.Count);
 
         // Combine all summaries
         var allSummaries = new List<string>();
@@ -136,7 +136,7 @@ Story Summaries:
 Create a character relationship network graph based ONLY on information in these summaries.";
 
             var model = "gpt-4o"; // Use GPT-4o for cost-effective character graph generation
-            Log.Information("🤖 Using model for character graph: {model}");
+            Log.Information("🤖 Using model for character graph: {Model}", model);
 
             var payload = modelHelper.BuildChatCompletionPayload(
                 model,
@@ -153,7 +153,7 @@ Create a character relationship network graph based ONLY on information in these
             if (!response.IsSuccessStatusCode)
             {
                 var body = await response.Content.ReadAsStringAsync();
-                Log.Information("❌ Character graph failed: {response.StatusCode}");
+                Log.Information("❌ Character graph failed: {ResponseStatusCode}", response.StatusCode);
                 return Results.Problem($"Character graph generation failed: {(int)response.StatusCode}");
             }
 
@@ -201,14 +201,14 @@ Create a character relationship network graph based ONLY on information in these
 
                 // Save to cache
                 AiContentCache.SaveCharacterGraph(request.DropboxPath, graph);
-                Log.Information("✅ Character graph generated with {graph.Nodes.Count} characters and {graph.Edges.Count} relationships from {totalSummaryCount} summaries ({chapterSummaries.Count} chapter + {sectionSummaries.Count} section)");
+                Log.Information("✅ Character graph generated with {GraphNodesCount} characters and {GraphEdgesCount} relationships from {TotalSummaryCount} summaries ({ChapterSummariesCount} chapter + {SectionSummariesCount} section)", graph.Nodes.Count, graph.Edges.Count, totalSummaryCount, chapterSummaries.Count, sectionSummaries.Count);
 
                 return Results.Ok(graph);
             }
             catch (Exception ex)
             {
-                Log.Information("❌ Failed to parse character graph: {ex.Message}");
-                Log.Information("   Content: {content.Substring(0, Math.Min(200, content.Length))}");
+                Log.Information("❌ Failed to parse character graph: {ExMessage}", ex.Message);
+                Log.Information("   Content: {ContentSubstring}", content.Substring(0, Math.Min(200, content.Length)));
                 return Results.Problem("Failed to parse character graph data.");
             }
         }
@@ -219,7 +219,7 @@ Create a character relationship network graph based ONLY on information in these
         }
         catch (Exception ex)
         {
-            Log.Information("❌ Character graph generation failed: {ex.Message}");
+            Log.Information("❌ Character graph generation failed: {ExMessage}", ex.Message);
             return Results.Problem("Failed to generate character graph.");
         }
     }
@@ -298,7 +298,7 @@ New story content:
 Update the character graph with any new information. Return the complete updated graph.";
 
             var model = "gpt-4o"; // Use GPT-4o for cost-effective character graph updates
-            Log.Information("🤖 Using model for character graph update: {model}");
+            Log.Information("🤖 Using model for character graph update: {Model}", model);
 
             var payload = modelHelper.BuildChatCompletionPayload(
                 model,
@@ -314,7 +314,7 @@ Update the character graph with any new information. Return the complete updated
             var response = await http.PostAsJsonAsync("https://api.openai.com/v1/chat/completions", payload);
             if (!response.IsSuccessStatusCode)
             {
-                Log.Information("❌ Character graph update failed: {response.StatusCode}");
+                Log.Information("❌ Character graph update failed: {ResponseStatusCode}", response.StatusCode);
                 return Results.Problem("Failed to update character graph.");
             }
 
@@ -343,7 +343,7 @@ Update the character graph with any new information. Return the complete updated
 
             // Save to cache
             AiContentCache.SaveCharacterGraph(request.DropboxPath, updatedGraph);
-            Log.Information("✅ Character graph updated: {updatedGraph.Nodes.Count} characters, {updatedGraph.Edges.Count} relationships");
+            Log.Information("✅ Character graph updated: {UpdatedGraphNodesCount} characters, {UpdatedGraphEdgesCount} relationships", updatedGraph.Nodes.Count, updatedGraph.Edges.Count);
 
             return Results.Ok(updatedGraph);
         }
@@ -354,7 +354,7 @@ Update the character graph with any new information. Return the complete updated
         }
         catch (Exception ex)
         {
-            Log.Information("❌ Character graph update failed: {ex.Message}");
+            Log.Information("❌ Character graph update failed: {ExMessage}", ex.Message);
             return Results.Problem("Failed to update character graph.");
         }
     }

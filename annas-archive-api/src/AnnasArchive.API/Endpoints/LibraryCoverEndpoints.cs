@@ -101,6 +101,15 @@ public static class LibraryCoverEndpoints
             (coverUri.Scheme != Uri.UriSchemeHttp && coverUri.Scheme != Uri.UriSchemeHttps))
             return Results.BadRequest(new { error = "coverUrl must be an http(s) URL." });
 
+        // SSRF guard: this fetch happens from inside the compose network, next to
+        // services that trust anything already in there. Resolve first so a public
+        // hostname pointing at a private address can't slip through.
+        if (!await ValidationHelpers.IsPubliclyRoutableAsync(coverUri, context.RequestAborted))
+        {
+            Log.Warning("[library] Rejected cover URL resolving to a non-public address: {CoverHost}", coverUri.Host);
+            return Results.BadRequest(new { error = "coverUrl must point to a public address." });
+        }
+
         var safeFileName = Path.GetFileName(fileName);
         if (!string.Equals(fileName, safeFileName, StringComparison.Ordinal))
             return Results.BadRequest(new { error = "Invalid fileName." });
@@ -128,7 +137,7 @@ public static class LibraryCoverEndpoints
         }
         catch (Exception ex)
         {
-            Log.Information("[library] Failed to download cover: {ex.Message}");
+            Log.Warning(ex, "[library] Failed to download cover");
             return Results.Problem("Failed to download cover image.");
         }
 
@@ -160,21 +169,21 @@ public static class LibraryCoverEndpoints
         {
             var jsonOptions = LibraryHelpers.CreateLibraryJsonOptions();
             var json = await File.ReadAllTextAsync(metaPath);
-            Log.Information("[library-cover] READ metadata for {safeFileName}:");
-            Log.Information("[library-cover]   Existing JSON: {json.Substring(0, Math.Min(200, json.Length))}...");
+            Log.Information("[library-cover] READ metadata for {SafeFileName}:", safeFileName);
+            Log.Information("[library-cover]   Existing JSON: {JsonSubstring}...", json.Substring(0, Math.Min(200, json.Length)));
 
             var meta = JsonSerializer.Deserialize<LibraryBookMeta>(json, jsonOptions);
 
             if (meta == null)
                 return Results.BadRequest(new { error = "Invalid metadata file." });
 
-            Log.Information("[library-cover]   Deserialized CoverUrl: {meta.CoverUrl}");
+            Log.Information("[library-cover]   Deserialized CoverUrl: {MetaCoverUrl}", meta.CoverUrl);
 
             var updated = meta with { CoverUrl = $"_covers/{coverFileName}" };
-            Log.Information("[library-cover]   NEW CoverUrl: {updated.CoverUrl}");
+            Log.Information("[library-cover]   NEW CoverUrl: {UpdatedCoverUrl}", updated.CoverUrl);
 
             var updatedJson = JsonSerializer.Serialize(updated, jsonOptions);
-            Log.Information("[library-cover]   Serialized JSON: {updatedJson.Substring(0, Math.Min(200, updatedJson.Length))}...");
+            Log.Information("[library-cover]   Serialized JSON: {UpdatedJsonSubstring}...", updatedJson.Substring(0, Math.Min(200, updatedJson.Length)));
 
             await File.WriteAllTextAsync(metaPath, updatedJson);
             cache.InvalidateCache();

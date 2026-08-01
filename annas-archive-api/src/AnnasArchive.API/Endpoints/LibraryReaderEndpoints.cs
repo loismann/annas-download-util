@@ -129,7 +129,7 @@ public static class LibraryReaderEndpoints
             }
             catch (Exception ex)
             {
-                Log.Information("[library] Failed to persist chapter cache for {safeFileName} chapter {chapterId}: {ex.Message}");
+                Log.Information("[library] Failed to persist chapter cache for {SafeFileName} chapter {ChapterId}: {ExMessage}", safeFileName, chapterId, ex.Message);
             }
 
             var fallbackResponse = new DropboxChapterContentDto(

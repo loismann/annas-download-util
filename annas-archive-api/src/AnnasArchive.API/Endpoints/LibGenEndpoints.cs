@@ -85,11 +85,11 @@ public static class LibGenEndpoints
         IConfiguration cfg,
         [FromQuery] bool exact = false)
     {
-        Log.Information("[API LibGen Search] Received request: name='{name}', exact={exact}");
+        Log.Information("[API LibGen Search] Received request: name='{Name}', exact={Exact}", name, exact);
 
         if (!validation.IsValidSearchQuery(name))
         {
-            Log.Information("[API LibGen Search] Validation failed for query: '{name}'");
+            Log.Information("[API LibGen Search] Validation failed for query: '{Name}'", name);
             return Results.BadRequest(new {
                 error = "Query parameter 'name' is required and must be between 1 and 500 characters."
             });
@@ -98,7 +98,7 @@ public static class LibGenEndpoints
         var searchLimit = cfg.GetValue<int>("Anna:SearchLimit", 25);
         Log.Information("[API LibGen Search] Calling LibGenService.SearchAsync...");
         var books = (await svc.SearchAsync(name, searchLimit, exact)).ToList();
-        Log.Information("[API LibGen Search] Service returned {books.Count} books");
+        Log.Information("[API LibGen Search] Service returned {BooksCount} books", books.Count);
 
         if (exact)
         {
@@ -106,13 +106,13 @@ public static class LibGenEndpoints
             books = books
                 .Where(b => string.Equals(b.Title?.Trim(), name.Trim(), StringComparison.OrdinalIgnoreCase))
                 .ToList();
-            Log.Information("[API LibGen Search] After exact filter: {books.Count} books (was {originalCount})");
+            Log.Information("[API LibGen Search] After exact filter: {BooksCount} books (was {OriginalCount})", books.Count, originalCount);
         }
 
         if (books.Any())
         {
             var result = books.Count == 1 ? Results.Ok(books[0]) : Results.Ok(books);
-            Log.Information("[API LibGen Search] Returning {books.Count} books");
+            Log.Information("[API LibGen Search] Returning {BooksCount} books", books.Count);
             return result;
         }
         else

@@ -120,7 +120,7 @@ Write 300-400 words that assume the reader is intelligent but may lack specializ
             if (!chunkResponse.IsSuccessStatusCode)
             {
                 var body = await chunkResponse.Content.ReadAsStringAsync();
-                Log.Information("❌ OpenAI chunk summary failed status={(int)chunkResponse.StatusCode} body={body}");
+                Log.Information("❌ OpenAI chunk summary failed status={(int)chunkResponse.StatusCode} body={Body}", body);
                 await ServerSentEventsHelper.SendEventAsync(response, new
                 {
                     stage = "chunks",
@@ -135,10 +135,10 @@ Write 300-400 words that assume the reader is intelligent but may lack specializ
             using var stream = await chunkResponse.Content.ReadAsStreamAsync();
             using var doc = await JsonDocument.ParseAsync(stream);
 
-            Log.Information("🔍 Chunk {i + 1} response JSON: {doc.RootElement.GetRawText()}");
+            Log.Information("🔍 Chunk {i + 1} response JSON: {DocRootElementGetRawText}", doc.RootElement.GetRawText());
 
             var chunkSummary = aiResponseParser.ExtractText(doc.RootElement) ?? string.Empty;
-            Log.Information("🔍 Chunk {i + 1} extracted summary length: {chunkSummary.Length}");
+            Log.Information("🔍 Chunk {i + 1} extracted summary length: {ChunkSummaryLength}", chunkSummary.Length);
 
             chunkSummaries.Add(chunkSummary);
 
@@ -225,7 +225,7 @@ Write 400-500 words. Maintain educational depth while creating a flowing narrati
             if (!sectionResponse.IsSuccessStatusCode)
             {
                 var body = await sectionResponse.Content.ReadAsStringAsync();
-                Log.Information("❌ OpenAI section summary failed status={(int)sectionResponse.StatusCode} body={body}");
+                Log.Information("❌ OpenAI section summary failed status={(int)sectionResponse.StatusCode} body={Body}", body);
                 await ServerSentEventsHelper.SendEventAsync(response, new
                 {
                     stage = "sections",
@@ -333,7 +333,7 @@ Write as if teaching an intelligent student. Define specialized terms, explain r
         if (!finalResponse.IsSuccessStatusCode)
         {
             var body = await finalResponse.Content.ReadAsStringAsync();
-            Log.Information("❌ OpenAI final summary failed status={(int)finalResponse.StatusCode} body={body}");
+            Log.Information("❌ OpenAI final summary failed status={(int)finalResponse.StatusCode} body={Body}", body);
             await ServerSentEventsHelper.SendEventAsync(response, new
             {
                 stage = "final",
@@ -348,10 +348,10 @@ Write as if teaching an intelligent student. Define specialized terms, explain r
         using var finalStream = await finalResponse.Content.ReadAsStreamAsync();
         using var finalDoc = await JsonDocument.ParseAsync(finalStream);
 
-        Log.Information("🔍 Final response JSON: {finalDoc.RootElement.GetRawText()}");
+        Log.Information("🔍 Final response JSON: {FinalDocRootElementGetRawText}", finalDoc.RootElement.GetRawText());
 
         string finalSummary = aiResponseParser.ExtractText(finalDoc.RootElement) ?? "No summary returned.";
-        Log.Information("🔍 Extracted summary length: {finalSummary.Length}");
+        Log.Information("🔍 Extracted summary length: {FinalSummaryLength}", finalSummary.Length);
 
         var promptTokens = 0;
         var completionTokens = 0;

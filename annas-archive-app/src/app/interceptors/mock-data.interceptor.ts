@@ -319,8 +319,9 @@ export const mockDataInterceptor: HttpInterceptorFn = (req, next) => {
     return of(new HttpResponse({
       status: 200,
       body: {
+        // Documentation-range address (RFC 5737), not a real one from this LAN.
         isOnline: false,
-        ipAddress: '192.168.0.80',
+        ipAddress: '203.0.113.10',
         lastChecked: new Date().toISOString()
       }
     })).pipe(delay(400));

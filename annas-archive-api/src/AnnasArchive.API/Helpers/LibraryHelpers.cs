@@ -189,7 +189,7 @@ public static class LibraryHelpers
         var metaPath = Path.Combine(libraryRoot, fileName + ".meta.json");
         if (!File.Exists(metaPath))
         {
-            Log.Information("[AddTags] Metadata file not found for {fileName}, skipping tag addition");
+            Log.Information("[AddTags] Metadata file not found for {FileName}, skipping tag addition", fileName);
             return;
         }
 
@@ -201,7 +201,7 @@ public static class LibraryHelpers
 
             if (meta == null)
             {
-                Log.Information("[AddTags] Failed to deserialize metadata for {fileName}");
+                Log.Information("[AddTags] Failed to deserialize metadata for {FileName}", fileName);
                 return;
             }
 
@@ -214,7 +214,7 @@ public static class LibraryHelpers
                 if (existingTags.Add(tag))
                 {
                     tagsAdded = true;
-                    Log.Information("[AddTags] Adding tag '{tag}' to {fileName}");
+                    Log.Information("[AddTags] Adding tag '{Tag}' to {FileName}", tag, fileName);
                 }
             }
 
@@ -227,16 +227,16 @@ public static class LibraryHelpers
             }
             else
             {
-                Log.Information("[AddTags] No new tags to add for {fileName}");
+                Log.Information("[AddTags] No new tags to add for {FileName}", fileName);
             }
         }
         catch (ArgumentException ex)
         {
-            Log.Information("[AddTags] Invalid argument adding tags to {fileName}: {ex.ParamName}");
+            Log.Information("[AddTags] Invalid argument adding tags to {FileName}: {ExParamName}", fileName, ex.ParamName);
         }
         catch (Exception ex)
         {
-            Log.Information("[AddTags] Error adding tags to {fileName}: {ex.Message}");
+            Log.Information("[AddTags] Error adding tags to {FileName}: {ExMessage}", fileName, ex.Message);
         }
     }
 }

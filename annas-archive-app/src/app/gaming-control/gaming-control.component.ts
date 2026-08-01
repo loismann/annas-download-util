@@ -222,6 +222,16 @@ export class GamingControlComponent implements OnInit, OnDestroy {
   terminalLines: TerminalLine[] = [];
   pcOnline: boolean | null = null; // null = unknown, true = online, false = offline
 
+  /** Reported by the status endpoint (which reads it from server config) rather
+   * than hardcoded here — a LAN address baked into tracked frontend source is
+   * the same policy violation as one baked into the backend. Blank until the
+   * first status call lands, so the terminal just says "target" instead. */
+  private pcIpAddress = '';
+
+  private get pcTarget(): string {
+    return this.pcIpAddress || 'gaming PC';
+  }
+
   constructor(
     private gamingApi: GamingApiService
   ) {}
@@ -233,7 +243,6 @@ export class GamingControlComponent implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     this.addLine('System initialized', 'success');
-    this.addLine('Synology NAS: 192.168.0.81 (online)', 'success');
     this.addLine('Checking gaming PC status...', 'info');
     this.checkPCStatus();
   }
@@ -242,14 +251,15 @@ export class GamingControlComponent implements OnInit, OnDestroy {
     this.gamingApi.getGamingPCStatus().pipe(takeUntil(this.destroy$)).subscribe({
       next: (response) => {
         this.pcOnline = response.isOnline;
+        this.pcIpAddress = response.ipAddress ?? '';
         const status = response.isOnline ? 'ONLINE' : 'OFFLINE';
         const type = response.isOnline ? 'success' : 'warning';
-        this.addLine(`Gaming PC: 192.168.0.80 (${status})`, type);
+        this.addLine(`Gaming PC: ${this.pcTarget} (${status})`, type);
         this.addLine('Ready for commands...', 'info');
       },
-      error: (err) => {
+      error: () => {
         this.pcOnline = false;
-        this.addLine('Gaming PC: 192.168.0.80 (status check failed)', 'error');
+        this.addLine(`Gaming PC: ${this.pcTarget} (status check failed)`, 'error');
         this.addLine('Ready for commands...', 'info');
       }
     });
@@ -289,8 +299,10 @@ export class GamingControlComponent implements OnInit, OnDestroy {
     this.addLine('→ Connecting to Synology NAS...', 'info', 200);
     this.addLine('✓ Connection established', 'success', 400);
     this.addLine('→ Sending Wake-on-LAN magic packet...', 'info', 600);
-    this.addLine('  Target MAC: 04:7C:16:EA:C7:58', 'info', 800);
-    this.addLine('  Target IP: 192.168.0.80', 'info', 1000);
+    // The MAC that used to be printed here was a hardcoded hardware identifier
+    // in tracked source, and the server never reports one — dropped rather than
+    // faked. The target comes from the status endpoint's config-backed value.
+    this.addLine(`  Target: ${this.pcTarget}`, 'info', 1000);
 
     this.gamingApi.toggleGamingPC(1).pipe(takeUntil(this.destroy$)).subscribe({
       next: (response) => {
@@ -350,7 +362,7 @@ export class GamingControlComponent implements OnInit, OnDestroy {
     this.addLine('→ Connecting to Synology NAS...', 'info', 200);
     this.addLine('✓ Connection established', 'success', 400);
     this.addLine('→ Sending sleep command to gaming PC...', 'info', 600);
-    this.addLine('  Target IP: 192.168.0.80', 'info', 800);
+    this.addLine(`  Target: ${this.pcTarget}`, 'info', 800);
 
     this.gamingApi.toggleGamingPC(2).pipe(takeUntil(this.destroy$)).subscribe({
       next: (response) => {

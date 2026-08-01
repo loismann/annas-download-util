@@ -150,7 +150,7 @@ Return JSON array of flashcards for individual terms found in the passage.";
             if (!response.IsSuccessStatusCode)
             {
                 var body = await response.Content.ReadAsStringAsync();
-                Log.Information("❌ OpenAI flashcard failed status={(int)response.StatusCode} body={body}");
+                Log.Information("❌ OpenAI flashcard failed status={(int)response.StatusCode} body={Body}", body);
                 return Results.Problem($"OpenAI request failed: {(int)response.StatusCode}");
             }
 
@@ -191,12 +191,12 @@ Return JSON array of flashcards for individual terms found in the passage.";
                     PropertyNameCaseInsensitive = true
                 }) ?? throw new Exception("Invalid flashcard JSON array");
 
-                Log.Information("✅ Successfully parsed {cardsParsed.Count} flashcards from AI response");
+                Log.Information("✅ Successfully parsed {CardsParsedCount} flashcards from AI response", cardsParsed.Count);
             }
             catch (Exception parseEx)
             {
-                Log.Information("⚠️ Failed to parse flashcards as array: {parseEx.Message}");
-                Log.Information("   AI response: {content.Substring(0, Math.Min(200, content.Length))}...");
+                Log.Information("⚠️ Failed to parse flashcards as array: {ParseExMessage}", parseEx.Message);
+                Log.Information("   AI response: {ContentSubstring}...", content.Substring(0, Math.Min(200, content.Length)));
 
                 try
                 {
@@ -215,7 +215,7 @@ Return JSON array of flashcards for individual terms found in the passage.";
                 }
                 catch (Exception singleEx)
                 {
-                    Log.Information("❌ Failed to parse flashcards: {singleEx.Message}");
+                    Log.Information("❌ Failed to parse flashcards: {SingleExMessage}", singleEx.Message);
                     // Don't create a fallback card - return empty list
                     // This prevents creating giant vocab cards with entire text
                     cardsParsed = new List<FlashcardItem>();
@@ -246,7 +246,7 @@ Return JSON array of flashcards for individual terms found in the passage.";
         }
         catch (Exception ex)
         {
-            Log.Information("❌ Flashcard create failed: {ex.Message}");
+            Log.Information("❌ Flashcard create failed: {ExMessage}", ex.Message);
             return ApiResponse.InternalError("Failed to create flashcard.");
         }
     }

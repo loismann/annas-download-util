@@ -1,3 +1,6 @@
+using System.Net;
+using System.Net.Sockets;
+
 namespace AnnasArchive.API.Helpers;
 
 /// <summary>
@@ -37,6 +40,80 @@ public static class ValidationHelpers
                 return ApiResponse.BadRequest($"{paramName} is not a valid URL");
         }
         return null;
+    }
+
+    /// <summary>
+    /// Resolves a user-supplied URL and rejects it if it points anywhere inside
+    /// this host's own network — the SSRF guard for endpoints that fetch an
+    /// arbitrary URL server-side.
+    ///
+    /// The resolve step is the point: this process sits on the compose network
+    /// alongside Sonarr/Radarr/Gluetun-control/Seq, several of which are
+    /// unauthenticated or key-only, so a URL that merely *looks* public
+    /// ("http://cdn.example.com/x.jpg") but resolves to 172.18.x.x would
+    /// otherwise be fetched from a trusted position on that network. Checking
+    /// every resolved address also covers a hostname that returns a mix.
+    /// </summary>
+    /// <param name="uri">An already-parsed absolute http(s) URI.</param>
+    /// <param name="ct">Cancellation token for the DNS lookup.</param>
+    /// <returns>True when every resolved address is a public one.</returns>
+    public static async Task<bool> IsPubliclyRoutableAsync(Uri uri, CancellationToken ct = default)
+    {
+        IPAddress[] addresses;
+        try
+        {
+            // A literal IP in the URL parses here without a DNS round trip.
+            addresses = IPAddress.TryParse(uri.Host, out var literal)
+                ? [literal]
+                : await Dns.GetHostAddressesAsync(uri.Host, ct);
+        }
+        catch (Exception ex) when (ex is SocketException or ArgumentException)
+        {
+            // Unresolvable is not fetchable — fail closed rather than handing
+            // the request to HttpClient to find out.
+            return false;
+        }
+
+        return addresses.Length > 0 && addresses.All(IsPublicAddress);
+    }
+
+    /// <summary>Whether one address is outside every reserved/private range.</summary>
+    private static bool IsPublicAddress(IPAddress address)
+    {
+        // Map IPv4-in-IPv6 (::ffff:192.168.0.1) down before range-checking, or
+        // a private v4 address wearing a v6 costume would read as public.
+        if (address.IsIPv4MappedToIPv6)
+            address = address.MapToIPv4();
+
+        if (IPAddress.IsLoopback(address)) return false;
+
+        if (address.AddressFamily == AddressFamily.InterNetwork)
+        {
+            var b = address.GetAddressBytes();
+            return b[0] switch
+            {
+                0 => false,                                  // 0.0.0.0/8 "this network"
+                10 => false,                                 // 10.0.0.0/8 private
+                127 => false,                                // loopback (covered above; explicit)
+                169 when b[1] == 254 => false,               // 169.254.0.0/16 link-local + cloud metadata
+                172 when b[1] >= 16 && b[1] <= 31 => false,  // 172.16.0.0/12 private (Docker lives here)
+                192 when b[1] == 168 => false,               // 192.168.0.0/16 private
+                100 when b[1] >= 64 && b[1] <= 127 => false, // 100.64.0.0/10 CGNAT (Tailscale)
+                >= 224 => false,                             // multicast + reserved
+                _ => true
+            };
+        }
+
+        if (address.AddressFamily == AddressFamily.InterNetworkV6)
+        {
+            return !address.IsIPv6LinkLocal
+                && !address.IsIPv6SiteLocal
+                && !address.IsIPv6Multicast
+                && !address.GetAddressBytes()[0].Equals((byte)0xfd) // fc00::/7 unique-local
+                && !address.GetAddressBytes()[0].Equals((byte)0xfc);
+        }
+
+        return false;
     }
 
     /// <summary>

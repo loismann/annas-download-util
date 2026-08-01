@@ -10,7 +10,7 @@ describe('GamingControlComponent', () => {
 
   beforeEach(async () => {
     mockGamingApi = jasmine.createSpyObj('GamingApiService', ['getGamingPCStatus', 'toggleGamingPC']);
-    mockGamingApi.getGamingPCStatus.and.returnValue(of({ isOnline: false, ipAddress: '192.168.1.100', lastChecked: '2026-01-15T00:00:00Z' }));
+    mockGamingApi.getGamingPCStatus.and.returnValue(of({ isOnline: false, ipAddress: '203.0.113.10', lastChecked: '2026-01-15T00:00:00Z' }));
 
     await TestBed.configureTestingModule({
       imports: [GamingControlComponent],
@@ -43,7 +43,7 @@ describe('GamingControlComponent', () => {
     }));
 
     it('should set pcOnline based on status response', fakeAsync(() => {
-      mockGamingApi.getGamingPCStatus.and.returnValue(of({ isOnline: true, ipAddress: '192.168.1.100', lastChecked: '2026-01-15T00:00:00Z' }));
+      mockGamingApi.getGamingPCStatus.and.returnValue(of({ isOnline: true, ipAddress: '203.0.113.10', lastChecked: '2026-01-15T00:00:00Z' }));
       fixture.detectChanges();
       tick(100);
 

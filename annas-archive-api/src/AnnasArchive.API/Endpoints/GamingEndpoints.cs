@@ -27,11 +27,16 @@ public static class GamingEndpoints
 
     private static async Task<IResult> HandleGamingStatus(IConfiguration cfg)
     {
-        var pcIp = "192.168.0.80"; // Gaming PC IP
+        // Config, not a literal: a LAN address in tracked source is exactly what
+        // the project's own security policy forbids. Unset simply means "gaming
+        // control isn't set up here", same shape as the toggle handler below.
+        var pcIp = cfg["Gaming:PcIp"];
+        if (string.IsNullOrWhiteSpace(pcIp))
+            return Results.Problem("Gaming PC control is not configured.");
 
         try
         {
-            Log.Information("→ Checking gaming PC status at {pcIp}");
+            Log.Information("→ Checking gaming PC status at {PcIp}", pcIp);
 
             // Use ping to check if PC is reachable
             var process = new Process
@@ -62,12 +67,12 @@ public static class GamingEndpoints
         }
         catch (ArgumentException ex)
         {
-            Log.Information("❌ Invalid argument for gaming status: {Message}", ex.Message);
+            Log.Warning(ex, "Invalid argument for gaming status");
             return Results.BadRequest(new { error = $"Invalid parameter: {ex.ParamName ?? "unknown"}" });
         }
         catch (Exception ex)
         {
-            Log.Information("❌ Gaming PC status check exception: {ex.Message}");
+            Log.Error(ex, "Gaming PC status check failed");
             return Results.Ok(new
             {
                 isOnline = false,
@@ -95,7 +100,7 @@ public static class GamingEndpoints
         try
         {
             var actionName = action == 1 ? "wake" : "sleep";
-            Log.Information("→ Gaming PC {actionName} request received");
+            Log.Information("→ Gaming PC {ActionName} request received", actionName);
 
             // SSH into Synology and run the wake-steam.sh script
             var process = new Process
@@ -120,8 +125,10 @@ public static class GamingEndpoints
 
             if (process.ExitCode == 0)
             {
-                Log.Information("✅ Gaming PC {actionName} successful");
-                Log.Information(output);
+                // `output` is process output, so it must be an ARGUMENT, never the
+                // template — a stray brace in it would otherwise be parsed as a
+                // placeholder and mangle (or drop) the line.
+                Log.Information("✅ Gaming PC {ActionName} successful: {Output}", actionName, output);
                 return Results.Ok(new
                 {
                     success = true,
@@ -134,7 +141,7 @@ public static class GamingEndpoints
             }
             else
             {
-                Log.Information("❌ Gaming PC {actionName} failed: {error}");
+                Log.Warning("❌ Gaming PC {ActionName} failed: {Error}", actionName, error);
                 return Results.Ok(new
                 {
                     success = false,
@@ -146,12 +153,12 @@ public static class GamingEndpoints
         }
         catch (ArgumentException ex)
         {
-            Log.Information("❌ Invalid argument for gaming toggle: {Message}", ex.Message);
+            Log.Warning(ex, "Invalid argument for gaming toggle");
             return Results.BadRequest(new { error = $"Invalid parameter: {ex.ParamName ?? "unknown"}" });
         }
         catch (Exception ex)
         {
-            Log.Information("❌ Gaming PC control exception: {ex.Message}");
+            Log.Error(ex, "Gaming PC control failed");
             return Results.Problem("An error occurred while controlling the gaming PC.");
         }
     }

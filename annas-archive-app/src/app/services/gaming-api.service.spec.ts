@@ -93,13 +93,13 @@ describe('GamingApiService', () => {
     it('should return online status', () => {
       const mockResponse: GamingStatusResponse = {
         isOnline: true,
-        ipAddress: '192.168.0.80',
+        ipAddress: '203.0.113.10',
         lastChecked: '2024-01-15T10:30:00Z'
       };
 
       service.getGamingPCStatus().subscribe(response => {
         expect(response.isOnline).toBe(true);
-        expect(response.ipAddress).toBe('192.168.0.80');
+        expect(response.ipAddress).toBe('203.0.113.10');
       });
 
       const req = httpMock.expectOne(req => req.url.includes('/api/gaming/status'));
@@ -110,7 +110,7 @@ describe('GamingApiService', () => {
     it('should return offline status', () => {
       const mockResponse: GamingStatusResponse = {
         isOnline: false,
-        ipAddress: '192.168.0.80',
+        ipAddress: '203.0.113.10',
         lastChecked: '2024-01-15T10:30:00Z'
       };
 
@@ -125,7 +125,7 @@ describe('GamingApiService', () => {
     it('should handle error response', () => {
       const mockResponse: GamingStatusResponse = {
         isOnline: false,
-        ipAddress: '192.168.0.80',
+        ipAddress: '203.0.113.10',
         lastChecked: '2024-01-15T10:30:00Z',
         error: 'Host unreachable'
       };

@@ -66,9 +66,18 @@ public static class BookSearchEndpoints
             .RequireAuthorization()
             .RequireRateLimiting("api");
 
-        // Health check endpoints (no auth required)
-        app.MapGet("/api/anna/slum-health", HandleSlumHealth);
-        app.MapGet("/api/anna/mirror-health", HandleMirrorHealth);
+        // Health checks for the search page's status badges. Authorized and
+        // rate-limited like everything else: both reach out to third-party
+        // services on call (slum-health makes two live requests per hit), so
+        // leaving them anonymous and ungated made them a free amplification
+        // and probe surface. Every caller is already an authenticated page.
+        app.MapGet("/api/anna/slum-health", HandleSlumHealth)
+            .RequireAuthorization()
+            .RequireRateLimiting("api");
+
+        app.MapGet("/api/anna/mirror-health", HandleMirrorHealth)
+            .RequireAuthorization()
+            .RequireRateLimiting("api");
 
         return app;
     }
@@ -129,7 +138,7 @@ public static class BookSearchEndpoints
         if (string.IsNullOrWhiteSpace(title))
             return Results.BadRequest(new { error = "title is required." });
 
-        Log.Information("Google Books description lookup: title='{title}', author='{author}'");
+        Log.Information("Google Books description lookup: title='{Title}', author='{Author}'", title, author);
         var description = await googleBooks.GetBookDescriptionAsync(title, author ?? "");
 
         Log.Information(description is null
@@ -147,7 +156,7 @@ public static class BookSearchEndpoints
         if (string.IsNullOrWhiteSpace(title))
             return Results.BadRequest(new { error = "title is required." });
 
-        Log.Information("OpenLibrary description lookup: title='{title}', author='{author}'");
+        Log.Information("OpenLibrary description lookup: title='{Title}', author='{Author}'", title, author);
         var description = await openLibrary.GetBookDescriptionAsync(title, author ?? "");
 
         Log.Information(description is null
@@ -165,7 +174,7 @@ public static class BookSearchEndpoints
         if (string.IsNullOrWhiteSpace(title))
             return Results.BadRequest(new { error = "title is required." });
 
-        Log.Information("Wikipedia description lookup: title='{title}', author='{author}'");
+        Log.Information("Wikipedia description lookup: title='{Title}', author='{Author}'", title, author);
         var description = await wikipedia.GetBookDescriptionAsync(title, author);
 
         Log.Information(description is null
@@ -236,7 +245,7 @@ public static class BookSearchEndpoints
             var statusResponse = await http.GetAsync("https://open-slum.org/api/status-page/slum");
             if (!statusResponse.IsSuccessStatusCode)
             {
-                Log.Information("[slum-health] Failed to fetch status page: {statusResponse.StatusCode}");
+                Log.Information("[slum-health] Failed to fetch status page: {StatusResponseStatusCode}", statusResponse.StatusCode);
                 return Results.Json(new { success = false, error = "Failed to fetch status page data" });
             }
 
@@ -244,7 +253,7 @@ public static class BookSearchEndpoints
             var heartbeatResponse = await http.GetAsync("https://open-slum.org/api/status-page/heartbeat/slum");
             if (!heartbeatResponse.IsSuccessStatusCode)
             {
-                Log.Information("[slum-health] Failed to fetch heartbeat: {heartbeatResponse.StatusCode}");
+                Log.Information("[slum-health] Failed to fetch heartbeat: {HeartbeatResponseStatusCode}", heartbeatResponse.StatusCode);
                 return Results.Json(new { success = false, error = "Failed to fetch heartbeat data" });
             }
 

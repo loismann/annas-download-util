@@ -27,10 +27,6 @@ public class LibraryWatcherService : BackgroundService
 {
     // Throttling configuration is now centralized in AiThrottlingConfiguration
 
-    private static readonly HashSet<string> SupportedExtensions = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ".epub", ".pdf", ".mobi", ".azw3", ".azw", ".kfx", ".pobi", ".fb2", ".txt", ".rtf", ".lit", ".djvu"
-    };
 
     private readonly ConcurrentDictionary<string, DateTime> _pending = new();
     private readonly IHttpClientFactory _httpFactory;
@@ -119,7 +115,7 @@ public class LibraryWatcherService : BackgroundService
     private void EnqueueIfSupported(string path)
     {
         var ext = Path.GetExtension(path);
-        if (!SupportedExtensions.Contains(ext))
+        if (!LibraryMetadataRules.SupportedExtensions.Contains(ext))
             return;
 
         _pending[path] = DateTime.UtcNow;
@@ -172,7 +168,7 @@ public class LibraryWatcherService : BackgroundService
     private async Task RunFullScanAsync(string libraryRoot, CancellationToken token)
     {
         var files = Directory.GetFiles(libraryRoot)
-            .Where(file => SupportedExtensions.Contains(Path.GetExtension(file)))
+            .Where(file => LibraryMetadataRules.SupportedExtensions.Contains(Path.GetExtension(file)))
             .ToList();
 
         var duplicates = _duplicateDetection.FindDuplicates(libraryRoot, files);
@@ -293,7 +289,7 @@ public class LibraryWatcherService : BackgroundService
         var format = ext.TrimStart('.').ToUpperInvariant();
         var parsed = _metadataExtraction.ParseTitleAuthorFromFileName(filePath);
         var rawBaseName = Path.GetFileNameWithoutExtension(filePath);
-        var resolvedTitle = ShouldUseParsedTitle(existing?.Title, parsed.Title, rawBaseName)
+        var resolvedTitle = LibraryMetadataRules.ShouldUseParsedTitle(existing?.Title, parsed.Title, rawBaseName)
             ? parsed.Title
             : existing?.Title;
         var resolvedAuthors = (existing?.Authors == null || existing.Authors.Length == 0)
@@ -305,7 +301,7 @@ public class LibraryWatcherService : BackgroundService
             ["title"] = resolvedTitle ?? parsed.Title ?? rawBaseName,
             ["authors"] = resolvedAuthors ?? parsed.Authors ?? Array.Empty<string>(),
             ["format"] = format,
-            ["fileSize"] = FormatFileSize(fileInfo.Length),
+            ["fileSize"] = LibraryMetadataRules.FormatFileSize(fileInfo.Length),
             ["fileName"] = Path.GetFileName(filePath),
             ["coverUrl"] = existing?.CoverUrl,
             ["source"] = existing?.Source ?? "library",
@@ -339,42 +335,42 @@ public class LibraryWatcherService : BackgroundService
         Log.Information("[LibraryWatcher]   Existing CoverUrl: {CoverUrl}", existing?.CoverUrl);
         if (!string.IsNullOrWhiteSpace(existing?.CoverUrl))
         {
-            var coverType = IsLocalCover(existing.CoverUrl) ? "local (_covers/)" : "external";
+            var coverType = LibraryMetadataRules.IsLocalCover(existing.CoverUrl) ? "local (_covers/)" : "external";
             Log.Information("[LibraryWatcher]   ✓ Existing {CoverType} cover detected - will preserve", coverType);
         }
 
         if (ext.Equals(".epub", StringComparison.OrdinalIgnoreCase))
         {
-            var skipCover = IsLocalCover(TryGetMetaValue(meta, "coverUrl") as string);
+            var skipCover = LibraryMetadataRules.IsLocalCover(LibraryMetadataRules.TryGetMetaValue(meta, "coverUrl") as string);
             var epubMeta = await _metadataExtraction.ExtractEpubMetadataAsync(filePath, libraryRoot, skipCover, token);
             if (epubMeta != null)
             {
-                SetIfMissing(meta, "title", epubMeta.Title);
-                SetIfMissing(meta, "authors", epubMeta.Authors);
-                SetIfMissing(meta, "publishedDate", epubMeta.PublishedDate);
-                SetIfMissing(meta, "pages", epubMeta.Pages);
+                LibraryMetadataRules.SetIfMissing(meta, "title", epubMeta.Title);
+                LibraryMetadataRules.SetIfMissing(meta, "authors", epubMeta.Authors);
+                LibraryMetadataRules.SetIfMissing(meta, "publishedDate", epubMeta.PublishedDate);
+                LibraryMetadataRules.SetIfMissing(meta, "pages", epubMeta.Pages);
                 if (!string.IsNullOrWhiteSpace(epubMeta.CoverUrl))
                     meta["coverUrl"] = epubMeta.CoverUrl;
             }
         }
 
-        if (string.IsNullOrWhiteSpace(TryGetMetaValue(meta, "coverUrl") as string))
+        if (string.IsNullOrWhiteSpace(LibraryMetadataRules.TryGetMetaValue(meta, "coverUrl") as string))
         {
             var sdrCover = await _metadataExtraction.ExtractSdrCoverAsync(filePath, libraryRoot, token);
             if (!string.IsNullOrWhiteSpace(sdrCover))
                 meta["coverUrl"] = sdrCover;
         }
 
-        var coverUrl = TryGetMetaValue(meta, "coverUrl") as string;
-        var title = TryGetMetaValue(meta, "title") as string;
-        var authors = TryGetMetaArray(meta, "authors") ?? Array.Empty<string>();
-        var series = TryGetMetaValue(meta, "series") as string;
-        var aiEnrichedAt = TryGetMetaValue(meta, "aiEnrichedAt") as string;
-        var goodreadsRating = TryGetMetaValue(meta, "goodreadsRating") as double?;
+        var coverUrl = LibraryMetadataRules.TryGetMetaValue(meta, "coverUrl") as string;
+        var title = LibraryMetadataRules.TryGetMetaValue(meta, "title") as string;
+        var authors = LibraryMetadataRules.TryGetMetaArray(meta, "authors") ?? Array.Empty<string>();
+        var series = LibraryMetadataRules.TryGetMetaValue(meta, "series") as string;
+        var aiEnrichedAt = LibraryMetadataRules.TryGetMetaValue(meta, "aiEnrichedAt") as string;
+        var goodreadsRating = LibraryMetadataRules.TryGetMetaValue(meta, "goodreadsRating") as double?;
 
         // API Call 1: OpenLibrary (free, high rate limit)
         OpenLibraryData? openLibraryData = null;
-        if (IsMetadataReliable(title, authors))
+        if (LibraryMetadataRules.IsMetadataReliable(title, authors))
         {
             openLibraryData = await FetchOpenLibraryDataAsync(title!, authors!, token);
             var olSuccess = openLibraryData != null && openLibraryData.Confidence >= 0.5;
@@ -394,7 +390,7 @@ public class LibraryWatcherService : BackgroundService
                 }
 
                 // Only use external cover if no local cover exists
-                if (!IsLocalCover(coverUrl) && string.IsNullOrWhiteSpace(coverUrl) && !string.IsNullOrWhiteSpace(openLibraryData.CoverUrl))
+                if (!LibraryMetadataRules.IsLocalCover(coverUrl) && string.IsNullOrWhiteSpace(coverUrl) && !string.IsNullOrWhiteSpace(openLibraryData.CoverUrl))
                     meta["coverUrl"] = openLibraryData.CoverUrl;
 
                 if (string.IsNullOrWhiteSpace(series) && !string.IsNullOrWhiteSpace(openLibraryData.Series))
@@ -411,7 +407,7 @@ public class LibraryWatcherService : BackgroundService
         string? aiTitle = null;
         string[]? aiAuthors = null;
 
-        if (string.IsNullOrWhiteSpace(aiEnrichedAt) && (openLibraryData?.Confidence ?? 0) < 0.75 && IsMetadataReliable(title, authors))
+        if (string.IsNullOrWhiteSpace(aiEnrichedAt) && (openLibraryData?.Confidence ?? 0) < 0.75 && LibraryMetadataRules.IsMetadataReliable(title, authors))
         {
             var aiResult = await FetchAiValidationAndEnrichmentAsync(
                 title!,
@@ -432,7 +428,7 @@ public class LibraryWatcherService : BackgroundService
                         meta["title"] = openLibraryData.Title;
                     if (openLibraryData.Authors.Length > 0)
                         meta["authors"] = openLibraryData.Authors;
-                    if (!IsLocalCover(coverUrl) && string.IsNullOrWhiteSpace(coverUrl) && !string.IsNullOrWhiteSpace(openLibraryData.CoverUrl))
+                    if (!LibraryMetadataRules.IsLocalCover(coverUrl) && string.IsNullOrWhiteSpace(coverUrl) && !string.IsNullOrWhiteSpace(openLibraryData.CoverUrl))
                         meta["coverUrl"] = openLibraryData.CoverUrl;
                     meta["openLibraryConfidence"] = Math.Max(openLibraryData.Confidence, 0.75);
                 }
@@ -448,7 +444,7 @@ public class LibraryWatcherService : BackgroundService
                     meta["authors"] = aiResult.Authors;
                     meta["publishedDate"] = aiResult.PublishedDate;
                     meta["series"] = aiResult.Series;
-                    var existingCover = TryGetMetaValue(meta, "coverUrl") as string;
+                    var existingCover = LibraryMetadataRules.TryGetMetaValue(meta, "coverUrl") as string;
                     if (string.IsNullOrWhiteSpace(existingCover) && !string.IsNullOrWhiteSpace(aiResult.CoverUrl))
                         meta["coverUrl"] = aiResult.CoverUrl;
                 }
@@ -480,11 +476,11 @@ public class LibraryWatcherService : BackgroundService
                 if (retryOlData.FirstPublishYear != null)
                     meta["publishedDate"] = retryOlData.FirstPublishYear.ToString();
 
-                coverUrl = TryGetMetaValue(meta, "coverUrl") as string;
-                if (!IsLocalCover(coverUrl) && string.IsNullOrWhiteSpace(coverUrl) && !string.IsNullOrWhiteSpace(retryOlData.CoverUrl))
+                coverUrl = LibraryMetadataRules.TryGetMetaValue(meta, "coverUrl") as string;
+                if (!LibraryMetadataRules.IsLocalCover(coverUrl) && string.IsNullOrWhiteSpace(coverUrl) && !string.IsNullOrWhiteSpace(retryOlData.CoverUrl))
                     meta["coverUrl"] = retryOlData.CoverUrl;
 
-                if (string.IsNullOrWhiteSpace(TryGetMetaValue(meta, "series") as string) && !string.IsNullOrWhiteSpace(retryOlData.Series))
+                if (string.IsNullOrWhiteSpace(LibraryMetadataRules.TryGetMetaValue(meta, "series") as string) && !string.IsNullOrWhiteSpace(retryOlData.Series))
                     meta["series"] = retryOlData.Series;
             }
 
@@ -492,12 +488,12 @@ public class LibraryWatcherService : BackgroundService
         }
 
         // Re-read title/authors after potential updates
-        title = TryGetMetaValue(meta, "title") as string;
-        authors = TryGetMetaArray(meta, "authors") ?? Array.Empty<string>();
+        title = LibraryMetadataRules.TryGetMetaValue(meta, "title") as string;
+        authors = LibraryMetadataRules.TryGetMetaArray(meta, "authors") ?? Array.Empty<string>();
 
         // API Call 3: Google Books (only for cover if still missing)
-        coverUrl = TryGetMetaValue(meta, "coverUrl") as string;
-        if (!IsLocalCover(coverUrl) && string.IsNullOrWhiteSpace(coverUrl))
+        coverUrl = LibraryMetadataRules.TryGetMetaValue(meta, "coverUrl") as string;
+        if (!LibraryMetadataRules.IsLocalCover(coverUrl) && string.IsNullOrWhiteSpace(coverUrl))
         {
             var externalCover = await FetchGoogleBooksCoverAsync(title ?? "", authors, token);
             _statsService.RecordCall("GoogleBooks", !string.IsNullOrWhiteSpace(externalCover));
@@ -510,7 +506,7 @@ public class LibraryWatcherService : BackgroundService
         }
 
         // API Call 4: Goodreads (search only - no fallback chain)
-        if (!goodreadsRating.HasValue && IsMetadataReliable(title, authors))
+        if (!goodreadsRating.HasValue && LibraryMetadataRules.IsMetadataReliable(title, authors))
         {
             var fetchedRating = await FetchGoodreadsRatingSimpleAsync(title ?? "", authors, token);
             _statsService.RecordCall("Goodreads", fetchedRating.HasValue);
@@ -525,8 +521,8 @@ public class LibraryWatcherService : BackgroundService
         meta["enrichmentComplete"] = true;
 
         // Track book processed
-        var hasGoodMetadata = !string.IsNullOrWhiteSpace(TryGetMetaValue(meta, "title") as string) &&
-                              (TryGetMetaArray(meta, "authors")?.Length ?? 0) > 0;
+        var hasGoodMetadata = !string.IsNullOrWhiteSpace(LibraryMetadataRules.TryGetMetaValue(meta, "title") as string) &&
+                              (LibraryMetadataRules.TryGetMetaArray(meta, "authors")?.Length ?? 0) > 0;
         _statsService.RecordBookProcessed(hasGoodMetadata);
 
         // Save stats periodically (every 10 books)
@@ -592,38 +588,6 @@ public class LibraryWatcherService : BackgroundService
         }
 
         return true;
-    }
-
-    private static bool IsMetadataReliable(string? title, string[]? authors)
-    {
-        if (string.IsNullOrWhiteSpace(title) || title.Trim().Length < 3)
-            return false;
-
-        if (authors == null || authors.Length == 0)
-            return true;
-
-        return authors.Any(a => !string.IsNullOrWhiteSpace(a) && a.Trim().Length >= 3);
-    }
-
-    private static bool ShouldUseParsedTitle(string? existingTitle, string? parsedTitle, string rawBaseName)
-    {
-        if (string.IsNullOrWhiteSpace(parsedTitle))
-            return false;
-
-        if (string.IsNullOrWhiteSpace(existingTitle))
-            return true;
-
-        var normalizedExisting = existingTitle.Trim();
-        if (string.Equals(normalizedExisting, rawBaseName, StringComparison.OrdinalIgnoreCase))
-            return true;
-
-        if (normalizedExisting.Contains('_'))
-            return true;
-
-        if (Regex.IsMatch(normalizedExisting, @"[A-Z0-9]{8,}$"))
-            return true;
-
-        return false;
     }
 
     private async Task<OpenLibraryData?> FetchOpenLibraryDataAsync(string title, string[] authors, CancellationToken token)
@@ -799,7 +763,7 @@ public class LibraryWatcherService : BackgroundService
                         .ToArray();
 
                 var ratingNode = row.SelectSingleNode(".//span[contains(@class,'minirating')]");
-                var rating = ratingNode != null ? ParseGoodreadsRating(ratingNode.InnerText) : null;
+                var rating = ratingNode != null ? GoodreadsRatingParser.FromSearchResultText(ratingNode.InnerText) : null;
 
                 var href = titleNode.GetAttributeValue("href", "");
                 var urlValue = string.IsNullOrWhiteSpace(href) ? null : $"https://www.goodreads.com{href}";
@@ -836,7 +800,7 @@ public class LibraryWatcherService : BackgroundService
                 return null;
 
             var html = await resp.Content.ReadAsStringAsync(token);
-            return ExtractRatingFromHtml(html);
+            return GoodreadsRatingParser.FromHtml(html);
         }
         catch
         {
@@ -911,7 +875,7 @@ Return JSON:
 
             using var stream = await response.Content.ReadAsStreamAsync(token);
             using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: token);
-            var text = ExtractResponseText(doc.RootElement);
+            var text = LibraryMetadataRules.ExtractResponseText(doc.RootElement);
             if (string.IsNullOrWhiteSpace(text))
                 return null;
 
@@ -936,43 +900,6 @@ Return JSON:
         return null;
     }
 
-    private static double? ExtractRatingFromHtml(string html)
-    {
-        if (string.IsNullOrWhiteSpace(html))
-            return null;
-
-        var jsonLdMatch = Regex.Match(html, "\"ratingValue\"\\s*:\\s*\"(?<rating>[0-9.]+)\"");
-        if (jsonLdMatch.Success && TryParseRating(jsonLdMatch.Groups["rating"].Value, out var rating))
-            return rating;
-
-        var itemPropMatch = Regex.Match(html, "itemprop=\"ratingValue\"[^>]*>(?<rating>[0-9.]+)<");
-        if (itemPropMatch.Success && TryParseRating(itemPropMatch.Groups["rating"].Value, out rating))
-            return rating;
-
-        var avgMatch = Regex.Match(html, @"(?<rating>[0-9.]+)\\s*avg rating", RegexOptions.IgnoreCase);
-        if (avgMatch.Success && TryParseRating(avgMatch.Groups["rating"].Value, out rating))
-            return rating;
-
-        return null;
-    }
-
-    private static double? ParseGoodreadsRating(string text)
-    {
-        if (string.IsNullOrWhiteSpace(text))
-            return null;
-
-        var match = Regex.Match(text, @"(?<rating>[0-9.]+)\\s*avg rating", RegexOptions.IgnoreCase);
-        if (match.Success && TryParseRating(match.Groups["rating"].Value, out var rating))
-            return rating;
-
-        return null;
-    }
-
-    private static bool TryParseRating(string value, out double rating)
-    {
-        return double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out rating);
-    }
-
     private sealed record GoodreadsSearchResult(
         string Title,
         string[] Authors,
@@ -980,83 +907,9 @@ Return JSON:
         string? Url,
         double Score);
 
-    // Still needed for parsing the AI's JSON replies below; the OpenLibrary
-    // path now goes through OpenLibrarySearch directly.
-    private static string[] ExtractStringArray(JsonElement element, string propertyName) =>
-        OpenLibrarySearch.ExtractStringArray(element, propertyName);
-
-    private static double? TryGetDouble(JsonElement element, string propertyName)
-    {
-        if (!element.TryGetProperty(propertyName, out var prop))
-            return null;
-
-        if (prop.ValueKind == JsonValueKind.Number && prop.TryGetDouble(out var num))
-            return num;
-
-        if (prop.ValueKind == JsonValueKind.String &&
-            double.TryParse(prop.GetString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed))
-            return parsed;
-
-        return null;
-    }
-
-    private static int? TryGetInt(JsonElement element, string propertyName)
-    {
-        if (!element.TryGetProperty(propertyName, out var prop))
-            return null;
-
-        if (prop.ValueKind == JsonValueKind.Number && prop.TryGetInt32(out var num))
-            return num;
-
-        if (prop.ValueKind == JsonValueKind.String &&
-            int.TryParse(prop.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
-            return parsed;
-
-        return null;
-    }
-
-    private static object? TryGetMetaValue(Dictionary<string, object?> meta, string key)
-    {
-        return meta.TryGetValue(key, out var value) ? value : null;
-    }
-
-    private static string[]? TryGetMetaArray(Dictionary<string, object?> meta, string key)
-    {
-        return meta.TryGetValue(key, out var value) ? value as string[] : null;
-    }
-
-    private static void SetIfMissing(Dictionary<string, object?> meta, string key, object value)
-    {
-        if (!meta.TryGetValue(key, out var current) || current == null ||
-            (current is string str && string.IsNullOrWhiteSpace(str)) ||
-            (current is string[] arr && arr.Length == 0))
-        {
-            meta[key] = value;
-        }
-    }
-
     // Jaccard token-similarity scoring (TokenSimilarity/CandidateAuthorScore/
     // NormalizeForMatch) moved to the shared Services/Library/TitleMatchScorer.cs
     // so AudiobookEnrichmentService can reuse it without duplicating this logic.
-
-    private static string? ExtractResponseText(JsonElement root)
-    {
-        if (root.TryGetProperty("output", out var output) && output.ValueKind == JsonValueKind.Array)
-        {
-            foreach (var item in output.EnumerateArray())
-            {
-                if (item.TryGetProperty("content", out var content) && content.ValueKind == JsonValueKind.Array)
-                {
-                    foreach (var part in content.EnumerateArray())
-                    {
-                        if (part.TryGetProperty("text", out var textProp))
-                            return textProp.GetString();
-                    }
-                }
-            }
-        }
-        return null;
-    }
 
     /// <summary>
     /// Combined AI validation and enrichment in a single API call.
@@ -1121,7 +974,7 @@ Return JSON with:
 
             using var stream = await response.Content.ReadAsStreamAsync(token);
             using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: token);
-            var text = ExtractResponseText(doc.RootElement);
+            var text = LibraryMetadataRules.ExtractResponseText(doc.RootElement);
             if (string.IsNullOrWhiteSpace(text))
                 return null;
 
@@ -1134,7 +987,7 @@ Return JSON with:
                                  useOlProp.ValueKind == JsonValueKind.True;
 
             var aiTitle = root.TryGetProperty("title", out var t) ? t.GetString() : null;
-            var aiAuthors = ExtractStringArray(root, "authors");
+            var aiAuthors = OpenLibrarySearch.ExtractStringArray(root, "authors");
 
             return new AiValidationAndEnrichment(
                 useOpenLibrary,
@@ -1213,7 +1066,7 @@ Return JSON with:
                         .ToArray();
 
                 var ratingNode = row.SelectSingleNode(".//span[contains(@class,'minirating')]");
-                var rating = ratingNode != null ? ParseGoodreadsRating(ratingNode.InnerText) : null;
+                var rating = ratingNode != null ? GoodreadsRatingParser.FromSearchResultText(ratingNode.InnerText) : null;
 
                 var titleScore = TitleMatchScorer.TokenSimilarity(title, candidateTitle);
                 var authorScore = TitleMatchScorer.CandidateAuthorScore(authors, candidateAuthors);
@@ -1247,19 +1100,19 @@ Return JSON with:
             return new ExistingMeta
             {
                 Title = root.TryGetProperty("title", out var title) ? title.GetString() : null,
-                Authors = ExtractStringArray(root, "authors"),
+                Authors = OpenLibrarySearch.ExtractStringArray(root, "authors"),
                 CoverUrl = root.TryGetProperty("coverUrl", out var cover) ? cover.GetString() : null,
                 Source = root.TryGetProperty("source", out var source) ? source.GetString() : null,
                 Md5 = root.TryGetProperty("md5", out var md5) ? md5.GetString() : null,
                 SavedAt = root.TryGetProperty("savedAt", out var saved) ? saved.GetString() : null,
                 PrimaryGenre = root.TryGetProperty("primaryGenre", out var pg) ? pg.GetString() : null,
-                Tags = ExtractStringArray(root, "tags"),
+                Tags = OpenLibrarySearch.ExtractStringArray(root, "tags"),
                 Series = root.TryGetProperty("series", out var series) ? series.GetString() : null,
-                Genres = ExtractStringArray(root, "genres"),
+                Genres = OpenLibrarySearch.ExtractStringArray(root, "genres"),
                 PublishedDate = root.TryGetProperty("publishedDate", out var pd) ? pd.GetString() : null,
                 Pages = root.TryGetProperty("pages", out var pages) ? pages.GetString() : null,
-                GoodreadsRating = TryGetDouble(root, "goodreadsRating"),
-                PersonalRating = TryGetInt(root, "personalRating"),
+                GoodreadsRating = LibraryMetadataRules.TryGetDouble(root, "goodreadsRating"),
+                PersonalRating = LibraryMetadataRules.TryGetInt(root, "personalRating"),
                 ReaderEnabled = root.TryGetProperty("readerEnabled", out var readerEnabled)
                     ? readerEnabled.ValueKind == JsonValueKind.True
                         ? true
@@ -1274,7 +1127,7 @@ Return JSON with:
                 AiEnrichedAt = root.TryGetProperty("aiEnrichedAt", out var ai) ? ai.GetString() : null,
                 EnrichmentComplete = root.TryGetProperty("enrichmentComplete", out var complete) &&
                     complete.ValueKind == JsonValueKind.True,
-                FavoritedBy = ExtractStringArray(root, "favoritedBy"),
+                FavoritedBy = OpenLibrarySearch.ExtractStringArray(root, "favoritedBy"),
                 CullReviewedAt = root.TryGetProperty("cullReviewedAt", out var cull) &&
                     cull.ValueKind == JsonValueKind.String &&
                     DateTime.TryParse(cull.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var cullDate)
@@ -1338,31 +1191,4 @@ Return JSON with:
     }
 
     private static string ResolveLibraryRoot() => Helpers.StoragePaths.LibraryRoot();
-
-    private static string FormatFileSize(long bytes)
-    {
-        if (bytes <= 0)
-            return "0B";
-
-        string[] units = { "B", "KB", "MB", "GB" };
-        var size = (double)bytes;
-        var unitIndex = 0;
-        while (size >= 1024 && unitIndex < units.Length - 1)
-        {
-            size /= 1024;
-            unitIndex++;
-        }
-
-        return $"{size:0.0}{units[unitIndex]}";
-    }
-
-    /// <summary>
-    /// Returns true if the coverUrl is a local cover stored in _covers/ directory.
-    /// Local covers should never be overwritten by external URLs.
-    /// </summary>
-    private static bool IsLocalCover(string? coverUrl)
-    {
-        return !string.IsNullOrWhiteSpace(coverUrl) &&
-               coverUrl.StartsWith("_covers/", StringComparison.OrdinalIgnoreCase);
-    }
 }

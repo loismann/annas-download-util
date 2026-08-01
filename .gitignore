@@ -58,6 +58,8 @@ out/
 *.dylib
 *.pdb
 *.json
+# Sanitized external-API contract fixtures are source-controlled test inputs.
+!annas-archive-api/tests/AnnasArchive.Tests/Fixtures/**/*.json
 *.log
 *.vsix
 *.nuspec

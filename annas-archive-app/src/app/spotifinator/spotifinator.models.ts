@@ -22,6 +22,38 @@ export interface SpotifyPlaylist {
   imageUrl: string | null;
   trackCount: number;
   spotifyUrl: string | null;
+  contentsAvailable: boolean;
+  snapshotId: string | null;
+}
+
+export type SpotifyConnectionState =
+  | 'Disconnected'
+  | 'Connected'
+  | 'ScopeLimited'
+  | 'ReauthorizationRequired'
+  | 'RateLimited'
+  | 'QuotaExceeded'
+  | 'SpotifyUnavailable';
+
+export interface SpotifyConnectionStatus {
+  state: SpotifyConnectionState;
+  isConnected: boolean;
+  accountId: string | null;
+  spotifyUserId: string | null;
+  displayName: string | null;
+  grantedScopes: string[];
+  missingScopes: string[];
+  authorizedAt: string | null;
+  reauthorizationDueAt: string | null;
+  daysUntilReauthorization: number | null;
+  lastSuccessfulCallAt: string | null;
+  rateLimitedUntil: string | null;
+  warning: string | null;
+  lastError: string | null;
+}
+
+export interface SpotifyAuthorizeResponse {
+  authorizationUrl: string;
 }
 
 // ─── Vibe Generation Types ───────────────────────────────────────────────────

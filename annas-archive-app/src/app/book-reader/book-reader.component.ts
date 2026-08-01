@@ -22,7 +22,7 @@ import { MatDialog } from '@angular/material/dialog';
 import { ActivatedRoute, Router } from '@angular/router';
 import { CharacterGraphModalComponent } from '../character-graph-modal/character-graph-modal.component';
 import { ChapterListComponent } from '../components/chapter-list/chapter-list.component';
-import { ConfirmDialogComponent } from '../components/confirm-dialog/confirm-dialog.component';
+import { VocabularyPanelComponent } from './vocabulary-panel/vocabulary-panel.component';
 import { DeleteCacheDialogComponent, DeleteCacheDialogResult } from '../components/delete-cache-dialog/delete-cache-dialog.component';
 import { RemoveFromReaderDialogComponent, RemoveFromReaderDialogResult } from '../components/remove-from-reader-dialog/remove-from-reader-dialog.component';
 import { firstValueFrom } from 'rxjs';
@@ -32,15 +32,13 @@ import {
   DropboxChapterContent,
   DropboxEpubChapter,
   DropboxEpubStatus,
-  FlashcardItem,
   FullChapterSummaryResponse,
   ChunkBoundariesResponse,
   SectionSummaryResponse,
   LibraryReaderBook,
   UserTokenUsage,
   SummarySSEEvent,
-  ChunkBoundarySSEEvent,
-  LearnMoreRequestPayload
+  ChunkBoundarySSEEvent
 } from '../models/dropbox-epub.model';
 import { AiApiService } from '../services/ai-api.service';
 import { LibraryApiService } from '../services/library-api.service';
@@ -57,9 +55,10 @@ import {
   ReaderStateService,
   ReaderTextUtilsService,
   ReaderPaginationService,
+  ReaderSseService,
+  ReaderSectionsService,
   ViewedBook,
-  BookmarkEntry,
-  ReadingPosition
+  BookmarkEntry
 } from './services';
 
 @Component({
@@ -77,7 +76,8 @@ import {
     MatProgressBarModule,
     MatSliderModule,
     MatTooltipModule,
-    ChapterListComponent
+    ChapterListComponent,
+    VocabularyPanelComponent
   ],
   templateUrl: './book-reader.component.html',
   styleUrls: ['./book-reader.component.css']
@@ -109,10 +109,7 @@ export class BookReaderComponent implements OnInit, OnDestroy {
   private lastStatusPercent: number | null = null;
   private timeoutIds: ReturnType<typeof setTimeout>[] = [];
   private pendingRestorePosition: { readerKey: string; chapterId: number; wordOffset: number } | null = null;
-  private measurementEl: HTMLElement | null = null;
   private resizeObserver: ResizeObserver | null = null;
-  private cachedPageSize: number | null = null;
-  private pageSizeCacheKey: string | null = null;
 
   bookSearchTerm = '';
   bookSearchResults: DropboxBookSearchResult[] = [];
@@ -146,19 +143,8 @@ export class BookReaderComponent implements OnInit, OnDestroy {
   vocabularyWords: VocabularyWord[] = [];
   analysisText: string | null = null;
   showVocabModal = false;
-  vocabKnownList: string[] = [];
-  vocabUnknownList: { term: string; definition: string }[] = [];
-  flashcards: FlashcardItem[] = [];
-  learnMoreContent: string | null = null;
-  learnMoreImages: string[] = [];
-  learnMoreSafeContent: SafeHtml | null = null;
-  learnMoreTerm: string | null = null;
-  loadingLearnMore = false;
-  loadingFlashcard = false;
   loadingSelectionVocab = false;
   loadingChapterVocab = false;
-  vocabFilter: string = 'all';
-  vocabFilters: { id: string; name: string }[] = [{ id: 'all', name: 'All books' }];
   leftFlex = '1 1 0';
   rightFlex = '1 1 0';
   showSidebar = true;
@@ -247,7 +233,9 @@ export class BookReaderComponent implements OnInit, OnDestroy {
     private logger: LoggerService,
     private readerState: ReaderStateService,
     private textUtils: ReaderTextUtilsService,
-    private paginationService: ReaderPaginationService
+    private paginationService: ReaderPaginationService,
+    private sse: ReaderSseService,
+    private sections: ReaderSectionsService
   ) {}
 
   ngOnInit(): void {
@@ -256,7 +244,6 @@ export class BookReaderComponent implements OnInit, OnDestroy {
     this.bookmarks = this.readerState.getBookmarks();
     this.subscribeToReaderParams();
     this.loadBooks();
-    this.vocabFilters = this.vocabularyService.getBookFilters();
     this.timeoutIds.push(setTimeout(() => this.recalcPageSize(), 0));
     this.refreshTokenUsage();
 
@@ -268,21 +255,6 @@ export class BookReaderComponent implements OnInit, OnDestroy {
       error: (err) => this.logger.error('[reader] Failed to load all users usage:', err)
     });
 
-    // Subscribe to vocabulary changes for real-time updates
-    // Always keep lists in sync so they're ready when modal opens
-    this.vocabularyService.knownWords$
-      .pipe(takeUntil(this.destroy$))
-      .subscribe(() => {
-        this.refreshVocabLists();
-        this.vocabFilters = this.vocabularyService.getBookFilters();
-      });
-
-    this.vocabularyService.studyWords$
-      .pipe(takeUntil(this.destroy$))
-      .subscribe(() => {
-        this.refreshVocabLists();
-        this.vocabFilters = this.vocabularyService.getBookFilters();
-      });
   }
 
   ngOnDestroy(): void {
@@ -296,9 +268,9 @@ export class BookReaderComponent implements OnInit, OnDestroy {
     this.resizeObserver?.disconnect();
     this.resizeObserver = null;
 
-    // Remove measurement element
-    this.measurementEl?.remove();
-    this.measurementEl = null;
+    // Drop the hidden measurement element and the page-size cache. The service
+    // is providedIn: 'root', so this has to be explicit — it outlives us.
+    this.paginationService.cleanup();
 
     // Unsubscribe from all observables
     this.destroy$.next();
@@ -348,9 +320,7 @@ export class BookReaderComponent implements OnInit, OnDestroy {
   }
 
   get truncatedChapterLabel(): string {
-    const label = this.currentChapterLabel;
-    if (!label) return '';
-    return label.length > 20 ? label.substring(0, 20) + '...' : label;
+    return this.textUtils.truncateChapterLabel(this.currentChapterLabel ?? '');
   }
 
   // Check if current user is over their AI usage limit
@@ -401,7 +371,12 @@ export class BookReaderComponent implements OnInit, OnDestroy {
     let processedText = this.textUtils.escapeHtml(text);
 
     if (this.chunkBoundaries) {
-      processedText = this.applySectionAnnotations(processedText);
+      processedText = this.sections.annotate(processedText, {
+        chunks: this.chunkBoundaries.chunks,
+        wordOffset: this.wordOffset,
+        pageSizeWords: this.pageSizeWords,
+        highlightSectionIndex: this.analysisMode === 'section' ? this.currentSectionIndex : null
+      });
     }
 
     // Apply search highlighting
@@ -411,76 +386,6 @@ export class BookReaderComponent implements OnInit, OnDestroy {
     }
 
     return processedText.replace(/\n/g, '<br/>');
-  }
-
-  private applySectionAnnotations(escapedText: string): string {
-    if (!this.chunkBoundaries || !this.chapterContent) {
-      return escapedText;
-    }
-
-    const visibleStart = this.wordOffset;
-    const visibleEnd = this.wordOffset + this.pageSizeWords;
-    const boundaryMarkers = new Map<number, string>();
-
-    if (this.chunkBoundaries.chunks.length > 1) {
-      this.chunkBoundaries.chunks.slice(0, -1).forEach((chunk, index) => {
-        const boundary = chunk.end;
-        if (boundary < visibleStart || boundary > visibleEnd) return;
-        const boundaryInVisible = boundary - visibleStart;
-        boundaryMarkers.set(
-          boundaryInVisible,
-          `${index + 1} <span class="section-marker-icon">&#9660;</span> ${index + 2}`
-        );
-      });
-    }
-
-    let sectionStartInVisible: number | null = null;
-    let sectionEndInVisible: number | null = null;
-    if (this.analysisMode === 'section' && this.currentSectionIndex !== null) {
-      const chunk = this.chunkBoundaries.chunks[this.currentSectionIndex];
-      if (chunk && !(chunk.end <= visibleStart || chunk.start >= visibleEnd)) {
-        sectionStartInVisible = Math.max(0, chunk.start - visibleStart);
-        sectionEndInVisible = Math.min(this.pageSizeWords, chunk.end - visibleStart);
-      }
-    }
-
-    const words = escapedText.split(/(\s+)/);
-    let wordCount = 0;
-    let result = '';
-
-    for (let i = 0; i < words.length; i++) {
-      const word = words[i];
-      const isWhitespace = /^\s+$/.test(word);
-
-      if (!isWhitespace) {
-        if (boundaryMarkers.has(wordCount)) {
-          const marker = boundaryMarkers.get(wordCount);
-          if (marker) {
-            result += ` <span class="section-marker">${marker}</span> `;
-            boundaryMarkers.delete(wordCount);
-          }
-        }
-
-        if (sectionStartInVisible !== null && sectionEndInVisible !== null &&
-            wordCount >= sectionStartInVisible && wordCount < sectionEndInVisible) {
-          result += `<span class="section-highlight">${word}</span>`;
-        } else {
-          result += word;
-        }
-        wordCount++;
-      } else {
-        result += word;
-      }
-    }
-
-    if (boundaryMarkers.has(wordCount)) {
-      const marker = boundaryMarkers.get(wordCount);
-      if (marker) {
-        result += ` <span class="section-marker">${marker}</span> `;
-      }
-    }
-
-    return result;
   }
 
   get formattedSummary(): string | null {
@@ -510,16 +415,6 @@ export class BookReaderComponent implements OnInit, OnDestroy {
     this.formattedAnalysis = this.formatAnalysis(this.analysisText ?? '');
   }
 
-  private extractDefinitionsFromSummary(summary: string): VocabularyWord[] {
-    const defRegex = /definitions?\s*:/i;
-    const match = defRegex.exec(summary);
-    if (match) {
-      const definitionsSection = summary.substring(match.index + match[0].length).trim();
-      return this.parseVocabulary(definitionsSection);
-    }
-    return [];
-  }
-
   private parseVocabulary(definitionsText: string): VocabularyWord[] {
     const words: VocabularyWord[] = [];
     const added = new Set<string>();
@@ -538,7 +433,10 @@ export class BookReaderComponent implements OnInit, OnDestroy {
 
       // Remove leading dash, bullet points, asterisks, numbers with dots/parens, and whitespace
       let cleaned = trimmed
-        .replace(/^[-•*]\s*/, '')  // Remove dash/bullet/asterisk
+        // Remove dash/bullet/asterisk. A lone '*' is a bullet, but '**' opens a
+        // bold term — stripping one of the pair leaves '*term**', which no longer
+        // matches the bold pattern below and ends up keeping the stray asterisk.
+        .replace(/^(?:[-•]|\*(?!\*))\s*/, '')
         .replace(/^\d+[\.)]\s*/, '') // Remove "1." or "1)"
         .trim();
 
@@ -727,7 +625,6 @@ export class BookReaderComponent implements OnInit, OnDestroy {
     this.queueRestorePosition(selected.readerKey);
     if (this.selectedBook) {
       this.vocabularyService.registerBook(this.selectedBookPath ?? '', this.selectedBook.title);
-      this.vocabFilters = this.vocabularyService.getBookFilters();
     }
     this.fetchStatus(selected.fileName, true);
     this.loadChapters(selected.fileName);
@@ -1127,23 +1024,12 @@ export class BookReaderComponent implements OnInit, OnDestroy {
   }
 
   formatBookmarkLabel(bookmark: BookmarkEntry): string {
-    const chapter = this.chapters.find(ch => ch.id === bookmark.chapterId);
-    const chapterIndex = this.chapters.findIndex(ch => ch.id === bookmark.chapterId);
-    const chapterNumber = chapterIndex >= 0 ? chapterIndex + 1 : bookmark.chapterId + 1;
-    const page = Math.floor(bookmark.wordOffset / Math.max(1, this.pageSizeWords)) + 1;
-    const chapterLabel = chapter?.displayLabel || chapter?.title || `Chapter ${chapterNumber}`;
-    const normalized = chapterLabel.trim();
-    const chapterMatch = normalized.match(/^chapter\s+(\d+)/i);
-    if (chapterMatch) {
-      return `Ch. ${chapterMatch[1]} p. ${page}`;
-    }
-
-    const romanMatch = normalized.match(/^([ivxlcdm]+)\b/i);
-    if (romanMatch && !/^chapter\b/i.test(normalized)) {
-      return `${romanMatch[1].toLowerCase()} p. ${page}`;
-    }
-
-    return `${chapterLabel} • p. ${page}`;
+    return this.textUtils.formatBookmarkLabel(
+      bookmark.chapterId,
+      bookmark.wordOffset,
+      this.pageSizeWords,
+      this.chapters
+    );
   }
 
   summarize(): void {
@@ -1259,47 +1145,7 @@ export class BookReaderComponent implements OnInit, OnDestroy {
       }
 
       const reader = response.body?.getReader();
-      const decoder = new TextDecoder();
-      let buffer = ''; // Buffer for incomplete SSE messages
-
-      const readStream = async (): Promise<void> => {
-        const { done, value } = await reader!.read();
-        if (done) {
-          this.logger.log('SSE stream complete');
-          return;
-        }
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-
-        // Keep the last incomplete line in the buffer
-        buffer = lines.pop() || '';
-
-        let currentEvent = '';
-        for (const line of lines) {
-          if (line.startsWith('event:')) {
-            currentEvent = line.substring(6).trim();
-            continue;
-          }
-
-          if (line.startsWith('data:')) {
-            const data = line.substring(5).trim();
-            if (!data) continue;
-
-            try {
-              const parsed = JSON.parse(data);
-              this.logger.log(`SSE ${currentEvent}:`, parsed);
-              this.handleSSEEvent(parsed);
-            } catch (e) {
-              this.logger.error('Failed to parse SSE data:', data, e);
-            }
-          }
-        }
-
-        return readStream();
-      };
-
-      return readStream();
+      return this.sse.readStream(reader!, event => this.handleSSEEvent(event));
     }).catch(err => {
       this.logger.error('Failed to summarize full chapter', err);
       this.fullChapterSummary = 'Full chapter summary failed.';
@@ -1424,14 +1270,7 @@ export class BookReaderComponent implements OnInit, OnDestroy {
   }
 
   getStageLabel(stage: string): string {
-    switch (stage) {
-      case 'chunks': return 'Analyzing Chunks';
-      case 'sections': return 'Synthesizing Sections';
-      case 'final': return 'Final Summary';
-      case 'complete': return 'Complete';
-      case 'error': return 'Error';
-      default: return 'Processing';
-    }
+    return this.sse.getStageLabel(stage);
   }
 
   private loadBooks(): void {
@@ -1617,8 +1456,7 @@ export class BookReaderComponent implements OnInit, OnDestroy {
 
   private applyChapterContent(content: DropboxChapterContent): void {
     // Invalidate page size cache when chapter changes
-    this.cachedPageSize = null;
-    this.pageSizeCacheKey = null;
+    this.paginationService.invalidateCache();
 
     const computedWordCount = content.wordCount ?? this.textUtils.countWords(content.content);
     this.chapterContent = {
@@ -1876,37 +1714,14 @@ export class BookReaderComponent implements OnInit, OnDestroy {
     });
   }
 
+  // VocabularyPanelComponent loads its own lists when `open` flips to true, so
+  // all the reader still owns is the flag behind the "Vocab" button.
   openVocabModal(): void {
-    if (this.selectedBookPath && this.selectedBook) {
-      this.vocabularyService.registerBook(this.selectedBookPath, this.selectedBook.title);
-    }
-    this.vocabFilters = this.vocabularyService.getBookFilters();
-
-    // Auto-select the currently loaded book in the filter if available
-    if (this.selectedBookPath && this.vocabFilters.some(f => f.id === this.selectedBookPath)) {
-      this.vocabFilter = this.selectedBookPath;
-    }
-
-    this.refreshVocabLists();
-    this.loadFlashcards();
     this.showVocabModal = true;
   }
 
   closeVocabModal(): void {
     this.showVocabModal = false;
-  }
-
-  onModalOverlayClick(event: MouseEvent): void {
-    // Close modal when clicking the overlay (but not the modal itself)
-    this.closeVocabModal();
-  }
-
-  @HostListener('document:keydown.escape', ['$event'])
-  handleEscapeKey(event: KeyboardEvent): void {
-    if (this.showVocabModal) {
-      event.preventDefault();
-      this.closeVocabModal();
-    }
   }
 
   openCharacterGraphModal(): void {
@@ -1921,386 +1736,6 @@ export class BookReaderComponent implements OnInit, OnDestroy {
         bookTitle: this.selectedBook.title
       }
     });
-  }
-
-  clearKnownWords(): void {
-    this.vocabularyService.clearKnown();
-    this.refreshVocabLists();
-  }
-
-  clearUnknownWords(): void {
-    this.vocabularyService.clearUnknown();
-    this.refreshVocabLists();
-  }
-
-  clearAllVocab(): void {
-    this.vocabularyService.clearAll();
-    this.refreshVocabLists();
-  }
-
-  moveKnownToStudy(term: string): void {
-    // Use the vocab filter (selected book in modal) if available, otherwise use currently loaded book
-    const bookId = this.vocabFilter !== 'all' ? this.vocabFilter : this.selectedBookPath ?? undefined;
-
-    // Retrieve cached definition if available
-    const cachedDefinition = this.vocabularyService.getCachedDefinition(term) || '';
-    this.logger.log(`🔄 [moveKnownToStudy] Moving '${term}' to study with cached definition: '${cachedDefinition}'`);
-
-    this.vocabularyService.markAsUnknown(term, cachedDefinition, bookId);
-    this.refreshVocabLists();
-  }
-
-  moveStudyToKnown(term: string): void {
-    // Use the vocab filter (selected book in modal) if available, otherwise use currently loaded book
-    const bookId = this.vocabFilter !== 'all' ? this.vocabFilter : this.selectedBookPath ?? undefined;
-    // Get the definition from study words to preserve it when marking as known
-    const definition = this.vocabularyService.getStudyWordDefinition(term);
-    this.vocabularyService.markAsKnown(term, bookId, definition);
-    this.refreshVocabLists();
-  }
-
-  private fetchLearnMoreAndImages(payload: LearnMoreRequestPayload, cacheResult: boolean): void {
-    this.loadingLearnMore = true;
-    this.logger.log(`Fetching learn more for "${payload.term}"`);
-
-    this.aiApi.learnMore(payload)
-      .pipe(takeUntil(this.destroy$))
-      .subscribe({
-      next: resp => {
-        this.logger.log(`Learn more response received for "${payload.term}"`);
-        const cleaned = this.cleanModelHtml(resp.detail);
-
-        // Extract Wikipedia URLs from the content
-        const wikiUrls = this.extractWikipediaUrls(cleaned);
-        this.logger.log(`Found ${wikiUrls.length} Wikipedia URLs:`, wikiUrls);
-
-        if (wikiUrls.length > 0) {
-          // Fetch images from the first Wikipedia URL
-          const firstWikiUrl = wikiUrls[0];
-          const articleTitle = this.getWikipediaTitleFromUrl(firstWikiUrl);
-          this.logger.log(`Fetching images for Wikipedia article: "${articleTitle}"`);
-
-          this.aiApi.getWikiImages(articleTitle)
-            .pipe(takeUntil(this.destroy$))
-            .subscribe({
-            next: wiki => {
-              const images = wiki?.images || [];
-              this.logger.log(`Wiki images received:`, images.length, 'images', images);
-              this.learnMoreImages = images;
-              this.learnMoreContent = cleaned;
-              this.learnMoreSafeContent = this.sanitizer.bypassSecurityTrustHtml(cleaned);
-              if (cacheResult) {
-                this.vocabularyService.cacheLearnMore(payload.term, cleaned, images);
-              }
-              this.loadingLearnMore = false;
-            },
-            error: err => {
-              this.logger.error(`Wiki images lookup failed:`, err);
-              this.learnMoreImages = [];
-              this.learnMoreContent = cleaned;
-              this.learnMoreSafeContent = this.sanitizer.bypassSecurityTrustHtml(cleaned);
-              if (cacheResult) {
-                this.vocabularyService.cacheLearnMore(payload.term, cleaned, []);
-              }
-              this.loadingLearnMore = false;
-            }
-          });
-        } else {
-          this.logger.log('No Wikipedia URLs found in content');
-          this.learnMoreImages = [];
-          this.learnMoreContent = cleaned;
-          this.learnMoreSafeContent = this.sanitizer.bypassSecurityTrustHtml(cleaned);
-          if (cacheResult) {
-            this.vocabularyService.cacheLearnMore(payload.term, cleaned, []);
-          }
-          this.loadingLearnMore = false;
-        }
-      },
-      error: (err) => {
-        this.logger.error(`Learn more failed for "${payload.term}":`, err);
-        this.learnMoreContent = 'Failed to load details.';
-        this.learnMoreSafeContent = this.learnMoreContent;
-        this.learnMoreImages = [];
-        this.loadingLearnMore = false;
-      }
-    });
-  }
-
-  private extractWikipediaUrls(html: string): string[] {
-    const urls: string[] = [];
-    // Match Wikipedia URLs in href attributes
-    const regex = /href="(https?:\/\/en\.wikipedia\.org\/wiki\/[^"]+)"/gi;
-    let match;
-    while ((match = regex.exec(html)) !== null) {
-      if (!urls.includes(match[1])) {
-        urls.push(match[1]);
-      }
-    }
-    return urls;
-  }
-
-  private getWikipediaTitleFromUrl(url: string): string {
-    // Extract title from URL like https://en.wikipedia.org/wiki/Article_Title
-    const match = url.match(/\/wiki\/(.+)$/);
-    if (match) {
-      return decodeURIComponent(match[1]);
-    }
-    return '';
-  }
-
-  loadFlashcards(): void {
-    if (!this.selectedBookPath) {
-      this.flashcards = [];
-      return;
-    }
-    this.aiApi.getFlashcards(this.selectedBookPath)
-      .pipe(takeUntil(this.destroy$))
-      .subscribe({
-      next: cards => (this.flashcards = cards || []),
-      error: () => (this.flashcards = [])
-    });
-  }
-
-  clearFlashcards(): void {
-    if (!this.selectedBookPath) return;
-    this.aiApi.clearFlashcards(this.selectedBookPath)
-      .pipe(takeUntil(this.destroy$))
-      .subscribe({
-      next: () => (this.flashcards = []),
-      error: () => {}
-    });
-  }
-
-  deleteFlashcard(card: FlashcardItem): void {
-    // Use the vocab filter (selected book in modal) if available, otherwise use currently loaded book
-    const bookPath = this.vocabFilter !== 'all' ? this.vocabFilter : this.selectedBookPath;
-    if (!bookPath) return;
-
-    this.aiApi.deleteFlashcard(bookPath, card.term)
-      .pipe(takeUntil(this.destroy$))
-      .subscribe({
-        next: () => {
-          this.flashcards = this.flashcards.filter(c => c.term !== card.term);
-        },
-        error: () => {}
-      });
-  }
-
-  learnMore(item: { term: string; definition: string }): void {
-    if (this.loadingLearnMore) return;
-    this.loadingLearnMore = true;
-    this.learnMoreTerm = item.term;
-    this.learnMoreContent = 'Loading…';
-    this.learnMoreSafeContent = this.learnMoreContent;
-    this.learnMoreImages = [];
-
-    const cached = this.vocabularyService.getCachedLearnMore(item.term);
-    if (cached) {
-      this.learnMoreContent = cached.detail;
-      this.learnMoreSafeContent = this.sanitizer.bypassSecurityTrustHtml(cached.detail);
-      this.learnMoreImages = cached.images || [];
-      this.loadingLearnMore = false;
-      return;
-    }
-
-    const payload = {
-      term: item.term,
-      definition: item.definition,
-      dropboxPath: this.selectedBookPath ?? undefined,
-      bookTitle: this.selectedBook?.title ?? undefined,
-      context: this.analysisText ?? undefined
-    };
-    this.fetchLearnMoreAndImages(payload, true);
-  }
-
-  closeLearnMore(): void {
-    this.learnMoreContent = null;
-    this.learnMoreTerm = null;
-  }
-
-  makeFlashcard(item: { term: string; definition: string }): void {
-    if (this.loadingFlashcard) return;
-
-    // Use the current book from reader, or fall back to vocab filter if no book is selected
-    const bookPath = this.selectedBookPath || (this.vocabFilter !== 'all' ? this.vocabFilter : null);
-    if (!bookPath) {
-      this.logger.warn('No book selected for flashcard creation');
-      return;
-    }
-
-    this.loadingFlashcard = true;
-    const payload = {
-      term: item.term,
-      definition: item.definition,
-      dropboxPath: bookPath,
-      bookTitle: this.selectedBook?.title ?? undefined,
-      context: this.analysisText ?? undefined,
-      saveToLibrary: true
-    };
-    this.aiApi.createFlashcard(payload)
-      .pipe(takeUntil(this.destroy$))
-      .subscribe({
-      next: cards => {
-        const normalized: FlashcardItem[] = Array.isArray(cards) ? cards : [cards];
-        const updated = [...this.flashcards];
-        normalized.forEach(card => {
-          const idx = updated.findIndex(fc => fc.term.toLowerCase() === card.term.toLowerCase());
-          if (idx >= 0) {
-            updated[idx] = card;
-          } else {
-            updated.push(card);
-          }
-        });
-        this.flashcards = updated;
-        this.loadingFlashcard = false;
-      },
-      error: () => {
-        this.loadingFlashcard = false;
-      }
-    });
-  }
-
-  private refreshVocabLists(): void {
-    const filter = this.vocabFilter === 'all' ? undefined : this.vocabFilter;
-    this.vocabKnownList = this.vocabularyService.getKnownWords(filter)
-      .map(term => this.textUtils.capitalizeWords(term))
-      .sort((a, b) => a.localeCompare(b));
-    const unknownMap = this.vocabularyService.getUnknownWords(filter);
-    this.vocabUnknownList = Array.from(unknownMap.entries())
-      .map(([term, definition]) => ({
-        term: this.textUtils.capitalizeWords(term),
-        definition
-      }))
-      .sort((a, b) => a.term.localeCompare(b.term));
-  }
-
-  onVocabFilterChange(id: string): void {
-    this.vocabFilter = id;
-    this.refreshVocabLists();
-
-    // Also reload flashcards based on the filter
-    if (id === 'all') {
-      // Show flashcards for the currently open book
-      this.loadFlashcards();
-    } else {
-      // Show flashcards for the filtered book
-      this.loadFlashcardsForBook(id);
-    }
-  }
-
-  private loadFlashcardsForBook(bookPath: string): void {
-    if (!bookPath) {
-      this.flashcards = [];
-      return;
-    }
-    this.aiApi.getFlashcards(bookPath)
-      .pipe(takeUntil(this.destroy$))
-      .subscribe({
-        next: cards => (this.flashcards = cards || []),
-        error: () => (this.flashcards = [])
-      });
-  }
-
-  deleteSelectedBook(): void {
-    if (!this.vocabFilter || this.vocabFilter === 'all') {
-      return;
-    }
-
-    const bookName = this.vocabFilters.find(f => f.id === this.vocabFilter)?.name || this.vocabFilter;
-
-    const dialogRef = this.dialog.open(ConfirmDialogComponent, {
-      width: '450px',
-      data: {
-        title: 'Delete Book Vocabulary',
-        message: `Delete all vocabulary words from "${bookName}"?\n\nThis will remove all known words, study words, and flashcards associated with this book. This action cannot be undone.`,
-        confirmText: 'Delete',
-        cancelText: 'Cancel',
-        isDanger: true
-      }
-    });
-
-    dialogRef.afterClosed().subscribe(confirmed => {
-      if (!confirmed) {
-        return;
-      }
-
-      // Delete vocabulary for the book
-      this.vocabularyService.deleteBook(this.vocabFilter, (success, message) => {
-        if (success) {
-          this.logger.log(`✅ ${message}`);
-
-          // Delete flashcards for the book
-          this.aiApi.clearFlashcards(this.vocabFilter)
-            .pipe(takeUntil(this.destroy$))
-            .subscribe({
-              next: () => {
-                this.logger.log(`✅ Deleted flashcards for "${bookName}"`);
-              },
-              error: (err) => {
-                this.logger.error(`❌ Failed to delete flashcards:`, err);
-              }
-            });
-
-          // Switch back to "all" filter
-          this.vocabFilter = 'all';
-          this.vocabFilters = this.vocabularyService.getBookFilters();
-          this.refreshVocabLists();
-          this.loadFlashcards();
-
-          // Show success message with another dialog
-          this.dialog.open(ConfirmDialogComponent, {
-            width: '400px',
-            data: {
-              title: 'Success',
-              message: `Successfully deleted all vocabulary from "${bookName}"`,
-              confirmText: 'OK',
-              cancelText: null,
-              isDanger: false
-            }
-          });
-        } else {
-          // Show error message with another dialog
-          this.dialog.open(ConfirmDialogComponent, {
-            width: '400px',
-            data: {
-              title: 'Error',
-              message: `Failed to delete vocabulary: ${message}`,
-              confirmText: 'OK',
-              cancelText: null,
-              isDanger: true
-            }
-          });
-        }
-      });
-    });
-  }
-
-  private cleanModelHtml(text: string): string {
-    if (!text) return '';
-    // Strip common code fences (```html ... ```)
-    let cleaned = text.replace(/```[\s]*html?/gi, '').replace(/```/g, '').trim();
-    // Normalize double-slash image URLs to https and encode spaces/whitespace
-    cleaned = cleaned.replace(/<img([^>]+)src="(\/\/|https?:\/\/)([^"]+)"/gi, (_m, pre, _proto, rest) => {
-      const encoded = encodeURI(rest.trim().replace(/\s+/g, '_'));
-      return `<img${pre}src="https://${encoded}"`;
-    });
-    // Ensure images have lazy loading, referrer policy, error hide, and basic styling
-    cleaned = cleaned.replace(/<img([^>]*?)>/gi, (_match, attrs) => {
-      const hasLoading = /loading\s*=/.test(attrs);
-      const hasReferrer = /referrerpolicy\s*=/.test(attrs);
-      const hasStyle = /style\s*=/.test(attrs);
-      const hasOnError = /onerror\s*=/.test(attrs);
-      const styleAppend = 'display:block;margin:6px 0;max-width:100%;border-radius:8px;';
-
-      let finalAttrs = `${attrs}`;
-      if (!hasLoading) finalAttrs += ' loading="lazy"';
-      if (!hasReferrer) finalAttrs += ' referrerpolicy="no-referrer"';
-      if (!hasOnError) finalAttrs += ' onerror="this.style.display=\'none\'"';
-      if (!hasStyle) finalAttrs += ` style="${styleAppend}"`;
-
-      return `<img${finalAttrs}>`;
-    });
-    return cleaned;
   }
 
   @HostListener('mouseup')
@@ -2575,152 +2010,49 @@ DO NOT include common words. Only create flashcards for terms that significantly
     }
   }
 
-  private recalcPageSize(adjustOffset: boolean = true): void {
+  private recalcPageSize(): void {
     if (!this.textWindowRef || !this.chapterContent) return;
     const el = this.textWindowRef.nativeElement;
     if (!el.clientHeight || !el.clientWidth) return;
 
-    // Create cache key based on container dimensions and font size
-    const cacheKey = `${el.clientWidth}x${el.clientHeight}@${this.fontSize}`;
+    // Measurement, binary search and dimension-keyed caching all live in
+    // ReaderPaginationService. What stays here is the part that owns reader
+    // state: keeping wordOffset pointing at the same place after the page size
+    // changes underneath it.
+    const { pageSize: newSize, cached } = this.paginationService.calculatePageSize(
+      this.chapterContent.content,
+      el,
+      this.fontSize
+    );
 
-    // Use cached page size if dimensions haven't changed
-    if (this.pageSizeCacheKey === cacheKey && this.cachedPageSize !== null) {
-      // Just ensure offset is valid
-      const totalPages = this.totalPages;
-      const maxStart = Math.max(0, (totalPages - 1) * this.pageSizeWords);
-      if (this.wordOffset > maxStart) {
-        this.wordOffset = maxStart;
-      }
+    // Nothing was re-measured, so the layout hasn't moved — only make sure the
+    // offset is still legal. Deliberately does not persist reading position:
+    // a cache hit means the reader didn't actually go anywhere.
+    if (cached) {
+      this.clampWordOffset();
       return;
     }
 
-    // Setup measurement element if needed
-    this.setupMeasurementElement();
-
-    const newSize = this.findOptimalPageSize();
-
-    // Update cache
-    this.cachedPageSize = newSize;
-    this.pageSizeCacheKey = cacheKey;
-
     if (newSize !== this.pageSizeWords) {
-      const pageIndex = adjustOffset ? Math.floor(this.wordOffset / this.pageSizeWords) : 0;
+      // Keep the reader on the same page, re-expressed in the new page size.
+      const pageIndex = Math.floor(this.wordOffset / this.pageSizeWords);
       this.pageSizeWords = newSize;
-      if (adjustOffset) {
-        this.wordOffset = pageIndex * this.pageSizeWords;
-      }
+      this.wordOffset = pageIndex * this.pageSizeWords;
     }
 
-    // Clamp offset to last page start
-    const totalPages = this.totalPages;
-    const maxStart = Math.max(0, (totalPages - 1) * this.pageSizeWords);
-    if (this.wordOffset > maxStart) {
-      this.wordOffset = maxStart;
-    }
+    this.clampWordOffset();
 
     // Update current section index based on word offset
     this.updateCurrentSection();
     this.updateReadingPosition();
   }
 
-  private setupMeasurementElement(): void {
-    const textWindow = this.textWindowRef?.nativeElement;
-    if (!textWindow) return;
-
-    if (!this.measurementEl) {
-      // Create measurement element matching text-window
-      this.measurementEl = document.createElement('div');
-      this.measurementEl.style.cssText = `
-        position: absolute;
-        left: -9999px;
-        top: 0;
-        overflow: hidden;
-        visibility: hidden;
-        pointer-events: none;
-      `;
-      document.body.appendChild(this.measurementEl);
+  /** Pulls wordOffset back to the last page's start if it now points past the end. */
+  private clampWordOffset(): void {
+    const maxStart = Math.max(0, (this.totalPages - 1) * this.pageSizeWords);
+    if (this.wordOffset > maxStart) {
+      this.wordOffset = maxStart;
     }
-
-    // Update dimensions and styles to match current text window
-    const styles = getComputedStyle(textWindow);
-    this.measurementEl.style.width = `${textWindow.clientWidth}px`;
-    this.measurementEl.style.height = `${textWindow.clientHeight}px`;
-    this.measurementEl.style.fontSize = styles.fontSize;
-    this.measurementEl.style.fontFamily = styles.fontFamily;
-    this.measurementEl.style.lineHeight = styles.lineHeight;
-    this.measurementEl.style.padding = styles.padding;
-    this.measurementEl.style.boxSizing = 'border-box';
-  }
-
-  private doesTextOverflowAtOffset(wordCount: number, testOffset: number): boolean {
-    if (!this.measurementEl || !this.chapterContent) return false;
-
-    const testText = this.textUtils.sliceByWords(
-      this.chapterContent.content,
-      testOffset,
-      wordCount
-    );
-
-    // Apply same formatting as highlightedVisibleText (without section annotations for speed)
-    const html = this.textUtils.escapeHtml(testText).replace(/\n/g, '<br/>');
-    this.measurementEl.innerHTML = `<pre style="white-space: pre-wrap; word-wrap: break-word; margin: 0; line-height: inherit;">${html}</pre>`;
-
-    return this.measurementEl.scrollHeight > this.measurementEl.clientHeight;
-  }
-
-  private getEstimatedPageSize(): number {
-    // Quick estimation for binary search starting point
-    if (!this.textWindowRef) return 200;
-    const el = this.textWindowRef.nativeElement;
-    const styles = getComputedStyle(el);
-    const fontSize = parseFloat(styles.fontSize) || this.fontSize;
-    const lineHeight = parseFloat(styles.lineHeight) || (fontSize * 1.7);
-    const paddingY = parseFloat(styles.paddingTop || '0') + parseFloat(styles.paddingBottom || '0');
-    const availableHeight = Math.max(0, el.clientHeight - paddingY);
-    const lines = Math.max(3, Math.floor(availableHeight / lineHeight));
-    const avgCharWidth = fontSize * 0.6;
-    const approxCharsPerLine = Math.max(16, Math.floor(el.clientWidth / avgCharWidth));
-    const approxWordsPerLine = Math.max(4, Math.floor(approxCharsPerLine / 6));
-    return Math.max(20, Math.floor(lines * approxWordsPerLine));
-  }
-
-  private findOptimalPageSize(): number {
-    if (!this.chapterContent) return 200;
-
-    const totalChapterWords = this.textUtils.countWords(this.chapterContent.content);
-    // Use fixed test offset (0) so page size is consistent across the chapter
-    const testOffset = 0;
-    const maxPossible = Math.min(totalChapterWords, 800); // Cap for performance
-
-    if (maxPossible <= 10) return maxPossible;
-
-    // Get estimation for binary search bounds
-    const estimate = this.getEstimatedPageSize();
-
-    // Binary search for optimal page size using text from chapter start
-    // Use wider range to ensure we find the true maximum (estimate can be inaccurate)
-    let low = Math.max(10, Math.floor(estimate * 0.3));
-    let high = Math.min(maxPossible, Math.ceil(estimate * 2.5));
-    let result = low;
-
-    // First check if our low value overflows - if so, we need to go lower
-    if (this.doesTextOverflowAtOffset(low, testOffset)) {
-      high = low;
-      low = 10;
-    }
-
-    while (low <= high) {
-      const mid = Math.floor((low + high) / 2);
-
-      if (this.doesTextOverflowAtOffset(mid, testOffset)) {
-        high = mid - 1;
-      } else {
-        result = mid;
-        low = mid + 1;
-      }
-    }
-
-    return Math.max(10, result);
   }
 
   private setupResizeObserver(): void {
@@ -2806,39 +2138,7 @@ DO NOT include common words. Only create flashcards for terms that significantly
 
       // SSE stream - parse events
       const reader = response.body?.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      const readStream = async (): Promise<void> => {
-        const { done, value } = await reader!.read();
-        if (done) {
-          this.logger.log('SSE stream complete');
-          return;
-        }
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-
-        for (const line of lines) {
-          if (line.startsWith('data:')) {
-            const data = line.substring(5).trim();
-            if (!data) continue;
-
-            try {
-              const parsed = JSON.parse(data);
-              this.logger.log('SSE event:', parsed);
-              this.handleChunkBoundarySSEEvent(parsed);
-            } catch (e) {
-              this.logger.error('Failed to parse SSE data:', data, e);
-            }
-          }
-        }
-
-        return readStream();
-      };
-
-      return readStream();
+      return this.sse.readStream(reader!, event => this.handleChunkBoundarySSEEvent(event));
     }).catch(err => {
       this.logger.error('Failed to load chunk boundaries', err);
       this.ngZone.run(() => {
@@ -2902,23 +2202,13 @@ DO NOT include common words. Only create flashcards for terms that significantly
   }
 
   private updateCurrentSection(): void {
-    if (!this.chunkBoundaries || !this.chunkBoundaries.chunks.length) {
-      this.currentSectionIndex = null;
-      return;
-    }
-
-    // Find which section contains the current word offset
-    for (let i = 0; i < this.chunkBoundaries.chunks.length; i++) {
-      const chunk = this.chunkBoundaries.chunks[i];
-      if (this.wordOffset >= chunk.start && this.wordOffset < chunk.end) {
-        this.currentSectionIndex = i;
-        return;
-      }
-    }
-
-    // If not found, set to last section if we're beyond all chunks
-    if (this.wordOffset >= this.chunkBoundaries.chunks[this.chunkBoundaries.chunks.length - 1].end) {
-      this.currentSectionIndex = this.chunkBoundaries.chunks.length - 1;
+    const next = this.sections.findSectionIndex(
+      this.chunkBoundaries?.chunks ?? [],
+      this.wordOffset
+    );
+    // undefined means "offset is in a gap" — keep the current selection.
+    if (next !== undefined) {
+      this.currentSectionIndex = next;
     }
   }
 

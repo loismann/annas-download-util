@@ -91,4 +91,14 @@ public class AppDatabase
         cmd.Parameters.AddWithValue("$now", DateTime.UtcNow.ToString("o"));
         cmd.ExecuteNonQuery();
     }
+
+    /// <summary>Deletes one state document. Missing keys are a successful no-op.</summary>
+    public void DeleteState(string key)
+    {
+        using var conn = OpenConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "DELETE FROM app_state WHERE key = $key";
+        cmd.Parameters.AddWithValue("$key", key);
+        cmd.ExecuteNonQuery();
+    }
 }

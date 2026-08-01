@@ -222,12 +222,6 @@ describe('SearchFormComponent', () => {
     }));
   });
 
-  describe('Available formats', () => {
-    it('should have static list of formats', () => {
-      expect(component.availableFormats).toContain('EPUB');
-      expect(component.availableFormats).toContain('MOBI');
-      expect(component.availableFormats).toContain('PDF');
-      expect(component.availableFormats).toContain('AZW3');
-    });
-  });
+  // The "Available formats" suite was removed: format filtering no longer exists
+  // on this form, so there is no `availableFormats` to assert against.
 });

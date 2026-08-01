@@ -44,6 +44,73 @@
   }
 }
 
+.connection-panel {
+  margin: 0.75rem 1rem 0;
+  padding: 0.75rem 1rem;
+  border: 1px solid #d7d7d7;
+  border-radius: 10px;
+  background: #fafafa;
+
+  &.connected {
+    border-color: rgba(29, 185, 84, 0.5);
+    background: rgba(29, 185, 84, 0.06);
+  }
+}
+
+.connection-loading,
+.connection-summary,
+.connection-actions,
+.connection-details {
+  display: flex;
+  align-items: center;
+}
+
+.connection-loading {
+  gap: 0.75rem;
+}
+
+.connection-summary {
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.connection-state {
+  display: block;
+  margin-top: 0.15rem;
+  color: #555;
+  font-size: 0.8rem;
+}
+
+.connection-actions {
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.connection-details {
+  gap: 0.35rem 1rem;
+  flex-wrap: wrap;
+  margin-top: 0.65rem;
+  color: #555;
+  font-size: 0.75rem;
+}
+
+.connection-warning,
+.missing-scopes,
+.connection-notice {
+  margin-top: 0.65rem;
+  font-size: 0.8rem;
+}
+
+.connection-warning,
+.missing-scopes {
+  color: #9a5b00;
+}
+
+.connection-notice {
+  color: #315b3c;
+}
+
 // ─── Chat Messages ────────────────────────────────────────────────────────────
 
 .chat-messages {
@@ -261,6 +328,15 @@
 
   .message {
     max-width: 95%;
+  }
+
+  .connection-summary {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .connection-actions {
+    justify-content: flex-start;
   }
 
   .album-art,

@@ -1,42 +1,36 @@
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
-using AnnasArchive.API.Infrastructure;
 using AnnasArchive.API.Models;
-using Microsoft.Extensions.Options;
 using Serilog;
 
 namespace AnnasArchive.API.Services;
 
 public interface ISpotifyService
 {
-    Task<SpotifySearchResultDto> SearchTracksAsync(string query, int limit = 20, CancellationToken token = default);
+    Task<SpotifySearchResultDto> SearchTracksAsync(string query, int limit = 10, CancellationToken token = default);
     Task<List<SpotifyPlaylistDto>> GetUserPlaylistsAsync(CancellationToken token = default);
     Task<SpotifyPlaylistDto> CreatePlaylistAsync(string name, string? description = null, bool isPublic = false, CancellationToken token = default);
     Task AddTracksToPlaylistAsync(string playlistId, List<string> trackUris, CancellationToken token = default);
     Task RemoveTracksFromPlaylistAsync(string playlistId, List<string> trackUris, CancellationToken token = default);
+    Task RemovePlaylistsFromLibraryAsync(List<string> playlistUris, CancellationToken token = default);
 }
 
 public class SpotifyService : ISpotifyService
 {
     private readonly HttpClient _httpClient;
-    private readonly SpotifyConfiguration _config;
-    private readonly SemaphoreSlim _tokenLock = new(1, 1);
-
-    private string? _accessToken;
-    private DateTime _tokenExpiry = DateTime.MinValue;
-
-    private const string TokenUrl = "https://accounts.spotify.com/api/token";
+    private readonly ISpotifyAccessTokenProvider _accessTokens;
     private const string ApiBaseUrl = "https://api.spotify.com/v1";
 
-    public SpotifyService(HttpClient httpClient, IOptions<SpotifyConfiguration> config)
+    public SpotifyService(HttpClient httpClient, ISpotifyAccessTokenProvider accessTokens)
     {
         _httpClient = httpClient;
-        _config = config.Value;
+        _accessTokens = accessTokens;
     }
 
-    public async Task<SpotifySearchResultDto> SearchTracksAsync(string query, int limit = 20, CancellationToken token = default)
+    public async Task<SpotifySearchResultDto> SearchTracksAsync(string query, int limit = 10, CancellationToken token = default)
     {
+        limit = Math.Clamp(limit, 1, 10);
         var encodedQuery = Uri.EscapeDataString(query);
         var url = $"{ApiBaseUrl}/search?q={encodedQuery}&type=track&limit={limit}";
 
@@ -51,25 +45,26 @@ public class SpotifyService : ISpotifyService
 
     public async Task<List<SpotifyPlaylistDto>> GetUserPlaylistsAsync(CancellationToken token = default)
     {
-        var url = $"{ApiBaseUrl}/me/playlists?limit=50";
-        var response = await SendAuthenticatedRequestAsync<SpotifyPlaylistsResponse>(HttpMethod.Get, url, token);
+        string? url = $"{ApiBaseUrl}/me/playlists?limit=50";
+        var playlists = new List<SpotifyPlaylistDto>();
+        var visitedPages = new HashSet<string>(StringComparer.Ordinal);
 
-        if (response == null)
-            return [];
+        while (!string.IsNullOrWhiteSpace(url) && visitedPages.Add(url))
+        {
+            var response = await SendAuthenticatedRequestAsync<SpotifyPlaylistsResponse>(HttpMethod.Get, url, token);
+            if (response == null)
+                break;
 
-        return response.Items.Select(p => new SpotifyPlaylistDto(
-            p.Id,
-            p.Name,
-            p.Images?.FirstOrDefault()?.Url,
-            p.Tracks?.Total ?? 0,
-            p.ExternalUrls?.Spotify
-        )).ToList();
+            playlists.AddRange(response.Items.Select(MapPlaylistToDto));
+            url = response.Next;
+        }
+
+        return playlists;
     }
 
     public async Task<SpotifyPlaylistDto> CreatePlaylistAsync(string name, string? description = null, bool isPublic = false, CancellationToken token = default)
     {
-        var userId = await GetCurrentUserIdAsync(token);
-        var url = $"{ApiBaseUrl}/users/{userId}/playlists";
+        var url = $"{ApiBaseUrl}/me/playlists";
 
         var body = new
         {
@@ -99,7 +94,7 @@ public class SpotifyService : ISpotifyService
     {
         if (trackUris.Count == 0) return;
 
-        var url = $"{ApiBaseUrl}/playlists/{playlistId}/tracks";
+        var url = $"{ApiBaseUrl}/playlists/{playlistId}/items";
         var body = new { uris = trackUris };
 
         await SendAuthenticatedRequestAsync<object>(HttpMethod.Post, url, token, body);
@@ -110,28 +105,34 @@ public class SpotifyService : ISpotifyService
     {
         if (trackUris.Count == 0) return;
 
-        var url = $"{ApiBaseUrl}/playlists/{playlistId}/tracks";
+        var url = $"{ApiBaseUrl}/playlists/{playlistId}/items";
         var body = new
         {
-            tracks = trackUris.Select(uri => new { uri }).ToList()
+            items = trackUris.Select(uri => new { uri }).ToList()
         };
 
         await SendAuthenticatedRequestAsync<object>(HttpMethod.Delete, url, token, body);
         Log.Information("[Spotify] Removed {Count} tracks from playlist {PlaylistId}", trackUris.Count, playlistId);
     }
 
-    // ─── Private Helpers ─────────────────────────────────────────────────────────
-
-    private async Task<string> GetCurrentUserIdAsync(CancellationToken token)
+    public async Task RemovePlaylistsFromLibraryAsync(
+        List<string> playlistUris,
+        CancellationToken token = default)
     {
-        var url = $"{ApiBaseUrl}/me";
-        var response = await SendAuthenticatedRequestAsync<SpotifyUserProfile>(HttpMethod.Get, url, token);
-
-        if (response == null)
-            throw new InvalidOperationException("Failed to get current user profile");
-
-        return response.Id;
+        foreach (var batch in playlistUris
+                     .Where(uri => !string.IsNullOrWhiteSpace(uri))
+                     .Distinct(StringComparer.Ordinal)
+                     .Chunk(40))
+        {
+            var uris = Uri.EscapeDataString(string.Join(',', batch));
+            await SendAuthenticatedRequestAsync<object>(
+                HttpMethod.Delete,
+                $"{ApiBaseUrl}/me/library?uris={uris}",
+                token);
+        }
     }
+
+    // ─── Private Helpers ─────────────────────────────────────────────────────────
 
     private async Task<T?> SendAuthenticatedRequestAsync<T>(
         HttpMethod method,
@@ -139,83 +140,111 @@ public class SpotifyService : ISpotifyService
         CancellationToken token,
         object? body = null) where T : class
     {
-        await EnsureValidTokenAsync(token);
+        var serializedBody = body == null ? null : JsonSerializer.Serialize(body);
 
-        using var request = new HttpRequestMessage(method, url);
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _accessToken);
-
-        if (body != null)
+        for (var attempt = 0; attempt < 2; attempt++)
         {
-            var json = JsonSerializer.Serialize(body);
-            request.Content = new StringContent(json, Encoding.UTF8, "application/json");
+            var accessToken = await _accessTokens.GetAccessTokenAsync(
+                forceRefresh: attempt > 0,
+                token);
+            using var request = new HttpRequestMessage(method, url);
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+
+            if (serializedBody != null)
+                request.Content = new StringContent(serializedBody, Encoding.UTF8, "application/json");
+
+            HttpResponseMessage response;
+            try
+            {
+                response = await _httpClient.SendAsync(request, token);
+            }
+            catch (HttpRequestException ex)
+            {
+                await _accessTokens.RecordUnavailableAsync(ex.Message, token);
+                throw new SpotifyConnectionException(
+                    "Spotify is currently unavailable.",
+                    nameof(SpotifyConnectionState.SpotifyUnavailable),
+                    System.Net.HttpStatusCode.BadGateway);
+            }
+
+            using (response)
+            {
+                if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized && attempt == 0)
+                    continue;
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    var errorContent = await response.Content.ReadAsStringAsync(token);
+                    var (spotifyMessage, reason) = ParseSpotifyError(errorContent);
+                    var retryAfter = response.Headers.RetryAfter?.Delta;
+
+                    if (retryAfter == null && response.Headers.RetryAfter?.Date is { } retryDate)
+                    {
+                        var delay = retryDate - DateTimeOffset.UtcNow;
+                        retryAfter = delay > TimeSpan.Zero ? delay : TimeSpan.Zero;
+                    }
+
+                    Log.Warning(
+                        "[Spotify] API error {StatusCode}: {Message} (reason: {Reason}, retry after: {RetryAfter})",
+                        response.StatusCode,
+                        spotifyMessage,
+                        reason,
+                        retryAfter);
+
+                    var exception = new SpotifyApiException(
+                        response.StatusCode,
+                        spotifyMessage,
+                        reason,
+                        retryAfter);
+                    await _accessTokens.RecordApiFailureAsync(exception, token);
+                    throw exception;
+                }
+
+                await _accessTokens.RecordSuccessfulCallAsync(token);
+
+                if (response.StatusCode == System.Net.HttpStatusCode.NoContent)
+                    return null;
+
+                var content = await response.Content.ReadAsStringAsync(token);
+                if (string.IsNullOrWhiteSpace(content))
+                    return null;
+
+                return JsonSerializer.Deserialize<T>(content);
+            }
         }
 
-        var response = await _httpClient.SendAsync(request, token);
-
-        if (!response.IsSuccessStatusCode)
-        {
-            var errorContent = await response.Content.ReadAsStringAsync(token);
-            Log.Warning("[Spotify] API error {StatusCode}: {Error}", response.StatusCode, errorContent);
-            throw new HttpRequestException($"Spotify API error: {response.StatusCode}");
-        }
-
-        if (response.StatusCode == System.Net.HttpStatusCode.NoContent)
-            return null;
-
-        var content = await response.Content.ReadAsStringAsync(token);
-        return JsonSerializer.Deserialize<T>(content);
+        throw new InvalidOperationException("Spotify request retry flow ended unexpectedly.");
     }
 
-    private async Task EnsureValidTokenAsync(CancellationToken token)
+    private static (string? Message, string? Reason) ParseSpotifyError(string content)
     {
-        if (_accessToken != null && DateTime.UtcNow < _tokenExpiry.AddMinutes(-5))
-            return;
+        if (string.IsNullOrWhiteSpace(content))
+            return (null, null);
 
-        await _tokenLock.WaitAsync(token);
         try
         {
-            // Double-check after acquiring lock
-            if (_accessToken != null && DateTime.UtcNow < _tokenExpiry.AddMinutes(-5))
-                return;
+            using var document = JsonDocument.Parse(content);
+            var root = document.RootElement;
+            var error = root.TryGetProperty("error", out var nestedError) ? nestedError : root;
 
-            await RefreshAccessTokenAsync(token);
+            var message = error.TryGetProperty("message", out var messageElement)
+                ? messageElement.GetString()
+                : error.ValueKind == JsonValueKind.String
+                    ? error.GetString()
+                    : null;
+
+            var reason = error.TryGetProperty("reason", out var reasonElement)
+                ? reasonElement.GetString()
+                : root.TryGetProperty("reason", out var rootReasonElement)
+                    ? rootReasonElement.GetString()
+                    : null;
+
+            return (message, reason);
         }
-        finally
+        catch (JsonException)
         {
-            _tokenLock.Release();
+            return (null, null);
         }
-    }
-
-    private async Task RefreshAccessTokenAsync(CancellationToken token)
-    {
-        var credentials = Convert.ToBase64String(
-            Encoding.UTF8.GetBytes($"{_config.ClientId}:{_config.ClientSecret}"));
-
-        using var request = new HttpRequestMessage(HttpMethod.Post, TokenUrl);
-        request.Headers.Authorization = new AuthenticationHeaderValue("Basic", credentials);
-        request.Content = new FormUrlEncodedContent(new Dictionary<string, string>
-        {
-            ["grant_type"] = "refresh_token",
-            ["refresh_token"] = _config.RefreshToken
-        });
-
-        var response = await _httpClient.SendAsync(request, token);
-        var content = await response.Content.ReadAsStringAsync(token);
-
-        if (!response.IsSuccessStatusCode)
-        {
-            Log.Error("[Spotify] Token refresh failed: {Error}", content);
-            throw new InvalidOperationException($"Failed to refresh Spotify token: {content}");
-        }
-
-        var tokenResponse = JsonSerializer.Deserialize<SpotifyTokenResponse>(content);
-        if (tokenResponse == null)
-            throw new InvalidOperationException("Failed to parse token response");
-
-        _accessToken = tokenResponse.AccessToken;
-        _tokenExpiry = DateTime.UtcNow.AddSeconds(tokenResponse.ExpiresIn);
-
-        Log.Debug("[Spotify] Access token refreshed, expires at {Expiry}", _tokenExpiry);
     }
 
     private static SpotifyTrackDto MapToDto(SpotifyTrackItem track)
@@ -234,4 +263,14 @@ public class SpotifyService : ISpotifyService
             track.ExternalUrls?.Spotify
         );
     }
+
+    private static SpotifyPlaylistDto MapPlaylistToDto(SpotifyPlaylistItem playlist) => new(
+        playlist.Id,
+        playlist.Name,
+        playlist.Images?.FirstOrDefault()?.Url,
+        playlist.ItemSummary?.Total ?? 0,
+        playlist.ExternalUrls?.Spotify,
+        ContentsAvailable: playlist.ItemSummary != null,
+        SnapshotId: playlist.SnapshotId
+    );
 }

@@ -1,0 +1,94 @@
+{
+  "href": "https://api.spotify.com/v1/playlists/owned-playlist/items?offset=0&limit=50",
+  "limit": 50,
+  "next": null,
+  "offset": 0,
+  "previous": null,
+  "total": 4,
+  "items": [
+    {
+      "added_at": "2026-07-01T12:00:00Z",
+      "added_by": {
+        "display_name": "Test Owner",
+        "external_urls": null,
+        "id": "test-owner"
+      },
+      "is_local": false,
+      "item": {
+        "album": {
+          "id": "album-one",
+          "images": [
+            {
+              "url": "https://image.example/album-one.jpg",
+              "height": 300,
+              "width": 300
+            }
+          ],
+          "name": "Album One"
+        },
+        "artists": [
+          {
+            "id": "artist-one",
+            "name": "Artist One"
+          }
+        ],
+        "duration_ms": 183000,
+        "external_urls": {
+          "spotify": "https://open.spotify.com/track/track-one"
+        },
+        "id": "track-one",
+        "is_local": false,
+        "name": "Track One",
+        "type": "track",
+        "uri": "spotify:track:track-one"
+      }
+    },
+    {
+      "added_at": "2026-07-02T12:00:00Z",
+      "added_by": null,
+      "is_local": false,
+      "item": {
+        "duration_ms": 2400000,
+        "external_urls": {
+          "spotify": "https://open.spotify.com/episode/episode-one"
+        },
+        "id": "episode-one",
+        "is_local": false,
+        "name": "Episode One",
+        "type": "episode",
+        "uri": "spotify:episode:episode-one"
+      }
+    },
+    {
+      "added_at": null,
+      "added_by": null,
+      "is_local": true,
+      "item": {
+        "album": {
+          "id": "",
+          "images": [],
+          "name": "Local Album"
+        },
+        "artists": [
+          {
+            "id": "",
+            "name": "Local Artist"
+          }
+        ],
+        "duration_ms": 201000,
+        "external_urls": null,
+        "id": null,
+        "is_local": true,
+        "name": "Local Track",
+        "type": "track",
+        "uri": "spotify:local:Local+Artist:Local+Album:Local+Track:201"
+      }
+    },
+    {
+      "added_at": "2026-07-03T12:00:00Z",
+      "added_by": null,
+      "is_local": false,
+      "item": null
+    }
+  ]
+}

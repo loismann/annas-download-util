@@ -3,9 +3,11 @@ using System.Text;
 using System.Text.Json;
 using AnnasArchive.API.Models;
 using AnnasArchive.API.Services;
+using AnnasArchive.API.Infrastructure;
 using AnnasArchive.Core.Helpers;
 using AnnasArchive.Core.Services;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 using Serilog;
 
 namespace AnnasArchive.API.Endpoints;
@@ -15,23 +17,88 @@ public static class SpotifyEndpoints
     public static WebApplication MapSpotifyEndpoints(this WebApplication app)
     {
         var group = app.MapGroup("/api/spotify")
-            .RequireAuthorization()
+            .RequireAuthorization("AdminOnly")
             .RequireRateLimiting("api");
 
+        group.MapGet("/connection", HandleGetConnection);
+        group.MapPost("/connection/authorize", HandleAuthorize);
+        group.MapDelete("/connection", HandleDisconnect);
         group.MapGet("/search", HandleSearch);
         group.MapGet("/playlists", HandleGetPlaylists);
-        group.MapPost("/playlists", HandleCreatePlaylist);
-        group.MapPost("/playlists/{playlistId}/tracks", HandleAddTracks);
-        group.MapDelete("/playlists/{playlistId}/tracks", HandleRemoveTracks);
         group.MapPost("/command", HandleCommand);
 
+        app.MapGet("/api/spotify/oauth/callback", HandleOAuthCallback)
+            .AllowAnonymous()
+            .RequireRateLimiting("login");
+
         return app;
+    }
+
+    private static IResult HandleGetConnection(
+        ISpotifyAuthorizationService authorization,
+        ISpotifyCurrentUser currentUser) =>
+        Results.Ok(authorization.GetStatus(currentUser.GetRequiredOwnerKey()));
+
+    private static IResult HandleAuthorize(
+        SpotifyAuthorizeRequest? request,
+        ISpotifyAuthorizationService authorization,
+        ISpotifyCurrentUser currentUser)
+    {
+        try
+        {
+            var uri = authorization.CreateAuthorizationUri(
+                currentUser.GetRequiredOwnerKey(),
+                request?.ForceDialog ?? false);
+            return Results.Ok(new SpotifyAuthorizeResponse(uri.AbsoluteUri));
+        }
+        catch (Exception ex)
+        {
+            return MapFailure(ex);
+        }
+    }
+
+    private static IResult HandleDisconnect(
+        ISpotifyAuthorizationService authorization,
+        ISpotifyCurrentUser currentUser)
+    {
+        authorization.Disconnect(currentUser.GetRequiredOwnerKey());
+        return Results.NoContent();
+    }
+
+    private static async Task<IResult> HandleOAuthCallback(
+        string? state,
+        string? code,
+        string? error,
+        ISpotifyAuthorizationService authorization,
+        IOptions<SpotifyConfiguration> config,
+        CancellationToken token)
+    {
+        string result;
+        try
+        {
+            var completion = await authorization.CompleteAuthorizationAsync(state, code, error, token);
+            result = completion.Succeeded ? "connected" : completion.Error ?? "authorization_failed";
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "[Spotify] OAuth callback failed");
+            result = ex is SpotifyConnectionException connectionException
+                ? connectionException.State
+                : "authorization_failed";
+        }
+
+        var path = $"/spotifinator?spotify={Uri.EscapeDataString(result)}";
+        var frontendBaseUrl = config.Value.FrontendBaseUrl?.TrimEnd('/');
+        return Results.Redirect(string.IsNullOrWhiteSpace(frontendBaseUrl)
+            ? path
+            : frontendBaseUrl + path);
     }
 
     private static async Task<IResult> HandleSearch(
         string q,
         int? limit,
         ISpotifyService spotifyService,
+        HttpContext context,
         CancellationToken token)
     {
         if (string.IsNullOrWhiteSpace(q))
@@ -39,18 +106,19 @@ public static class SpotifyEndpoints
 
         try
         {
-            var results = await spotifyService.SearchTracksAsync(q, limit ?? 20, token);
+            var results = await spotifyService.SearchTracksAsync(q, limit ?? 10, token);
             return Results.Ok(results);
         }
         catch (Exception ex)
         {
             Log.Warning(ex, "[Spotify] Search failed for query: {Query}", q);
-            return Results.BadRequest(new { error = ex.Message });
+            return MapFailure(ex, context);
         }
     }
 
     private static async Task<IResult> HandleGetPlaylists(
         ISpotifyService spotifyService,
+        HttpContext context,
         CancellationToken token)
     {
         try
@@ -61,13 +129,14 @@ public static class SpotifyEndpoints
         catch (Exception ex)
         {
             Log.Warning(ex, "[Spotify] Failed to get playlists");
-            return Results.BadRequest(new { error = ex.Message });
+            return MapFailure(ex, context);
         }
     }
 
     private static async Task<IResult> HandleCreatePlaylist(
         CreatePlaylistRequest request,
         ISpotifyService spotifyService,
+        HttpContext context,
         CancellationToken token)
     {
         if (string.IsNullOrWhiteSpace(request?.Name))
@@ -86,7 +155,7 @@ public static class SpotifyEndpoints
         catch (Exception ex)
         {
             Log.Error(ex, "[Spotify] Failed to create playlist: {Name}", request?.Name);
-            return Results.BadRequest(new { error = ex.Message });
+            return MapFailure(ex, context);
         }
     }
 
@@ -94,6 +163,7 @@ public static class SpotifyEndpoints
         string playlistId,
         [FromBody] AddTracksRequest request,
         [FromServices] ISpotifyService spotifyService,
+        HttpContext context,
         CancellationToken token)
     {
         if (string.IsNullOrWhiteSpace(playlistId))
@@ -110,7 +180,7 @@ public static class SpotifyEndpoints
         catch (Exception ex)
         {
             Log.Error(ex, "[Spotify] Failed to add tracks to playlist: {PlaylistId}", playlistId);
-            return Results.BadRequest(new { error = ex.Message });
+            return MapFailure(ex, context);
         }
     }
 
@@ -118,6 +188,7 @@ public static class SpotifyEndpoints
         string playlistId,
         [FromBody] AddTracksRequest request,
         [FromServices] ISpotifyService spotifyService,
+        HttpContext context,
         CancellationToken token)
     {
         if (string.IsNullOrWhiteSpace(playlistId))
@@ -134,7 +205,7 @@ public static class SpotifyEndpoints
         catch (Exception ex)
         {
             Log.Error(ex, "[Spotify] Failed to remove tracks from playlist: {PlaylistId}", playlistId);
-            return Results.BadRequest(new { error = ex.Message });
+            return MapFailure(ex, context);
         }
     }
 
@@ -147,6 +218,7 @@ public static class SpotifyEndpoints
         [FromServices] IConfiguration config,
         [FromServices] IModelSelectionService modelSelection,
         [FromServices] IOpenAiModelHelper modelHelper,
+        HttpContext context,
         CancellationToken token)
     {
         if (string.IsNullOrWhiteSpace(request?.Message))
@@ -169,11 +241,7 @@ public static class SpotifyEndpoints
         catch (Exception ex)
         {
             Log.Error(ex, "[Spotify] Command processing failed for: {Message}", request.Message);
-            return Results.BadRequest(new SpotifyCommandResponse(
-                new ParsedSpotifyCommand("error"),
-                $"Sorry, something went wrong: {ex.Message}",
-                Error: ex.Message
-            ));
+            return MapFailure(ex, context);
         }
     }
 
@@ -301,98 +369,22 @@ public static class SpotifyEndpoints
                 var playlists = await spotifyService.GetUserPlaylistsAsync(token);
                 return playlists.Count > 0
                     ? (playlists, $"You have {playlists.Count} playlists:")
-                    : (playlists, "You don't have any playlists yet. Want me to create one?");
+                    : (playlists, "You don't have any playlists yet.");
 
             case "create_playlist":
-                if (string.IsNullOrWhiteSpace(parsed.PlaylistName))
-                    return (null, "What would you like to name the playlist?");
-
-                var newPlaylist = await spotifyService.CreatePlaylistAsync(
-                    parsed.PlaylistName,
-                    parsed.Description,
-                    false,
-                    token);
-
-                return (newPlaylist, $"Created playlist \"{newPlaylist.Name}\"! You can find it in your Spotify library.");
-
             case "add_tracks":
-                if (string.IsNullOrWhiteSpace(parsed.SearchQuery))
-                    return (null, "What song would you like to add?");
-                if (string.IsNullOrWhiteSpace(parsed.PlaylistName))
-                    return (null, "Which playlist should I add it to?");
-
-                // Find the playlist by name
-                var addPlaylists = await spotifyService.GetUserPlaylistsAsync(token);
-                var targetPlaylist = addPlaylists.FirstOrDefault(p =>
-                    p.Name.Contains(parsed.PlaylistName, StringComparison.OrdinalIgnoreCase));
-
-                if (targetPlaylist == null)
-                    return (addPlaylists, $"I couldn't find a playlist matching \"{parsed.PlaylistName}\". Here are your playlists:");
-
-                // Search for the track
-                var addSearchResults = await spotifyService.SearchTracksAsync(parsed.SearchQuery, 1, token);
-                if (addSearchResults.Tracks.Count == 0)
-                    return (null, $"I couldn't find any tracks matching \"{parsed.SearchQuery}\". Try a different search?");
-
-                var trackToAdd = addSearchResults.Tracks.First();
-                await spotifyService.AddTracksToPlaylistAsync(targetPlaylist.Id, new List<string> { trackToAdd.Uri }, token);
-
-                return (trackToAdd, $"Added \"{trackToAdd.Name}\" by {trackToAdd.Artists} to \"{targetPlaylist.Name}\"!");
-
             case "remove_tracks":
-                if (string.IsNullOrWhiteSpace(parsed.SearchQuery))
-                    return (null, "What song would you like to remove?");
-                if (string.IsNullOrWhiteSpace(parsed.PlaylistName))
-                    return (null, "Which playlist should I remove it from?");
-
-                // Find the playlist by name
-                var removePlaylists = await spotifyService.GetUserPlaylistsAsync(token);
-                var removeTargetPlaylist = removePlaylists.FirstOrDefault(p =>
-                    p.Name.Contains(parsed.PlaylistName, StringComparison.OrdinalIgnoreCase));
-
-                if (removeTargetPlaylist == null)
-                    return (removePlaylists, $"I couldn't find a playlist matching \"{parsed.PlaylistName}\". Here are your playlists:");
-
-                // Search for the track
-                var removeSearchResults = await spotifyService.SearchTracksAsync(parsed.SearchQuery, 1, token);
-                if (removeSearchResults.Tracks.Count == 0)
-                    return (null, $"I couldn't find any tracks matching \"{parsed.SearchQuery}\". Try a different search?");
-
-                var trackToRemove = removeSearchResults.Tracks.First();
-                await spotifyService.RemoveTracksFromPlaylistAsync(removeTargetPlaylist.Id, new List<string> { trackToRemove.Uri }, token);
-
-                return (trackToRemove, $"Removed \"{trackToRemove.Name}\" by {trackToRemove.Artists} from \"{removeTargetPlaylist.Name}\"!");
-
             case "generate_playlist":
-                if (string.IsNullOrWhiteSpace(parsed.VibeDescription))
-                    return (null, "What kind of vibe or mood are you looking for?");
-
-                // If not ready to generate, return clarifying questions
-                if (!parsed.ReadyToGenerate && parsed.ClarifyingQuestions?.Count > 0)
-                {
-                    var questionsText = string.Join("\n", parsed.ClarifyingQuestions.Select((q, i) => $"{i + 1}. {q}"));
-                    return (new { clarifyingQuestions = parsed.ClarifyingQuestions },
-                        $"I'd love to create the perfect playlist for you! To make sure I nail the vibe, a few quick questions:\n\n{questionsText}");
-                }
-
-                // Generate the playlist using GPT-5.2
-                return await GenerateVibePlaylistAsync(
-                    parsed.VibeDescription,
-                    parsed.PlaylistName ?? "AI Generated Playlist",
-                    parsed.TrackCount ?? 20,
-                    spotifyService,
-                    httpClientFactory,
-                    config,
-                    modelSelection,
-                    modelHelper,
-                    token);
+                return (null,
+                    "Playlist changes are paused until Spotifinator's reviewed change-plan flow is complete. " +
+                    "For now I can connect safely, search Spotify, and list playlist metadata without changing your account.");
 
             case "unknown":
             default:
                 if (!string.IsNullOrWhiteSpace(parsed.ClarificationNeeded))
                     return (null, parsed.ClarificationNeeded);
 
-                return (null, "I'm not sure what you want to do. You can:\n- Search for songs\n- Show your playlists\n- Create a new playlist\n- Add songs to a playlist\n- Remove songs from a playlist\n- Generate a playlist based on a vibe/mood\n\nWhat would you like?");
+                return (null, "I'm not sure what you want to do yet. In this phase you can:\n- Search for songs\n- Show your playlists\n- Check the Spotify connection\n\nPlaylist inspection arrives in Phase 3; reviewed changes arrive in Phase 6.");
         }
     }
 
@@ -539,6 +531,10 @@ public static class SpotifyEndpoints
                     Log.Information("[Spotify] Could not find: {Artist} - {Title}", song.Artist, song.Title);
                 }
             }
+            catch (Exception ex) when (ex is SpotifyApiException or SpotifyConnectionException)
+            {
+                throw;
+            }
             catch (Exception ex)
             {
                 Log.Warning(ex, "[Spotify] Error searching for: {Artist} - {Title}", song.Artist, song.Title);
@@ -565,6 +561,10 @@ public static class SpotifyEndpoints
 
                 Log.Information("[Spotify] Created playlist '{Name}' with {Count} tracks", playlistName, foundTracks.Count);
             }
+            catch (Exception ex) when (ex is SpotifyApiException or SpotifyConnectionException)
+            {
+                throw;
+            }
             catch (Exception ex)
             {
                 Log.Error(ex, "[Spotify] Failed to create playlist: {Name}", playlistName);
@@ -583,5 +583,49 @@ public static class SpotifyEndpoints
         }
 
         return (result, responseText);
+    }
+
+    private static IResult MapFailure(Exception exception, HttpContext? context = null)
+    {
+        var (statusCode, state, reason, retryAfter, message) = exception switch
+        {
+            SpotifyApiException apiException => (
+                (int)apiException.SpotifyStatusCode,
+                apiException.IsQuotaExceeded ? "QuotaExceeded" :
+                    apiException.SpotifyStatusCode == System.Net.HttpStatusCode.TooManyRequests
+                        ? "RateLimited"
+                        : "Connected",
+                apiException.Reason,
+                apiException.RetryAfter,
+                apiException.SpotifyMessage ?? "Spotify rejected the request."),
+            SpotifyConnectionException connectionException => (
+                (int)connectionException.StatusCode,
+                connectionException.State,
+                (string?)null,
+                connectionException.RetryAfter,
+                connectionException.Message),
+            UnauthorizedAccessException => (
+                StatusCodes.Status401Unauthorized,
+                "Disconnected",
+                (string?)null,
+                (TimeSpan?)null,
+                "A logged-in administrator is required for Spotify."),
+            _ => (
+                StatusCodes.Status502BadGateway,
+                "SpotifyUnavailable",
+                (string?)null,
+                (TimeSpan?)null,
+                "The Spotify operation could not be completed.")
+        };
+
+        var retryAfterSeconds = retryAfter is { } delay
+            ? Math.Max(0, (int)Math.Ceiling(delay.TotalSeconds))
+            : (int?)null;
+        if (context != null && retryAfterSeconds.HasValue)
+            context.Response.Headers.RetryAfter = retryAfterSeconds.Value.ToString();
+
+        return Results.Json(
+            new SpotifyConnectionErrorDto(message, state, reason, retryAfterSeconds),
+            statusCode: statusCode);
     }
 }

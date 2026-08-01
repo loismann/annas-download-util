@@ -268,33 +268,54 @@ describe('BookCardComponent', () => {
     });
   });
 
-  describe('Bookmark functionality', () => {
-    it('should display bookmark button', () => {
-      const bookmarkBtn = fixture.nativeElement.querySelector('.bookmark-btn');
-      expect(bookmarkBtn).toBeTruthy();
+  // Was "Bookmark functionality". The shared `bookmarked: boolean` became
+  // per-owner `favoritedBy: string[]`, so what the card shows now depends on who
+  // is logged in — that is the part worth covering.
+  describe('Favorite functionality', () => {
+    it('should display favorite button', () => {
+      const favoriteBtn = fixture.nativeElement.querySelector('.favorite-btn');
+      expect(favoriteBtn).toBeTruthy();
     });
 
-    it('should show empty bookmark icon when not bookmarked', () => {
-      component.book = { ...mockBook, bookmarked: false };
+    it('should show empty heart when the current owner has not favorited it', () => {
+      component.currentOwnerName = 'Paul';
+      component.book = { ...mockBook, favoritedBy: [] };
       fixture.detectChanges();
-      const bookmarkBtn = fixture.nativeElement.querySelector('.bookmark-btn');
-      expect(bookmarkBtn.textContent).toContain('bookmark_border');
-      expect(bookmarkBtn.classList.contains('bookmarked')).toBe(false);
+      const favoriteBtn = fixture.nativeElement.querySelector('.favorite-btn');
+      expect(favoriteBtn.textContent).toContain('favorite_border');
+      expect(favoriteBtn.classList.contains('favorited')).toBe(false);
     });
 
-    it('should show filled bookmark icon when bookmarked', () => {
-      component.book = { ...mockBook, bookmarked: true };
+    it('should show filled heart when the current owner has favorited it', () => {
+      component.currentOwnerName = 'Paul';
+      component.book = { ...mockBook, favoritedBy: ['Paul'] };
       fixture.detectChanges();
-      const bookmarkBtn = fixture.nativeElement.querySelector('.bookmark-btn');
-      expect(bookmarkBtn.textContent).toContain('bookmark');
-      expect(bookmarkBtn.classList.contains('bookmarked')).toBe(true);
+      const favoriteBtn = fixture.nativeElement.querySelector('.favorite-btn');
+      expect(favoriteBtn.textContent).toContain('favorite');
+      expect(favoriteBtn.classList.contains('favorited')).toBe(true);
     });
 
-    it('should emit bookmarkToggle when bookmark button is clicked', () => {
-      spyOn(component.bookmarkToggle, 'emit');
-      const bookmarkBtn = fixture.nativeElement.querySelector('.bookmark-btn');
-      bookmarkBtn.click();
-      expect(component.bookmarkToggle.emit).toHaveBeenCalledWith(component.book);
+    it('should not show someone else\'s favorite as the current owner\'s', () => {
+      component.currentOwnerName = 'Paul';
+      component.book = { ...mockBook, favoritedBy: ['Mom'] };
+      fixture.detectChanges();
+      const favoriteBtn = fixture.nativeElement.querySelector('.favorite-btn');
+      expect(favoriteBtn.classList.contains('favorited')).toBe(false);
+    });
+
+    it('should show no favorite when nobody is logged in', () => {
+      component.currentOwnerName = null;
+      component.book = { ...mockBook, favoritedBy: ['Paul'] };
+      fixture.detectChanges();
+      const favoriteBtn = fixture.nativeElement.querySelector('.favorite-btn');
+      expect(favoriteBtn.classList.contains('favorited')).toBe(false);
+    });
+
+    it('should emit favoriteToggle when the favorite button is clicked', () => {
+      spyOn(component.favoriteToggle, 'emit');
+      const favoriteBtn = fixture.nativeElement.querySelector('.favorite-btn');
+      favoriteBtn.click();
+      expect(component.favoriteToggle.emit).toHaveBeenCalledWith(component.book);
     });
   });
 });

@@ -292,4 +292,96 @@ describe('ReaderPaginationService', () => {
       expect(lastPage).toBe(totalPages);
     });
   });
+
+  // Moved here from book-reader.component.spec.ts, where they ran against a
+  // local re-implementation of the algorithm rather than the shipped one — and
+  // that copy had bounds handling the real code lacked. These call the real
+  // method; the overflow predicate is the only thing stubbed.
+  describe('findLargestNonOverflowing', () => {
+    const overflowsAtOrAbove = (threshold: number) => (count: number) => count >= threshold;
+
+    it('should find the exact overflow boundary', () => {
+      expect(service.findLargestNonOverflowing(overflowsAtOrAbove(150), 200, 500)).toBe(149);
+    });
+
+    it('should recover when the estimate is too high', () => {
+      expect(service.findLargestNonOverflowing(overflowsAtOrAbove(80), 200, 500)).toBe(79);
+    });
+
+    it('should recover when the estimate is too low', () => {
+      expect(service.findLargestNonOverflowing(overflowsAtOrAbove(400), 200, 500)).toBe(399);
+    });
+
+    it('should fall back to the 10-word floor when even that overflows', () => {
+      expect(service.findLargestNonOverflowing(() => true, 200, 500)).toBe(10);
+    });
+
+    it('should return the upper bound when nothing overflows', () => {
+      expect(service.findLargestNonOverflowing(() => false, 200, 500)).toBe(500);
+    });
+
+    it('should never exceed maxPossible, even when the bracket starts above it', () => {
+      // A 50-word chapter with a 200-word estimate puts the whole initial
+      // bracket out of range.
+      expect(service.findLargestNonOverflowing(() => false, 200, 50)).toBe(50);
+    });
+  });
+
+  describe('getEstimatedPageSize', () => {
+    const containers: HTMLElement[] = [];
+
+    function makeContainer(
+      width: number,
+      height: number,
+      fontSize: number,
+      lineHeight: number,
+      paddingY: number
+    ): HTMLElement {
+      const el = document.createElement('div');
+      el.style.cssText = [
+        'position:absolute',
+        'left:-9999px',
+        'box-sizing:border-box',
+        `width:${width}px`,
+        `height:${height}px`,
+        `font-size:${fontSize}px`,
+        `line-height:${lineHeight}px`,
+        `padding:${paddingY / 2}px 0`
+      ].join(';');
+      document.body.appendChild(el);
+      containers.push(el);
+      return el;
+    }
+
+    afterEach(() => {
+      containers.splice(0).forEach(el => el.remove());
+    });
+
+    it('should return the fallback when there is no container', () => {
+      expect(service.getEstimatedPageSize(null as any)).toBe(200);
+    });
+
+    it('should give a plausible estimate for a desktop container', () => {
+      const estimate = service.getEstimatedPageSize(makeContainer(800, 600, 16, 27.2, 60));
+      expect(estimate).toBeGreaterThan(100);
+      expect(estimate).toBeLessThan(600);
+    });
+
+    it('should estimate fewer words as the font grows', () => {
+      const small = service.getEstimatedPageSize(makeContainer(800, 600, 14, 23.8, 60));
+      const large = service.getEstimatedPageSize(makeContainer(800, 600, 24, 40.8, 60));
+      expect(large).toBeLessThan(small);
+    });
+
+    it('should estimate more words as the container grows', () => {
+      const small = service.getEstimatedPageSize(makeContainer(600, 400, 16, 27.2, 60));
+      const large = service.getEstimatedPageSize(makeContainer(1000, 800, 16, 27.2, 60));
+      expect(large).toBeGreaterThan(small);
+    });
+
+    it('should enforce a floor for a container too small to fit anything', () => {
+      const estimate = service.getEstimatedPageSize(makeContainer(100, 100, 28, 47.6, 80));
+      expect(estimate).toBeGreaterThanOrEqual(20);
+    });
+  });
 });

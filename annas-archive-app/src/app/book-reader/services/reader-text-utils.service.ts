@@ -155,67 +155,87 @@ export class ReaderTextUtilsService {
   }
 
   /**
-   * Cleans HTML from AI model output for safe display.
-   * Removes script tags and limits link attributes.
+   * Prepares AI/Wikipedia HTML for rendering in the Learn More panel.
+   *
+   * Every step here exists because of real upstream output, so resist
+   * "simplifying" it:
+   *  - Models wrap HTML in ``` fences even when told not to.
+   *  - Wikipedia emits protocol-relative image URLs (`//upload.wikimedia.org/…`),
+   *    which resolve to nothing over https and must be given a scheme.
+   *  - Wikipedia blocks hotlinked images unless the referrer is suppressed, so
+   *    `referrerpolicy="no-referrer"` is load-bearing, not decoration.
+   *  - `onerror` hides images that 404 rather than leaving a broken-image icon
+   *    mid-paragraph.
+   *
+   * The output is passed through DomSanitizer by the caller, which is what
+   * strips scripts — doing it here as well would be redundant and would also
+   * remove the `onerror` this adds.
    */
   cleanModelHtml(text: string): string {
     if (!text) return '';
-
-    let cleaned = text;
-
-    // Remove script tags and their content
-    cleaned = cleaned.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
-
-    // Remove event handlers
-    cleaned = cleaned.replace(/\s*on\w+\s*=\s*"[^"]*"/gi, '');
-    cleaned = cleaned.replace(/\s*on\w+\s*=\s*'[^']*'/gi, '');
-
-    // Ensure links open in new tab and have noopener
-    cleaned = cleaned.replace(/<a\s+([^>]*href="[^"]*"[^>]*)>/gi, (match, attrs) => {
-      // Check if target and rel already exist
-      let finalAttrs = attrs;
-      if (!/target\s*=/i.test(attrs)) {
-        finalAttrs += ' target="_blank"';
-      }
-      if (!/rel\s*=/i.test(attrs)) {
-        finalAttrs += ' rel="noopener noreferrer"';
-      }
-      return `<a ${finalAttrs}>`;
+    // Strip common code fences (```html ... ```)
+    let cleaned = text.replace(/```[\s]*html?/gi, '').replace(/```/g, '').trim();
+    // Normalize double-slash image URLs to https and encode spaces/whitespace
+    cleaned = cleaned.replace(/<img([^>]+)src="(\/\/|https?:\/\/)([^"]+)"/gi, (_m, pre, _proto, rest) => {
+      const encoded = encodeURI(rest.trim().replace(/\s+/g, '_'));
+      return `<img${pre}src="https://${encoded}"`;
     });
+    // Ensure images have lazy loading, referrer policy, error hide, and basic styling
+    cleaned = cleaned.replace(/<img([^>]*?)>/gi, (_match, attrs) => {
+      const hasLoading = /loading\s*=/.test(attrs);
+      const hasReferrer = /referrerpolicy\s*=/.test(attrs);
+      const hasStyle = /style\s*=/.test(attrs);
+      const hasOnError = /onerror\s*=/.test(attrs);
+      const styleAppend = 'display:block;margin:6px 0;max-width:100%;border-radius:8px;';
 
-    // Limit img tags to safe attributes
-    cleaned = cleaned.replace(/<img\s+([^>]*)>/gi, (match, attrs) => {
-      const srcMatch = attrs.match(/src\s*=\s*"([^"]*)"/i);
-      const altMatch = attrs.match(/alt\s*=\s*"([^"]*)"/i);
-
-      let finalAttrs = '';
-      if (srcMatch) finalAttrs += ` src="${srcMatch[1]}"`;
-      if (altMatch) finalAttrs += ` alt="${altMatch[1]}"`;
-      finalAttrs += ' style="max-width: 100%; height: auto;"';
+      let finalAttrs = `${attrs}`;
+      if (!hasLoading) finalAttrs += ' loading="lazy"';
+      if (!hasReferrer) finalAttrs += ' referrerpolicy="no-referrer"';
+      if (!hasOnError) finalAttrs += ' onerror="this.style.display=\'none\'"';
+      if (!hasStyle) finalAttrs += ` style="${styleAppend}"`;
 
       return `<img${finalAttrs}>`;
     });
-
     return cleaned;
   }
 
   /**
-   * Extracts Wikipedia URLs from HTML content.
+   * Extracts Wikipedia article URLs from HTML content.
+   *
+   * Deliberately restricted to `href="…"` attributes on `en.wikipedia.org`:
+   * the result feeds an image lookup for the article, and bare URLs appearing
+   * in prose (or other-language wikis) are not articles we can resolve.
    */
   extractWikipediaUrls(html: string): string[] {
-    if (!html) return [];
-    const regex = /https?:\/\/[a-z]{2,3}\.wikipedia\.org\/wiki\/[^\s"'<>]+/gi;
-    const matches = html.match(regex);
-    return matches ? [...new Set(matches)] : [];
+    const urls: string[] = [];
+    // Match Wikipedia URLs in href attributes
+    const regex = /href="(https?:\/\/en\.wikipedia\.org\/wiki\/[^"]+)"/gi;
+    let match;
+    while ((match = regex.exec(html)) !== null) {
+      if (!urls.includes(match[1])) {
+        urls.push(match[1]);
+      }
+    }
+    return urls;
   }
 
   /**
    * Extracts the page title from a Wikipedia URL.
+   *
+   * Underscores are preserved — the result is used as an API path segment,
+   * where `Test_Article` is correct and `Test Article` is not.
+   *
+   * A fragment or query string is dropped: models routinely link to a section
+   * (`/wiki/Dune#Plot`), and carrying that into the title made the image lookup
+   * miss, so the article rendered with no pictures.
    */
   getWikipediaTitleFromUrl(url: string): string {
-    if (!url) return '';
+    // Extract title from URL like https://en.wikipedia.org/wiki/Article_Title
     const match = url.match(/\/wiki\/([^#?]+)/);
-    return match ? decodeURIComponent(match[1].replace(/_/g, ' ')) : '';
+    if (match) {
+      return decodeURIComponent(match[1]);
+    }
+    return '';
   }
 
   /**
@@ -229,21 +249,34 @@ export class ReaderTextUtilsService {
 
   /**
    * Formats a bookmark label showing chapter and page information.
+   *
+   * Chapter number comes from the chapter's position in the list, not its `id`
+   * — EPUB ids are not contiguous and routinely start at 0 or skip values.
+   * Labels that already name themselves ("Chapter 4", "IV") are abbreviated
+   * rather than repeated, so the dropdown stays narrow.
    */
   formatBookmarkLabel(
     chapterId: number,
     wordOffset: number,
     pageSizeWords: number,
-    chapters: Array<{ chapterId: number; title: string }>
+    chapters: Array<{ id: number; title: string; displayLabel?: string | null }>
   ): string {
-    const chapter = chapters.find(c => c.chapterId === chapterId);
-    const chapterTitle = chapter?.title ?? `Chapter ${chapterId}`;
+    const chapter = chapters.find(ch => ch.id === chapterId);
+    const chapterIndex = chapters.findIndex(ch => ch.id === chapterId);
+    const chapterNumber = chapterIndex >= 0 ? chapterIndex + 1 : chapterId + 1;
+    const page = Math.floor(wordOffset / Math.max(1, pageSizeWords)) + 1;
+    const chapterLabel = chapter?.displayLabel || chapter?.title || `Chapter ${chapterNumber}`;
+    const normalized = chapterLabel.trim();
+    const chapterMatch = normalized.match(/^chapter\s+(\d+)/i);
+    if (chapterMatch) {
+      return `Ch. ${chapterMatch[1]} p. ${page}`;
+    }
 
-    // Try to extract chapter number from title
-    const numMatch = chapterTitle.match(/(?:Chapter|Ch\.?)\s*(\d+|[IVXLCDM]+)/i);
-    const chapterNum = numMatch ? numMatch[1] : String(chapterId);
+    const romanMatch = normalized.match(/^([ivxlcdm]+)\b/i);
+    if (romanMatch && !/^chapter\b/i.test(normalized)) {
+      return `${romanMatch[1].toLowerCase()} p. ${page}`;
+    }
 
-    const page = Math.floor(wordOffset / pageSizeWords) + 1;
-    return `Ch ${chapterNum} - Page ${page}`;
+    return `${chapterLabel} • p. ${page}`;
   }
 }

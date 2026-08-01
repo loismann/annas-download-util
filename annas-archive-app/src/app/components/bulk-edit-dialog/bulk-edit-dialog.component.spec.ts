@@ -240,13 +240,14 @@ describe('BulkEditDialogComponent', () => {
     });
   });
 
-  describe('onBookmarkAll', () => {
+  // Renamed from onBookmarkAll along with the bookmark → favorite migration.
+  describe('onFavoriteAll', () => {
     beforeEach(() => createComponent());
 
-    it('should close dialog with bookmarkAll true', () => {
-      component.onBookmarkAll();
+    it('should close dialog with favoriteAll true', () => {
+      component.onFavoriteAll();
 
-      expect(mockDialogRef.close).toHaveBeenCalledWith({ bookmarkAll: true });
+      expect(mockDialogRef.close).toHaveBeenCalledWith({ favoriteAll: true });
     });
   });
 

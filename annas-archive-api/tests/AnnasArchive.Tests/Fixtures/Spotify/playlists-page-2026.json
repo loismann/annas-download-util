@@ -1,0 +1,77 @@
+{
+  "href": "https://api.spotify.com/v1/me/playlists?offset=0&limit=50",
+  "limit": 50,
+  "next": null,
+  "offset": 0,
+  "previous": null,
+  "total": 3,
+  "items": [
+    {
+      "collaborative": false,
+      "external_urls": {
+        "spotify": "https://open.spotify.com/playlist/owned-playlist"
+      },
+      "id": "owned-playlist",
+      "images": [
+        {
+          "url": "https://image.example/owned.jpg",
+          "height": 300,
+          "width": 300
+        }
+      ],
+      "name": "Owned Playlist",
+      "owner": {
+        "display_name": "Test Owner",
+        "external_urls": {
+          "spotify": "https://open.spotify.com/user/test-owner"
+        },
+        "id": "test-owner"
+      },
+      "public": false,
+      "snapshot_id": "snapshot-owned",
+      "items": {
+        "href": "https://api.spotify.com/v1/playlists/owned-playlist/items",
+        "total": 23
+      },
+      "uri": "spotify:playlist:owned-playlist"
+    },
+    {
+      "collaborative": true,
+      "external_urls": {
+        "spotify": "https://open.spotify.com/playlist/collaborative-playlist"
+      },
+      "id": "collaborative-playlist",
+      "images": [],
+      "name": "Collaborative Playlist",
+      "owner": {
+        "display_name": "Collaborator",
+        "external_urls": null,
+        "id": "collaborator"
+      },
+      "public": false,
+      "snapshot_id": "snapshot-collaborative",
+      "items": {
+        "href": "https://api.spotify.com/v1/playlists/collaborative-playlist/items",
+        "total": 8
+      },
+      "uri": "spotify:playlist:collaborative-playlist"
+    },
+    {
+      "collaborative": false,
+      "external_urls": {
+        "spotify": "https://open.spotify.com/playlist/followed-playlist"
+      },
+      "id": "followed-playlist",
+      "images": null,
+      "name": "Followed Metadata Only",
+      "owner": {
+        "display_name": "Another Owner",
+        "external_urls": null,
+        "id": "another-owner"
+      },
+      "public": true,
+      "snapshot_id": "snapshot-followed",
+      "uri": "spotify:playlist:followed-playlist"
+    }
+  ]
+}

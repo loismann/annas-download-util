@@ -6,6 +6,63 @@
       <mat-card-subtitle>Natural language Spotify control</mat-card-subtitle>
     </mat-card-header>
 
+    <section class="connection-panel" [class.connected]="connection?.isConnected">
+      @if (connectionLoading) {
+        <div class="connection-loading">
+          <mat-spinner diameter="20"></mat-spinner>
+          <span>Checking Spotify connection…</span>
+        </div>
+      } @else if (connection) {
+        <div class="connection-summary">
+          <div>
+            <strong>{{ connection.displayName || 'Spotify' }}</strong>
+            <span class="connection-state">{{ connection.state }}</span>
+          </div>
+
+          <div class="connection-actions">
+            @if (!connection.isConnected || connection.state === 'ScopeLimited') {
+              <button mat-stroked-button color="primary" (click)="connectSpotify(true)" [disabled]="connectionActionPending">
+                {{ connection.state === 'Disconnected' ? 'Connect Spotify' : 'Reauthorize' }}
+              </button>
+            } @else if (connection.state === 'RateLimited' || connection.state === 'QuotaExceeded' || connection.state === 'SpotifyUnavailable') {
+              <button mat-stroked-button (click)="loadConnection()" [disabled]="connectionActionPending">
+                Refresh status
+              </button>
+            } @else {
+              <button mat-stroked-button (click)="connectSpotify(true)" [disabled]="connectionActionPending">
+                Reauthorize
+              </button>
+            }
+            @if (connection.state !== 'Disconnected') {
+              <button mat-button (click)="disconnectSpotify()" [disabled]="connectionActionPending">Disconnect</button>
+            }
+          </div>
+        </div>
+
+        @if (connection.accountId) {
+          <div class="connection-details">
+            <span>Account {{ connection.accountId }}</span>
+            <span>{{ connection.grantedScopes.length }} scopes granted</span>
+            <span>Last successful call: {{ formatConnectionDate(connection.lastSuccessfulCallAt) }}</span>
+            @if (connection.daysUntilReauthorization !== null) {
+              <span>Reauthorize in {{ connection.daysUntilReauthorization }} days</span>
+            }
+          </div>
+        }
+
+        @if (connection.warning) {
+          <div class="connection-warning">{{ connection.warning }}</div>
+        }
+        @if (connection.missingScopes.length > 0) {
+          <div class="missing-scopes">Missing: {{ connection.missingScopes.join(', ') }}</div>
+        }
+      }
+
+      @if (connectionNotice) {
+        <div class="connection-notice">{{ connectionNotice }}</div>
+      }
+    </section>
+
     <mat-card-content>
       <!-- Chat Messages -->
       <div class="chat-messages" #chatContainer>
@@ -57,7 +114,13 @@
                           <mat-icon matListItemAvatar>queue_music</mat-icon>
                         }
                         <div matListItemTitle>{{ playlist.name }}</div>
-                        <div matListItemLine>{{ playlist.trackCount }} tracks</div>
+                        <div matListItemLine>
+                          @if (playlist.contentsAvailable) {
+                            {{ playlist.trackCount }} tracks
+                          } @else {
+                            Contents unavailable
+                          }
+                        </div>
                       </mat-list-item>
                     }
                   </mat-list>
@@ -75,7 +138,13 @@
                     }
                     <div class="playlist-info">
                       <span class="playlist-name">{{ message.data.name }}</span>
-                      <span class="playlist-tracks">{{ message.data.trackCount }} tracks</span>
+                      <span class="playlist-tracks">
+                        @if (message.data.contentsAvailable) {
+                          {{ message.data.trackCount }} tracks
+                        } @else {
+                          Contents unavailable
+                        }
+                      </span>
                     </div>
                   </mat-card>
                 </div>
@@ -142,7 +211,7 @@
             #messageInput
             [(ngModel)]="userInput"
             (keydown)="onKeyDown($event)"
-            [disabled]="viewState === 'processing'"
+            [disabled]="viewState === 'processing' || !canUseSpotify"
             placeholder="e.g., Search for chill music"
           />
         </mat-form-field>
@@ -150,7 +219,7 @@
           mat-fab
           color="primary"
           (click)="onSubmit()"
-          [disabled]="!userInput.trim() || viewState === 'processing'"
+          [disabled]="!userInput.trim() || viewState === 'processing' || !canUseSpotify"
           matTooltip="Send message"
         >
           @if (viewState === 'processing') {

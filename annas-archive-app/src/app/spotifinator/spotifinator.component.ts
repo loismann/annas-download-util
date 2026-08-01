@@ -1,4 +1,4 @@
-import { Component, OnDestroy, ViewChild, ElementRef, AfterViewChecked } from '@angular/core';
+import { Component, OnDestroy, OnInit, ViewChild, ElementRef, AfterViewChecked } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MatCardModule } from '@angular/material/card';
@@ -11,6 +11,7 @@ import { MatListModule } from '@angular/material/list';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { Subject } from 'rxjs';
 import { takeUntil } from 'rxjs/operators';
+import { ActivatedRoute } from '@angular/router';
 
 import { SpotifinatorApiService } from '../services/spotifinator-api.service';
 import { LoggerService } from '../services/logger.service';
@@ -20,6 +21,7 @@ import {
   SpotifyTrack,
   SpotifyPlaylist,
   SpotifySearchResult,
+  SpotifyConnectionStatus,
   VibeGenerationResult
 } from './spotifinator.models';
 
@@ -41,7 +43,7 @@ import {
   templateUrl: './spotifinator.component.html',
   styleUrl: './spotifinator.component.scss'
 })
-export class SpotifinatorComponent implements OnDestroy, AfterViewChecked {
+export class SpotifinatorComponent implements OnInit, OnDestroy, AfterViewChecked {
   @ViewChild('chatContainer') private chatContainer!: ElementRef;
   @ViewChild('messageInput') private messageInput!: ElementRef;
 
@@ -50,15 +52,31 @@ export class SpotifinatorComponent implements OnDestroy, AfterViewChecked {
   userInput = '';
   messages: ChatMessage[] = [];
   errorMessage = '';
+  connection: SpotifyConnectionStatus | null = null;
+  connectionLoading = true;
+  connectionActionPending = false;
+  connectionNotice = '';
 
   private destroy$ = new Subject<void>();
   private shouldScrollToBottom = false;
 
   constructor(
     private api: SpotifinatorApiService,
-    private logger: LoggerService
+    private logger: LoggerService,
+    private route: ActivatedRoute
   ) {
     this.addWelcomeMessage();
+  }
+
+  ngOnInit(): void {
+    const oauthResult = this.route.snapshot.queryParamMap.get('spotify');
+    if (oauthResult === 'connected') {
+      this.connectionNotice = 'Spotify connected successfully.';
+    } else if (oauthResult) {
+      this.connectionNotice = `Spotify authorization did not complete (${oauthResult}).`;
+    }
+
+    this.loadConnection();
   }
 
   ngAfterViewChecked(): void {
@@ -77,11 +95,67 @@ export class SpotifinatorComponent implements OnDestroy, AfterViewChecked {
 
   onSubmit(): void {
     const message = this.userInput.trim();
-    if (!message || this.viewState === 'processing') return;
+    if (!message || this.viewState === 'processing' || !this.canUseSpotify) return;
 
     this.addUserMessage(message);
     this.userInput = '';
     this.processCommand(message);
+  }
+
+  get canUseSpotify(): boolean {
+    if (!this.connection?.isConnected) return false;
+    if (this.connection.state !== 'RateLimited') return true;
+    return !!this.connection.rateLimitedUntil &&
+      new Date(this.connection.rateLimitedUntil).getTime() <= Date.now();
+  }
+
+  loadConnection(): void {
+    this.connectionLoading = true;
+    this.api.getConnection().pipe(takeUntil(this.destroy$)).subscribe({
+      next: (connection) => {
+        this.connection = connection;
+        this.connectionLoading = false;
+      },
+      error: (err) => {
+        this.connectionLoading = false;
+        this.connectionNotice = err.error?.error || 'Could not load the Spotify connection status.';
+        this.logger.error('[Spotifinator] Connection status failed:', err);
+      }
+    });
+  }
+
+  connectSpotify(forceDialog = false): void {
+    this.connectionActionPending = true;
+    this.api.beginAuthorization(forceDialog).pipe(takeUntil(this.destroy$)).subscribe({
+      next: ({ authorizationUrl }) => window.location.assign(authorizationUrl),
+      error: (err) => {
+        this.connectionActionPending = false;
+        this.connectionNotice = err.error?.error || 'Could not start Spotify authorization.';
+        this.logger.error('[Spotifinator] Authorization start failed:', err);
+      }
+    });
+  }
+
+  disconnectSpotify(): void {
+    if (!window.confirm('Disconnect Spotify from Spotifinator on this server?')) return;
+
+    this.connectionActionPending = true;
+    this.api.disconnect().pipe(takeUntil(this.destroy$)).subscribe({
+      next: () => {
+        this.connectionActionPending = false;
+        this.connectionNotice = 'Spotify disconnected from Spotifinator.';
+        this.loadConnection();
+      },
+      error: (err) => {
+        this.connectionActionPending = false;
+        this.connectionNotice = err.error?.error || 'Could not disconnect Spotify.';
+        this.logger.error('[Spotifinator] Disconnect failed:', err);
+      }
+    });
+  }
+
+  formatConnectionDate(value: string | null): string {
+    return value ? new Date(value).toLocaleString() : 'Not yet';
   }
 
   onKeyDown(event: KeyboardEvent): void {
@@ -128,8 +202,8 @@ export class SpotifinatorComponent implements OnDestroy, AfterViewChecked {
 
 - "Search for songs by Taylor Swift"
 - "Show me my playlists"
-- "Create a playlist called Road Trip Vibes"
-- "Add that song to my workout playlist"
+
+Playlist changes are paused until the reviewed change-plan flow is ready.
 
 What would you like to do?`,
       timestamp: new Date()

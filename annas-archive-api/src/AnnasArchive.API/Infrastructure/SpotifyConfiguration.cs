@@ -18,7 +18,13 @@ public class SpotifyConfiguration
     public string ClientSecret { get; set; } = string.Empty;
 
     /// <summary>
-    /// Long-lived refresh token for OAuth.
+    /// Exact callback URI allowlisted in the Spotify developer dashboard.
     /// </summary>
-    public string RefreshToken { get; set; } = string.Empty;
+    public string RedirectUri { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Public browser origin used after the callback, for example
+    /// https://my-server.example. The callback returns to /spotifinator.
+    /// </summary>
+    public string FrontendBaseUrl { get; set; } = string.Empty;
 }

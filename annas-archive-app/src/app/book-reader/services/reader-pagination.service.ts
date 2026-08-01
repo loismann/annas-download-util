@@ -16,6 +16,13 @@ export interface PaginationConfig {
 export interface PageSizeResult {
   pageSize: number;
   cacheKey: string;
+  /**
+   * True when the container's dimensions were unchanged and no re-measurement
+   * happened. Callers use this to skip work that only makes sense after a real
+   * relayout — the reader, for example, does not re-persist reading position on
+   * a cache hit.
+   */
+  cached: boolean;
 }
 
 /**
@@ -63,14 +70,14 @@ export class ReaderPaginationService implements OnDestroy {
     fontSize: number
   ): PageSizeResult {
     if (!container || !textContent) {
-      return { pageSize: 200, cacheKey: '' };
+      return { pageSize: 200, cacheKey: '', cached: false };
     }
 
     const cacheKey = `${container.clientWidth}x${container.clientHeight}@${fontSize}`;
 
     // Return cached result if dimensions haven't changed
     if (this.pageSizeCacheKey === cacheKey && this.cachedPageSize !== null) {
-      return { pageSize: this.cachedPageSize, cacheKey };
+      return { pageSize: this.cachedPageSize, cacheKey, cached: true };
     }
 
     // Setup measurement element
@@ -83,7 +90,7 @@ export class ReaderPaginationService implements OnDestroy {
     this.cachedPageSize = newSize;
     this.pageSizeCacheKey = cacheKey;
 
-    return { pageSize: newSize, cacheKey };
+    return { pageSize: newSize, cacheKey, cached: false };
   }
 
   /**
@@ -204,24 +211,55 @@ export class ReaderPaginationService implements OnDestroy {
 
     if (maxPossible <= 10) return maxPossible;
 
-    // Get estimation for binary search bounds
-    const estimate = this.getEstimatedPageSize(container);
+    return this.findLargestNonOverflowing(
+      wordCount => this.doesTextOverflow(text, wordCount, testOffset),
+      this.getEstimatedPageSize(container),
+      maxPossible
+    );
+  }
 
-    // Binary search with wider range to handle estimate inaccuracy
+  /**
+   * Largest word count that still fits, found by binary search.
+   *
+   * Split out from the DOM measurement above so the algorithm can be tested
+   * without a browser: `doesOverflow` is the only thing that touches layout.
+   *
+   * @param doesOverflow True when that many words spill past the container.
+   * @param estimate Font-metric guess used to bracket the search.
+   * @param maxPossible Upper bound — words available, capped for performance.
+   */
+  findLargestNonOverflowing(
+    doesOverflow: (wordCount: number) => boolean,
+    estimate: number,
+    maxPossible: number
+  ): number {
+    // Bracket wide: the estimate assumes uniform character widths and is
+    // routinely off by more than a factor of two on real prose.
     let low = Math.max(10, Math.floor(estimate * 0.3));
     let high = Math.min(maxPossible, Math.ceil(estimate * 2.5));
+
+    // A short chapter can leave the whole bracket above maxPossible. Drop the
+    // floor so the search stays inside the cap instead of skipping the loop and
+    // returning a page size larger than the text.
+    if (high < low) {
+      low = 10;
+    }
+
     let result = low;
 
     // Check if low value overflows - if so, go lower
-    if (this.doesTextOverflow(text, low, testOffset)) {
+    if (doesOverflow(low)) {
       high = low;
       low = 10;
+      // The old bound overflowed, so it is not a valid answer. Without this the
+      // search returns it unchanged when nothing in the new range fits either.
+      result = low;
     }
 
     while (low <= high) {
       const mid = Math.floor((low + high) / 2);
 
-      if (this.doesTextOverflow(text, mid, testOffset)) {
+      if (doesOverflow(mid)) {
         high = mid - 1;
       } else {
         result = mid;

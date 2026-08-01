@@ -11,6 +11,7 @@ using AnnasArchive.API.Services;
 using AnnasArchive.API.Services.Library;
 using AnnasArchive.Core.Services;
 using Dropbox.Api;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Caching.Memory;
@@ -361,9 +362,11 @@ public static class ServiceConfiguration
         services.AddHttpClient<IEbookCoverService, EbookCoverService>()
             .AddStandardResilience("EbookCover");
 
-        // Spotify HTTP client (external API)
-        services.AddHttpClient<ISpotifyService, SpotifyService>()
-            .AddStandardResilience("Spotify");
+        // Spotify's Development Mode QUOTA_EXCEEDED response must not be
+        // automatically retried. Phase 9 can add a Spotify-specific policy for
+        // selected network/5xx failures; for now all retries remain explicit.
+        services.AddHttpClient("SpotifyAccounts");
+        services.AddHttpClient<ISpotifyService, SpotifyService>();
 
         // Sonarr/Radarr — the API is local, but interactive release searches fan
         // out to external indexers and can legitimately take longer than quick
@@ -428,6 +431,17 @@ public static class ServiceConfiguration
     {
         // Memory cache (required by OpenLibraryService for author suggestions caching)
         services.AddMemoryCache();
+        services.AddHttpContextAccessor();
+        services.AddSingleton<TimeProvider>(TimeProvider.System);
+
+        var configuredDataProtectionPath = configuration["DataProtection:KeysPath"];
+        var dataProtectionPath = string.IsNullOrWhiteSpace(configuredDataProtectionPath)
+            ? Path.Combine(Directory.GetCurrentDirectory(), "state", "data-protection-keys")
+            : configuredDataProtectionPath;
+        Directory.CreateDirectory(dataProtectionPath);
+        services.AddDataProtection()
+            .SetApplicationName("AnnasArchive")
+            .PersistKeysToFileSystem(new DirectoryInfo(dataProtectionPath));
 
         // Background services
         var watcherEnabled = configuration.GetValue<bool>("LibraryWatcher:Enabled", false);
@@ -579,6 +593,14 @@ public static class ServiceConfiguration
 
         // Spotify configuration
         services.Configure<SpotifyConfiguration>(configuration.GetSection(SpotifyConfiguration.SectionName));
+        services.AddSingleton<ISpotifyConnectionStore, SpotifyConnectionStore>();
+        services.AddSingleton<ISpotifyOAuthStateStore, SpotifyOAuthStateStore>();
+        services.AddSingleton<ISpotifyCurrentUser, SpotifyCurrentUser>();
+        services.AddSingleton<SpotifyAuthorizationService>();
+        services.AddSingleton<ISpotifyAuthorizationService>(provider =>
+            provider.GetRequiredService<SpotifyAuthorizationService>());
+        services.AddSingleton<ISpotifyAccessTokenProvider>(provider =>
+            provider.GetRequiredService<SpotifyAuthorizationService>());
 
         // Text processing
         services.AddSingleton<ITextProcessingService, TextProcessingService>();

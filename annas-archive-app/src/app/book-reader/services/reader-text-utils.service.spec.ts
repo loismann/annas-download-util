@@ -290,6 +290,9 @@ describe('ReaderTextUtilsService', () => {
     });
   });
 
+  // These three suites pin what the reader actually ships. An earlier version of
+  // this file tested a parallel implementation that was never wired up, and its
+  // expectations contradicted production on every point that mattered.
   describe('cleanModelHtml', () => {
     it('should return empty string for empty input', () => {
       expect(service.cleanModelHtml('')).toBe('');
@@ -300,41 +303,51 @@ describe('ReaderTextUtilsService', () => {
       expect(service.cleanModelHtml(undefined as any)).toBe('');
     });
 
-    it('should remove script tags', () => {
-      const input = '<p>text</p><script>alert("xss")</script><p>more</p>';
-      const result = service.cleanModelHtml(input);
-      expect(result).not.toContain('<script>');
-      expect(result).not.toContain('alert');
-      expect(result).toContain('<p>text</p>');
-      expect(result).toContain('<p>more</p>');
+    it('should strip code fences the model wraps around HTML', () => {
+      expect(service.cleanModelHtml('```html<p>text</p>```')).toBe('<p>text</p>');
+      expect(service.cleanModelHtml('```<p>text</p>```')).toBe('<p>text</p>');
     });
 
-    it('should remove event handlers', () => {
-      const input = '<div onclick="alert(1)">click</div>';
-      const result = service.cleanModelHtml(input);
-      expect(result).not.toContain('onclick');
-      expect(result).toContain('<div');
+    it('should give protocol-relative image URLs an https scheme', () => {
+      // Wikipedia serves //upload.wikimedia.org/... which resolves to nothing.
+      const result = service.cleanModelHtml('<img src="//upload.wikimedia.org/a.jpg">');
+      expect(result).toContain('src="https://upload.wikimedia.org/a.jpg"');
     });
 
-    it('should add target="_blank" to links', () => {
-      const input = '<a href="https://example.com">link</a>';
-      const result = service.cleanModelHtml(input);
-      expect(result).toContain('target="_blank"');
+    it('should collapse whitespace in image URLs', () => {
+      const result = service.cleanModelHtml('<img src="//upload.wikimedia.org/a b.jpg">');
+      expect(result).toContain('src="https://upload.wikimedia.org/a_b.jpg"');
     });
 
-    it('should add rel="noopener noreferrer" to links', () => {
-      const input = '<a href="https://example.com">link</a>';
-      const result = service.cleanModelHtml(input);
-      expect(result).toContain('rel="noopener noreferrer"');
+    it('should suppress the referrer so Wikipedia does not block the image', () => {
+      const result = service.cleanModelHtml('<img src="https://example.com/a.jpg">');
+      expect(result).toContain('referrerpolicy="no-referrer"');
     });
 
-    it('should limit img attributes', () => {
-      const input = '<img src="image.jpg" alt="test" onerror="alert(1)" onclick="evil()">';
+    it('should hide images that fail to load rather than leaving a broken icon', () => {
+      const result = service.cleanModelHtml('<img src="https://example.com/a.jpg">');
+      expect(result).toContain('onerror=');
+    });
+
+    it('should lazy-load and style images', () => {
+      const result = service.cleanModelHtml('<img src="https://example.com/a.jpg">');
+      expect(result).toContain('loading="lazy"');
+      expect(result).toContain('max-width:100%');
+    });
+
+    it('should not duplicate attributes that are already present', () => {
+      const input = '<img src="https://example.com/a.jpg" loading="eager" style="width:1px">';
       const result = service.cleanModelHtml(input);
-      expect(result).toContain('src="image.jpg"');
-      expect(result).toContain('alt="test"');
-      expect(result).not.toContain('onerror');
-      expect(result).not.toContain('onclick');
+      expect(result).toContain('loading="eager"');
+      expect(result.match(/loading=/g)?.length).toBe(1);
+      expect(result.match(/style=/g)?.length).toBe(1);
+    });
+
+    it('should leave non-image markup untouched', () => {
+      // Script/attribute stripping is DomSanitizer's job at the call site;
+      // doing it here would also strip the onerror this method adds.
+      const input = '<p>text</p><a href="https://example.com">link</a>';
+      expect(service.cleanModelHtml(input)).toBe(input);
     });
   });
 
@@ -343,34 +356,37 @@ describe('ReaderTextUtilsService', () => {
       expect(service.extractWikipediaUrls('')).toEqual([]);
     });
 
-    it('should return empty array for null/undefined', () => {
-      expect(service.extractWikipediaUrls(null as any)).toEqual([]);
-      expect(service.extractWikipediaUrls(undefined as any)).toEqual([]);
-    });
-
-    it('should extract single Wikipedia URL', () => {
+    it('should extract a Wikipedia URL from an href attribute', () => {
       const html = '<a href="https://en.wikipedia.org/wiki/Test">link</a>';
       expect(service.extractWikipediaUrls(html)).toContain('https://en.wikipedia.org/wiki/Test');
     });
 
-    it('should extract multiple Wikipedia URLs', () => {
-      const html = 'See https://en.wikipedia.org/wiki/First and https://en.wikipedia.org/wiki/Second';
-      const result = service.extractWikipediaUrls(html);
-      expect(result.length).toBe(2);
-      expect(result).toContain('https://en.wikipedia.org/wiki/First');
-      expect(result).toContain('https://en.wikipedia.org/wiki/Second');
+    it('should extract multiple URLs in document order', () => {
+      const html =
+        '<a href="https://en.wikipedia.org/wiki/First">a</a>' +
+        '<a href="https://en.wikipedia.org/wiki/Second">b</a>';
+      expect(service.extractWikipediaUrls(html)).toEqual([
+        'https://en.wikipedia.org/wiki/First',
+        'https://en.wikipedia.org/wiki/Second'
+      ]);
     });
 
     it('should deduplicate URLs', () => {
-      const html = 'https://en.wikipedia.org/wiki/Test https://en.wikipedia.org/wiki/Test';
-      const result = service.extractWikipediaUrls(html);
-      expect(result.length).toBe(1);
+      const html =
+        '<a href="https://en.wikipedia.org/wiki/Test">a</a>' +
+        '<a href="https://en.wikipedia.org/wiki/Test">b</a>';
+      expect(service.extractWikipediaUrls(html).length).toBe(1);
     });
 
-    it('should handle different language Wikipedias', () => {
-      const html = 'https://fr.wikipedia.org/wiki/Article';
-      const result = service.extractWikipediaUrls(html);
-      expect(result).toContain('https://fr.wikipedia.org/wiki/Article');
+    it('should ignore bare URLs in prose', () => {
+      // Only linked articles can be resolved to an image set.
+      const html = 'See https://en.wikipedia.org/wiki/First for more';
+      expect(service.extractWikipediaUrls(html)).toEqual([]);
+    });
+
+    it('should ignore non-English Wikipedias', () => {
+      const html = '<a href="https://fr.wikipedia.org/wiki/Article">link</a>';
+      expect(service.extractWikipediaUrls(html)).toEqual([]);
     });
   });
 
@@ -379,29 +395,35 @@ describe('ReaderTextUtilsService', () => {
       expect(service.getWikipediaTitleFromUrl('')).toBe('');
     });
 
-    it('should return empty string for null/undefined', () => {
-      expect(service.getWikipediaTitleFromUrl(null as any)).toBe('');
-      expect(service.getWikipediaTitleFromUrl(undefined as any)).toBe('');
-    });
-
-    it('should extract title from URL', () => {
-      expect(service.getWikipediaTitleFromUrl('https://en.wikipedia.org/wiki/Test_Article')).toBe('Test Article');
-    });
-
-    it('should handle URL with query string', () => {
-      expect(service.getWikipediaTitleFromUrl('https://en.wikipedia.org/wiki/Article?param=value')).toBe('Article');
-    });
-
-    it('should handle URL with anchor', () => {
-      expect(service.getWikipediaTitleFromUrl('https://en.wikipedia.org/wiki/Article#Section')).toBe('Article');
+    it('should keep underscores, which the article API expects', () => {
+      expect(service.getWikipediaTitleFromUrl('https://en.wikipedia.org/wiki/Test_Article'))
+        .toBe('Test_Article');
     });
 
     it('should decode URL-encoded characters', () => {
-      expect(service.getWikipediaTitleFromUrl('https://en.wikipedia.org/wiki/Test%20Article')).toBe('Test Article');
+      expect(service.getWikipediaTitleFromUrl('https://en.wikipedia.org/wiki/Test%20Article'))
+        .toBe('Test Article');
     });
 
-    it('should return empty string for non-Wikipedia URL', () => {
+    it('should return empty string for a non-Wikipedia URL', () => {
       expect(service.getWikipediaTitleFromUrl('https://example.com/page')).toBe('');
+    });
+
+    // Regression: these used to be carried into the title, so a link to a
+    // section resolved to no article and the Learn More panel showed no images.
+    it('should drop a section fragment', () => {
+      expect(service.getWikipediaTitleFromUrl('https://en.wikipedia.org/wiki/Dune#Plot'))
+        .toBe('Dune');
+    });
+
+    it('should drop a query string', () => {
+      expect(service.getWikipediaTitleFromUrl('https://en.wikipedia.org/wiki/Article?p=v'))
+        .toBe('Article');
+    });
+
+    it('should keep underscores in a title that also has a fragment', () => {
+      expect(service.getWikipediaTitleFromUrl('https://en.wikipedia.org/wiki/Test_Article#Bio'))
+        .toBe('Test_Article');
     });
   });
 
@@ -433,41 +455,53 @@ describe('ReaderTextUtilsService', () => {
   });
 
   describe('formatBookmarkLabel', () => {
+    // Real DropboxEpubChapter shape. The previous suite used { chapterId, title },
+    // a field that does not exist on the model, so nothing it asserted could have
+    // matched production.
     const mockChapters = [
-      { chapterId: 1, title: 'Chapter 1: Introduction' },
-      { chapterId: 2, title: 'Chapter 2: Main Content' },
-      { chapterId: 3, title: 'Epilogue' }
+      { id: 1, title: 'Chapter 1: Introduction' },
+      { id: 2, title: 'Chapter 2: Main Content' },
+      { id: 3, title: 'Epilogue' }
     ];
 
-    it('should format bookmark with chapter number and page', () => {
-      const result = service.formatBookmarkLabel(1, 500, 250, mockChapters);
-      expect(result).toBe('Ch 1 - Page 3');
+    it('should abbreviate a self-naming chapter and show the page', () => {
+      expect(service.formatBookmarkLabel(1, 500, 250, mockChapters)).toBe('Ch. 1 p. 3');
     });
 
-    it('should handle first page', () => {
-      const result = service.formatBookmarkLabel(1, 0, 250, mockChapters);
-      expect(result).toBe('Ch 1 - Page 1');
+    it('should handle the first page', () => {
+      expect(service.formatBookmarkLabel(1, 0, 250, mockChapters)).toBe('Ch. 1 p. 1');
     });
 
-    it('should extract chapter number from title', () => {
-      const result = service.formatBookmarkLabel(2, 100, 250, mockChapters);
-      expect(result).toBe('Ch 2 - Page 1');
+    it('should take the chapter number from the title, not the id', () => {
+      expect(service.formatBookmarkLabel(2, 100, 250, mockChapters)).toBe('Ch. 2 p. 1');
     });
 
-    it('should use chapter ID as fallback when no number in title', () => {
-      const result = service.formatBookmarkLabel(3, 100, 250, mockChapters);
-      expect(result).toBe('Ch 3 - Page 1');
+    it('should keep a title that does not name itself', () => {
+      expect(service.formatBookmarkLabel(3, 100, 250, mockChapters)).toBe('Epilogue • p. 1');
     });
 
-    it('should handle unknown chapter', () => {
-      const result = service.formatBookmarkLabel(99, 100, 250, mockChapters);
-      expect(result).toContain('Ch 99');
+    it('should prefer displayLabel over title', () => {
+      const chapters = [{ id: 1, title: 'Chapter 1', displayLabel: 'Prologue' }];
+      expect(service.formatBookmarkLabel(1, 0, 250, chapters)).toBe('Prologue • p. 1');
     });
 
-    it('should handle Roman numerals in chapter title', () => {
-      const chapters = [{ chapterId: 1, title: 'Chapter IV: The Journey' }];
-      const result = service.formatBookmarkLabel(1, 100, 250, chapters);
-      expect(result).toBe('Ch IV - Page 1');
+    it('should abbreviate a bare Roman numeral label', () => {
+      const chapters = [{ id: 1, title: 'IV' }];
+      expect(service.formatBookmarkLabel(1, 0, 250, chapters)).toBe('iv p. 1');
+    });
+
+    it('should fall back to a synthesized label for an unknown chapter', () => {
+      // Position is unknown, so the number falls back to id + 1.
+      expect(service.formatBookmarkLabel(99, 100, 250, mockChapters)).toBe('Ch. 100 p. 1');
+    });
+
+    it('should number chapters by position, since EPUB ids are not contiguous', () => {
+      const chapters = [{ id: 40, title: 'Opening' }, { id: 90, title: 'Closing' }];
+      expect(service.formatBookmarkLabel(90, 0, 250, chapters)).toBe('Closing • p. 1');
+    });
+
+    it('should not divide by zero before the first measurement', () => {
+      expect(service.formatBookmarkLabel(3, 5, 0, mockChapters)).toBe('Epilogue • p. 6');
     });
   });
 });

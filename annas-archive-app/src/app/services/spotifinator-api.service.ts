@@ -6,6 +6,8 @@ import { LoggerService } from './logger.service';
 import {
   SpotifySearchResult,
   SpotifyPlaylist,
+  SpotifyConnectionStatus,
+  SpotifyAuthorizeResponse,
   CommandResponse
 } from '../spotifinator/spotifinator.models';
 import { apiBase } from './api-base';
@@ -22,7 +24,21 @@ export class SpotifinatorApiService {
 
   // ─── Direct API Calls ──────────────────────────────────────────────────────
 
-  searchTracks(query: string, limit = 20): Observable<SpotifySearchResult> {
+  getConnection(): Observable<SpotifyConnectionStatus> {
+    return this.http.get<SpotifyConnectionStatus>(`${this.baseUrl}/connection`);
+  }
+
+  beginAuthorization(forceDialog = false): Observable<SpotifyAuthorizeResponse> {
+    return this.http.post<SpotifyAuthorizeResponse>(`${this.baseUrl}/connection/authorize`, {
+      forceDialog
+    });
+  }
+
+  disconnect(): Observable<void> {
+    return this.http.delete<void>(`${this.baseUrl}/connection`);
+  }
+
+  searchTracks(query: string, limit = 10): Observable<SpotifySearchResult> {
     return this.http.get<SpotifySearchResult>(`${this.baseUrl}/search`, {
       params: { q: query, limit: limit.toString() }
     }).pipe(
@@ -48,7 +64,7 @@ export class SpotifinatorApiService {
 
   addTracksToPlaylist(playlistId: string, trackUris: string[]): Observable<{ success: boolean; added: number }> {
     return this.http.post<{ success: boolean; added: number }>(
-      `${this.baseUrl}/playlists/${playlistId}/tracks`,
+      `${this.baseUrl}/playlists/${playlistId}/items`,
       { playlistId, trackUris }
     ).pipe(
       tap(result => this.logger.log('[Spotifinator] Tracks added', { playlistId, count: result.added }))
@@ -58,7 +74,7 @@ export class SpotifinatorApiService {
   removeTracksFromPlaylist(playlistId: string, trackUris: string[]): Observable<{ success: boolean; removed: number }> {
     return this.http.request<{ success: boolean; removed: number }>(
       'DELETE',
-      `${this.baseUrl}/playlists/${playlistId}/tracks`,
+      `${this.baseUrl}/playlists/${playlistId}/items`,
       { body: { playlistId, trackUris } }
     ).pipe(
       tap(result => this.logger.log('[Spotifinator] Tracks removed', { playlistId, count: result.removed }))

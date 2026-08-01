@@ -30,4 +30,10 @@
     <ProjectReference Include="..\..\src\AnnasArchive.Core\AnnasArchive.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Update="Fixtures\**\*.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
 </Project>

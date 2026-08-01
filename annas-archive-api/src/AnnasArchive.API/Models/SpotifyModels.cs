@@ -7,7 +7,9 @@ namespace AnnasArchive.API.Models;
 public record SpotifyTokenResponse(
     [property: JsonPropertyName("access_token")] string AccessToken,
     [property: JsonPropertyName("token_type")] string TokenType,
-    [property: JsonPropertyName("expires_in")] int ExpiresIn
+    [property: JsonPropertyName("expires_in")] int ExpiresIn,
+    [property: JsonPropertyName("refresh_token")] string? RefreshToken = null,
+    [property: JsonPropertyName("scope")] string? Scope = null
 );
 
 public record SpotifySearchResponse(
@@ -52,7 +54,13 @@ public record SpotifyExternalUrls(
 
 public record SpotifyUserProfile(
     [property: JsonPropertyName("id")] string Id,
-    [property: JsonPropertyName("display_name")] string? DisplayName
+    [property: JsonPropertyName("display_name")] string? DisplayName,
+    [property: JsonPropertyName("account_id")] string? AccountId = null
+);
+
+public record SpotifyTokenErrorResponse(
+    [property: JsonPropertyName("error")] string Error,
+    [property: JsonPropertyName("error_description")] string? Description = null
 );
 
 public record SpotifyPlaylistResponse(
@@ -63,26 +71,75 @@ public record SpotifyPlaylistResponse(
 
 public record SpotifyPlaylistsResponse(
     [property: JsonPropertyName("items")] List<SpotifyPlaylistItem> Items,
-    [property: JsonPropertyName("total")] int Total
+    [property: JsonPropertyName("total")] int Total,
+    [property: JsonPropertyName("next")] string? Next = null,
+    [property: JsonPropertyName("offset")] int Offset = 0,
+    [property: JsonPropertyName("limit")] int Limit = 20
 );
 
 public record SpotifyPlaylistItem(
     [property: JsonPropertyName("id")] string Id,
     [property: JsonPropertyName("name")] string Name,
     [property: JsonPropertyName("images")] List<SpotifyImage>? Images,
-    [property: JsonPropertyName("tracks")] SpotifyPlaylistTracks? Tracks,
+    [property: JsonPropertyName("items")] SpotifyPlaylistItemsSummary? ItemSummary,
+    [property: JsonPropertyName("external_urls")] SpotifyExternalUrls? ExternalUrls,
+    [property: JsonPropertyName("owner")] SpotifyPlaylistOwner? Owner = null,
+    [property: JsonPropertyName("public")] bool? Public = null,
+    [property: JsonPropertyName("collaborative")] bool Collaborative = false,
+    [property: JsonPropertyName("snapshot_id")] string? SnapshotId = null,
+    [property: JsonPropertyName("uri")] string? Uri = null
+);
+
+public record SpotifyPlaylistItemsSummary(
+    [property: JsonPropertyName("href")] string? Href,
+    [property: JsonPropertyName("total")] int Total
+);
+
+public record SpotifyPlaylistOwner(
+    [property: JsonPropertyName("id")] string Id,
+    [property: JsonPropertyName("display_name")] string? DisplayName,
     [property: JsonPropertyName("external_urls")] SpotifyExternalUrls? ExternalUrls
 );
 
-public record SpotifyPlaylistTracks(
-    [property: JsonPropertyName("total")] int Total
+public record SpotifyPlaylistItemsResponse(
+    [property: JsonPropertyName("href")] string? Href,
+    [property: JsonPropertyName("limit")] int Limit,
+    [property: JsonPropertyName("next")] string? Next,
+    [property: JsonPropertyName("offset")] int Offset,
+    [property: JsonPropertyName("previous")] string? Previous,
+    [property: JsonPropertyName("total")] int Total,
+    [property: JsonPropertyName("items")] List<SpotifyPlaylistEntry> Items
+);
+
+public record SpotifyPlaylistEntry(
+    [property: JsonPropertyName("added_at")] DateTimeOffset? AddedAt,
+    [property: JsonPropertyName("added_by")] SpotifyPlaylistOwner? AddedBy,
+    [property: JsonPropertyName("is_local")] bool IsLocal,
+    [property: JsonPropertyName("item")] SpotifyPlaylistPlayableItem? Item
+);
+
+/// <summary>
+/// The 2026 playlist item wrapper can contain a track or an episode. Properties
+/// that only exist on one kind deliberately remain nullable; callers must branch
+/// on <see cref="Type"/> instead of assuming every item is a catalog track.
+/// </summary>
+public record SpotifyPlaylistPlayableItem(
+    [property: JsonPropertyName("id")] string? Id,
+    [property: JsonPropertyName("name")] string Name,
+    [property: JsonPropertyName("uri")] string? Uri,
+    [property: JsonPropertyName("type")] string Type,
+    [property: JsonPropertyName("duration_ms")] int DurationMs,
+    [property: JsonPropertyName("artists")] List<SpotifyArtist>? Artists,
+    [property: JsonPropertyName("album")] SpotifyAlbum? Album,
+    [property: JsonPropertyName("external_urls")] SpotifyExternalUrls? ExternalUrls,
+    [property: JsonPropertyName("is_local")] bool IsLocal = false
 );
 
 // ─── Request/Response DTOs for Endpoints ─────────────────────────────────────
 
 public record SpotifySearchRequest(
     string Query,
-    int Limit = 20
+    int Limit = 10
 );
 
 public record SpotifyTrackDto(
@@ -117,7 +174,37 @@ public record SpotifyPlaylistDto(
     string Name,
     string? ImageUrl,
     int TrackCount,
-    string? SpotifyUrl
+    string? SpotifyUrl,
+    bool ContentsAvailable = true,
+    string? SnapshotId = null
+);
+
+public record SpotifyAuthorizeRequest(bool ForceDialog = false);
+
+public record SpotifyAuthorizeResponse(string AuthorizationUrl);
+
+public record SpotifyConnectionStatusDto(
+    string State,
+    bool IsConnected,
+    string? AccountId,
+    string? SpotifyUserId,
+    string? DisplayName,
+    IReadOnlyList<string> GrantedScopes,
+    IReadOnlyList<string> MissingScopes,
+    DateTimeOffset? AuthorizedAt,
+    DateTimeOffset? ReauthorizationDueAt,
+    int? DaysUntilReauthorization,
+    DateTimeOffset? LastSuccessfulCallAt,
+    DateTimeOffset? RateLimitedUntil,
+    string? Warning,
+    string? LastError
+);
+
+public record SpotifyConnectionErrorDto(
+    string Error,
+    string State,
+    string? Reason = null,
+    int? RetryAfterSeconds = null
 );
 
 // ─── AI Command Models ───────────────────────────────────────────────────────

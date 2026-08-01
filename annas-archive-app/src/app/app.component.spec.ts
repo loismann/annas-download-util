@@ -60,7 +60,7 @@ describe('AppComponent', () => {
 
     // Manually set activity data
     component.userActivity = [
-      { initial: 'M', userName: 'Mom', minutesAgo: 5, isFullTone: true, isHalfTone: false }
+      { initial: 'M', userName: 'Mom', minutesAgo: 5, isFullTone: true, isHalfTone: false, lastAction: 'Reading a book', activeForMinutes: 12 }
     ];
 
     // Mock authenticated state
@@ -88,7 +88,7 @@ describe('AppComponent', () => {
     const component = fixture.componentInstance;
 
     component.userActivity = [
-      { initial: 'M', userName: 'Mom', minutesAgo: 10, isFullTone: true, isHalfTone: false }
+      { initial: 'M', userName: 'Mom', minutesAgo: 10, isFullTone: true, isHalfTone: false, lastAction: 'Reading a book', activeForMinutes: 20 }
     ];
 
     fixture.detectChanges();
@@ -103,7 +103,7 @@ describe('AppComponent', () => {
     const component = fixture.componentInstance;
 
     component.userActivity = [
-      { initial: 'D', userName: 'Dad', minutesAgo: 45, isFullTone: false, isHalfTone: true }
+      { initial: 'D', userName: 'Dad', minutesAgo: 45, isFullTone: false, isHalfTone: true, lastAction: null, activeForMinutes: null }
     ];
 
     fixture.detectChanges();

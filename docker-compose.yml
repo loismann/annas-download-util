@@ -83,6 +83,12 @@ services:
       # metadata, review progress — see AppDatabase.cs). The *StoragePath
       # JSON entries below/above it are now legacy import sources only.
       - Database__Path=/app/state/app.db
+      # Spotify OAuth tokens are encrypted with ASP.NET Data Protection. Both
+      # the encrypted connection and these rotating keys live on the persistent
+      # state mount, so a container rebuild does not strand the connection.
+      - DataProtection__KeysPath=/app/state/data-protection-keys
+      - Spotify__RedirectUri=https://${TAILSCALE_HOSTNAME}/api/spotify/oauth/callback
+      - Spotify__FrontendBaseUrl=https://${TAILSCALE_HOSTNAME}
       - MediaMetadata__StoragePath=/app/state/media-metadata.json
       # Both of these previously defaulted to paths inside the container
       # filesystem (/app and ~/.annas-archive respectively), so every deploy

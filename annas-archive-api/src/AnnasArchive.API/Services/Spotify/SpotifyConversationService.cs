@@ -23,6 +23,9 @@ public sealed class SpotifyConversationService : ISpotifyConversationService
     private readonly ISpotifyCommandParser _parser;
     private readonly ISpotifyService _spotify;
     private readonly ISpotifyInventoryService _inventory;
+    private readonly ISpotifyInventoryJobService? _inventoryJobs;
+    private readonly ISpotifyCurrentUser? _currentUser;
+    private readonly ISpotifyKnownMusicService? _knownMusic;
 
     public SpotifyConversationService(
         ISpotifyCommandParser parser, ISpotifyService spotify, ISpotifyInventoryService inventory)
@@ -30,6 +33,29 @@ public sealed class SpotifyConversationService : ISpotifyConversationService
         _parser = parser;
         _spotify = spotify;
         _inventory = inventory;
+    }
+
+    public SpotifyConversationService(
+        ISpotifyCommandParser parser,
+        ISpotifyService spotify,
+        ISpotifyInventoryService inventory,
+        ISpotifyInventoryJobService inventoryJobs,
+        ISpotifyCurrentUser currentUser) : this(parser, spotify, inventory)
+    {
+        _inventoryJobs = inventoryJobs;
+        _currentUser = currentUser;
+    }
+
+    public SpotifyConversationService(
+        ISpotifyCommandParser parser,
+        ISpotifyService spotify,
+        ISpotifyInventoryService inventory,
+        ISpotifyInventoryJobService inventoryJobs,
+        ISpotifyCurrentUser currentUser,
+        ISpotifyKnownMusicService knownMusic)
+        : this(parser, spotify, inventory, inventoryJobs, currentUser)
+    {
+        _knownMusic = knownMusic;
     }
 
     public async Task<SpotifyConversationResponse> HandleAsync(
@@ -54,6 +80,7 @@ public sealed class SpotifyConversationService : ISpotifyConversationService
             SpotifyReadAction.ComparePlaylists => await ComparePlaylistsAsync(command, token),
             SpotifyReadAction.GetTopItems => await TopItemsAsync(command, token),
             SpotifyReadAction.GetRecentPlaylistContexts => await RecentContextsAsync(token),
+            SpotifyReadAction.GetKnownMusic => await KnownMusicAsync(command, token),
             SpotifyReadAction.ExplainCapability => ExplainCapability(command),
             _ => Unknown(command)
         };
@@ -77,7 +104,7 @@ public sealed class SpotifyConversationService : ISpotifyConversationService
 
     private async Task<SpotifyConversationResponse> ListPlaylistsAsync(CancellationToken token)
     {
-        var playlists = await _spotify.GetUserPlaylistsAsync(token);
+        var playlists = await _inventory.GetPlaylistsAsync(token: token);
         return new SpotifyConversationResponse(
             SpotifyActionCatalog.WireNameOf(SpotifyReadAction.ListPlaylists),
             1.0,
@@ -89,7 +116,7 @@ public sealed class SpotifyConversationService : ISpotifyConversationService
         SpotifyValidatedCommand command, CancellationToken token)
     {
         var query = command.Arguments.Query!;
-        var all = await _spotify.GetUserPlaylistsAsync(token);
+        var all = await _inventory.GetPlaylistsAsync(token: token);
         var matches = SpotifyPlaylistResolver.Filter(query, all);
 
         var message = matches.Count == 0
@@ -145,7 +172,9 @@ public sealed class SpotifyConversationService : ISpotifyConversationService
 
     private async Task<SpotifyConversationResponse> RecentContextsAsync(CancellationToken token)
     {
-        var contexts = await _spotify.GetRecentPlaylistContextsAsync(token);
+        var contexts = _knownMusic != null
+            ? await _knownMusic.GetRecentContextsAsync(token)
+            : await _spotify.GetRecentPlaylistContextsAsync(token);
         var playlists = await _spotify.GetUserPlaylistsAsync(token);
 
         // Spotify's recently-played payload carries the playlist URI but not its
@@ -179,7 +208,9 @@ public sealed class SpotifyConversationService : ISpotifyConversationService
             - Describe one playlist — owner, visibility, item count, whether I can read inside it
             - List the songs and episodes in a playlist you own or collaborate on
             - Search Spotify's catalog
+            - Analyze empty, repeated, overlapping, and similarly named playlists
             - Tell you which playlists show up most in recent listening history
+            - Summarize the artists and tracks represented in the Spotify data I can access
 
             I cannot create, rename, merge, or delete anything yet. Those arrive with the
             reviewed change-plan flow, where you see exactly what will happen before it does.
@@ -190,6 +221,19 @@ public sealed class SpotifyConversationService : ISpotifyConversationService
             removes it from your own library.
             """,
             data: null);
+
+    private async Task<SpotifyConversationResponse> KnownMusicAsync(
+        SpotifyValidatedCommand command, CancellationToken token)
+    {
+        if (_knownMusic == null)
+            return Respond(command, "The known-music index is not available in this environment.", null);
+
+        var report = await _knownMusic.GetAsync(token);
+        var message = $"I currently recognize {report.Index.ArtistKeys.Count} artists and "
+            + $"{report.Index.TrackKeys.Count} tracks in the Spotify data I can access. "
+            + report.Coverage;
+        return Respond(command, message, report);
+    }
 
     private static SpotifyConversationResponse Unknown(SpotifyValidatedCommand command) =>
         Respond(command,
@@ -228,8 +272,32 @@ public sealed class SpotifyConversationService : ISpotifyConversationService
     private async Task<SpotifyConversationResponse> AnalyzeLibraryAsync(
         SpotifyValidatedCommand command, CancellationToken token)
     {
-        var library = await ReadLibraryAsync(token);
-        var analysis = SpotifyAnalysis.Analyze(library);
+        IReadOnlyList<SpotifyPlaylistContents> library;
+        if (_inventoryJobs != null && _currentUser != null)
+        {
+            var ownerKey = _currentUser.GetRequiredOwnerKey();
+            var status = _inventoryJobs.GetStatus(ownerKey);
+            if (status.LastInventoryAt == null ||
+                status.LastInventoryAt < DateTimeOffset.UtcNow.AddMinutes(-15) ||
+                status.State is SpotifyInventoryJobState.Queued or SpotifyInventoryJobState.Running)
+            {
+                if (status.State is not (SpotifyInventoryJobState.Queued or SpotifyInventoryJobState.Running))
+                    status = _inventoryJobs.Start(ownerKey);
+                return Respond(command,
+                    "I started a read-only inventory refresh. Progress is shown above; I have not changed Spotify.",
+                    status);
+            }
+            library = _inventory.LoadCachedLibrary(ownerKey);
+        }
+        else
+        {
+            library = await ReadLibraryAsync(token);
+        }
+
+        var recent = _knownMusic != null
+            ? await _knownMusic.GetRecentContextsAsync(token)
+            : await _spotify.GetRecentPlaylistContextsAsync(token);
+        var analysis = SpotifyAnalysis.Analyze(library, recentContexts: recent);
 
         return Respond(command, DescribeAnalysis(analysis), analysis);
     }
@@ -241,7 +309,7 @@ public sealed class SpotifyConversationService : ISpotifyConversationService
         if (names == null)
             return Respond(command, "Which two playlists should I compare? Name both, like “A and B”.", null);
 
-        var playlists = await _spotify.GetUserPlaylistsAsync(token);
+        var playlists = await _inventory.GetPlaylistsAsync(token: token);
         var left = SpotifyPlaylistResolver.Resolve(names.Value.Left, playlists);
         var right = SpotifyPlaylistResolver.Resolve(names.Value.Right, playlists);
 
@@ -278,8 +346,11 @@ public sealed class SpotifyConversationService : ISpotifyConversationService
             ? "artists"
             : "tracks";
 
-        var top = await _spotify.GetTopItemsAsync(
-            kind, command.Arguments.TimeRange ?? "medium_term", command.Arguments.Limit ?? 20, token);
+        var top = _knownMusic != null
+            ? await _knownMusic.GetTopItemsAsync(
+                kind, command.Arguments.TimeRange ?? "medium_term", command.Arguments.Limit ?? 20, token)
+            : await _spotify.GetTopItemsAsync(
+                kind, command.Arguments.TimeRange ?? "medium_term", command.Arguments.Limit ?? 20, token);
 
         var window = top.TimeRange switch
         {
@@ -300,7 +371,7 @@ public sealed class SpotifyConversationService : ISpotifyConversationService
     private async Task<(SpotifyPlaylistResolution Resolution, IReadOnlyList<SpotifyPlaylistDto> Playlists)>
         ResolveAsync(SpotifyValidatedCommand command, string? pinnedPlaylistId, CancellationToken token)
     {
-        var playlists = await _spotify.GetUserPlaylistsAsync(token);
+        var playlists = await _inventory.GetPlaylistsAsync(token: token);
 
         if (!string.IsNullOrWhiteSpace(pinnedPlaylistId))
         {
@@ -394,7 +465,7 @@ public sealed class SpotifyConversationService : ISpotifyConversationService
 
     private async Task<IReadOnlyList<SpotifyPlaylistContents>> ReadLibraryAsync(CancellationToken token)
     {
-        var playlists = await _spotify.GetUserPlaylistsAsync(token);
+        var playlists = await _inventory.GetPlaylistsAsync(token: token);
         return await _inventory.GetAllContentsAsync(playlists, token);
     }
 
@@ -434,11 +505,12 @@ public sealed class SpotifyConversationService : ISpotifyConversationService
               + (analysis.Empty.Count > 10 ? ", and more" : ""));
 
         var exact = analysis.DuplicateItems.Count(d => d.Confidence == SpotifyDuplicateConfidence.Exact);
-        var probable = analysis.DuplicateItems.Count - exact;
+        var recording = analysis.DuplicateItems.Count(d => d.Confidence == SpotifyDuplicateConfidence.Recording);
+        var probable = analysis.DuplicateItems.Count - exact - recording;
         lines.Add(analysis.DuplicateItems.Count == 0
             ? "No repeated songs inside any playlist."
-            : $"{exact} exact repeat(s) — the same song twice in one playlist — and {probable} "
-              + "probable repeat(s) where the title and artist match but the recording might differ.");
+            : $"{exact} exact Spotify-item repeat(s), {recording} recording repeat(s) with the same ISRC, "
+              + $"and {probable} probable title/artist match(es).");
 
         var identical = analysis.OverlappingPlaylists.Count(o => o.Identical);
         var supersets = analysis.OverlappingPlaylists.Count(o => o.SupersetOf != null);
@@ -451,8 +523,13 @@ public sealed class SpotifyConversationService : ISpotifyConversationService
         if (analysis.NamingCollisions.Count > 0)
         {
             lines.Add($"{analysis.NamingCollisions.Count} set(s) of playlists whose names differ only by "
-                    + "punctuation or case — worth renaming so I can tell them apart.");
+                    + "punctuation, case, or a trailing year — worth renaming so I can tell them apart.");
         }
+
+        lines.Add(analysis.RecentlyObserved is { Count: > 0 }
+            ? $"{analysis.RecentlyObserved.Count} playlist(s) appeared in Spotify's recent playback window; "
+              + $"usage for the other {analysis.UsageUnknown} is unknown, not zero."
+            : "No playlist contexts appeared in Spotify's recent playback window; that is not evidence of no use.");
 
         lines.Add("");
         lines.Add("I have not changed anything. Making changes needs the reviewed plan flow, which is not built yet.");

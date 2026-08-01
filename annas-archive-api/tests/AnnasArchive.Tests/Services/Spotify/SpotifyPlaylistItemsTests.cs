@@ -28,6 +28,7 @@ public class SpotifyPlaylistItemsTests
                     "type": "track", "duration_ms": 145000,
                     "artists": [{ "id": "a1", "name": "Elvis Presley" }],
                     "album": { "id": "al1", "name": "Sun Sessions", "images": [] },
+                    "external_ids": { "isrc": "USRC17607839" },
                     "external_urls": { "spotify": "https://open.spotify.com/track/t1" }
                   }
                 },
@@ -55,6 +56,7 @@ public class SpotifyPlaylistItemsTests
         page.Items[0].Artists.Should().Be("Elvis Presley");
         page.Items[0].AlbumName.Should().Be("Sun Sessions");
         page.Items[0].Position.Should().Be(0);
+        page.Items[0].Isrc.Should().Be("USRC17607839");
         page.Items[1].Artists.Should().Be("Robert Johnson, Guest");
         page.Items[1].Position.Should().Be(1);
     }

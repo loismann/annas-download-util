@@ -78,7 +78,7 @@ describe('SpotifinatorComponent', () => {
     const playlist = (over: Partial<SpotifyPlaylist>): SpotifyPlaylist => ({
       id: 'p', name: 'P', imageUrl: null, trackCount: 0, spotifyUrl: null,
       contentsAvailable: true, snapshotId: null, ownerId: null, ownerName: null,
-      isOwnedByUser: false, isCollaborative: false, isPublic: null, uri: null,
+      isOwnedByUser: false, isCollaborative: false, isPublic: null, uri: null, inventoryAt: null,
       ...over
     });
 
@@ -118,7 +118,7 @@ describe('SpotifinatorComponent', () => {
     const playlist = (over: Partial<SpotifyPlaylist>): SpotifyPlaylist => ({
       id: 'p', name: 'P', imageUrl: null, trackCount: 0, spotifyUrl: null,
       contentsAvailable: true, snapshotId: null, ownerId: null, ownerName: null,
-      isOwnedByUser: false, isCollaborative: false, isPublic: null, uri: null,
+      isOwnedByUser: false, isCollaborative: false, isPublic: null, uri: null, inventoryAt: null,
       ...over
     });
 
@@ -150,7 +150,7 @@ describe('SpotifinatorComponent', () => {
     const item = (over: Partial<SpotifyPlaylistItem>): SpotifyPlaylistItem => ({
       position: 0, kind: 'Track', id: 't', name: 'Song', uri: 'spotify:track:t',
       artists: 'Artist', albumName: 'Album', durationMs: 180000, spotifyUrl: null,
-      isLocal: false, addedAt: null,
+      isLocal: false, addedAt: null, isrc: null,
       ...over
     });
 
@@ -208,6 +208,19 @@ describe('SpotifinatorComponent', () => {
       expect(component.isPlaylist(null)).toBe(false);
       expect(component.isItemsPage(null)).toBe(false);
       expect(component.isSearchResult(null)).toBe(false);
+    });
+
+    it('recognizes inventory progress without mistaking it for analysis', () => {
+      const status = {
+        jobId: 'job', state: 'Running', totalPlaylists: 100, processedPlaylists: 25,
+        readablePlaylists: 24, partialPlaylists: 1, unreadablePlaylists: 0,
+        startedAt: null, updatedAt: null, completedAt: null, lastInventoryAt: null,
+        message: 'Reading'
+      };
+
+      expect(component.isInventoryStatus(status)).toBe(true);
+      expect(component.isAnalysis(status)).toBe(false);
+      expect(component.inventoryProgress(status as any)).toBe(25);
     });
   });
 });

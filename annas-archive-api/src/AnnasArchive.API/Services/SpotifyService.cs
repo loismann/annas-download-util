@@ -10,14 +10,27 @@ public interface ISpotifyService
 {
     Task<SpotifySearchResultDto> SearchTracksAsync(string query, int limit = 10, CancellationToken token = default);
     Task<List<SpotifyPlaylistDto>> GetUserPlaylistsAsync(CancellationToken token = default);
+    Task<List<SpotifyPlaylistDto>> GetUserPlaylistsForOwnerAsync(
+        string ownerKey, CancellationToken token = default) => GetUserPlaylistsAsync(token);
     Task<SpotifyPlaylistDto?> GetPlaylistAsync(string playlistId, CancellationToken token = default);
     Task<SpotifyPlaylistItemsPageDto> GetPlaylistItemsAsync(
         string playlistId, int offset = 0, int limit = 50, CancellationToken token = default);
+    Task<SpotifyPlaylistItemsPageDto> GetPlaylistItemsForOwnerAsync(
+        string ownerKey, string playlistId, int offset = 0, int limit = 50,
+        CancellationToken token = default) => GetPlaylistItemsAsync(playlistId, offset, limit, token);
     Task<IReadOnlyList<SpotifyRecentPlaylistContextDto>> GetRecentPlaylistContextsAsync(
         CancellationToken token = default);
+    Task<IReadOnlyList<SpotifyRecentTrackDto>> GetRecentlyPlayedTracksAsync(
+        CancellationToken token = default) =>
+        Task.FromResult<IReadOnlyList<SpotifyRecentTrackDto>>([]);
+    Task<IReadOnlyList<SpotifyRecentTrackDto>> GetRecentlyPlayedTracksForOwnerAsync(
+        string ownerKey, CancellationToken token = default) => GetRecentlyPlayedTracksAsync(token);
     Task<SpotifyTopItemsDto> GetTopItemsAsync(
         string kind = "tracks", string timeRange = "medium_term", int limit = 20,
         CancellationToken token = default);
+    Task<SpotifyTopItemsDto> GetTopItemsForOwnerAsync(
+        string ownerKey, string kind = "tracks", string timeRange = "medium_term", int limit = 20,
+        CancellationToken token = default) => GetTopItemsAsync(kind, timeRange, limit, token);
     Task<SpotifyPlaylistDto> CreatePlaylistAsync(string name, string? description = null, bool isPublic = false, CancellationToken token = default);
     Task AddTracksToPlaylistAsync(string playlistId, List<string> trackUris, CancellationToken token = default);
     Task RemoveTracksFromPlaylistAsync(string playlistId, List<string> trackUris, CancellationToken token = default);
@@ -51,16 +64,25 @@ public class SpotifyService : ISpotifyService
         return new SpotifySearchResultDto(tracks, response.Tracks.Total);
     }
 
-    public async Task<List<SpotifyPlaylistDto>> GetUserPlaylistsAsync(CancellationToken token = default)
+    public Task<List<SpotifyPlaylistDto>> GetUserPlaylistsAsync(CancellationToken token = default) =>
+        GetUserPlaylistsCoreAsync(ownerKey: null, token);
+
+    public Task<List<SpotifyPlaylistDto>> GetUserPlaylistsForOwnerAsync(
+        string ownerKey, CancellationToken token = default) =>
+        GetUserPlaylistsCoreAsync(ownerKey, token);
+
+    private async Task<List<SpotifyPlaylistDto>> GetUserPlaylistsCoreAsync(
+        string? ownerKey, CancellationToken token)
     {
         string? url = $"{ApiBaseUrl}/me/playlists?limit=50";
         var playlists = new List<SpotifyPlaylistDto>();
         var visitedPages = new HashSet<string>(StringComparer.Ordinal);
-        var connectedUserId = TryGetConnectedUserId();
+        var connectedUserId = TryGetConnectedUserId(ownerKey);
 
         while (!string.IsNullOrWhiteSpace(url) && visitedPages.Add(url))
         {
-            var response = await SendAuthenticatedRequestAsync<SpotifyPlaylistsResponse>(HttpMethod.Get, url, token);
+            var response = await SendAuthenticatedRequestAsync<SpotifyPlaylistsResponse>(
+                HttpMethod.Get, url, token, ownerKey: ownerKey);
             if (response == null)
                 break;
 
@@ -88,11 +110,27 @@ public class SpotifyService : ISpotifyService
     /// items. That returns an empty page marked <see cref="SpotifyContentsAccess.Forbidden"/>
     /// so callers can say "not allowed to read" rather than "no songs".
     /// </summary>
-    public async Task<SpotifyPlaylistItemsPageDto> GetPlaylistItemsAsync(
+    public Task<SpotifyPlaylistItemsPageDto> GetPlaylistItemsAsync(
         string playlistId,
         int offset = 0,
         int limit = 50,
-        CancellationToken token = default)
+        CancellationToken token = default) =>
+        GetPlaylistItemsCoreAsync(ownerKey: null, playlistId, offset, limit, token);
+
+    public Task<SpotifyPlaylistItemsPageDto> GetPlaylistItemsForOwnerAsync(
+        string ownerKey,
+        string playlistId,
+        int offset = 0,
+        int limit = 50,
+        CancellationToken token = default) =>
+        GetPlaylistItemsCoreAsync(ownerKey, playlistId, offset, limit, token);
+
+    private async Task<SpotifyPlaylistItemsPageDto> GetPlaylistItemsCoreAsync(
+        string? ownerKey,
+        string playlistId,
+        int offset,
+        int limit,
+        CancellationToken token)
     {
         limit = Math.Clamp(limit, 1, 50);
         offset = Math.Max(0, offset);
@@ -103,7 +141,7 @@ public class SpotifyService : ISpotifyService
         try
         {
             response = await SendAuthenticatedRequestAsync<SpotifyPlaylistItemsResponse>(
-                HttpMethod.Get, url, token);
+                HttpMethod.Get, url, token, ownerKey: ownerKey);
         }
         catch (SpotifyApiException ex) when (ex.SpotifyStatusCode == System.Net.HttpStatusCode.Forbidden)
         {
@@ -165,6 +203,30 @@ public class SpotifyService : ISpotifyService
             .ToList();
     }
 
+    public Task<IReadOnlyList<SpotifyRecentTrackDto>> GetRecentlyPlayedTracksAsync(
+        CancellationToken token = default) => GetRecentlyPlayedTracksCoreAsync(ownerKey: null, token);
+
+    public Task<IReadOnlyList<SpotifyRecentTrackDto>> GetRecentlyPlayedTracksForOwnerAsync(
+        string ownerKey, CancellationToken token = default) =>
+        GetRecentlyPlayedTracksCoreAsync(ownerKey, token);
+
+    private async Task<IReadOnlyList<SpotifyRecentTrackDto>> GetRecentlyPlayedTracksCoreAsync(
+        string? ownerKey, CancellationToken token)
+    {
+        var response = await SendAuthenticatedRequestAsync<SpotifyRecentlyPlayedResponse>(
+            HttpMethod.Get, $"{ApiBaseUrl}/me/player/recently-played?limit=50", token,
+            ownerKey: ownerKey);
+
+        return (response?.Items ?? [])
+            .Where(entry => entry.Track != null)
+            .Select((entry, index) => new SpotifyRecentTrackDto(
+                MapTrackItem(entry.Track!, index, entry.PlayedAt),
+                entry.PlayedAt,
+                entry.Context?.Type,
+                entry.Context?.Uri))
+            .ToList();
+    }
+
     /// <summary>
     /// Top tracks or artists over one of Spotify's three windows. Anything Spotify
     /// does not recognise is corrected to a supported value rather than passed
@@ -174,7 +236,23 @@ public class SpotifyService : ISpotifyService
         string kind = "tracks",
         string timeRange = "medium_term",
         int limit = 20,
-        CancellationToken token = default)
+        CancellationToken token = default) =>
+        await GetTopItemsCoreAsync(ownerKey: null, kind, timeRange, limit, token);
+
+    public Task<SpotifyTopItemsDto> GetTopItemsForOwnerAsync(
+        string ownerKey,
+        string kind = "tracks",
+        string timeRange = "medium_term",
+        int limit = 20,
+        CancellationToken token = default) =>
+        GetTopItemsCoreAsync(ownerKey, kind, timeRange, limit, token);
+
+    private async Task<SpotifyTopItemsDto> GetTopItemsCoreAsync(
+        string? ownerKey,
+        string kind,
+        string timeRange,
+        int limit,
+        CancellationToken token)
     {
         var safeKind = string.Equals(kind, "artists", StringComparison.OrdinalIgnoreCase)
             ? "artists"
@@ -192,7 +270,8 @@ public class SpotifyService : ISpotifyService
         var response = await SendAuthenticatedRequestAsync<SpotifyTopItemsResponse>(
             HttpMethod.Get,
             $"{ApiBaseUrl}/me/top/{safeKind}?time_range={safeRange}&limit={limit}",
-            token);
+            token,
+            ownerKey: ownerKey);
 
         var items = (response?.Items ?? [])
             .Where(item => !string.IsNullOrWhiteSpace(item.Id))
@@ -257,8 +336,25 @@ public class SpotifyService : ISpotifyService
             DurationMs: item.DurationMs,
             SpotifyUrl: item.ExternalUrls?.Spotify,
             IsLocal: isLocal,
-            AddedAt: entry.AddedAt);
+            AddedAt: entry.AddedAt,
+            Isrc: item.ExternalIds?.Isrc);
     }
+
+    private static SpotifyPlaylistItemDto MapTrackItem(
+        SpotifyTrackItem item, int position, DateTimeOffset? observedAt) =>
+        new(
+            position,
+            item.IsLocal ? SpotifyItemKind.Local : SpotifyItemKind.Track,
+            item.Id,
+            item.Name,
+            item.Uri,
+            string.Join(", ", item.Artists.Select(a => a.Name)),
+            item.Album.Name,
+            item.DurationMs,
+            item.ExternalUrls?.Spotify,
+            item.IsLocal,
+            observedAt,
+            item.ExternalIds?.Isrc);
 
     public async Task<SpotifyPlaylistDto> CreatePlaylistAsync(string name, string? description = null, bool isPublic = false, CancellationToken token = default)
     {
@@ -336,15 +432,16 @@ public class SpotifyService : ISpotifyService
         HttpMethod method,
         string url,
         CancellationToken token,
-        object? body = null) where T : class
+        object? body = null,
+        string? ownerKey = null) where T : class
     {
         var serializedBody = body == null ? null : JsonSerializer.Serialize(body);
 
         for (var attempt = 0; attempt < 2; attempt++)
         {
-            var accessToken = await _accessTokens.GetAccessTokenAsync(
-                forceRefresh: attempt > 0,
-                token);
+            var accessToken = ownerKey == null
+                ? await _accessTokens.GetAccessTokenAsync(forceRefresh: attempt > 0, token)
+                : await _accessTokens.GetAccessTokenForOwnerAsync(ownerKey, forceRefresh: attempt > 0, token);
             using var request = new HttpRequestMessage(method, url);
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
 
@@ -358,7 +455,10 @@ public class SpotifyService : ISpotifyService
             }
             catch (HttpRequestException ex)
             {
-                await _accessTokens.RecordUnavailableAsync(ex.Message, token);
+                if (ownerKey == null)
+                    await _accessTokens.RecordUnavailableAsync(ex.Message, token);
+                else
+                    await _accessTokens.RecordUnavailableForOwnerAsync(ownerKey, ex.Message, token);
                 throw new SpotifyConnectionException(
                     "Spotify is currently unavailable.",
                     nameof(SpotifyConnectionState.SpotifyUnavailable),
@@ -394,11 +494,17 @@ public class SpotifyService : ISpotifyService
                         spotifyMessage,
                         reason,
                         retryAfter);
-                    await _accessTokens.RecordApiFailureAsync(exception, token);
+                    if (ownerKey == null)
+                        await _accessTokens.RecordApiFailureAsync(exception, token);
+                    else
+                        await _accessTokens.RecordApiFailureForOwnerAsync(ownerKey, exception, token);
                     throw exception;
                 }
 
-                await _accessTokens.RecordSuccessfulCallAsync(token);
+                if (ownerKey == null)
+                    await _accessTokens.RecordSuccessfulCallAsync(token);
+                else
+                    await _accessTokens.RecordSuccessfulCallForOwnerAsync(ownerKey, token);
 
                 if (response.StatusCode == System.Net.HttpStatusCode.NoContent)
                     return null;
@@ -496,11 +602,13 @@ public class SpotifyService : ISpotifyService
     /// connection cannot be read, report "not owned" rather than failing the whole
     /// listing.
     /// </summary>
-    private string? TryGetConnectedUserId()
+    private string? TryGetConnectedUserId(string? ownerKey = null)
     {
         try
         {
-            return _accessTokens.GetConnectedSpotifyUserId();
+            return ownerKey == null
+                ? _accessTokens.GetConnectedSpotifyUserId()
+                : _accessTokens.GetConnectedSpotifyUserId(ownerKey);
         }
         catch (SpotifyConnectionException)
         {

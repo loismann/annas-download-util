@@ -23,6 +23,11 @@ public static class SpotifyEndpoints
         group.MapGet("/playlists", HandleGetPlaylists);
         group.MapGet("/playlists/{playlistId}", HandleGetPlaylist);
         group.MapGet("/playlists/{playlistId}/items", HandleGetPlaylistItems);
+        group.MapPost("/inventory/refresh", HandleStartInventoryRefresh);
+        group.MapGet("/inventory/status", HandleGetInventoryStatus);
+        group.MapGet("/analysis", HandleGetAnalysis);
+        group.MapGet("/known-music", HandleGetKnownMusic);
+        group.MapPut("/known-music/override", HandleKnownMusicOverride);
         group.MapPost("/command", HandleCommand);
 
         app.MapGet("/api/spotify/oauth/callback", HandleOAuthCallback)
@@ -55,11 +60,11 @@ public static class SpotifyEndpoints
         }
     }
 
-    private static IResult HandleDisconnect(
+    private static async Task<IResult> HandleDisconnect(
         ISpotifyAuthorizationService authorization,
         ISpotifyCurrentUser currentUser)
     {
-        authorization.Disconnect(currentUser.GetRequiredOwnerKey());
+        await authorization.DisconnectAsync(currentUser.GetRequiredOwnerKey());
         return Results.NoContent();
     }
 
@@ -126,13 +131,13 @@ public static class SpotifyEndpoints
     }
 
     private static async Task<IResult> HandleGetPlaylists(
-        ISpotifyService spotifyService,
+        ISpotifyInventoryService inventory,
         HttpContext context,
         CancellationToken token)
     {
         try
         {
-            var playlists = await spotifyService.GetUserPlaylistsAsync(token);
+            var playlists = await inventory.GetPlaylistsAsync(token: token);
             return Results.Ok(playlists);
         }
         catch (Exception ex)
@@ -140,6 +145,49 @@ public static class SpotifyEndpoints
             Log.Warning(ex, "[Spotify] Failed to get playlists");
             return MapFailure(ex, context);
         }
+    }
+
+    private static IResult HandleStartInventoryRefresh(
+        ISpotifyInventoryJobService jobs,
+        ISpotifyCurrentUser currentUser) =>
+        Results.Accepted(value: jobs.Start(currentUser.GetRequiredOwnerKey()));
+
+    private static IResult HandleGetInventoryStatus(
+        ISpotifyInventoryJobService jobs,
+        ISpotifyCurrentUser currentUser) =>
+        Results.Ok(jobs.GetStatus(currentUser.GetRequiredOwnerKey()));
+
+    private static async Task<IResult> HandleGetAnalysis(
+        ISpotifyInventoryService inventory,
+        ISpotifyKnownMusicService knownMusic,
+        ISpotifyInventoryJobService jobs,
+        ISpotifyCurrentUser currentUser,
+        CancellationToken token)
+    {
+        var ownerKey = currentUser.GetRequiredOwnerKey();
+        var status = jobs.GetStatus(ownerKey);
+        if (status.State is SpotifyInventoryJobState.Queued or SpotifyInventoryJobState.Running)
+            return Results.Conflict(new { error = "The Spotify inventory is still refreshing.", status });
+        var library = inventory.LoadCachedLibrary(ownerKey);
+        if (library.Count == 0)
+            return Results.Conflict(new { error = "Refresh the Spotify inventory before requesting analysis.", status });
+
+        var recent = await knownMusic.GetRecentContextsAsync(token);
+        return Results.Ok(SpotifyAnalysis.Analyze(library, recentContexts: recent));
+    }
+
+    private static async Task<IResult> HandleGetKnownMusic(
+        ISpotifyKnownMusicService knownMusic,
+        CancellationToken token) =>
+        Results.Ok(await knownMusic.GetAsync(token));
+
+    private static IResult HandleKnownMusicOverride(
+        SpotifyKnownMusicOverrideRequest request,
+        ISpotifyKnownMusicService knownMusic)
+    {
+        if (string.IsNullOrWhiteSpace(request?.Name))
+            return Results.BadRequest(new { error = "A track or artist name is required." });
+        return Results.Ok(knownMusic.ApplyOverride(request));
     }
 
     private static async Task<IResult> HandleGetPlaylist(

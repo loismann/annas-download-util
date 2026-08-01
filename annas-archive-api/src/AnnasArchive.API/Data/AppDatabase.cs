@@ -54,8 +54,62 @@ public class AppDatabase
                 json       TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS spotify_inventory_meta (
+                owner_hash        TEXT PRIMARY KEY,
+                playlists_json    TEXT NOT NULL,
+                last_inventory_at TEXT NOT NULL,
+                full_inventory_at TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS spotify_playlist_cache (
+                owner_hash       TEXT NOT NULL,
+                playlist_id      TEXT NOT NULL,
+                playlist_json    TEXT NOT NULL,
+                access           TEXT NOT NULL,
+                snapshot_id      TEXT,
+                items_snapshot_id TEXT,
+                items_json       TEXT,
+                inventory_at     TEXT NOT NULL,
+                items_updated_at TEXT,
+                PRIMARY KEY (owner_hash, playlist_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS spotify_inventory_job (
+                owner_hash          TEXT PRIMARY KEY,
+                job_id              TEXT,
+                state               TEXT NOT NULL,
+                total_playlists     INTEGER NOT NULL,
+                processed_playlists INTEGER NOT NULL,
+                readable_playlists  INTEGER NOT NULL,
+                partial_playlists   INTEGER NOT NULL,
+                unreadable_playlists INTEGER NOT NULL,
+                started_at          TEXT,
+                updated_at          TEXT,
+                completed_at        TEXT,
+                message             TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS spotify_known_music_override (
+                owner_hash     TEXT NOT NULL,
+                kind           TEXT NOT NULL,
+                normalized_key TEXT NOT NULL,
+                display_name   TEXT NOT NULL,
+                is_known       INTEGER NOT NULL,
+                updated_at     TEXT NOT NULL,
+                PRIMARY KEY (owner_hash, kind, normalized_key)
+            );
+
+            CREATE TABLE IF NOT EXISTS spotify_signal_cache (
+                owner_hash TEXT NOT NULL,
+                cache_key  TEXT NOT NULL,
+                json       TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (owner_hash, cache_key)
+            );
             """;
         cmd.ExecuteNonQuery();
+        EnsureColumn(conn, "spotify_inventory_meta", "full_inventory_at", "TEXT");
     }
 
     public SqliteConnection OpenConnection()
@@ -63,6 +117,24 @@ public class AppDatabase
         var conn = new SqliteConnection($"Data Source={_dbPath}");
         conn.Open();
         return conn;
+    }
+
+    private static void EnsureColumn(
+        SqliteConnection connection, string table, string column, string declaration)
+    {
+        using var inspect = connection.CreateCommand();
+        inspect.CommandText = $"PRAGMA table_info({table})";
+        using var reader = inspect.ExecuteReader();
+        while (reader.Read())
+        {
+            if (string.Equals(reader.GetString(1), column, StringComparison.OrdinalIgnoreCase))
+                return;
+        }
+        reader.Close();
+
+        using var alter = connection.CreateCommand();
+        alter.CommandText = $"ALTER TABLE {table} ADD COLUMN {column} {declaration}";
+        alter.ExecuteNonQuery();
     }
 
     /// <summary>Gets a JSON document from the app_state key/value table, or null if absent.</summary>

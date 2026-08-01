@@ -36,9 +36,10 @@ export interface SpotifyPlaylist {
   isCollaborative: boolean;
   isPublic: boolean | null;
   uri: string | null;
+  inventoryAt: string | null;
 }
 
-export type SpotifyContentsAccess = 'Available' | 'Unavailable' | 'Forbidden';
+export type SpotifyContentsAccess = 'Available' | 'Unavailable' | 'Forbidden' | 'Partial';
 
 export type SpotifyItemKind = 'Track' | 'Episode' | 'Local' | 'Unavailable';
 
@@ -54,6 +55,7 @@ export interface SpotifyPlaylistItem {
   spotifyUrl: string | null;
   isLocal: boolean;
   addedAt: string | null;
+  isrc: string | null;
 }
 
 export interface SpotifyPlaylistItemsPage {
@@ -106,7 +108,7 @@ export interface SpotifyAuthorizeResponse {
 
 // ─── Analysis ────────────────────────────────────────────────────────────────
 
-export type SpotifyDuplicateConfidence = 'Exact' | 'Probable';
+export type SpotifyDuplicateConfidence = 'Exact' | 'Probable' | 'Recording';
 
 export interface SpotifyDuplicateItemGroup {
   playlistId: string;
@@ -151,6 +153,10 @@ export interface SpotifyLibraryAnalysis {
   duplicateItems: SpotifyDuplicateItemGroup[];
   overlappingPlaylists: SpotifyPlaylistOverlap[];
   namingCollisions: SpotifyNamingCollision[];
+  recentlyObserved: SpotifyPlaylist[];
+  usageUnknown: number;
+  limitations: string[];
+  generatedAt: string;
 }
 
 export interface SpotifyTopItem {
@@ -165,6 +171,52 @@ export interface SpotifyTopItems {
   kind: string;
   timeRange: string;
   items: SpotifyTopItem[];
+}
+
+export type SpotifyInventoryJobState =
+  | 'NotStarted'
+  | 'Queued'
+  | 'Running'
+  | 'Complete'
+  | 'Partial'
+  | 'Failed';
+
+export interface SpotifyInventoryStatus {
+  jobId: string | null;
+  state: SpotifyInventoryJobState;
+  totalPlaylists: number;
+  processedPlaylists: number;
+  readablePlaylists: number;
+  partialPlaylists: number;
+  unreadablePlaylists: number;
+  startedAt: string | null;
+  updatedAt: string | null;
+  completedAt: string | null;
+  lastInventoryAt: string | null;
+  message: string | null;
+}
+
+export interface SpotifyKnownMusicIndex {
+  artistKeys: string[];
+  trackKeys: string[];
+  playlistsIncluded: number;
+  unreadablePlaylists: number;
+  includesTopItems: boolean;
+  includesRecentHistory: boolean;
+  explicitOverrides: number;
+}
+
+export interface SpotifyKnownMusicReport {
+  index: SpotifyKnownMusicIndex;
+  coverage: string;
+  generatedAt: string;
+}
+
+export interface SpotifyKnownMusicOverrideResult {
+  kind: string;
+  name: string;
+  known: boolean;
+  updatedAt: string;
 }
 
 // ─── Command Types ───────────────────────────────────────────────────────────
@@ -185,6 +237,7 @@ export type SpotifyAction =
   | 'compare_playlists'
   | 'get_top_items'
   | 'get_recent_playlist_contexts'
+  | 'get_known_music'
   | 'explain_capability'
   | 'unknown';
 
@@ -197,6 +250,8 @@ export type CommandData =
   | SpotifyLibraryAnalysis
   | SpotifyPlaylistOverlap
   | SpotifyTopItems
+  | SpotifyInventoryStatus
+  | SpotifyKnownMusicReport
   | null;
 
 export interface CommandResponse {

@@ -7,10 +7,11 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatListModule } from '@angular/material/list';
 import { MatTooltipModule } from '@angular/material/tooltip';
-import { Subject } from 'rxjs';
-import { takeUntil } from 'rxjs/operators';
+import { Subject, timer } from 'rxjs';
+import { switchMap, takeUntil, takeWhile } from 'rxjs/operators';
 import { ActivatedRoute } from '@angular/router';
 
 import { SpotifinatorApiService } from '../services/spotifinator-api.service';
@@ -28,7 +29,8 @@ import {
   SpotifyDuplicateItemGroup,
   SpotifyTopItems,
   SpotifySearchResult,
-  SpotifyConnectionStatus
+  SpotifyConnectionStatus,
+  SpotifyInventoryStatus
 } from './spotifinator.models';
 
 @Component({
@@ -43,6 +45,7 @@ import {
     MatButtonModule,
     MatIconModule,
     MatProgressSpinnerModule,
+    MatProgressBarModule,
     MatListModule,
     MatTooltipModule
   ],
@@ -62,12 +65,16 @@ export class SpotifinatorComponent implements OnInit, OnDestroy, AfterViewChecke
   connectionLoading = true;
   connectionActionPending = false;
   connectionNotice = '';
+  inventoryStatus: SpotifyInventoryStatus | null = null;
+  inventoryActionPending = false;
 
   private destroy$ = new Subject<void>();
+  private inventoryPollStop$ = new Subject<void>();
   private shouldScrollToBottom = false;
 
   /** Replayed when the user picks a playlist or pages, so the intent is not lost. */
   private lastMessage = '';
+  private pendingAnalysisMessage = '';
 
   constructor(
     private api: SpotifinatorApiService,
@@ -98,6 +105,8 @@ export class SpotifinatorComponent implements OnInit, OnDestroy, AfterViewChecke
   ngOnDestroy(): void {
     this.destroy$.next();
     this.destroy$.complete();
+    this.inventoryPollStop$.next();
+    this.inventoryPollStop$.complete();
   }
 
   // ─── Message Handling ──────────────────────────────────────────────────────
@@ -124,6 +133,7 @@ export class SpotifinatorComponent implements OnInit, OnDestroy, AfterViewChecke
       next: (connection) => {
         this.connection = connection;
         this.connectionLoading = false;
+        if (connection.isConnected) this.loadInventoryStatus();
       },
       error: (err) => {
         this.connectionLoading = false;
@@ -167,6 +177,70 @@ export class SpotifinatorComponent implements OnInit, OnDestroy, AfterViewChecke
     return value ? new Date(value).toLocaleString() : 'Not yet';
   }
 
+  loadInventoryStatus(): void {
+    this.api.getInventoryStatus().pipe(takeUntil(this.destroy$)).subscribe({
+      next: status => {
+        this.inventoryStatus = status;
+        if (this.inventoryIsRunning(status)) this.startInventoryPolling();
+      },
+      error: err => this.logger.error('[Spotifinator] Inventory status failed:', err)
+    });
+  }
+
+  refreshInventory(): void {
+    if (this.inventoryActionPending || !this.canUseSpotify) return;
+    this.inventoryActionPending = true;
+    this.api.startInventoryRefresh().pipe(takeUntil(this.destroy$)).subscribe({
+      next: status => {
+        this.inventoryStatus = status;
+        this.inventoryActionPending = false;
+        this.startInventoryPolling();
+      },
+      error: err => {
+        this.inventoryActionPending = false;
+        this.connectionNotice = err.error?.error || 'Could not start the library inventory.';
+        this.logger.error('[Spotifinator] Inventory refresh failed:', err);
+      }
+    });
+  }
+
+  inventoryProgress(status: SpotifyInventoryStatus): number {
+    return status.totalPlaylists > 0
+      ? Math.round(status.processedPlaylists * 100 / status.totalPlaylists)
+      : 0;
+  }
+
+  inventoryIsRunning(status: SpotifyInventoryStatus | null): boolean {
+    return status?.state === 'Queued' || status?.state === 'Running';
+  }
+
+  private startInventoryPolling(): void {
+    this.inventoryPollStop$.next();
+    timer(0, 2000).pipe(
+      switchMap(() => this.api.getInventoryStatus()),
+      takeWhile(status => this.inventoryIsRunning(status), true),
+      takeUntil(this.inventoryPollStop$),
+      takeUntil(this.destroy$)
+    ).subscribe({
+      next: status => {
+        this.inventoryStatus = status;
+        if (!this.inventoryIsRunning(status)) {
+          this.inventoryActionPending = false;
+          if (this.pendingAnalysisMessage &&
+              (status.state === 'Complete' || status.state === 'Partial')) {
+            const message = this.pendingAnalysisMessage;
+            this.pendingAnalysisMessage = '';
+            this.processCommand(message);
+          }
+        }
+      },
+      error: err => {
+        this.inventoryActionPending = false;
+        this.logger.error('[Spotifinator] Inventory polling failed:', err);
+      }
+    });
+  }
+
   onKeyDown(event: KeyboardEvent): void {
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
@@ -188,6 +262,11 @@ export class SpotifinatorComponent implements OnInit, OnDestroy, AfterViewChecke
         this.lastMessage = message;
         this.addAssistantMessage(response.message, response.data);
         this.viewState = 'idle';
+        if (this.isInventoryStatus(response.data) && this.inventoryIsRunning(response.data)) {
+          this.inventoryStatus = response.data;
+          this.pendingAnalysisMessage = message;
+          this.startInventoryPolling();
+        }
       },
       error: (err) => {
         this.removePendingMessage(pendingId);
@@ -297,6 +376,11 @@ What would you like to know?`,
     return !!data && typeof data === 'object' && !Array.isArray(data) && 'timeRange' in data;
   }
 
+  isInventoryStatus(data: unknown): data is SpotifyInventoryStatus {
+    return !!data && typeof data === 'object' && !Array.isArray(data) &&
+      'processedPlaylists' in data && 'state' in data;
+  }
+
   // ─── Rendering helpers ─────────────────────────────────────────────────────
 
   /**
@@ -315,6 +399,12 @@ What would you like to know?`,
     if (playlist.isOwnedByUser) return 'Yours';
     if (playlist.isCollaborative) return 'Collaborative';
     return playlist.ownerName ? `Followed · ${playlist.ownerName}` : 'Followed';
+  }
+
+  inventoryLabel(playlist: SpotifyPlaylist): string {
+    return playlist.inventoryAt
+      ? `Inventoried ${new Date(playlist.inventoryAt).toLocaleString()}`
+      : 'Not inventoried yet';
   }
 
   itemIcon(item: SpotifyPlaylistItem): string {
@@ -355,9 +445,9 @@ What would you like to know?`,
 
   duplicateLabel(group: SpotifyDuplicateItemGroup): string {
     const where = `positions ${group.positions.map(p => p + 1).join(', ')}`;
-    return group.confidence === 'Exact'
-      ? `${group.label} — same song at ${where}`
-      : `${group.label} — possibly the same recording at ${where}`;
+    if (group.confidence === 'Exact') return `${group.label} — same Spotify item at ${where}`;
+    if (group.confidence === 'Recording') return `${group.label} — same ISRC at ${where}`;
+    return `${group.label} — possibly the same recording at ${where}`;
   }
 
   /** Picks a playlist from a disambiguation card and re-asks the same question. */

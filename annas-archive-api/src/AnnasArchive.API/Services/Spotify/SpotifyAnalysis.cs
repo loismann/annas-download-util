@@ -20,10 +20,19 @@ public static class SpotifyAnalysis
 
     public static SpotifyLibraryAnalysis Analyze(
         IReadOnlyList<SpotifyPlaylistContents> library,
-        double nearDuplicateThreshold = NearDuplicateThreshold)
+        double nearDuplicateThreshold = NearDuplicateThreshold,
+        IReadOnlyList<SpotifyRecentPlaylistContextDto>? recentContexts = null)
     {
         var readable = library.Where(c => c.IsReadable).ToList();
         var unreadable = library.Where(c => !c.IsReadable).Select(c => c.Playlist).ToList();
+        var observedIds = (recentContexts ?? [])
+            .Select(context => context.PlaylistId)
+            .ToHashSet(StringComparer.Ordinal);
+        var observed = library.Select(c => c.Playlist).Where(p => observedIds.Contains(p.Id)).ToList();
+        var limitations = new List<string>();
+        if (unreadable.Count > 0)
+            limitations.Add($"{unreadable.Count} playlist(s) were unavailable or incomplete and were excluded.");
+        limitations.Add("Recent playback is a bounded observation window; no observed play is not evidence of no use.");
 
         return new SpotifyLibraryAnalysis(
             PlaylistsScanned: library.Count,
@@ -32,7 +41,11 @@ public static class SpotifyAnalysis
             Empty: FindEmpty(readable),
             DuplicateItems: readable.SelectMany(FindDuplicateItems).ToList(),
             OverlappingPlaylists: FindOverlaps(readable, nearDuplicateThreshold),
-            NamingCollisions: FindNamingCollisions(library.Select(c => c.Playlist).ToList()));
+            NamingCollisions: FindNamingCollisions(library.Select(c => c.Playlist).ToList()),
+            RecentlyObserved: observed,
+            UsageUnknown: library.Count - observed.Count,
+            Limitations: limitations,
+            GeneratedAt: DateTimeOffset.UtcNow);
     }
 
     /// <summary>
@@ -79,7 +92,8 @@ public static class SpotifyAnalysis
         var byRecording = contents.Items
             .Where(i => i.Kind == SpotifyItemKind.Track && !string.IsNullOrWhiteSpace(i.Name))
             .Where(i => !alreadyReported.Contains(i.Position))
-            .GroupBy(RecordingKey, StringComparer.Ordinal)
+            .GroupBy(RecordingMatchKey, StringComparer.Ordinal)
+            .Where(g => g.Key.Length > 0)
             .Where(g => g.Count() > 1)
             .ToList();
 
@@ -89,7 +103,9 @@ public static class SpotifyAnalysis
                 contents.Playlist.Id,
                 contents.Playlist.Name,
                 Describe(group.First()),
-                SpotifyDuplicateConfidence.Probable,
+                group.Key.StartsWith("isrc:", StringComparison.Ordinal)
+                    ? SpotifyDuplicateConfidence.Recording
+                    : SpotifyDuplicateConfidence.Probable,
                 group.Select(i => i.Position).OrderBy(p => p).ToList()));
         }
 
@@ -97,20 +113,21 @@ public static class SpotifyAnalysis
     }
 
     /// <summary>
-    /// Every readable pair that overlaps at all, keeping the ones that are identical,
-    /// a superset, or above the threshold. Compared as sets of URIs, so a playlist
-    /// containing the same song twice does not inflate its own similarity.
+    /// Every readable pair that overlaps at all, keeping exact ordered matches,
+    /// multisets contained by another playlist, or pairs above the set-Jaccard
+    /// threshold. Ordering and repeated occurrences therefore remain part of the
+    /// exact-duplicate decision without distorting near-duplicate similarity.
     /// </summary>
     public static IReadOnlyList<SpotifyPlaylistOverlap> FindOverlaps(
         IReadOnlyList<SpotifyPlaylistContents> readable,
         double nearDuplicateThreshold = NearDuplicateThreshold)
     {
         var sets = readable
-            .Select(c => (Contents: c, Uris: c.Items
+            .Select(c => (Contents: c, Sequence: c.Items
                 .Where(i => !string.IsNullOrWhiteSpace(i.Uri))
                 .Select(i => i.Uri!)
-                .ToHashSet(StringComparer.Ordinal)))
-            .Where(x => x.Uris.Count > 0)
+                .ToList()))
+            .Where(x => x.Sequence.Count > 0)
             .ToList();
 
         var overlaps = new List<SpotifyPlaylistOverlap>();
@@ -119,8 +136,10 @@ public static class SpotifyAnalysis
         {
             for (var j = i + 1; j < sets.Count; j++)
             {
-                var (left, leftUris) = sets[i];
-                var (right, rightUris) = sets[j];
+                var (left, leftSequence) = sets[i];
+                var (right, rightSequence) = sets[j];
+                var leftUris = leftSequence.ToHashSet(StringComparer.Ordinal);
+                var rightUris = rightSequence.ToHashSet(StringComparer.Ordinal);
 
                 var shared = leftUris.Count(rightUris.Contains);
                 if (shared == 0)
@@ -129,10 +148,10 @@ public static class SpotifyAnalysis
                 var union = leftUris.Count + rightUris.Count - shared;
                 var jaccard = (double)shared / union;
 
-                var identical = shared == leftUris.Count && shared == rightUris.Count;
+                var identical = leftSequence.SequenceEqual(rightSequence, StringComparer.Ordinal);
                 var supersetOf =
-                    !identical && shared == rightUris.Count ? right.Playlist.Id
-                    : !identical && shared == leftUris.Count ? left.Playlist.Id
+                    !identical && leftSequence.Count > rightSequence.Count && ContainsMultiset(leftSequence, rightSequence) ? right.Playlist.Id
+                    : !identical && rightSequence.Count > leftSequence.Count && ContainsMultiset(rightSequence, leftSequence) ? left.Playlist.Id
                     : null;
 
                 if (!identical && supersetOf == null && jaccard < nearDuplicateThreshold)
@@ -161,7 +180,7 @@ public static class SpotifyAnalysis
     public static IReadOnlyList<SpotifyNamingCollision> FindNamingCollisions(
         IReadOnlyList<SpotifyPlaylistDto> playlists) =>
         playlists
-            .GroupBy(p => SpotifyPlaylistResolver.Normalize(p.Name), StringComparer.Ordinal)
+            .GroupBy(p => NormalizeComparableName(p.Name), StringComparer.Ordinal)
             .Where(g => g.Count() > 1 && g.Key.Length > 0)
             .Select(g => new SpotifyNamingCollision(g.Key, g.ToList()))
             .ToList();
@@ -173,6 +192,34 @@ public static class SpotifyAnalysis
     /// </summary>
     internal static string RecordingKey(SpotifyPlaylistItemDto item) =>
         $"{SpotifyPlaylistResolver.Normalize(item.Artists)}|{SpotifyPlaylistResolver.Normalize(item.Name)}";
+
+    private static string RecordingMatchKey(SpotifyPlaylistItemDto item) =>
+        !string.IsNullOrWhiteSpace(item.Isrc)
+            ? $"isrc:{item.Isrc.Trim().ToUpperInvariant()}"
+            : $"name:{RecordingKey(item)}";
+
+    private static bool ContainsMultiset(IReadOnlyList<string> possibleSuperset, IReadOnlyList<string> subset)
+    {
+        var counts = possibleSuperset
+            .GroupBy(uri => uri, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.Count(), StringComparer.Ordinal);
+        foreach (var uri in subset)
+        {
+            if (!counts.TryGetValue(uri, out var remaining) || remaining == 0)
+                return false;
+            counts[uri] = remaining - 1;
+        }
+        return true;
+    }
+
+    private static string NormalizeComparableName(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            return string.Empty;
+        var withoutYear = System.Text.RegularExpressions.Regex.Replace(
+            name, @"(?:[\s\-–—_()\[\]]*)(?:19|20)\d{2}\s*$", string.Empty);
+        return SpotifyPlaylistResolver.Normalize(withoutYear);
+    }
 
     private static string Describe(SpotifyPlaylistItemDto item) =>
         string.IsNullOrWhiteSpace(item.Artists) ? item.Name ?? "Unknown" : $"{item.Name} — {item.Artists}";

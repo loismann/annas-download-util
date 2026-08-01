@@ -106,6 +106,34 @@ public class SpotifyInventoryReadTests
     // ─── recent playlist contexts ────────────────────────────────────────────
 
     [Fact]
+    public async Task ReturnsTrackMetadataFromRecentHistoryForKnownMusicIndexing()
+    {
+        var service = ServiceReturning(HttpStatusCode.OK, """
+            {
+              "items": [{
+                "played_at": "2026-08-01T10:00:00Z",
+                "context": { "type": "playlist", "uri": "spotify:playlist:a" },
+                "track": {
+                  "id": "t1", "name": "Mystery Train", "uri": "spotify:track:t1",
+                  "duration_ms": 145000, "is_local": false,
+                  "artists": [{ "id": "a1", "name": "Elvis Presley" }],
+                  "album": { "id": "al1", "name": "Sun Sessions", "images": [] },
+                  "external_urls": { "spotify": "https://open.spotify.com/track/t1" },
+                  "external_ids": { "isrc": "USRC17607839" }
+                }
+              }]
+            }
+            """);
+
+        var recent = await service.GetRecentlyPlayedTracksAsync();
+
+        recent.Should().ContainSingle();
+        recent[0].Track.Name.Should().Be("Mystery Train");
+        recent[0].Track.Isrc.Should().Be("USRC17607839");
+        recent[0].ContextUri.Should().Be("spotify:playlist:a");
+    }
+
+    [Fact]
     public async Task CountsHowOftenEachPlaylistAppearsInRecentHistory()
     {
         var service = ServiceReturning(HttpStatusCode.OK, """

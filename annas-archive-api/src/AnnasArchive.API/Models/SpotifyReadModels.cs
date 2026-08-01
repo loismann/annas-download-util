@@ -19,7 +19,13 @@ public enum SpotifyContentsAccess
     Unavailable,
 
     /// <summary>The item endpoint answered 403 — followed, but not owned or collaborative.</summary>
-    Forbidden
+    Forbidden,
+
+    /// <summary>
+    /// Spotify returned at least one page, but the complete collection could not be
+    /// read. Partial contents are useful evidence, but never safe input for cleanup.
+    /// </summary>
+    Partial
 }
 
 /// <summary>
@@ -47,7 +53,8 @@ public record SpotifyPlaylistItemDto(
     int DurationMs,
     string? SpotifyUrl,
     bool IsLocal,
-    DateTimeOffset? AddedAt
+    DateTimeOffset? AddedAt,
+    string? Isrc = null
 );
 
 public record SpotifyPlaylistItemsPageDto(
@@ -101,6 +108,13 @@ public record SpotifyRecentPlaylistContextDto(
     string? Name,
     int ObservedPlays,
     string? SpotifyUrl
+);
+
+public record SpotifyRecentTrackDto(
+    SpotifyPlaylistItemDto Track,
+    DateTimeOffset? PlayedAt,
+    string? ContextType,
+    string? ContextUri
 );
 
 // ─── Typed command envelope ──────────────────────────────────────────────────

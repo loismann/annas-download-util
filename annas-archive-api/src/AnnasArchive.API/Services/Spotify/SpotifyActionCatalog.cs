@@ -24,6 +24,7 @@ public enum SpotifyReadAction
     ComparePlaylists,
     GetTopItems,
     GetRecentPlaylistContexts,
+    GetKnownMusic,
     ExplainCapability
 }
 
@@ -91,6 +92,9 @@ public static class SpotifyActionCatalog
 
         new(SpotifyReadAction.GetRecentPlaylistContexts, "get_recent_playlist_contexts",
             "Which playlists appear most often in recent listening history."),
+
+        new(SpotifyReadAction.GetKnownMusic, "get_known_music",
+            "Summarize what artists and tracks appear in the user's accessible playlists, top-item windows, and recent history."),
 
         new(SpotifyReadAction.ExplainCapability, "explain_capability",
             "The user is asking what this assistant can or cannot do, or why something is unavailable.")

@@ -53,6 +53,35 @@
         @if (connection.warning) {
           <div class="connection-warning">{{ connection.warning }}</div>
         }
+
+
+        @if (connection.isConnected) {
+          <div class="inventory-summary">
+            <div class="inventory-copy">
+              <strong>Library inventory</strong>
+              @if (inventoryStatus?.lastInventoryAt) {
+                <span>Last refreshed {{ formatConnectionDate(inventoryStatus!.lastInventoryAt) }}</span>
+              } @else {
+                <span>Not refreshed yet</span>
+              }
+            </div>
+            <button mat-stroked-button
+                    (click)="refreshInventory()"
+                    [disabled]="inventoryActionPending || inventoryIsRunning(inventoryStatus)">
+              {{ inventoryIsRunning(inventoryStatus) ? 'Refreshing…' : 'Refresh inventory' }}
+            </button>
+          </div>
+          @if (inventoryStatus && inventoryIsRunning(inventoryStatus)) {
+            <mat-progress-bar mode="determinate" [value]="inventoryProgress(inventoryStatus)"></mat-progress-bar>
+            <div class="inventory-progress">
+              {{ inventoryStatus.message }}
+            </div>
+          } @else if (inventoryStatus?.message) {
+            <div class="inventory-progress" [class.inventory-problem]="inventoryStatus?.state === 'Failed'">
+              {{ inventoryStatus!.message }}
+            </div>
+          }
+        }
         @if (connection.missingScopes.length > 0) {
           <div class="missing-scopes">Missing: {{ connection.missingScopes.join(', ') }}</div>
         }
@@ -115,7 +144,7 @@
                         }
                         <div matListItemTitle>{{ playlist.name }}</div>
                         <div matListItemLine>
-                          {{ itemCountLabel(playlist) }} · {{ ownershipLabel(playlist) }}
+                          {{ itemCountLabel(playlist) }} · {{ ownershipLabel(playlist) }} · {{ inventoryLabel(playlist) }}
                         </div>
                         <button
                           matListItemMeta
@@ -144,7 +173,7 @@
                     <div class="playlist-info">
                       <span class="playlist-name">{{ message.data.name }}</span>
                       <span class="playlist-tracks">
-                        {{ itemCountLabel(message.data) }} · {{ ownershipLabel(message.data) }}
+                        {{ itemCountLabel(message.data) }} · {{ ownershipLabel(message.data) }} · {{ inventoryLabel(message.data) }}
                       </span>
                     </div>
                   </mat-card>
@@ -206,7 +235,7 @@
                       @for (group of message.data.duplicateItems; track group.playlistId + group.label) {
                         <mat-list-item>
                           <mat-icon matListItemAvatar>
-                            {{ group.confidence === 'Exact' ? 'content_copy' : 'help_outline' }}
+                            {{ group.confidence === 'Exact' ? 'content_copy' : group.confidence === 'Recording' ? 'fingerprint' : 'help_outline' }}
                           </mat-icon>
                           <div matListItemTitle>{{ group.playlistName }}</div>
                           <div matListItemLine>{{ duplicateLabel(group) }}</div>
@@ -240,8 +269,10 @@
                             {{ collision.playlists.length }} playlists named alike
                           </div>
                           <div matListItemLine>
-                            @for (p of collision.playlists; track p.id) {{{ p.name }}&nbsp;</div>
-                          }
+                            @for (p of collision.playlists; track p.id) {
+                              <span>{{ p.name }}&nbsp;</span>
+                            }
+                          </div>
                         </mat-list-item>
                       }
                     </mat-list>
@@ -259,6 +290,28 @@
                       }
                     </mat-list>
                   }
+
+                  @if (message.data.recentlyObserved.length > 0) {
+                    <h4>Observed in recent playback ({{ message.data.recentlyObserved.length }})</h4>
+                    <div class="analysis-note">
+                      {{ message.data.usageUnknown }} other playlist(s) have unknown recent usage—not zero usage.
+                    </div>
+                  }
+
+                  @if (message.data.limitations.length > 0) {
+                    <div class="analysis-note">
+                      @for (limitation of message.data.limitations; track limitation) {
+                        <div>{{ limitation }}</div>
+                      }
+                    </div>
+                  }
+                </div>
+              }
+
+              @if (isInventoryStatus(message.data)) {
+                <div class="results-container analysis-warning">
+                  <mat-icon>sync</mat-icon>
+                  <span>{{ message.data.message }}</span>
                 </div>
               }
 

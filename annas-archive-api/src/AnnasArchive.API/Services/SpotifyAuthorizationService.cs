@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using AnnasArchive.API.Infrastructure;
 using AnnasArchive.API.Models;
+using AnnasArchive.API.Services.Spotify;
 using Microsoft.AspNetCore.Http.Extensions;
 using Microsoft.Extensions.Options;
 using Serilog;
@@ -20,12 +21,15 @@ public interface ISpotifyAuthorizationService
         string? error,
         CancellationToken token = default);
     SpotifyConnectionStatusDto GetStatus(string ownerKey);
-    void Disconnect(string ownerKey);
+    Task DisconnectAsync(string ownerKey);
 }
 
 public interface ISpotifyAccessTokenProvider
 {
     Task<string> GetAccessTokenAsync(bool forceRefresh = false, CancellationToken token = default);
+    Task<string> GetAccessTokenForOwnerAsync(
+        string ownerKey, bool forceRefresh = false, CancellationToken token = default) =>
+        GetAccessTokenAsync(forceRefresh, token);
 
     /// <summary>
     /// Spotify user ID of the connection belonging to the *calling* application
@@ -33,9 +37,18 @@ public interface ISpotifyAccessTokenProvider
     /// comparison against this ID, not against whoever authorized first.
     /// </summary>
     string GetConnectedSpotifyUserId();
+    string GetConnectedSpotifyUserId(string ownerKey) => GetConnectedSpotifyUserId();
     Task RecordSuccessfulCallAsync(CancellationToken token = default);
+    Task RecordSuccessfulCallForOwnerAsync(string ownerKey, CancellationToken token = default) =>
+        RecordSuccessfulCallAsync(token);
     Task RecordApiFailureAsync(SpotifyApiException exception, CancellationToken token = default);
+    Task RecordApiFailureForOwnerAsync(
+        string ownerKey, SpotifyApiException exception, CancellationToken token = default) =>
+        RecordApiFailureAsync(exception, token);
     Task RecordUnavailableAsync(string message, CancellationToken token = default);
+    Task RecordUnavailableForOwnerAsync(
+        string ownerKey, string message, CancellationToken token = default) =>
+        RecordUnavailableAsync(message, token);
 }
 
 public sealed class SpotifyAuthorizationService : ISpotifyAuthorizationService, ISpotifyAccessTokenProvider
@@ -62,6 +75,8 @@ public sealed class SpotifyAuthorizationService : ISpotifyAuthorizationService, 
     private readonly ISpotifyOAuthStateStore _states;
     private readonly ISpotifyCurrentUser _currentUser;
     private readonly TimeProvider _timeProvider;
+    private readonly ISpotifyInventoryStore? _inventoryStore;
+    private readonly ISpotifyInventoryJobService? _inventoryJobs;
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _refreshLocks = new(StringComparer.Ordinal);
 
     public SpotifyAuthorizationService(
@@ -70,7 +85,9 @@ public sealed class SpotifyAuthorizationService : ISpotifyAuthorizationService, 
         ISpotifyConnectionStore connections,
         ISpotifyOAuthStateStore states,
         ISpotifyCurrentUser currentUser,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        ISpotifyInventoryStore? inventoryStore = null,
+        ISpotifyInventoryJobService? inventoryJobs = null)
     {
         _httpClientFactory = httpClientFactory;
         _config = config.Value;
@@ -78,6 +95,8 @@ public sealed class SpotifyAuthorizationService : ISpotifyAuthorizationService, 
         _states = states;
         _currentUser = currentUser;
         _timeProvider = timeProvider;
+        _inventoryStore = inventoryStore;
+        _inventoryJobs = inventoryJobs;
     }
 
     public Uri CreateAuthorizationUri(string ownerKey, bool forceDialog = false)
@@ -133,6 +152,15 @@ public sealed class SpotifyAuthorizationService : ISpotifyAuthorizationService, 
         var grantedScopes = NormalizeScopes(tokenResponse.Scope);
         var profile = await RequestProfileAsync(tokenResponse.AccessToken, token);
         var accountId = string.IsNullOrWhiteSpace(profile.AccountId) ? profile.Id : profile.AccountId;
+
+        var previousConnection = _connections.Get(ownerKey);
+        if (previousConnection != null &&
+            !string.Equals(previousConnection.SpotifyUserId, profile.Id, StringComparison.Ordinal))
+        {
+            if (_inventoryJobs != null)
+                await _inventoryJobs.CancelAsync(ownerKey);
+            _inventoryStore?.ClearOwner(ownerKey);
+        }
 
         var connection = new SpotifyConnectionRecord(
             ownerKey,
@@ -203,16 +231,23 @@ public sealed class SpotifyAuthorizationService : ISpotifyAuthorizationService, 
             connection.LastError);
     }
 
-    public void Disconnect(string ownerKey)
+    public async Task DisconnectAsync(string ownerKey)
     {
+        if (_inventoryJobs != null)
+            await _inventoryJobs.CancelAsync(ownerKey);
         _connections.Delete(ownerKey);
+        _inventoryStore?.ClearOwner(ownerKey);
         Log.Information("[Spotify] Local Spotify connection removed for owner {OwnerKeyHash}",
             ownerKey.GetHashCode(StringComparison.Ordinal));
     }
 
     public string GetConnectedSpotifyUserId()
     {
-        var ownerKey = _currentUser.GetRequiredOwnerKey();
+        return GetConnectedSpotifyUserId(_currentUser.GetRequiredOwnerKey());
+    }
+
+    public string GetConnectedSpotifyUserId(string ownerKey)
+    {
         var connection = _connections.Get(ownerKey)
             ?? throw new SpotifyConnectionException(
                 "Spotify is not connected.",
@@ -223,9 +258,14 @@ public sealed class SpotifyAuthorizationService : ISpotifyAuthorizationService, 
 
     public async Task<string> GetAccessTokenAsync(
         bool forceRefresh = false,
+        CancellationToken token = default) =>
+        await GetAccessTokenForOwnerAsync(_currentUser.GetRequiredOwnerKey(), forceRefresh, token);
+
+    public async Task<string> GetAccessTokenForOwnerAsync(
+        string ownerKey,
+        bool forceRefresh = false,
         CancellationToken token = default)
     {
-        var ownerKey = _currentUser.GetRequiredOwnerKey();
         var connection = _connections.Get(ownerKey)
             ?? throw new SpotifyConnectionException(
                 "Spotify is not connected.",
@@ -262,7 +302,10 @@ public sealed class SpotifyAuthorizationService : ISpotifyAuthorizationService, 
     }
 
     public Task RecordSuccessfulCallAsync(CancellationToken token = default) =>
-        UpdateCurrentConnectionAsync(connection =>
+        RecordSuccessfulCallForOwnerAsync(_currentUser.GetRequiredOwnerKey(), token);
+
+    public Task RecordSuccessfulCallForOwnerAsync(string ownerKey, CancellationToken token = default) =>
+        UpdateConnectionAsync(ownerKey, connection =>
         {
             var state = MissingScopes(connection.GrantedScopes).Count == 0
                 ? SpotifyConnectionState.Connected
@@ -277,7 +320,11 @@ public sealed class SpotifyAuthorizationService : ISpotifyAuthorizationService, 
         }, token);
 
     public Task RecordApiFailureAsync(SpotifyApiException exception, CancellationToken token = default) =>
-        UpdateCurrentConnectionAsync(connection =>
+        RecordApiFailureForOwnerAsync(_currentUser.GetRequiredOwnerKey(), exception, token);
+
+    public Task RecordApiFailureForOwnerAsync(
+        string ownerKey, SpotifyApiException exception, CancellationToken token = default) =>
+        UpdateConnectionAsync(ownerKey, connection =>
         {
             var state = exception.SpotifyStatusCode switch
             {
@@ -299,7 +346,11 @@ public sealed class SpotifyAuthorizationService : ISpotifyAuthorizationService, 
         }, token);
 
     public Task RecordUnavailableAsync(string message, CancellationToken token = default) =>
-        UpdateCurrentConnectionAsync(connection => connection with
+        RecordUnavailableForOwnerAsync(_currentUser.GetRequiredOwnerKey(), message, token);
+
+    public Task RecordUnavailableForOwnerAsync(
+        string ownerKey, string message, CancellationToken token = default) =>
+        UpdateConnectionAsync(ownerKey, connection => connection with
         {
             State = SpotifyConnectionState.SpotifyUnavailable,
             LastError = message
@@ -454,12 +505,12 @@ public sealed class SpotifyAuthorizationService : ISpotifyAuthorizationService, 
                 HttpStatusCode.BadGateway);
     }
 
-    private Task UpdateCurrentConnectionAsync(
+    private Task UpdateConnectionAsync(
+        string ownerKey,
         Func<SpotifyConnectionRecord, SpotifyConnectionRecord> update,
         CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
-        var ownerKey = _currentUser.GetRequiredOwnerKey();
         var refreshLock = _refreshLocks.GetOrAdd(ownerKey, static _ => new SemaphoreSlim(1, 1));
         return UpdateUnderLockAsync(ownerKey, refreshLock, update, token);
     }

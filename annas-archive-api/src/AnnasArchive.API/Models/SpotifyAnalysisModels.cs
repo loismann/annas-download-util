@@ -19,7 +19,10 @@ public enum SpotifyDuplicateConfidence
     Exact,
 
     /// <summary>Same normalized artist and title. Probably the same recording, possibly not.</summary>
-    Probable
+    Probable,
+
+    /// <summary>Different Spotify URIs with the same recording-level ISRC.</summary>
+    Recording
 }
 
 public record SpotifyDuplicateItemGroup(
@@ -64,7 +67,11 @@ public record SpotifyLibraryAnalysis(
     IReadOnlyList<SpotifyEmptyPlaylist> Empty,
     IReadOnlyList<SpotifyDuplicateItemGroup> DuplicateItems,
     IReadOnlyList<SpotifyPlaylistOverlap> OverlappingPlaylists,
-    IReadOnlyList<SpotifyNamingCollision> NamingCollisions
+    IReadOnlyList<SpotifyNamingCollision> NamingCollisions,
+    IReadOnlyList<SpotifyPlaylistDto>? RecentlyObserved = null,
+    int UsageUnknown = 0,
+    IReadOnlyList<string>? Limitations = null,
+    DateTimeOffset? GeneratedAt = null
 );
 
 // ─── top items and the known-music index ─────────────────────────────────────
@@ -88,5 +95,51 @@ public record SpotifyKnownMusicIndex(
     int PlaylistsIncluded,
     int UnreadablePlaylists,
     bool IncludesTopItems,
-    bool IncludesRecentHistory
+    bool IncludesRecentHistory,
+    int ExplicitOverrides = 0
+);
+
+public record SpotifyKnownMusicReport(
+    SpotifyKnownMusicIndex Index,
+    string Coverage,
+    DateTimeOffset GeneratedAt
+);
+
+public enum SpotifyInventoryJobState
+{
+    NotStarted,
+    Queued,
+    Running,
+    Complete,
+    Partial,
+    Failed
+}
+
+public record SpotifyInventoryStatusDto(
+    string? JobId,
+    SpotifyInventoryJobState State,
+    int TotalPlaylists,
+    int ProcessedPlaylists,
+    int ReadablePlaylists,
+    int PartialPlaylists,
+    int UnreadablePlaylists,
+    DateTimeOffset? StartedAt,
+    DateTimeOffset? UpdatedAt,
+    DateTimeOffset? CompletedAt,
+    DateTimeOffset? LastInventoryAt,
+    string? Message = null
+);
+
+public record SpotifyKnownMusicOverrideRequest(
+    string Kind,
+    string Name,
+    bool Known,
+    string? Artist = null
+);
+
+public record SpotifyKnownMusicOverrideResult(
+    string Kind,
+    string Name,
+    bool Known,
+    DateTimeOffset UpdatedAt
 );

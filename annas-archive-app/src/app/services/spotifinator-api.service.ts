@@ -9,6 +9,10 @@ import {
   SpotifyPlaylistItemsPage,
   SpotifyConnectionStatus,
   SpotifyAuthorizeResponse,
+  SpotifyInventoryStatus,
+  SpotifyLibraryAnalysis,
+  SpotifyKnownMusicReport,
+  SpotifyKnownMusicOverrideResult,
   CommandResponse
 } from '../spotifinator/spotifinator.models';
 import { apiBase } from './api-base';
@@ -66,6 +70,30 @@ export class SpotifinatorApiService {
         playlistId, count: page.items.length, access: page.access
       }))
     );
+  }
+
+  startInventoryRefresh(): Observable<SpotifyInventoryStatus> {
+    return this.http.post<SpotifyInventoryStatus>(`${this.baseUrl}/inventory/refresh`, {});
+  }
+
+  getInventoryStatus(): Observable<SpotifyInventoryStatus> {
+    return this.http.get<SpotifyInventoryStatus>(`${this.baseUrl}/inventory/status`);
+  }
+
+  getAnalysis(): Observable<SpotifyLibraryAnalysis> {
+    return this.http.get<SpotifyLibraryAnalysis>(`${this.baseUrl}/analysis`);
+  }
+
+  getKnownMusic(): Observable<SpotifyKnownMusicReport> {
+    return this.http.get<SpotifyKnownMusicReport>(`${this.baseUrl}/known-music`);
+  }
+
+  setKnownMusicOverride(
+    kind: 'artist' | 'track', name: string, known: boolean, artist?: string
+  ): Observable<SpotifyKnownMusicOverrideResult> {
+    return this.http.put<SpotifyKnownMusicOverrideResult>(`${this.baseUrl}/known-music/override`, {
+      kind, name, known, artist
+    });
   }
 
   // ─── Conversation ──────────────────────────────────────────────────────────

@@ -103,7 +103,19 @@ public class SpotifyInventoryServiceTests
         var contents = await inventory.GetContentsAsync(Playlist("p", "Partial"));
 
         contents.Items.Should().HaveCount(50);
-        contents.IsReadable.Should().BeTrue();
+        contents.Access.Should().Be(SpotifyContentsAccess.Partial);
+        contents.IsReadable.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task MarksAMissingNextPagePartialEvenWhenSpotifyOmitsTheNextLink()
+    {
+        var inventory = new SpotifyInventoryService(new TruncatedSpotify());
+
+        var contents = await inventory.GetContentsAsync(Playlist("p", "Truncated"));
+
+        contents.Items.Should().HaveCount(50);
+        contents.Access.Should().Be(SpotifyContentsAccess.Partial);
     }
 
     [Fact]
@@ -205,6 +217,15 @@ public class SpotifyInventoryServiceTests
                     playlistId, Enumerable.Range(0, 50).Select(Item).ToList(), 120, 0, 50, HasMore: true)
                 : new SpotifyPlaylistItemsPageDto(
                     playlistId, [], 0, offset, limit, false, SpotifyContentsAccess.Unavailable));
+    }
+
+    private sealed class TruncatedSpotify : SpotifyStub
+    {
+        public override Task<SpotifyPlaylistItemsPageDto> GetPlaylistItemsAsync(
+            string playlistId, int offset = 0, int limit = 50, CancellationToken token = default) =>
+            Task.FromResult(new SpotifyPlaylistItemsPageDto(
+                playlistId, Enumerable.Range(0, 50).Select(Item).ToList(), 120,
+                offset, limit, HasMore: false));
     }
 
     private sealed class ThrowsForSpotify(string failingPlaylistId) : SpotifyStub

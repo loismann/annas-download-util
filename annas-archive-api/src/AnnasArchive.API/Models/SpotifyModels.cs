@@ -28,7 +28,15 @@ public record SpotifyTrackItem(
     [property: JsonPropertyName("duration_ms")] int DurationMs,
     [property: JsonPropertyName("artists")] List<SpotifyArtist> Artists,
     [property: JsonPropertyName("album")] SpotifyAlbum Album,
-    [property: JsonPropertyName("external_urls")] SpotifyExternalUrls? ExternalUrls
+    [property: JsonPropertyName("external_urls")] SpotifyExternalUrls? ExternalUrls,
+    [property: JsonPropertyName("external_ids")] SpotifyExternalIds? ExternalIds = null,
+    [property: JsonPropertyName("is_local")] bool IsLocal = false
+);
+
+public record SpotifyExternalIds(
+    [property: JsonPropertyName("isrc")] string? Isrc = null,
+    [property: JsonPropertyName("ean")] string? Ean = null,
+    [property: JsonPropertyName("upc")] string? Upc = null
 );
 
 public record SpotifyArtist(
@@ -132,7 +140,8 @@ public record SpotifyPlaylistPlayableItem(
     [property: JsonPropertyName("artists")] List<SpotifyArtist>? Artists,
     [property: JsonPropertyName("album")] SpotifyAlbum? Album,
     [property: JsonPropertyName("external_urls")] SpotifyExternalUrls? ExternalUrls,
-    [property: JsonPropertyName("is_local")] bool IsLocal = false
+    [property: JsonPropertyName("is_local")] bool IsLocal = false,
+    [property: JsonPropertyName("external_ids")] SpotifyExternalIds? ExternalIds = null
 );
 
 public record SpotifyRecentlyPlayedResponse(
@@ -140,6 +149,7 @@ public record SpotifyRecentlyPlayedResponse(
 );
 
 public record SpotifyRecentlyPlayedEntry(
+    [property: JsonPropertyName("track")] SpotifyTrackItem? Track,
     [property: JsonPropertyName("played_at")] DateTimeOffset? PlayedAt,
     [property: JsonPropertyName("context")] SpotifyPlaybackContext? Context
 );
@@ -228,7 +238,8 @@ public record SpotifyPlaylistDto(
     bool IsOwnedByUser = false,
     bool IsCollaborative = false,
     bool? IsPublic = null,
-    string? Uri = null
+    string? Uri = null,
+    DateTimeOffset? InventoryAt = null
 );
 
 public record SpotifyAuthorizeRequest(bool ForceDialog = false);

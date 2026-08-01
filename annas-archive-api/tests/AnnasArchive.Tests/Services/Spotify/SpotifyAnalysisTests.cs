@@ -23,6 +23,7 @@ public class SpotifyAnalysisTests
     [Theory]
     [InlineData(SpotifyContentsAccess.Forbidden)]
     [InlineData(SpotifyContentsAccess.Unavailable)]
+    [InlineData(SpotifyContentsAccess.Partial)]
     public void NeverCallsAnUnreadablePlaylistEmpty(SpotifyContentsAccess access)
     {
         // The whole point. An unreadable playlist in a delete list is data loss.
@@ -62,6 +63,19 @@ public class SpotifyAnalysisTests
 
         analysis.DuplicateItems.Should().ContainSingle()
             .Which.Confidence.Should().Be(SpotifyDuplicateConfidence.Probable);
+    }
+
+    [Fact]
+    public void UsesIsrcAsRecordingLevelEvidence()
+    {
+        var analysis = SpotifyAnalysis.Analyze([
+            Readable("a", "Same recording",
+                Track("Different title", uri: "spotify:track:1", isrc: "USRC10000001"),
+                Track("Original title", uri: "spotify:track:2", isrc: "USRC10000001"))
+        ]);
+
+        analysis.DuplicateItems.Should().ContainSingle()
+            .Which.Confidence.Should().Be(SpotifyDuplicateConfidence.Recording);
     }
 
     [Fact]
@@ -125,15 +139,16 @@ public class SpotifyAnalysisTests
     }
 
     [Fact]
-    public void TreatsDifferentOrderingAsIdentical()
+    public void DoesNotTreatDifferentOrderingAsAnExactDuplicate()
     {
-        // Sets, not sequences. Reordering a playlist does not make it a new one.
         var analysis = SpotifyAnalysis.Analyze([
             Readable("a", "One", Track("x", uri: "spotify:track:1"), Track("y", uri: "spotify:track:2")),
             Readable("b", "Two", Track("y", uri: "spotify:track:2"), Track("x", uri: "spotify:track:1"))
         ]);
 
-        analysis.OverlappingPlaylists.Should().ContainSingle().Which.Identical.Should().BeTrue();
+        var overlap = analysis.OverlappingPlaylists.Should().ContainSingle().Subject;
+        overlap.Identical.Should().BeFalse();
+        overlap.Overlap.Should().Be(1.0);
     }
 
     [Fact]
@@ -233,10 +248,10 @@ public class SpotifyAnalysisTests
     }
 
     [Fact]
-    public void DoesNotReportDistinctNamesAsColliding()
+    public void TreatsTrailingYearSuffixesAsNamingVariants()
     {
         SpotifyAnalysis.Analyze([Readable("a", "Road Trip 2025"), Readable("b", "Road Trip 2026")])
-            .NamingCollisions.Should().BeEmpty();
+            .NamingCollisions.Should().ContainSingle();
     }
 
     // ─── helpers ─────────────────────────────────────────────────────────────
@@ -251,9 +266,10 @@ public class SpotifyAnalysisTests
         new(new SpotifyPlaylistDto(id, name, null, null, null, ContentsAvailable: false),
             [], access, $"snap-{id}");
 
-    private static SpotifyPlaylistItemDto Track(string name, string artists = "Artist", string? uri = null) =>
+    private static SpotifyPlaylistItemDto Track(
+        string name, string artists = "Artist", string? uri = null, string? isrc = null) =>
         new(0, SpotifyItemKind.Track, "id", name, uri ?? $"spotify:track:{name}", artists,
-            "Album", 1000, null, false, null);
+            "Album", 1000, null, false, null, isrc);
 
     private static SpotifyPlaylistItemDto Local(string name) =>
         new(0, SpotifyItemKind.Local, null, name, null, "Artist", null, 1000, null, true, null);

@@ -113,6 +113,38 @@
   font-size: 0.8rem;
 }
 
+.inventory-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.inventory-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.inventory-progress {
+  margin-top: 0.35rem;
+  color: #555;
+  font-size: 0.85rem;
+}
+
+.inventory-problem {
+  color: #b3261e;
+}
+
+.analysis-note {
+  margin-top: 0.75rem;
+  color: #555;
+  font-size: 0.88rem;
+}
+
 .connection-warning,
 .missing-scopes {
   color: #9a5b00;

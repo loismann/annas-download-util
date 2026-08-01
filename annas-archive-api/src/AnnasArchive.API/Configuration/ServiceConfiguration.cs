@@ -623,10 +623,14 @@ public static class ServiceConfiguration
         services.AddSingleton<ISpotifyCommandParser, SpotifyCommandParser>();
         services.AddScoped<ISpotifyConversationService, SpotifyConversationService>();
 
-        // Scoped, not singleton: its snapshot cache holds playlist contents, which
-        // belong to whichever connected account made the request. A singleton would
-        // share one person's library with the next caller.
+        // Spotify inventory is persisted in the shared SQLite database but every row
+        // is keyed by a one-way hash of the application owner. The scoped reader can
+        // use the current request identity; the singleton job runner creates scopes
+        // and supplies an explicit owner key after the browser disconnects.
+        services.AddSingleton<ISpotifyInventoryStore, SpotifyInventoryStore>();
         services.AddScoped<ISpotifyInventoryService, SpotifyInventoryService>();
+        services.AddSingleton<ISpotifyInventoryJobService, SpotifyInventoryJobService>();
+        services.AddScoped<ISpotifyKnownMusicService, SpotifyKnownMusicService>();
 
         // Text processing
         services.AddSingleton<ITextProcessingService, TextProcessingService>();

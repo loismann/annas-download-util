@@ -107,7 +107,7 @@
                 <div class="results-container">
                   <mat-list class="playlist-list">
                     @for (playlist of message.data; track playlist.id) {
-                      <mat-list-item class="playlist-item" (click)="openInSpotify(playlist.spotifyUrl)">
+                      <mat-list-item class="playlist-item" (click)="selectPlaylist(playlist)">
                         @if (playlist.imageUrl) {
                           <img matListItemAvatar [src]="playlist.imageUrl" [alt]="playlist.name" class="playlist-art" />
                         } @else {
@@ -115,12 +115,17 @@
                         }
                         <div matListItemTitle>{{ playlist.name }}</div>
                         <div matListItemLine>
-                          @if (playlist.contentsAvailable) {
-                            {{ playlist.trackCount }} tracks
-                          } @else {
-                            Contents unavailable
-                          }
+                          {{ itemCountLabel(playlist) }} · {{ ownershipLabel(playlist) }}
                         </div>
+                        <button
+                          matListItemMeta
+                          mat-icon-button
+                          matTooltip="Open in Spotify"
+                          [disabled]="!playlist.spotifyUrl"
+                          (click)="$event.stopPropagation(); openInSpotify(playlist.spotifyUrl)"
+                        >
+                          <mat-icon>open_in_new</mat-icon>
+                        </button>
                       </mat-list-item>
                     }
                   </mat-list>
@@ -139,62 +144,153 @@
                     <div class="playlist-info">
                       <span class="playlist-name">{{ message.data.name }}</span>
                       <span class="playlist-tracks">
-                        @if (message.data.contentsAvailable) {
-                          {{ message.data.trackCount }} tracks
-                        } @else {
-                          Contents unavailable
-                        }
+                        {{ itemCountLabel(message.data) }} · {{ ownershipLabel(message.data) }}
                       </span>
                     </div>
                   </mat-card>
                 </div>
               }
 
-              <!-- Vibe generation results -->
-              @if (isVibeGenerationResult(message.data)) {
+              <!-- Playlist contents -->
+              @if (isItemsPage(message.data)) {
                 <div class="results-container">
-                  <!-- Show created playlist if available -->
-                  @if (message.data.createdPlaylist) {
-                    <div class="single-playlist" style="margin-bottom: 1rem;">
-                      <mat-card class="playlist-card" (click)="openInSpotify(message.data.createdPlaylist.spotifyUrl)">
-                        @if (message.data.createdPlaylist.imageUrl) {
-                          <img [src]="message.data.createdPlaylist.imageUrl" [alt]="message.data.createdPlaylist.name" class="playlist-cover" />
-                        } @else {
-                          <mat-icon class="playlist-placeholder">queue_music</mat-icon>
-                        }
-                        <div class="playlist-info">
-                          <span class="playlist-name">{{ message.data.createdPlaylist.name }}</span>
-                          <span class="playlist-tracks">{{ message.data.createdPlaylist.trackCount }} tracks</span>
-                        </div>
-                      </mat-card>
+                  @if (message.data.items.length > 0) {
+                    <mat-list class="track-list">
+                      @for (item of message.data.items; track item.position) {
+                        <mat-list-item class="track-item" (click)="openInSpotify(item.spotifyUrl)">
+                          <mat-icon matListItemAvatar>{{ itemIcon(item) }}</mat-icon>
+                          <div matListItemTitle class="track-title">
+                            {{ item.position + 1 }}. {{ item.name || 'No longer available on Spotify' }}
+                          </div>
+                          <div matListItemLine class="track-meta">{{ itemMeta(item) }}</div>
+                        </mat-list-item>
+                      }
+                    </mat-list>
+                  }
+                  @if (message.data.hasMore) {
+                    <button mat-stroked-button class="load-more" (click)="loadMoreItems(message.data)">
+                      Show the next {{ message.data.limit }}
+                    </button>
+                  }
+                </div>
+              }
+
+              <!-- Library analysis -->
+              @if (isAnalysis(message.data)) {
+                <div class="results-container analysis">
+                  @if (!analysisIsComplete(message.data)) {
+                    <div class="analysis-warning">
+                      <mat-icon>warning</mat-icon>
+                      <span>
+                        {{ message.data.unreadable.length }} playlist(s) could not be read. Everything
+                        below excludes them, so these are minimums — do not treat them as a full picture.
+                      </span>
                     </div>
                   }
 
-                  <!-- Show found tracks -->
-                  @if (message.data.foundTracks.length > 0) {
-                    <mat-list class="track-list">
-                      @for (track of message.data.foundTracks; track track.id) {
-                        <mat-list-item class="track-item" (click)="openInSpotify(track.spotifyUrl)">
-                          @if (track.albumArtUrl) {
-                            <img matListItemAvatar [src]="track.albumArtUrl" [alt]="track.albumName" class="album-art" />
-                          } @else {
-                            <mat-icon matListItemAvatar>album</mat-icon>
-                          }
-                          <div matListItemTitle class="track-title">{{ track.name }}</div>
-                          <div matListItemLine class="track-meta">
-                            {{ track.artists }} · {{ track.albumName }} · {{ formatDuration(track.durationMs) }}
+                  @if (message.data.empty.length > 0) {
+                    <h4>Empty playlists ({{ message.data.empty.length }})</h4>
+                    <mat-list class="playlist-list">
+                      @for (item of message.data.empty; track item.playlistId) {
+                        <mat-list-item>
+                          <mat-icon matListItemAvatar>inbox</mat-icon>
+                          <div matListItemTitle>{{ item.name }}</div>
+                        </mat-list-item>
+                      }
+                    </mat-list>
+                  }
+
+                  @if (message.data.duplicateItems.length > 0) {
+                    <h4>Repeated songs ({{ message.data.duplicateItems.length }})</h4>
+                    <mat-list class="playlist-list">
+                      @for (group of message.data.duplicateItems; track group.playlistId + group.label) {
+                        <mat-list-item>
+                          <mat-icon matListItemAvatar>
+                            {{ group.confidence === 'Exact' ? 'content_copy' : 'help_outline' }}
+                          </mat-icon>
+                          <div matListItemTitle>{{ group.playlistName }}</div>
+                          <div matListItemLine>{{ duplicateLabel(group) }}</div>
+                        </mat-list-item>
+                      }
+                    </mat-list>
+                  }
+
+                  @if (message.data.overlappingPlaylists.length > 0) {
+                    <h4>Overlapping playlists ({{ message.data.overlappingPlaylists.length }})</h4>
+                    <mat-list class="playlist-list">
+                      @for (overlap of message.data.overlappingPlaylists; track overlap.leftId + overlap.rightId) {
+                        <mat-list-item>
+                          <mat-icon matListItemAvatar>join_inner</mat-icon>
+                          <div matListItemTitle>{{ overlap.leftName }} ↔ {{ overlap.rightName }}</div>
+                          <div matListItemLine>
+                            {{ overlapLabel(overlap) }} · {{ overlap.sharedItems }} shared
                           </div>
                         </mat-list-item>
                       }
                     </mat-list>
                   }
 
-                  <!-- Show not found songs -->
-                  @if (message.data.notFoundSongs.length > 0) {
-                    <div class="not-found-songs">
-                      <small>Couldn't find on Spotify: {{ message.data.notFoundSongs.join(', ') }}</small>
-                    </div>
+                  @if (message.data.namingCollisions.length > 0) {
+                    <h4>Confusingly similar names ({{ message.data.namingCollisions.length }})</h4>
+                    <mat-list class="playlist-list">
+                      @for (collision of message.data.namingCollisions; track collision.normalized) {
+                        <mat-list-item>
+                          <mat-icon matListItemAvatar>label</mat-icon>
+                          <div matListItemTitle>
+                            {{ collision.playlists.length }} playlists named alike
+                          </div>
+                          <div matListItemLine>
+                            @for (p of collision.playlists; track p.id) {{{ p.name }}&nbsp;</div>
+                          }
+                        </mat-list-item>
+                      }
+                    </mat-list>
                   }
+
+                  @if (message.data.unreadable.length > 0) {
+                    <h4>Could not be read ({{ message.data.unreadable.length }})</h4>
+                    <mat-list class="playlist-list">
+                      @for (playlist of message.data.unreadable; track playlist.id) {
+                        <mat-list-item>
+                          <mat-icon matListItemAvatar>lock</mat-icon>
+                          <div matListItemTitle>{{ playlist.name }}</div>
+                          <div matListItemLine>{{ ownershipLabel(playlist) }}</div>
+                        </mat-list-item>
+                      }
+                    </mat-list>
+                  }
+                </div>
+              }
+
+              <!-- Top tracks / artists -->
+              @if (isTopItems(message.data)) {
+                <div class="results-container">
+                  <mat-list class="playlist-list">
+                    @for (item of message.data.items; track item.id) {
+                      <mat-list-item class="playlist-item" (click)="openInSpotify(item.spotifyUrl)">
+                        <mat-icon matListItemAvatar>{{ message.data.kind === 'artists' ? 'person' : 'music_note' }}</mat-icon>
+                        <div matListItemTitle>{{ item.rank }}. {{ item.name }}</div>
+                        @if (item.detail) {
+                          <div matListItemLine>{{ item.detail }}</div>
+                        }
+                      </mat-list-item>
+                    }
+                  </mat-list>
+                </div>
+              }
+
+              <!-- Recent playlist contexts -->
+              @if (isRecentContexts(message.data)) {
+                <div class="results-container">
+                  <mat-list class="playlist-list">
+                    @for (context of message.data; track context.playlistId) {
+                      <mat-list-item class="playlist-item" (click)="openInSpotify(context.spotifyUrl)">
+                        <mat-icon matListItemAvatar>history</mat-icon>
+                        <div matListItemTitle>{{ context.name || context.playlistId }}</div>
+                        <div matListItemLine>{{ context.observedPlays }} observed in recent history</div>
+                      </mat-list-item>
+                    }
+                  </mat-list>
                 </div>
               }
             }

@@ -65,7 +65,10 @@ public class SpotifyServiceTests
         playlists[0].TrackCount.Should().Be(17);
         playlists[0].ContentsAvailable.Should().BeTrue();
         playlists[0].SnapshotId.Should().Be("snapshot-owned");
-        playlists[1].TrackCount.Should().Be(0);
+        // null, not 0. Phase 1 mapped a missing `items` summary to zero, which is
+        // precisely the "followed playlist looks empty" bug the spec calls out.
+        // The unknown now survives to the UI so it can say so.
+        playlists[1].TrackCount.Should().BeNull();
         playlists[1].ContentsAvailable.Should().BeFalse();
         requestedUris.Count(uri => uri.Host == "api.spotify.com").Should().Be(2);
     }
@@ -194,8 +197,12 @@ public class SpotifyServiceTests
 
     private sealed class StubAccessTokenProvider : ISpotifyAccessTokenProvider
     {
+        public string ConnectedSpotifyUserId { get; set; } = "test-spotify-user";
+
         public Task<string> GetAccessTokenAsync(bool forceRefresh = false, CancellationToken token = default) =>
             Task.FromResult("test-access-token");
+
+        public string GetConnectedSpotifyUserId() => ConnectedSpotifyUserId;
 
         public Task RecordSuccessfulCallAsync(CancellationToken token = default) => Task.CompletedTask;
 

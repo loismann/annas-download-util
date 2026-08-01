@@ -6,6 +6,7 @@ import { LoggerService } from './logger.service';
 import {
   SpotifySearchResult,
   SpotifyPlaylist,
+  SpotifyPlaylistItemsPage,
   SpotifyConnectionStatus,
   SpotifyAuthorizeResponse,
   CommandResponse
@@ -52,45 +53,36 @@ export class SpotifinatorApiService {
     );
   }
 
-  createPlaylist(name: string, description?: string, isPublic = false): Observable<SpotifyPlaylist> {
-    return this.http.post<SpotifyPlaylist>(`${this.baseUrl}/playlists`, {
-      name,
-      description,
-      public: isPublic
-    }).pipe(
-      tap(playlist => this.logger.log('[Spotifinator] Playlist created', { id: playlist.id, name: playlist.name }))
-    );
+  getPlaylist(playlistId: string): Observable<SpotifyPlaylist> {
+    return this.http.get<SpotifyPlaylist>(`${this.baseUrl}/playlists/${encodeURIComponent(playlistId)}`);
   }
 
-  addTracksToPlaylist(playlistId: string, trackUris: string[]): Observable<{ success: boolean; added: number }> {
-    return this.http.post<{ success: boolean; added: number }>(
-      `${this.baseUrl}/playlists/${playlistId}/items`,
-      { playlistId, trackUris }
+  getPlaylistItems(playlistId: string, offset = 0, limit = 50): Observable<SpotifyPlaylistItemsPage> {
+    return this.http.get<SpotifyPlaylistItemsPage>(
+      `${this.baseUrl}/playlists/${encodeURIComponent(playlistId)}/items`,
+      { params: { offset: offset.toString(), limit: limit.toString() } }
     ).pipe(
-      tap(result => this.logger.log('[Spotifinator] Tracks added', { playlistId, count: result.added }))
+      tap(page => this.logger.log('[Spotifinator] Playlist items loaded', {
+        playlistId, count: page.items.length, access: page.access
+      }))
     );
   }
 
-  removeTracksFromPlaylist(playlistId: string, trackUris: string[]): Observable<{ success: boolean; removed: number }> {
-    return this.http.request<{ success: boolean; removed: number }>(
-      'DELETE',
-      `${this.baseUrl}/playlists/${playlistId}/items`,
-      { body: { playlistId, trackUris } }
-    ).pipe(
-      tap(result => this.logger.log('[Spotifinator] Tracks removed', { playlistId, count: result.removed }))
-    );
-  }
+  // ─── Conversation ──────────────────────────────────────────────────────────
 
-  // ─── AI Command Processing ─────────────────────────────────────────────────
-
-  processCommand(userMessage: string, conversationContext?: string): Observable<CommandResponse> {
+  /**
+   * `playlistId` pins a playlist the user picked from a disambiguation card, so
+   * the next turn does not re-ask which "Chill" they meant.
+   */
+  processCommand(userMessage: string, playlistId?: string, offset?: number): Observable<CommandResponse> {
     return this.http.post<CommandResponse>(`${this.baseUrl}/command`, {
       message: userMessage,
-      context: conversationContext
+      playlistId,
+      offset
     }).pipe(
       tap(response => this.logger.log('[Spotifinator] Command processed', {
-        action: response.parsed.action,
-        confidence: response.parsed.confidence
+        action: response.action,
+        confidence: response.confidence
       }))
     );
   }

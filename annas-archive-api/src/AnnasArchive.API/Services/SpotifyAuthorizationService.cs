@@ -26,6 +26,13 @@ public interface ISpotifyAuthorizationService
 public interface ISpotifyAccessTokenProvider
 {
     Task<string> GetAccessTokenAsync(bool forceRefresh = false, CancellationToken token = default);
+
+    /// <summary>
+    /// Spotify user ID of the connection belonging to the *calling* application
+    /// user. Ownership checks need it — "did I create this playlist" is a
+    /// comparison against this ID, not against whoever authorized first.
+    /// </summary>
+    string GetConnectedSpotifyUserId();
     Task RecordSuccessfulCallAsync(CancellationToken token = default);
     Task RecordApiFailureAsync(SpotifyApiException exception, CancellationToken token = default);
     Task RecordUnavailableAsync(string message, CancellationToken token = default);
@@ -201,6 +208,17 @@ public sealed class SpotifyAuthorizationService : ISpotifyAuthorizationService, 
         _connections.Delete(ownerKey);
         Log.Information("[Spotify] Local Spotify connection removed for owner {OwnerKeyHash}",
             ownerKey.GetHashCode(StringComparison.Ordinal));
+    }
+
+    public string GetConnectedSpotifyUserId()
+    {
+        var ownerKey = _currentUser.GetRequiredOwnerKey();
+        var connection = _connections.Get(ownerKey)
+            ?? throw new SpotifyConnectionException(
+                "Spotify is not connected.",
+                "Disconnected");
+
+        return connection.SpotifyUserId;
     }
 
     public async Task<string> GetAccessTokenAsync(

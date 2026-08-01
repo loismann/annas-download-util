@@ -135,6 +135,46 @@ public record SpotifyPlaylistPlayableItem(
     [property: JsonPropertyName("is_local")] bool IsLocal = false
 );
 
+public record SpotifyRecentlyPlayedResponse(
+    [property: JsonPropertyName("items")] List<SpotifyRecentlyPlayedEntry>? Items
+);
+
+public record SpotifyRecentlyPlayedEntry(
+    [property: JsonPropertyName("played_at")] DateTimeOffset? PlayedAt,
+    [property: JsonPropertyName("context")] SpotifyPlaybackContext? Context
+);
+
+/// <summary>
+/// The playback context a track was played from. Frequently null — Spotify reports
+/// no context for many plays — and often an album or artist rather than a playlist.
+/// Both cases mean "no evidence", never "not listened to".
+/// </summary>
+public record SpotifyPlaybackContext(
+    [property: JsonPropertyName("type")] string? Type,
+    [property: JsonPropertyName("uri")] string? Uri,
+    [property: JsonPropertyName("external_urls")] SpotifyExternalUrls? ExternalUrls
+);
+
+public record SpotifyTopItemsResponse(
+    [property: JsonPropertyName("items")] List<SpotifyTopItem>? Items
+);
+
+/// <summary>
+/// /me/top/tracks and /me/top/artists return the same envelope with different item
+/// shapes — a track carries artists and an album, an artist carries genres and
+/// neither. Both are read through this one nullable-heavy record.
+/// </summary>
+public record SpotifyTopItem(
+    [property: JsonPropertyName("id")] string? Id,
+    [property: JsonPropertyName("name")] string? Name,
+    [property: JsonPropertyName("uri")] string? Uri,
+    [property: JsonPropertyName("type")] string? Type,
+    [property: JsonPropertyName("artists")] List<SpotifyArtist>? Artists,
+    [property: JsonPropertyName("album")] SpotifyAlbum? Album,
+    [property: JsonPropertyName("genres")] List<string>? Genres,
+    [property: JsonPropertyName("external_urls")] SpotifyExternalUrls? ExternalUrls
+);
+
 // ─── Request/Response DTOs for Endpoints ─────────────────────────────────────
 
 public record SpotifySearchRequest(
@@ -169,14 +209,26 @@ public record AddTracksRequest(
     List<string> TrackUris
 );
 
+/// <summary>
+/// <paramref name="TrackCount"/> is nullable on purpose. Spotify omits the
+/// <c>items</c> summary for playlists whose contents it will not expose, and the
+/// only honest rendering of that is "unavailable" — never 0. Pair it with
+/// <paramref name="ContentsAvailable"/>: false means the count is unknown, not zero.
+/// </summary>
 public record SpotifyPlaylistDto(
     string Id,
     string Name,
     string? ImageUrl,
-    int TrackCount,
+    int? TrackCount,
     string? SpotifyUrl,
     bool ContentsAvailable = true,
-    string? SnapshotId = null
+    string? SnapshotId = null,
+    string? OwnerId = null,
+    string? OwnerName = null,
+    bool IsOwnedByUser = false,
+    bool IsCollaborative = false,
+    bool? IsPublic = null,
+    string? Uri = null
 );
 
 public record SpotifyAuthorizeRequest(bool ForceDialog = false);

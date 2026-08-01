@@ -17,12 +17,18 @@ import { SpotifinatorApiService } from '../services/spotifinator-api.service';
 import { LoggerService } from '../services/logger.service';
 import {
   ChatMessage,
+  CommandData,
   ViewState,
-  SpotifyTrack,
   SpotifyPlaylist,
+  SpotifyPlaylistItem,
+  SpotifyPlaylistItemsPage,
+  SpotifyRecentPlaylistContext,
+  SpotifyLibraryAnalysis,
+  SpotifyPlaylistOverlap,
+  SpotifyDuplicateItemGroup,
+  SpotifyTopItems,
   SpotifySearchResult,
-  SpotifyConnectionStatus,
-  VibeGenerationResult
+  SpotifyConnectionStatus
 } from './spotifinator.models';
 
 @Component({
@@ -59,6 +65,9 @@ export class SpotifinatorComponent implements OnInit, OnDestroy, AfterViewChecke
 
   private destroy$ = new Subject<void>();
   private shouldScrollToBottom = false;
+
+  /** Replayed when the user picks a playlist or pages, so the intent is not lost. */
+  private lastMessage = '';
 
   constructor(
     private api: SpotifinatorApiService,
@@ -167,18 +176,17 @@ export class SpotifinatorComponent implements OnInit, OnDestroy, AfterViewChecke
 
   // ─── Command Processing ────────────────────────────────────────────────────
 
-  private processCommand(message: string): void {
+  private processCommand(message: string, playlistId?: string, offset?: number): void {
     this.viewState = 'processing';
     const pendingId = this.addPendingMessage();
 
-    const context = this.getConversationContext();
-
-    this.api.processCommand(message, context).pipe(
+    this.api.processCommand(message, playlistId, offset).pipe(
       takeUntil(this.destroy$)
     ).subscribe({
       next: (response) => {
         this.removePendingMessage(pendingId);
-        this.addAssistantMessage(response.naturalResponse, response.data);
+        this.lastMessage = message;
+        this.addAssistantMessage(response.message, response.data);
         this.viewState = 'idle';
       },
       error: (err) => {
@@ -198,14 +206,17 @@ export class SpotifinatorComponent implements OnInit, OnDestroy, AfterViewChecke
     this.messages.push({
       id: this.generateId(),
       role: 'assistant',
-      content: `Hey! I'm your Spotify assistant. You can ask me things like:
+      content: `Hey! I can read your Spotify library. Try:
 
-- "Search for songs by Taylor Swift"
 - "Show me my playlists"
+- "What songs are in <playlist name>?"
+- "List my Best Of playlists"
+- "What have I been listening to lately?"
 
-Playlist changes are paused until the reviewed change-plan flow is ready.
+I can't create, rename, or delete anything yet — those arrive with the reviewed
+change-plan flow, where you'll see exactly what will happen before it does.
 
-What would you like to do?`,
+What would you like to know?`,
       timestamp: new Date()
     });
   }
@@ -242,7 +253,7 @@ What would you like to do?`,
 
   private addAssistantMessage(
     content: string,
-    data?: SpotifySearchResult | SpotifyPlaylist[] | SpotifyPlaylist | VibeGenerationResult | null,
+    data?: CommandData,
     isError = false
   ): void {
     this.messages.push({
@@ -256,14 +267,6 @@ What would you like to do?`,
     this.shouldScrollToBottom = true;
   }
 
-  private getConversationContext(): string {
-    return this.messages
-      .slice(-6)
-      .filter(m => !m.pending)
-      .map(m => `${m.role}: ${m.content}`)
-      .join('\n');
-  }
-
   // ─── Data Type Guards ──────────────────────────────────────────────────────
 
   isSearchResult(data: unknown): data is SpotifySearchResult {
@@ -271,15 +274,127 @@ What would you like to do?`,
   }
 
   isPlaylistArray(data: unknown): data is SpotifyPlaylist[] {
-    return Array.isArray(data) && data.length > 0 && 'trackCount' in data[0];
+    return Array.isArray(data) && data.length > 0 && 'contentsAvailable' in data[0];
   }
 
   isPlaylist(data: unknown): data is SpotifyPlaylist {
-    return !!data && typeof data === 'object' && 'trackCount' in data && !Array.isArray(data);
+    return !!data && typeof data === 'object' && !Array.isArray(data) && 'contentsAvailable' in data;
   }
 
-  isVibeGenerationResult(data: unknown): data is VibeGenerationResult {
-    return !!data && typeof data === 'object' && 'foundTracks' in data && Array.isArray((data as VibeGenerationResult).foundTracks);
+  isItemsPage(data: unknown): data is SpotifyPlaylistItemsPage {
+    return !!data && typeof data === 'object' && !Array.isArray(data) && 'access' in data;
+  }
+
+  isRecentContexts(data: unknown): data is SpotifyRecentPlaylistContext[] {
+    return Array.isArray(data) && data.length > 0 && 'observedPlays' in data[0];
+  }
+
+  isAnalysis(data: unknown): data is SpotifyLibraryAnalysis {
+    return !!data && typeof data === 'object' && !Array.isArray(data) && 'playlistsScanned' in data;
+  }
+
+  isTopItems(data: unknown): data is SpotifyTopItems {
+    return !!data && typeof data === 'object' && !Array.isArray(data) && 'timeRange' in data;
+  }
+
+  // ─── Rendering helpers ─────────────────────────────────────────────────────
+
+  /**
+   * Never renders a number when the count is unknown. The whole point of
+   * `trackCount: number | null` is that "0 items" and "Spotify won't tell me"
+   * must not look the same.
+   */
+  itemCountLabel(playlist: SpotifyPlaylist): string {
+    if (!playlist.contentsAvailable || playlist.trackCount === null) {
+      return 'Contents unavailable';
+    }
+    return playlist.trackCount === 1 ? '1 item' : `${playlist.trackCount} items`;
+  }
+
+  ownershipLabel(playlist: SpotifyPlaylist): string {
+    if (playlist.isOwnedByUser) return 'Yours';
+    if (playlist.isCollaborative) return 'Collaborative';
+    return playlist.ownerName ? `Followed · ${playlist.ownerName}` : 'Followed';
+  }
+
+  itemIcon(item: SpotifyPlaylistItem): string {
+    switch (item.kind) {
+      case 'Episode': return 'podcasts';
+      case 'Local': return 'sd_storage';
+      case 'Unavailable': return 'help_outline';
+      default: return 'music_note';
+    }
+  }
+
+  itemMeta(item: SpotifyPlaylistItem): string {
+    if (item.kind === 'Unavailable') {
+      return 'This item is no longer on Spotify';
+    }
+
+    const parts = [item.artists, item.albumName].filter(Boolean);
+    if (item.kind === 'Local') parts.push('local file');
+    if (item.durationMs > 0) parts.push(this.formatDuration(item.durationMs));
+    return parts.join(' · ');
+  }
+
+
+  /**
+   * Whether an analysis is safe to act on. False whenever any playlist could not
+   * be read — the counts below it are then a floor, not a total, and the UI has to
+   * say so before anyone treats a list of "empty" playlists as a delete list.
+   */
+  analysisIsComplete(analysis: SpotifyLibraryAnalysis): boolean {
+    return analysis.unreadable.length === 0;
+  }
+
+  overlapLabel(overlap: SpotifyPlaylistOverlap): string {
+    if (overlap.identical) return 'Identical';
+    if (overlap.supersetOf) return 'One contains the other';
+    return `${Math.round(overlap.overlap * 100)}% overlap`;
+  }
+
+  duplicateLabel(group: SpotifyDuplicateItemGroup): string {
+    const where = `positions ${group.positions.map(p => p + 1).join(', ')}`;
+    return group.confidence === 'Exact'
+      ? `${group.label} — same song at ${where}`
+      : `${group.label} — possibly the same recording at ${where}`;
+  }
+
+  /** Picks a playlist from a disambiguation card and re-asks the same question. */
+  selectPlaylist(playlist: SpotifyPlaylist): void {
+    this.addUserMessage(playlist.name);
+    this.processCommand(this.lastMessage || `what is in ${playlist.name}`, playlist.id);
+  }
+
+  /**
+   * Pages straight off the items endpoint. Routing "show more" back through the
+   * conversation would spend an AI call to re-derive an intent we already know,
+   * and a re-classification could land on a different action entirely.
+   */
+  loadMoreItems(page: SpotifyPlaylistItemsPage): void {
+    if (this.viewState === 'processing') return;
+
+    this.viewState = 'processing';
+    const pendingId = this.addPendingMessage();
+    const nextOffset = page.offset + page.items.length;
+
+    this.api.getPlaylistItems(page.playlistId, nextOffset, page.limit).pipe(
+      takeUntil(this.destroy$)
+    ).subscribe({
+      next: (next) => {
+        this.removePendingMessage(pendingId);
+        const last = nextOffset + next.items.length;
+        this.addAssistantMessage(`Showing ${nextOffset + 1}–${last} of ${next.total}:`, next);
+        this.viewState = 'idle';
+      },
+      error: (err) => {
+        this.removePendingMessage(pendingId);
+        this.addAssistantMessage(
+          `Sorry, I could not load more: ${err.error?.error || err.message}`, null, true);
+        this.viewState = 'error';
+        this.logger.error('[Spotifinator] Paging failed:', err);
+      }
+    });
   }
 
   // ─── Track Actions ─────────────────────────────────────────────────────────

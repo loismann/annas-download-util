@@ -29,10 +29,21 @@
     background: linear-gradient(135deg, #1db954, #191414);
     color: white;
     border-radius: 50%;
-    padding: 8px;
-    font-size: 24px;
     width: 40px;
     height: 40px;
+    font-size: 24px;
+
+    // Centre the glyph with flexbox rather than padding. A mat-icon is a font
+    // character, so `padding: 8px` only centres its em box — the visible ink
+    // sits high within that box, and the default `line-height: normal` (~28px
+    // at this size) overflows the 40px circle, pushing it higher still.
+    // line-height: 1 plus flex centring positions the rendered glyph itself.
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    padding: 0;
+    line-height: 1;
   }
 
   mat-card-content {

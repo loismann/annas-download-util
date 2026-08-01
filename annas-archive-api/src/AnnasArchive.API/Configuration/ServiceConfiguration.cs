@@ -1,4 +1,5 @@
 using System.Net;
+using AnnasArchive.API.Services.Spotify;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
@@ -616,6 +617,16 @@ public static class ServiceConfiguration
             provider.GetRequiredService<SpotifyAuthorizationService>());
         services.AddSingleton<ISpotifyAccessTokenProvider>(provider =>
             provider.GetRequiredService<SpotifyAuthorizationService>());
+
+        // Read-only conversational inspector. The parser only classifies intent;
+        // the conversation service owns every fact and every sentence about them.
+        services.AddSingleton<ISpotifyCommandParser, SpotifyCommandParser>();
+        services.AddScoped<ISpotifyConversationService, SpotifyConversationService>();
+
+        // Scoped, not singleton: its snapshot cache holds playlist contents, which
+        // belong to whichever connected account made the request. A singleton would
+        // share one person's library with the next caller.
+        services.AddScoped<ISpotifyInventoryService, SpotifyInventoryService>();
 
         // Text processing
         services.AddSingleton<ITextProcessingService, TextProcessingService>();

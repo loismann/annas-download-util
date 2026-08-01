@@ -87,11 +87,22 @@ public static class SpotifyEndpoints
                 : "authorization_failed";
         }
 
+        return Results.Redirect(BuildCallbackRedirect(result, config.Value.FrontendBaseUrl));
+    }
+
+    /// <summary>
+    /// Where the browser lands after Spotify's callback. The <c>?spotify=</c> result
+    /// must sit in a real query string, which is only true because the app serves
+    /// path-based URLs. Under the previous hash routing this same value landed
+    /// before the <c>#</c>, where Angular's router could not see it — a successful
+    /// connection and a failed one both looked like silently landing on the wrong
+    /// page. Reintroducing <c>#/</c> here would restore that bug.
+    /// </summary>
+    public static string BuildCallbackRedirect(string result, string? frontendBaseUrl)
+    {
         var path = $"/spotifinator?spotify={Uri.EscapeDataString(result)}";
-        var frontendBaseUrl = config.Value.FrontendBaseUrl?.TrimEnd('/');
-        return Results.Redirect(string.IsNullOrWhiteSpace(frontendBaseUrl)
-            ? path
-            : frontendBaseUrl + path);
+        var trimmedBase = frontendBaseUrl?.TrimEnd('/');
+        return string.IsNullOrWhiteSpace(trimmedBase) ? path : trimmedBase + path;
     }
 
     private static async Task<IResult> HandleSearch(

@@ -65,7 +65,7 @@ test.describe('Library Tile Size Controls', () => {
   test.beforeEach(async ({ page }) => {
     await mockLibraryRoute(page, testBooks);
     await setAuthToken(page);
-    await page.goto('/#/library');
+    await page.goto('/library');
     // Wait for virtual scroll viewport (replaces .library-grid)
     await page.waitForSelector('.library-grid-scroll', { timeout: 15000 });
   });

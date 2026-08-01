@@ -92,7 +92,7 @@ const mockLibraryError = async (page: Page) => {
 const openLibraryPage = async (page: Page) => {
   const responsePromise = page.waitForResponse('**/api/library/books**');
   await setAuthToken(page);
-  await page.goto(`/#/library?e2e=${Date.now()}`);
+  await page.goto(`/library?e2e=${Date.now()}`);
   await responsePromise;
 };
 
@@ -161,7 +161,7 @@ test.describe('Library - Basic Navigation', () => {
     });
 
     await setAuthToken(page);
-    await page.goto(`/#/library?e2e=${Date.now()}`);
+    await page.goto(`/library?e2e=${Date.now()}`);
 
     const loadingSpinner = page.locator('.library-loading mat-spinner');
     await expect(loadingSpinner).toBeVisible({ timeout: 2000 });

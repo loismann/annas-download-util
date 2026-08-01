@@ -145,7 +145,7 @@ test.describe('Reader - Deep Linking', () => {
     );
 
     // Navigate with fileName parameter
-    await page.goto(`/#/reader?fileName=${encodeURIComponent(testBook.fileName)}&e2e=${Date.now()}`);
+    await page.goto(`/reader?fileName=${encodeURIComponent(testBook.fileName)}&e2e=${Date.now()}`);
     await page.locator('app-book-reader').waitFor({ state: 'visible', timeout: 10000 });
 
     // Wait for chapters to load
@@ -174,7 +174,7 @@ test.describe('Reader - Deep Linking', () => {
     );
 
     // Navigate with fileName and chapterId parameters
-    await page.goto(`/#/reader?fileName=${encodeURIComponent(testBook.fileName)}&chapterId=2&e2e=${Date.now()}`);
+    await page.goto(`/reader?fileName=${encodeURIComponent(testBook.fileName)}&chapterId=2&e2e=${Date.now()}`);
     await page.locator('app-book-reader').waitFor({ state: 'visible', timeout: 10000 });
 
     // Wait for chapters and content to load
@@ -202,7 +202,7 @@ test.describe('Reader - Deep Linking', () => {
     );
 
     // Navigate to reader and select book/chapter
-    await page.goto(`/#/reader?fileName=${encodeURIComponent(testBook.fileName)}&chapterId=2&e2e=${Date.now()}`);
+    await page.goto(`/reader?fileName=${encodeURIComponent(testBook.fileName)}&chapterId=2&e2e=${Date.now()}`);
     await page.locator('app-book-reader').waitFor({ state: 'visible', timeout: 10000 });
 
     // Wait for chapter content to load
@@ -238,7 +238,7 @@ test.describe('Reader - Deep Linking', () => {
     );
 
     // Navigate to reader and open a book
-    await page.goto(`/#/reader?fileName=${encodeURIComponent(testBook.fileName)}&chapterId=1&e2e=${Date.now()}`);
+    await page.goto(`/reader?fileName=${encodeURIComponent(testBook.fileName)}&chapterId=1&e2e=${Date.now()}`);
     await page.locator('app-book-reader').waitFor({ state: 'visible', timeout: 10000 });
 
     // Wait for content to load
@@ -270,7 +270,7 @@ test.describe('Reader - Deep Linking', () => {
     const booksResponsePromise = page.waitForResponse('**/api/library/reader/books**');
 
     // Navigate to reader without any params
-    await page.goto(`/#/reader?e2e=${Date.now()}`);
+    await page.goto(`/reader?e2e=${Date.now()}`);
     await page.locator('app-book-reader').waitFor({ state: 'visible', timeout: 10000 });
 
     // Wait for books to load
@@ -304,7 +304,7 @@ test.describe('Reader - Deep Linking', () => {
     const booksResponsePromise = page.waitForResponse('**/api/library/reader/books**');
 
     // Navigate to reader
-    await page.goto(`/#/reader?e2e=${Date.now()}`);
+    await page.goto(`/reader?e2e=${Date.now()}`);
     await page.locator('app-book-reader').waitFor({ state: 'visible', timeout: 10000 });
 
     // Wait for books to load
@@ -333,7 +333,7 @@ test.describe('Reader - Deep Linking', () => {
     );
 
     // Navigate with invalid chapter
-    await page.goto(`/#/reader?fileName=${encodeURIComponent(testBook.fileName)}&chapterId=999&e2e=${Date.now()}`);
+    await page.goto(`/reader?fileName=${encodeURIComponent(testBook.fileName)}&chapterId=999&e2e=${Date.now()}`);
     await page.locator('app-book-reader').waitFor({ state: 'visible', timeout: 10000 });
 
     // Wait for chapters to load

@@ -85,7 +85,7 @@ async function setAuthToken(page: Page): Promise<void> {
 
 async function openSearchPage(page: Page): Promise<void> {
   await setAuthToken(page);
-  await page.goto('/#/search');
+  await page.goto('/search');
   await expect(page.locator('app-book-search')).toBeVisible();
 }
 
@@ -564,7 +564,7 @@ test.describe('Book Send and Download Actions', () => {
       });
 
       await setAuthToken(page);
-      await page.goto('/#/search');
+      await page.goto('/search');
       await expect(page.locator('.download-counter.warning-yellow')).toBeVisible();
 
       // Test orange warning (20 downloads left)

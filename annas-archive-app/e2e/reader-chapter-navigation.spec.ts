@@ -156,7 +156,7 @@ const mockChapterContentError = async (page: Page, fileName: string) => {
 
 const openReaderPage = async (page: Page) => {
   await setAuthToken(page);
-  await page.goto(`/#/reader?e2e=${Date.now()}`);
+  await page.goto(`/reader?e2e=${Date.now()}`);
   await page.locator('app-book-reader').waitFor({ state: 'visible', timeout: 10000 });
   await page.waitForTimeout(1000);
 };

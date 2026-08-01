@@ -25,7 +25,7 @@ test.describe('Spotifinator Admin Access', () => {
   test.afterEach(async ({ page }) => {
     try {
       const url = page.url();
-      if (!url.includes('#/login')) {
+      if (!url.includes('/login')) {
         const logoutButton = page.locator('button:has-text("Logout")').first();
         if (await logoutButton.isVisible({ timeout: 1000 })) {
           await logoutButton.click();
@@ -103,7 +103,7 @@ test.describe('Spotifinator Admin Access', () => {
     await page.waitForTimeout(2000);
 
     // Navigate to spotifinator
-    await page.goto('/#/spotifinator', { timeout: 30000 });
+    await page.goto('/spotifinator', { timeout: 30000 });
     await page.waitForLoadState('domcontentloaded', { timeout: 10000 });
 
     // Should successfully access spotifinator page
@@ -120,7 +120,7 @@ test.describe('Spotifinator Admin Access', () => {
     });
 
     // Try to access spotifinator without authentication
-    await page.goto('/#/spotifinator');
+    await page.goto('/spotifinator');
 
     // Should be redirected to login
     await expect(page).toHaveURL(/#\/login/, { timeout: 5000 });
@@ -144,7 +144,7 @@ test.describe('Spotifinator Admin Access', () => {
     await page.waitForTimeout(2000);
 
     // Navigate to spotifinator
-    await page.goto('/#/spotifinator', { timeout: 30000 });
+    await page.goto('/spotifinator', { timeout: 30000 });
     await page.waitForLoadState('domcontentloaded', { timeout: 10000 });
 
     // Check page title
@@ -180,7 +180,7 @@ test.describe('Spotifinator Admin Access', () => {
     await page.waitForTimeout(2000);
 
     // Navigate to spotifinator
-    await page.goto('/#/spotifinator', { timeout: 30000 });
+    await page.goto('/spotifinator', { timeout: 30000 });
     await page.waitForLoadState('domcontentloaded', { timeout: 10000 });
 
     // Check container styling
@@ -222,7 +222,7 @@ test.describe('Spotifinator Admin Access', () => {
     await page.waitForTimeout(2000);
 
     // Navigate to spotifinator
-    await page.goto('/#/spotifinator', { timeout: 30000 });
+    await page.goto('/spotifinator', { timeout: 30000 });
     await page.waitForLoadState('domcontentloaded', { timeout: 10000 });
 
     // Verify page is visible and content is accessible

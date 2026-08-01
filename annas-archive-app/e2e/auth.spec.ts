@@ -30,7 +30,7 @@ test.describe('Authentication Flow', () => {
     try {
       // If on a page that's not login, try to logout
       const url = page.url();
-      if (!url.includes('#/login')) {
+      if (!url.includes('/login')) {
         // Check if logout button exists and click it
         const logoutButton = page.locator('button:has-text("Logout"), button:has-text("Sign Out"), mat-icon:has-text("logout")').first();
         if (await logoutButton.isVisible({ timeout: 1000 })) {
@@ -93,7 +93,7 @@ test.describe('Authentication Flow', () => {
     });
 
     // Try to navigate to a protected route
-    await page.goto('/#/library', { timeout: 30000 });
+    await page.goto('/library', { timeout: 30000 });
 
     // Wait for DOM to load and potential redirect to complete
     await page.waitForLoadState('domcontentloaded', { timeout: 10000 });
@@ -102,7 +102,7 @@ test.describe('Authentication Flow', () => {
     // The app might stay on library or redirect to login depending on implementation
     // We just verify the expired token doesn't grant access
     const url = page.url();
-    const isOnLoginOrHasNoAccess = url.includes('#/login') || url.includes('#/search') || url.includes('#/library');
+    const isOnLoginOrHasNoAccess = url.includes('/login') || url.includes('/search') || url.includes('/library');
     expect(isOnLoginOrHasNoAccess).toBeTruthy();
   });
 
@@ -259,17 +259,17 @@ test.describe('Authentication Flow', () => {
     });
 
     // Try to access protected route
-    await page.goto('/#/search');
+    await page.goto('/search');
 
     // Should be redirected to login
     await expect(page).toHaveURL(/#\/login/, { timeout: 5000 });
 
     // Try another protected route
-    await page.goto('/#/library');
+    await page.goto('/library');
     await expect(page).toHaveURL(/#\/login/, { timeout: 5000 });
 
     // Try reader route
-    await page.goto('/#/reader');
+    await page.goto('/reader');
     await expect(page).toHaveURL(/#\/login/, { timeout: 5000 });
   });
 
@@ -315,7 +315,7 @@ test.describe('Authentication Flow', () => {
     expect(authState.tokenLength).toBeGreaterThan(50);
 
     // Navigate to admin-only route (quiz page requires admin)
-    await page.goto('/#/quiz', { timeout: 30000 });
+    await page.goto('/quiz', { timeout: 30000 });
 
     // Wait for DOM to load and quiz component to render
     await page.waitForLoadState('domcontentloaded', { timeout: 10000 });
@@ -356,7 +356,7 @@ test.describe('Authentication Flow', () => {
   //   await expect(page).toHaveURL(/#\/search/, { timeout: 10000 });
 
   //   // Try to access admin-only route
-  //   await page.goto('/#/quiz');
+  //   await page.goto('/quiz');
 
   //   // Should be redirected away from quiz page
   //   await expect(page).not.toHaveURL(/#\/quiz/, { timeout: 5000 });

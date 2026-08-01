@@ -110,7 +110,7 @@ const mockChaptersError = async (page: Page, fileName: string) => {
 
 const openReaderPage = async (page: Page) => {
   await setAuthToken(page);
-  await page.goto(`/#/reader?e2e=${Date.now()}`);
+  await page.goto(`/reader?e2e=${Date.now()}`);
   // Wait for component to be visible instead of waiting for API response
   await page.locator('app-book-reader').waitFor({ state: 'visible', timeout: 10000 });
   // Give the component time to initialize
@@ -149,7 +149,7 @@ test.describe('Reader - Book Selection', () => {
     }, ACCESS_CODE);
 
     await mockReaderBooksRoute(page, readerBooks);
-    await page.goto(`/#/reader?e2e=${Date.now()}`);
+    await page.goto(`/reader?e2e=${Date.now()}`);
     await page.locator('app-book-reader').waitFor({ state: 'visible', timeout: 10000 });
     await page.waitForTimeout(2000); // Wait longer for books to load and previously viewed to reconcile
 

@@ -129,7 +129,7 @@ const mockLibraryRoute = async (page: Page, books: LibraryBook[]) => {
 const openLibraryPage = async (page: Page) => {
   const responsePromise = page.waitForResponse('**/api/library/books**', { timeout: 60000 });
   await setAuthToken(page);
-  await page.goto(`/#/library?e2e=${Date.now()}`, { timeout: 60000 });
+  await page.goto(`/library?e2e=${Date.now()}`, { timeout: 60000 });
   await responsePromise;
   await expect(page.locator('.library-loading')).not.toBeVisible({ timeout: 15000 });
 };

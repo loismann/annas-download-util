@@ -107,10 +107,11 @@ const MOCK_WIKI_IMAGES = [
 
 export const mockDataInterceptor: HttpInterceptorFn = (req, next) => {
   // Skip interceptor for E2E tests
-  // Check both URL query param and localStorage for E2E mode
+  // Check both URL query param and localStorage for E2E mode. Under the old hash
+  // routing the ?e2e= landed inside the fragment, so this also had to read
+  // location.hash; with path URLs it is always a real query string.
   const isE2E = (typeof window !== 'undefined' &&
     (window.location.search.includes('e2e=') ||
-     window.location.hash.includes('e2e=') ||
      localStorage.getItem('auth_name') === 'E2E User'));
 
   if (isE2E) {

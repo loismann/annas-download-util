@@ -150,7 +150,7 @@ async function setAuthToken(page: Page, accelerateTimeouts = false): Promise<voi
 
 async function openSearchPage(page: Page, accelerateTimeouts = false): Promise<void> {
   await setAuthToken(page, accelerateTimeouts);
-  await page.goto('/#/search');
+  await page.goto('/search');
   await expect(page.locator('app-book-search')).toBeVisible();
 }
 

@@ -1,5 +1,5 @@
 import { ApplicationConfig, ErrorHandler, provideZoneChangeDetection } from '@angular/core';
-import { provideRouter, withHashLocation } from '@angular/router';
+import { provideRouter } from '@angular/router';
 import { provideHttpClient, withInterceptors, withFetch } from '@angular/common/http';
 import { provideAnimations } from '@angular/platform-browser/animations';
 
@@ -13,7 +13,12 @@ import { environment } from '../environments/environment';
 export const appConfig: ApplicationConfig = {
   providers: [
     provideZoneChangeDetection({ eventCoalescing: true }),
-    provideRouter(routes, withHashLocation()),  // Add hash-based routing
+    // Path-based URLs (/library), not hash (/#/library). Requires the server to
+    // serve index.html for unknown paths — Program.cs does via MapFallbackToFile,
+    // and index.html already declares <base href="/">. Hash routing also hid
+    // pre-fragment query strings from the router, which silently broke the
+    // Spotify OAuth callback's ?spotify= result.
+    provideRouter(routes),
     provideHttpClient(
       // devInterceptors is empty in production and the module it came from is
       // never imported there, so the mock fixtures are absent from the bundle

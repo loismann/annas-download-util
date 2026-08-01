@@ -25,8 +25,11 @@ public static class SystemStatsEndpoints
 
     public static WebApplication MapSystemStatsEndpoints(this WebApplication app)
     {
+        // AdminOnly, not merely authenticated: server capacity is Paul's
+        // operational detail, and hiding the panel in the UI would otherwise
+        // leave the endpoint itself readable by any signed-in household member.
         app.MapGet("/api/system/storage", HandleGetStorageStats)
-            .RequireAuthorization()
+            .RequireAuthorization("AdminOnly")
             .RequireRateLimiting("api");
 
         return app;

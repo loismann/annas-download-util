@@ -7,6 +7,7 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { AiApiService } from '../services/ai-api.service';
 import { CharacterGraphResponse } from '../models/dropbox-epub.model';
 import { LoggerService } from '../services/logger.service';
+import { AnychartLoaderService } from '../services/anychart-loader.service';
 import { RENDER_DELAY_MS } from '../constants/timeouts';
 
 declare var anychart: any;
@@ -36,10 +37,15 @@ export class CharacterGraphModalComponent implements OnInit, AfterViewInit, OnDe
     public dialogRef: MatDialogRef<CharacterGraphModalComponent>,
     @Inject(MAT_DIALOG_DATA) public data: CharacterGraphModalData,
     private aiApi: AiApiService,
-    private logger: LoggerService
+    private logger: LoggerService,
+    private anychartLoader: AnychartLoaderService
   ) {}
 
   ngOnInit(): void {
+    // Start fetching the chart bundle immediately so it downloads alongside the
+    // graph request rather than after it. Errors are handled where it's awaited
+    // in renderGraph; this call only warms the cache.
+    this.anychartLoader.load().catch(() => { /* reported at render time */ });
     this.loadGraph();
   }
 
@@ -155,7 +161,7 @@ export class CharacterGraphModalComponent implements OnInit, AfterViewInit, OnDe
     }).filter(w => w !== '').join(' ');
   }
 
-  private renderGraph(): void {
+  private async renderGraph(): Promise<void> {
     if (!this.graphData || !this.graphData.nodes.length) {
       this.error = 'No character data available';
       return;
@@ -164,6 +170,17 @@ export class CharacterGraphModalComponent implements OnInit, AfterViewInit, OnDe
     const container = document.getElementById('character-graph-container');
     if (!container) {
       this.logger.error('Graph container not found');
+      return;
+    }
+
+    // AnyChart is no longer a global script, so it may not be present yet. This
+    // usually resolves instantly: ngOnInit kicks the download off in parallel
+    // with the graph API call, which is much slower.
+    try {
+      await this.anychartLoader.load();
+    } catch (err) {
+      this.logger.error('Failed to load the charting library', err);
+      this.error = 'Could not load the charting library. Please try again.';
       return;
     }
 

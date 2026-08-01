@@ -1,12 +1,23 @@
-<div class="storage-footer" *ngIf="stats" [class.expanded]="expanded" (click)="toggleExpanded()">
-  <span class="stat"><strong>{{ stats.percentFull }}%</strong> full</span>
-  <span class="divider detail">·</span>
-  <span class="stat detail">Movies: {{ formatTb(stats.moviesBytes) }}</span>
-  <span class="divider detail">·</span>
-  <span class="stat detail">TV: {{ formatTb(stats.tvBytes) }}</span>
-  <span class="divider detail">·</span>
-  <span class="stat detail">Books: {{ formatTb(stats.booksBytes) }}</span>
-  <span class="divider">·</span>
-  <span class="stat">Free: {{ formatTb(stats.freeBytes) }}</span>
-  <span class="expand-hint" aria-hidden="true">{{ expanded ? '▾' : '▸' }}</span>
+<div class="storage-panel" *ngIf="stats" [class.dark]="dark">
+  <div class="storage-head">
+    <span class="storage-label">Server</span>
+    <span class="storage-percent">{{ stats.percentFull }}% full</span>
+  </div>
+
+  <!-- Turns red as the disk fills; the number alone is easy to skim past. -->
+  <div
+    class="storage-bar"
+    role="progressbar"
+    [attr.aria-valuenow]="stats.percentFull"
+    aria-valuemin="0"
+    aria-valuemax="100">
+    <div class="storage-fill" [class.warn]="stats.percentFull >= 80" [style.width.%]="stats.percentFull"></div>
+  </div>
+
+  <div class="storage-rows">
+    <div class="storage-row"><span>Movies</span><span>{{ formatTb(stats.moviesBytes) }}</span></div>
+    <div class="storage-row"><span>TV</span><span>{{ formatTb(stats.tvBytes) }}</span></div>
+    <div class="storage-row"><span>Books</span><span>{{ formatTb(stats.booksBytes) }}</span></div>
+    <div class="storage-row free"><span>Free</span><span>{{ formatTb(stats.freeBytes) }}</span></div>
+  </div>
 </div>

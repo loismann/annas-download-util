@@ -1,53 +1,74 @@
-.storage-footer {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  z-index: 100;
-  background: #263238;
-  color: rgba(255, 255, 255, 0.85);
-  font-size: 0.8rem;
-  padding: 6px 16px calc(6px + env(safe-area-inset-bottom));
+/* Lives at the bottom of the expanded sidebar. It used to be a fixed bar across
+   the bottom of every page, which is why the old rules were position:fixed with
+   a mobile tap-to-expand — there is vertical room in the sidebar, so the full
+   breakdown is simply always shown. */
+
+.storage-panel {
+  padding: 12px 16px;
+  font-size: 0.78rem;
+  color: #5f6368;
+}
+
+.storage-head {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-wrap: wrap;
-  gap: 6px;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 6px;
 }
 
-.stat strong {
-  color: #fff;
+.storage-label {
+  font-weight: 600;
+  color: #3c4043;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-size: 0.68rem;
 }
 
-.divider {
-  opacity: 0.5;
+.storage-percent { font-weight: 600; color: #3c4043; }
+
+.storage-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+  margin-bottom: 8px;
 }
 
-/* Only meaningful on mobile, where the breakdown is collapsed behind a tap */
-.expand-hint {
-  display: none;
-  opacity: 0.6;
+.storage-fill {
+  height: 100%;
+  background: #3f51b5;
+  transition: width 300ms ease;
+}
+.storage-fill.warn { background: #e0533d; }
+
+.storage-rows { display: flex; flex-direction: column; gap: 2px; }
+
+.storage-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
 }
 
-/* Mobile: one short line (percent + free) that expands to the full breakdown
-   on tap, instead of wrapping to two permanent lines. */
-@media (max-width: 720px) {
-  .storage-footer {
-    cursor: pointer;
-    flex-wrap: nowrap;
-    white-space: nowrap;
-  }
+.storage-row.free {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+  color: #3c4043;
+  font-weight: 600;
+}
 
-  .expand-hint {
-    display: inline;
-  }
+/* ── Date Night ────────────────────────────────────────────────────────────
+   The Date Night pages are full-bleed black; a light panel beside them reads
+   as a rendering fault. Gilt/cream picked from the theater palette so the
+   sidebar belongs to the same room. */
 
-  .storage-footer:not(.expanded) .detail {
-    display: none;
-  }
-
-  .storage-footer.expanded {
-    flex-wrap: wrap;
-    white-space: normal;
-  }
+.storage-panel.dark { color: rgba(255, 238, 201, 0.7); }
+.storage-panel.dark .storage-label,
+.storage-panel.dark .storage-percent { color: var(--thtr-gilt-bright, #ffdf7e); }
+.storage-panel.dark .storage-bar { background: rgba(255, 238, 201, 0.15); }
+.storage-panel.dark .storage-fill { background: var(--thtr-gilt, #d9a441); }
+.storage-panel.dark .storage-fill.warn { background: var(--thtr-shock-red, #e02b1d); }
+.storage-panel.dark .storage-row.free {
+  border-top-color: rgba(255, 238, 201, 0.18);
+  color: var(--thtr-cream, #ffeec9);
 }

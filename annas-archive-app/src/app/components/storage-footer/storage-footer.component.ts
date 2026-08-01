@@ -1,4 +1,4 @@
-import { Component, OnDestroy, OnInit } from '@angular/core';
+import { Component, Input, OnDestroy, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Subscription, interval, startWith, switchMap } from 'rxjs';
 import { SystemStatsApiService, StorageStats } from '../../services/system-stats-api.service';
@@ -18,9 +18,10 @@ const REFRESH_MS = 10 * 60 * 1000;
   styleUrl: './storage-footer.component.css'
 })
 export class StorageFooterComponent implements OnInit, OnDestroy {
+  /** Matches the sidebar to the Date Night pages' black background. */
+  @Input() dark = false;
+
   stats: StorageStats | null = null;
-  /** Mobile-only: whether the per-category breakdown is shown (CSS ignores this on desktop). */
-  expanded = false;
   private sub?: Subscription;
 
   constructor(
@@ -42,10 +43,6 @@ export class StorageFooterComponent implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.sub?.unsubscribe();
-  }
-
-  toggleExpanded(): void {
-    this.expanded = !this.expanded;
   }
 
   formatTb(bytes: number): string {

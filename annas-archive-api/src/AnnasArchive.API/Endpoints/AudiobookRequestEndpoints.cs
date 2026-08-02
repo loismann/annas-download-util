@@ -33,6 +33,16 @@ public static class AudiobookRequestEndpoints
             .RequireAuthorization()
             .RequireRateLimiting("api");
 
+        // Declared before the {listenarrId:int} routes for readability only —
+        // the integer constraint already keeps "series" from matching them.
+        app.MapPost("/api/audiobook-requests/series/preview", HandleSeriesPreview)
+            .RequireAuthorization()
+            .RequireRateLimiting("api");
+
+        app.MapPost("/api/audiobook-requests/series/confirm", HandleSeriesConfirm)
+            .RequireAuthorization()
+            .RequireRateLimiting("api");
+
         app.MapPost("/api/audiobook-requests", HandleConfirm)
             .RequireAuthorization()
             .RequireRateLimiting("api");
@@ -54,6 +64,10 @@ public static class AudiobookRequestEndpoints
             .RequireRateLimiting("api");
 
         app.MapPost("/api/audiobook-requests/{listenarrId:int}/retry-import", HandleRetryImport)
+            .RequireAuthorization()
+            .RequireRateLimiting("api");
+
+        app.MapDelete("/api/audiobook-requests/{listenarrId:int}", HandleRemove)
             .RequireAuthorization()
             .RequireRateLimiting("api");
 
@@ -156,9 +170,15 @@ public static class AudiobookRequestEndpoints
         if (string.IsNullOrWhiteSpace(ownerKey))
             return Results.Unauthorized();
 
+        var narrator = Preference(request.NarratorPreference);
+        var preferredLanguage = Preference(request.LanguagePreference);
+        if (narrator is { Length: > 200 } || preferredLanguage is { Length: > 50 })
+            return Results.BadRequest(new { error = "That preference is too long." });
+
         try
         {
-            return Results.Ok(await requests.PreviewAsync(ownerKey, asin, region, ct));
+            return Results.Ok(await requests.PreviewAsync(
+                ownerKey, asin, region, narrator, preferredLanguage, ct));
         }
         catch (AudiobookRequestValidationException ex)
         {
@@ -220,6 +240,97 @@ public static class AudiobookRequestEndpoints
             }, statusCode: StatusCodes.Status504GatewayTimeout);
         }
     }
+
+    private static async Task<IResult> HandleSeriesPreview(
+        AudiobookSeriesPreviewRequest request,
+        HttpContext context,
+        IListenarrService listenarr,
+        AudiobookSeriesService series,
+        CancellationToken ct)
+    {
+        if (!listenarr.IsEnabled)
+            return Results.NotFound(new { error = "Audiobook requests are not enabled yet." });
+
+        var seriesAsin = request.SeriesAsin?.Trim().ToUpperInvariant();
+        var region = request.Region?.Trim().ToLowerInvariant() ?? "us";
+        if (string.IsNullOrWhiteSpace(seriesAsin) || !AsinPattern.IsMatch(seriesAsin))
+            return Results.BadRequest(new { error = "A valid 10-character series ASIN is required." });
+        if (!SupportedRegions.Contains(region))
+            return Results.BadRequest(new { error = "Unsupported Audible region." });
+
+        var ownerKey = UserHelpers.GetUserIdFromContext(context);
+        if (string.IsNullOrWhiteSpace(ownerKey))
+            return Results.Unauthorized();
+
+        try
+        {
+            return Results.Ok(await series.PreviewAsync(ownerKey, seriesAsin, region, ct));
+        }
+        catch (AudiobookRequestValidationException ex)
+        {
+            return Results.BadRequest(new { error = ex.Message });
+        }
+        catch (HttpRequestException ex)
+        {
+            Log.Warning("[Listenarr] Series preview failed for {SeriesAsin}: {Message}", seriesAsin, ex.Message);
+            return Results.Json(new { error = "The series could not be loaded right now." },
+                statusCode: StatusCodes.Status503ServiceUnavailable);
+        }
+        catch (TaskCanceledException ex) when (!ct.IsCancellationRequested)
+        {
+            Log.Warning("[Listenarr] Series preview timed out for {SeriesAsin}: {Message}", seriesAsin, ex.Message);
+            return Results.Json(new { error = "The series preview timed out. Try again." },
+                statusCode: StatusCodes.Status504GatewayTimeout);
+        }
+    }
+
+    private static async Task<IResult> HandleSeriesConfirm(
+        AudiobookSeriesConfirmRequest request,
+        HttpContext context,
+        IListenarrService listenarr,
+        AudiobookSeriesService series,
+        CancellationToken ct)
+    {
+        if (!listenarr.IsEnabled)
+            return Results.NotFound(new { error = "Audiobook requests are not enabled yet." });
+
+        var token = request.PreviewToken?.Trim().ToUpperInvariant();
+        if (string.IsNullOrWhiteSpace(token) || !OpaqueTokenPattern.IsMatch(token))
+            return Results.BadRequest(new { error = "A valid series preview token is required." });
+
+        var asins = request.Asins ?? [];
+        if (asins.Count == 0)
+            return Results.BadRequest(new { error = "Select at least one book to request." });
+        if (asins.Any(asin => !AsinPattern.IsMatch(asin?.Trim().ToUpperInvariant() ?? string.Empty)))
+            return Results.BadRequest(new { error = "That selection contains an invalid ASIN." });
+
+        var ownerKey = UserHelpers.GetUserIdFromContext(context);
+        if (string.IsNullOrWhiteSpace(ownerKey))
+            return Results.Unauthorized();
+        var ownerLabel = context.User.FindFirstValue(ClaimTypes.Name) ?? "Household member";
+
+        try
+        {
+            return Results.Ok(await series.ConfirmAsync(
+                ownerKey, ownerLabel, context.User.IsInRole("Admin"),
+                token, asins, request.ConfirmLarge, ct));
+        }
+        catch (AudiobookRequestValidationException ex)
+        {
+            return Results.BadRequest(new { error = ex.Message });
+        }
+        catch (HttpRequestException ex)
+        {
+            Log.Warning("[Listenarr] Series confirmation failed: {Message}", ex.Message);
+            return Results.Json(new
+            {
+                error = "Some books may not have been added. Preview the series again to see the current state."
+            }, statusCode: StatusCodes.Status503ServiceUnavailable);
+        }
+    }
+
+    private static string? Preference(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
     private static async Task<IResult> HandleReleaseSearch(
         int listenarrId,
@@ -361,6 +472,39 @@ public static class AudiobookRequestEndpoints
         {
             Log.Warning("[Listenarr] Cancellation failed for {ListenarrId}: {Message}", listenarrId, ex.Message);
             return Results.Json(new { error = "The cancellation outcome is uncertain. Refresh progress before retrying." },
+                statusCode: StatusCodes.Status503ServiceUnavailable);
+        }
+    }
+
+    private static async Task<IResult> HandleRemove(
+        int listenarrId,
+        HttpContext context,
+        IListenarrService listenarr,
+        AudiobookRequestService requests,
+        CancellationToken ct)
+    {
+        if (!listenarr.IsEnabled)
+            return Results.NotFound(new { error = "Audiobook requests are not enabled yet." });
+        var ownerKey = UserHelpers.GetUserIdFromContext(context);
+        if (listenarrId <= 0 || string.IsNullOrWhiteSpace(ownerKey))
+            return Results.BadRequest(new { error = "A valid audiobook request is required." });
+        try
+        {
+            return Results.Ok(await requests.RemoveRequestAsync(
+                ownerKey, context.User.IsInRole("Admin"), listenarrId, ct));
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Results.Forbid();
+        }
+        catch (AudiobookRequestValidationException ex)
+        {
+            return Results.BadRequest(new { error = ex.Message });
+        }
+        catch (HttpRequestException ex)
+        {
+            Log.Warning("[Listenarr] Request removal failed for {ListenarrId}: {Message}", listenarrId, ex.Message);
+            return Results.Json(new { error = "The request could not be removed. Refresh and try again." },
                 statusCode: StatusCodes.Status503ServiceUnavailable);
         }
     }

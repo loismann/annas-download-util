@@ -148,6 +148,49 @@ public sealed class AudiobookRequestStore(AppDatabase database)
         return labels;
     }
 
+    /// <summary>Drops one person's claim on a request. Returns how many
+    /// requesters remain, so the caller can decide whether the Listenarr entry
+    /// itself should go — one person changing their mind must not cancel the
+    /// book for everyone else who asked for it.</summary>
+    public int RemoveRequester(int listenarrId, string appUserId)
+    {
+        using var connection = database.OpenConnection();
+        using (var remove = connection.CreateCommand())
+        {
+            remove.CommandText = """
+                DELETE FROM audiobook_request_user
+                 WHERE listenarr_id = $id AND app_user_id = $user
+                """;
+            remove.Parameters.AddWithValue("$id", listenarrId);
+            remove.Parameters.AddWithValue("$user", appUserId);
+            remove.ExecuteNonQuery();
+        }
+
+        using var count = connection.CreateCommand();
+        count.CommandText =
+            "SELECT COUNT(*) FROM audiobook_request_user WHERE listenarr_id = $id";
+        count.Parameters.AddWithValue("$id", listenarrId);
+        return Convert.ToInt32(count.ExecuteScalar());
+    }
+
+    /// <summary>Deletes the request row and every remaining attribution.</summary>
+    public void DeleteRequest(int listenarrId)
+    {
+        using var connection = database.OpenConnection();
+        using var transaction = connection.BeginTransaction();
+
+        foreach (var table in new[] { "audiobook_request_user", "audiobook_request" })
+        {
+            using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = $"DELETE FROM {table} WHERE listenarr_id = $id";
+            command.Parameters.AddWithValue("$id", listenarrId);
+            command.ExecuteNonQuery();
+        }
+
+        transaction.Commit();
+    }
+
     public void MarkReconciled(int listenarrId, string absItemId, DateTimeOffset now)
     {
         using var connection = database.OpenConnection();

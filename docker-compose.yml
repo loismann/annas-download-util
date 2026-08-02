@@ -143,15 +143,22 @@ services:
       # Audiobookshelf itself on first admin setup, not chosen up front.
       - Audiobookshelf__BaseUrl=http://audiobookshelf:80
       - Audiobookshelf__ApiKey=${AUDIOBOOKSHELF_API_KEY:-}
-      # Listenarr — audiobook acquisition manager. The feature remains disabled
-      # until its read-only contract and filesystem gates pass; keeping the
-      # server connection configured now lets those checks run without exposing
-      # any request/download action in the household UI.
-      - Listenarr__Enabled=false
+      # Listenarr — audiobook acquisition manager. Live for the household as of
+      # 2026-08-02, after the read-only gate passed: ready/health, root folder,
+      # quality profile, indexers and download client all verified from inside
+      # this container. Set back to false to withdraw the search/request surface
+      # without affecting Audiobookshelf playback.
+      - Listenarr__Enabled=true
       - Listenarr__BaseUrl=http://listenarr:4545
       - Listenarr__ApiKey=${LISTENARR_API_KEY:-}
       - Listenarr__QualityProfile=AAC M4B
       - Listenarr__DefaultRegion=us
+      # Off until live release-matching accuracy has been measured. When on,
+      # an ordinary request lets Listenarr pick the release itself, the way
+      # Sonarr/Radarr requests already do. A stated narrator or language, or
+      # an abridged edition, still falls back to manual review, and bulk
+      # series requests are never automatic.
+      - Listenarr__AutoSearch=false
       # Audiobook enrichment/rename background service — deliberately breaks
       # the "never touch the files directly" pattern used for Sonarr/Radarr/
       # Jellyfin/Audiobookshelf above: file reorganization is a different
@@ -512,3 +519,84 @@ services:
       - ../data/audiobookshelf/config:/config
       - ../data/audiobookshelf/metadata:/metadata
       - /home/pferrer/Media/audiobooks:/audiobooks
+
+  # ─── Immich — the household photo library ────────────────────────────────
+  # Two feeds fill it (see DOCS/features/google-photos-cvs-print-automation-spec.md
+  # §5): the mobile app auto-backs-up from the phones within minutes of a photo
+  # being taken, and Google Takeout history is imported once with immich-go.
+  # Google Photos keeps working in parallel — this is additive, not a migration.
+  #
+  # The CVS print pipeline reads this library through Immich's REST API rather
+  # than by walking ${IMMICH_UPLOAD_LOCATION} directly: that on-disk layout is
+  # Immich's private implementation detail and changes between versions, while
+  # the API is stable. Generate an API key in Immich's user settings and put it
+  # in .env as IMMICH_API_KEY.
+  #
+  # Upstream ships these four services with `env_file: .env`, which would load
+  # this project's ENTIRE root .env — PIA credentials, Sonarr/Radarr keys, the
+  # lot — into all four containers. Every variable below is therefore passed
+  # explicitly instead. Do not reintroduce env_file here.
+  immich-server:
+    image: ghcr.io/immich-app/immich-server:${IMMICH_VERSION:-release}
+    container_name: immich-server
+    restart: unless-stopped
+    # Loopback only, same as everything else here — reached over the tailnet
+    # via `tailscale serve`, never published to the LAN.
+    ports:
+      - "127.0.0.1:2283:2283"
+    environment:
+      - DB_HOSTNAME=immich-postgres
+      - DB_USERNAME=${IMMICH_DB_USERNAME:-immich}
+      - DB_PASSWORD=${IMMICH_DB_PASSWORD}
+      - DB_DATABASE_NAME=${IMMICH_DB_NAME:-immich}
+      - REDIS_HOSTNAME=immich-redis
+      # Non-default service names, so these two cannot be left implicit.
+      - IMMICH_MACHINE_LEARNING_URL=http://immich-ml:3003
+    volumes:
+      - ${IMMICH_UPLOAD_LOCATION:-/home/pferrer/Media/Photos}:/data
+      - /etc/localtime:/etc/localtime:ro
+    depends_on:
+      - immich-redis
+      - immich-postgres
+    healthcheck:
+      disable: false
+
+  # Face/object recognition and smart search. Genuinely optional — Immich runs
+  # without it, you just lose search-by-content. Left on because "photos of the
+  # kids from last summer" is exactly how print selection gets used.
+  immich-ml:
+    image: ghcr.io/immich-app/immich-machine-learning:${IMMICH_VERSION:-release}
+    container_name: immich-ml
+    restart: unless-stopped
+    volumes:
+      - ../data/immich/model-cache:/cache
+    healthcheck:
+      disable: false
+
+  immich-redis:
+    image: docker.io/valkey/valkey:9@sha256:8e8d64b405ce18f41b8e5ee20aa4687a8ed0022d1298f2ce31cdcf3a76e09411
+    container_name: immich-redis
+    restart: unless-stopped
+    healthcheck:
+      test: redis-cli ping || exit 1
+
+  # Pinned by digest exactly as upstream ships it — this is a pgvector-carrying
+  # Postgres build, not stock Postgres, and Immich's schema depends on the
+  # bundled extension versions. Do not swap in a plain postgres image.
+  immich-postgres:
+    image: ghcr.io/immich-app/postgres:14-vectorchord0.4.3-pgvectors0.2.0@sha256:bcf63357191b76a916ae5eb93464d65c07511da41e3bf7a8416db519b40b1c23
+    container_name: immich-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=${IMMICH_DB_USERNAME:-immich}
+      - POSTGRES_PASSWORD=${IMMICH_DB_PASSWORD}
+      - POSTGRES_DB=${IMMICH_DB_NAME:-immich}
+      - POSTGRES_INITDB_ARGS=--data-checksums
+      # The library lives on spinning disks, not SSD — this tunes Postgres's
+      # vector index build for that. Upstream ships it commented out.
+      - DB_STORAGE_TYPE=HDD
+    volumes:
+      - ../data/immich/postgres:/var/lib/postgresql/data
+    shm_size: 128mb
+    healthcheck:
+      disable: false

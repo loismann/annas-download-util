@@ -1,0 +1,31 @@
+<h2 mat-dialog-title>Choose the edition</h2>
+<mat-dialog-content>
+  <p class="intro">
+    More than one Audible edition matches <strong>{{ data.suggestedTitle }}</strong>.
+    Pick the narrator and format you want — nothing is requested until you do.
+  </p>
+
+  <mat-radio-group [(ngModel)]="selectedAsin" aria-label="Matching audiobook editions">
+    <label class="edition" *ngFor="let choice of data.choices" [class.selected]="selectedAsin === choice.asin">
+      <mat-radio-button [value]="choice.asin">
+        <span class="edition-title">{{ choice.title }}<span *ngIf="choice.subtitle">: {{ choice.subtitle }}</span></span>
+      </mat-radio-button>
+      <div class="edition-facts">
+        <span>{{ choice.authors.join(', ') || 'Unknown author' }}</span>
+        <span *ngIf="choice.narrators.length">Narrated by {{ choice.narrators.join(', ') }}</span>
+        <span *ngIf="runtimeLabel(choice.runtimeMinutes) as runtime">{{ runtime }}</span>
+        <span *ngIf="choice.language">{{ choice.language }}</span>
+        <span *ngIf="choice.format">{{ choice.format }}</span>
+        <span *ngIf="choice.releaseDate">{{ choice.releaseDate }}</span>
+        <span class="asin">{{ choice.asin }}</span>
+      </div>
+      <p class="state" *ngIf="availabilityLabel(choice) as label">{{ label }}</p>
+    </label>
+  </mat-radio-group>
+</mat-dialog-content>
+<mat-dialog-actions align="end">
+  <button mat-button type="button" (click)="cancel()">Cancel</button>
+  <button mat-raised-button color="primary" type="button" [disabled]="!selectedAsin" (click)="choose()">
+    Use this edition
+  </button>
+</mat-dialog-actions>

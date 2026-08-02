@@ -4,10 +4,21 @@ using System.Text;
 
 namespace AnnasArchive.API.Services;
 
+/// <summary>AutoSearch is decided by the server during preview and carried in
+/// the token, so the browser can see what will happen without being able to
+/// upgrade a review-only request into an automatic grab.</summary>
 public sealed record AudiobookRequestPreviewToken(
     string Token,
     string Asin,
     string Region,
+    bool AutoSearch,
+    DateTimeOffset ExpiresAt);
+
+public sealed record AudiobookSeriesPreviewToken(
+    string Token,
+    string SeriesAsin,
+    string Region,
+    IReadOnlyList<string> Asins,
     DateTimeOffset ExpiresAt);
 
 public sealed record ListenarrReleaseSelectionToken(
@@ -26,14 +37,16 @@ public sealed class AudiobookRequestTokenStore(TimeProvider timeProvider)
     private static readonly TimeSpan Lifetime = TimeSpan.FromMinutes(15);
     private readonly ConcurrentDictionary<string, StoredPreview> _previews = new();
     private readonly ConcurrentDictionary<string, StoredRelease> _releases = new();
+    private readonly ConcurrentDictionary<string, StoredSeries> _series = new();
 
-    public AudiobookRequestPreviewToken CreatePreview(string ownerKey, string asin, string region)
+    public AudiobookRequestPreviewToken CreatePreview(
+        string ownerKey, string asin, string region, bool autoSearch)
     {
         PurgeExpired();
         var token = NewToken();
         var expiresAt = timeProvider.GetUtcNow().Add(Lifetime);
-        _previews[token] = new StoredPreview(HashOwner(ownerKey), asin, region, expiresAt);
-        return new AudiobookRequestPreviewToken(token, asin, region, expiresAt);
+        _previews[token] = new StoredPreview(HashOwner(ownerKey), asin, region, autoSearch, expiresAt);
+        return new AudiobookRequestPreviewToken(token, asin, region, autoSearch, expiresAt);
     }
 
     public AudiobookRequestPreviewToken? ConsumePreview(string ownerKey, string token)
@@ -43,7 +56,32 @@ public sealed class AudiobookRequestTokenStore(TimeProvider timeProvider)
             !OwnerMatches(ownerKey, stored.OwnerHash))
             return null;
 
-        return new AudiobookRequestPreviewToken(token, stored.Asin, stored.Region, stored.ExpiresAt);
+        return new AudiobookRequestPreviewToken(
+            token, stored.Asin, stored.Region, stored.AutoSearch, stored.ExpiresAt);
+    }
+
+    /// <summary>Holds the exact set of editions the server classified as
+    /// requestable. Confirmation may only ever be a subset of this set, so a
+    /// browser cannot append an ASIN the preview never offered.</summary>
+    public AudiobookSeriesPreviewToken CreateSeries(
+        string ownerKey, string seriesAsin, string region, IReadOnlyList<string> asins)
+    {
+        PurgeExpired();
+        var token = NewToken();
+        var expiresAt = timeProvider.GetUtcNow().Add(Lifetime);
+        _series[token] = new StoredSeries(HashOwner(ownerKey), seriesAsin, region, asins, expiresAt);
+        return new AudiobookSeriesPreviewToken(token, seriesAsin, region, asins, expiresAt);
+    }
+
+    public AudiobookSeriesPreviewToken? ConsumeSeries(string ownerKey, string token)
+    {
+        if (!_series.TryRemove(token, out var stored) ||
+            stored.ExpiresAt <= timeProvider.GetUtcNow() ||
+            !OwnerMatches(ownerKey, stored.OwnerHash))
+            return null;
+
+        return new AudiobookSeriesPreviewToken(
+            token, stored.SeriesAsin, stored.Region, stored.Asins, stored.ExpiresAt);
     }
 
     public ListenarrReleaseSelectionToken CreateRelease(
@@ -80,6 +118,8 @@ public sealed class AudiobookRequestTokenStore(TimeProvider timeProvider)
             _previews.TryRemove(entry.Key, out _);
         foreach (var entry in _releases.Where(entry => entry.Value.ExpiresAt <= now))
             _releases.TryRemove(entry.Key, out _);
+        foreach (var entry in _series.Where(entry => entry.Value.ExpiresAt <= now))
+            _series.TryRemove(entry.Key, out _);
     }
 
     private static string NewToken() => Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
@@ -95,7 +135,14 @@ public sealed class AudiobookRequestTokenStore(TimeProvider timeProvider)
     }
 
     private sealed record StoredPreview(
-        string OwnerHash, string Asin, string Region, DateTimeOffset ExpiresAt);
+        string OwnerHash, string Asin, string Region, bool AutoSearch, DateTimeOffset ExpiresAt);
+
+    private sealed record StoredSeries(
+        string OwnerHash,
+        string SeriesAsin,
+        string Region,
+        IReadOnlyList<string> Asins,
+        DateTimeOffset ExpiresAt);
 
     private sealed record StoredRelease(
         string OwnerHash,

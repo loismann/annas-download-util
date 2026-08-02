@@ -133,7 +133,8 @@ public sealed class AudiobookDiscoveryService(
             choices,
             exact.Count > 1
                 ? "Several editions match. Choose the narrator and format you want."
-                : "Only an approximate catalog match was found. Confirm the edition before requesting.");
+                : "Only an approximate catalog match was found. Confirm the edition before requesting.",
+            candidate.NarratorPreference);
     }
 
     /// <summary>Title plus author is the query Audible ranks best on. Series
@@ -203,11 +204,13 @@ public sealed class AudiobookDiscoveryService(
 
     private static AudiobookDiscoveryResult Resolved(
         AudiobookDiscoveryCandidate candidate, AudiobookSearchResult match, string? note) => new(
-        "resolved", candidate.Title, candidate.Author, candidate.Reason, match, [], note);
+        "resolved", candidate.Title, candidate.Author, candidate.Reason, match, [], note,
+        candidate.NarratorPreference);
 
     private static AudiobookDiscoveryResult NotFound(
         AudiobookDiscoveryCandidate candidate, string note) => new(
-        "notFound", candidate.Title, candidate.Author, candidate.Reason, null, [], note);
+        "notFound", candidate.Title, candidate.Author, candidate.Reason, null, [], note,
+        candidate.NarratorPreference);
 
     private sealed record ScoredEdition(ListenarrAudibleSearchResult Edition, EditionScore Score);
 

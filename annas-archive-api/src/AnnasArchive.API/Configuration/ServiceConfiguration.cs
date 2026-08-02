@@ -10,6 +10,7 @@ using AnnasArchive.API.Helpers;
 using AnnasArchive.API.Infrastructure;
 using AnnasArchive.API.Services;
 using AnnasArchive.API.Services.Library;
+using AnnasArchive.API.Services.PhotoPrint;
 using AnnasArchive.Core.Services;
 using Dropbox.Api;
 using Microsoft.AspNetCore.DataProtection;
@@ -629,6 +630,14 @@ public static class ServiceConfiguration
 
         // YouTube download service
         services.AddSingleton<IYouTubeDownloadService, YouTubeDownloadService>();
+
+        // Photo print pipeline (Immich → CVS pickup prints). See
+        // DOCS/features/google-photos-cvs-print-automation-spec.md. Registered
+        // unconditionally — the endpoints are what PhotoPrint:Enabled gates, and
+        // the store/preparation services are harmless and testable without it.
+        services.Configure<PhotoPrintConfiguration>(configuration.GetSection(PhotoPrintConfiguration.SectionName));
+        services.AddSingleton<Data.IPhotoPrintOrderStore, Data.PhotoPrintOrderStore>();
+        services.AddSingleton<IPrintImagePreparationService, PrintImagePreparationService>();
 
         // Spotify configuration
         services.Configure<SpotifyConfiguration>(configuration.GetSection(SpotifyConfiguration.SectionName));

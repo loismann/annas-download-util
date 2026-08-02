@@ -1,0 +1,56 @@
+<h2 mat-dialog-title>{{ data.seriesName || 'Request series' }}</h2>
+<mat-dialog-content>
+  <ng-container *ngIf="!result; else outcomeList">
+    <p class="intro">
+      {{ data.ownedCount }} already in your library · {{ data.requestedCount }} already requested ·
+      <strong>{{ data.requestableCount }} can be requested</strong>
+      <span *ngIf="data.unavailableCount"> · {{ data.unavailableCount }} unavailable</span>
+    </p>
+
+    <div class="members">
+      <div class="member" *ngFor="let member of data.members" [class.dim]="!isSelectable(member)">
+        <mat-checkbox *ngIf="isSelectable(member); else staticState"
+                      [(ngModel)]="selected[member.asin!]" [name]="'member-' + member.asin">
+          <span class="member-title"><span class="position" *ngIf="member.position">#{{ member.position }}</span> {{ member.title }}</span>
+        </mat-checkbox>
+        <ng-template #staticState>
+          <span class="member-title"><span class="position" *ngIf="member.position">#{{ member.position }}</span> {{ member.title }}</span>
+        </ng-template>
+        <span class="state" [class.owned]="member.classification === 'owned'"
+              [class.requested]="member.classification === 'requested'">
+          {{ classificationLabel(member) }}
+        </span>
+        <p class="note" *ngIf="member.note">{{ member.note }}</p>
+      </div>
+    </div>
+
+    <p class="warning" *ngIf="overCeiling" role="status">
+      <mat-icon>warning</mat-icon>
+      This is more than {{ data.requestCeiling }} books. An administrator must confirm a batch this large.
+    </p>
+    <p class="policy">Each book is added as monitored. You will choose a release for each one separately.</p>
+    <p class="error" *ngIf="error" role="alert">{{ error }}</p>
+  </ng-container>
+
+  <ng-template #outcomeList>
+    <p class="intro" role="status">
+      {{ result!.requestedCount }} added · {{ result!.alreadyExistedCount }} already requested ·
+      {{ result!.failedCount }} failed. Successful requests were kept.
+    </p>
+    <div class="members">
+      <div class="member" *ngFor="let outcome of result!.outcomes">
+        <span class="member-title">{{ outcome.title }}</span>
+        <span class="state" [class.failed]="outcome.outcome === 'failed'">{{ outcome.outcome }}</span>
+        <p class="note" *ngIf="outcome.error">{{ outcome.error }}</p>
+      </div>
+    </div>
+  </ng-template>
+</mat-dialog-content>
+<mat-dialog-actions align="end">
+  <button mat-button type="button" [disabled]="busy" (click)="close()">{{ result ? 'Done' : 'Cancel' }}</button>
+  <button mat-raised-button color="primary" type="button" *ngIf="!result"
+          [disabled]="busy || !selectedAsins.length" (click)="confirm()">
+    <mat-spinner *ngIf="busy" diameter="18"></mat-spinner>
+    <span *ngIf="!busy">Request {{ selectedAsins.length }} book{{ selectedAsins.length === 1 ? '' : 's' }}</span>
+  </button>
+</mat-dialog-actions>

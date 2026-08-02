@@ -220,6 +220,13 @@ public sealed record AudiobookRequestStatusResponse(
 
 public sealed record AudiobookRequestCancelRequest(bool RemoveFromClient = true);
 
+/// <summary>RemovedFromListenarr is false when other household members still
+/// want the book — the caller's own attribution went, the book stayed.</summary>
+public sealed record AudiobookRequestRemovalResult(
+    int ListenarrId,
+    bool RemovedFromListenarr,
+    int RemainingRequesters);
+
 /// <summary>Preferences the user stated themselves. They never widen what the
 /// app will do — they only force an automatic acquisition back to manual
 /// release review, because no automatic release match can prove a narrator or
@@ -399,7 +406,10 @@ public sealed record AudiobookDiscoveryResult(
     string? Reason,
     AudiobookSearchResult? Match,
     IReadOnlyList<AudiobookSearchResult> Choices,
-    string? ResolutionNote = null);
+    string? ResolutionNote = null,
+    /// <summary>Echoed back so a narrator the user asked for by name keeps
+    /// the eventual request on the manual release-review path.</summary>
+    string? NarratorPreference = null);
 
 public sealed record AudiobookDiscoveryResponse(
     string? Summary,

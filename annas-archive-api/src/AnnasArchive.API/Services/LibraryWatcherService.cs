@@ -549,13 +549,10 @@ public class LibraryWatcherService : BackgroundService
             meta["favoritedBy"] = latest.FavoritedBy ?? Array.Empty<string>();
             meta["cullReviewedAt"] = latest.CullReviewedAt?.ToString("o");
 
-            var freshTags = (latest.Tags ?? Array.Empty<string>()).ToList();
-            if (existing?.EnrichmentComplete != true && !string.IsNullOrWhiteSpace(_autoTagNewBooks) &&
-                !freshTags.Contains(_autoTagNewBooks, StringComparer.OrdinalIgnoreCase))
-            {
-                freshTags.Add(_autoTagNewBooks);
-            }
-            meta["tags"] = freshTags.ToArray();
+            meta["tags"] = ApplyFallbackOwnerTag(
+                latest.Tags,
+                _autoTagNewBooks,
+                enrichmentComplete: existing?.EnrichmentComplete == true);
         }
 
         var json = JsonSerializer.Serialize(meta, new JsonSerializerOptions
@@ -1067,6 +1064,33 @@ Return JSON with:
             Log.Debug("[LibraryWatcher] Goodreads simple search failed: {Error}", ex.Message);
             return null;
         }
+    }
+
+    /// <summary>
+    /// Applies the configured fallback owner tag, but only to a book nobody
+    /// owns yet.
+    ///
+    /// AutoTagNewBooks exists for books that arrive with no owner — dropped
+    /// into the watched folder by hand. A book downloaded through the app
+    /// already carries its downloader's tag. This used to add the fallback
+    /// whenever it was merely absent, so every book Mom or Dad downloaded came
+    /// out tagged "Mom's Books" *and* "Paul's Books", and showed up in Paul's
+    /// library as well as theirs.
+    /// </summary>
+    public static string[] ApplyFallbackOwnerTag(
+        string[]? tags, string? fallbackTag, bool enrichmentComplete)
+    {
+        var result = (tags ?? Array.Empty<string>()).ToList();
+        if (enrichmentComplete || string.IsNullOrWhiteSpace(fallbackTag))
+            return result.ToArray();
+
+        if (result.Any(Constants.HouseholdOwners.IsBookOwnerTag))
+            return result.ToArray();
+
+        if (!result.Contains(fallbackTag, StringComparer.OrdinalIgnoreCase))
+            result.Add(fallbackTag);
+
+        return result.ToArray();
     }
 
     private static async Task<ExistingMeta?> LoadExistingMetaAsync(string metaPath, CancellationToken token)

@@ -19,7 +19,7 @@
   <p class="warning" *ngIf="data.abridged"><mat-icon>warning</mat-icon>This edition is marked abridged.</p>
   <p class="policy">
     {{ data.alreadyRequested ? 'This edition already exists in Listenarr. Confirming adds you as a requester.' : 'This adds the exact edition to Listenarr as monitored.' }}
-    It will <strong>not download automatically</strong>; you will review a release separately.
+    {{ data.autoSearchReason }}
   </p>
   <p class="error" *ngIf="error" role="alert">{{ error }}</p>
 </mat-dialog-content>

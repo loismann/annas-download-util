@@ -11,12 +11,27 @@ public sealed class AudiobookRequestService(
     AudiobookRequestStore store,
     AudiobookRequestTokenStore tokens,
     AudiobookRequestReconciler reconciler,
+    IConfiguration configuration,
     TimeProvider timeProvider)
 {
     private static readonly ConcurrentDictionary<string, SemaphoreSlim> AsinLocks = new();
 
+    /// <summary>
+    /// Whether an ordinary request may let Listenarr pick the release itself,
+    /// the way Radarr/Sonarr requests already do. It stays off until live
+    /// release-matching accuracy has been measured on this stack, and it is
+    /// overridden per request whenever the user stated a preference no
+    /// automatic match can prove — see <see cref="ResolveAutoSearch"/>.
+    /// </summary>
+    private bool AutoSearchEnabled => configuration.GetValue("Listenarr:AutoSearch", false);
+
     public async Task<AudiobookRequestPreviewResponse> PreviewAsync(
-        string ownerKey, string asin, string region, CancellationToken ct)
+        string ownerKey,
+        string asin,
+        string region,
+        string? narratorPreference,
+        string? languagePreference,
+        CancellationToken ct)
     {
         var metadataTask = listenarr.GetAudibleMetadataAsync(asin, region, ct);
         var profileTask = listenarr.GetDefaultQualityProfileAsync(ct);
@@ -37,7 +52,8 @@ public sealed class AudiobookRequestService(
         if (string.IsNullOrWhiteSpace(title))
             throw new AudiobookRequestValidationException("This catalog edition has no usable title.");
 
-        var token = tokens.CreatePreview(ownerKey, asin, region);
+        var autoSearch = ResolveAutoSearch(metadata, narratorPreference, languagePreference);
+        var token = tokens.CreatePreview(ownerKey, asin, region, autoSearch.Allowed);
         return new AudiobookRequestPreviewResponse(
             token.Token,
             token.ExpiresAt,
@@ -49,22 +65,42 @@ public sealed class AudiobookRequestService(
             metadata.BookFormat,
             IsAbridged(metadata.BookFormat),
             (await profileTask).Name ?? "Default profile",
-            AutoSearch: false,
+            autoSearch.Allowed,
+            autoSearch.Reason,
             AlreadyRequested: await existingTask is not null);
     }
 
-    public async Task<AudiobookRequestResponse> ConfirmAsync(
+    public Task<AudiobookRequestResponse> ConfirmAsync(
         string ownerKey, string ownerLabel, string previewToken, CancellationToken ct)
     {
         var preview = tokens.ConsumePreview(ownerKey, previewToken)
             ?? throw new AudiobookRequestValidationException(
                 "That request preview expired or belongs to another user. Review the edition again.");
 
-        var gate = AsinLocks.GetOrAdd(preview.Asin, _ => new SemaphoreSlim(1, 1));
+        return AddRequestAsync(
+            ownerKey, ownerLabel, preview.Asin, preview.Region, preview.AutoSearch, ct);
+    }
+
+    /// <summary>
+    /// The single idempotent add path, shared by the reviewed single-book
+    /// confirmation and the capped series workflow. Both authorize their own
+    /// way in before calling it; the ASIN lock and the Listenarr preflight
+    /// below are what guarantee one library entry per edition regardless of
+    /// which path, or how many household members, arrive at once.
+    /// </summary>
+    public async Task<AudiobookRequestResponse> AddRequestAsync(
+        string ownerKey,
+        string ownerLabel,
+        string asin,
+        string region,
+        bool autoSearch,
+        CancellationToken ct)
+    {
+        var gate = AsinLocks.GetOrAdd(asin, _ => new SemaphoreSlim(1, 1));
         await gate.WaitAsync(ct);
         try
         {
-            return await ConfirmLockedAsync(ownerKey, ownerLabel, preview, ct);
+            return await ConfirmLockedAsync(ownerKey, ownerLabel, asin, region, autoSearch, ct);
         }
         finally
         {
@@ -72,16 +108,35 @@ public sealed class AudiobookRequestService(
         }
     }
 
+    /// <summary>
+    /// A stated narrator or language preference, or an abridged edition, can
+    /// only be honoured by looking at the actual release — so those always
+    /// fall back to manual review even once auto-search is enabled.
+    /// </summary>
+    private AutoSearchDecision ResolveAutoSearch(
+        ListenarrAudibleBook metadata, string? narratorPreference, string? languagePreference)
+    {
+        if (!AutoSearchEnabled)
+            return new AutoSearchDecision(false, "You will choose the release yourself.");
+        if (!string.IsNullOrWhiteSpace(narratorPreference))
+            return new AutoSearchDecision(false, "You named a narrator, so you will confirm the release yourself.");
+        if (!string.IsNullOrWhiteSpace(languagePreference))
+            return new AutoSearchDecision(false, "You named a language, so you will confirm the release yourself.");
+        if (IsAbridged(metadata.BookFormat))
+            return new AutoSearchDecision(false, "This edition is abridged, so you will confirm the release yourself.");
+
+        return new AutoSearchDecision(true, "Listenarr will search and download the best matching release.");
+    }
+
+    private sealed record AutoSearchDecision(bool Allowed, string Reason);
+
     public async Task<AudiobookReleaseSearchResponse> SearchReleasesAsync(
         string ownerKey, int listenarrId, CancellationToken ct)
     {
         var request = store.GetByListenarrId(listenarrId)
             ?? throw new AudiobookRequestValidationException("That audiobook request was not found.");
 
-        var query = string.IsNullOrWhiteSpace(request.Author)
-            ? request.Title
-            : $"{request.Title} {request.Author}";
-        var upstream = await listenarr.SearchIndexersAsync(query, ct);
+        var upstream = await SearchIndexersWithFallbackAsync(request, ct);
         var releases = upstream
             .Where(result => !string.IsNullOrWhiteSpace(result.DownloadReference) &&
                 !string.IsNullOrWhiteSpace(result.Title))
@@ -111,6 +166,62 @@ public sealed class AudiobookRequestService(
         return new AudiobookReleaseSearchResponse(
             listenarrId, request.Asin, request.Title, releases);
     }
+
+    /// <summary>
+    /// Builds the indexer query, then widens it if nothing came back.
+    ///
+    /// Measured against the live indexers on 2026-08-02: punctuation must be
+    /// replaced with a space, not deleted. "Pandora's Star" returns nothing and
+    /// "PandorasStar"/"Pandoras Star" also return nothing, but "Pandora Star"
+    /// returns real releases — indexers tokenise on whitespace and never match
+    /// across an apostrophe. Passing Audible's title through verbatim silently
+    /// zeroed out every book with an apostrophe in its name.
+    ///
+    /// The author is narrowed to the first name and used only in the first
+    /// attempt: release names spell authors inconsistently, so title alone is
+    /// the more reliable fallback rather than a worse first guess.
+    /// </summary>
+    private async Task<IReadOnlyList<ListenarrIndexerSearchResult>> SearchIndexersWithFallbackAsync(
+        AudiobookRequestRecord request, CancellationToken ct)
+    {
+        var title = NormalizeQuery(request.Title);
+        if (string.IsNullOrWhiteSpace(title))
+            return [];
+
+        var author = NormalizeQuery(FirstAuthor(request.Author));
+        var attempts = string.IsNullOrWhiteSpace(author)
+            ? [title]
+            : new[] { $"{title} {author}", title };
+
+        foreach (var attempt in attempts)
+        {
+            var results = await listenarr.SearchIndexersAsync(attempt, ct);
+            if (results.Count > 0)
+                return results;
+
+            Log.Information(
+                "[Listenarr] no releases for audiobook {ListenarrId} using query \"{Query}\"",
+                request.ListenarrId, attempt);
+        }
+
+        return [];
+    }
+
+    /// <summary>Punctuation becomes whitespace, then runs of whitespace
+    /// collapse. See <see cref="SearchIndexersWithFallbackAsync"/> for why
+    /// deleting punctuation instead of replacing it does not work.</summary>
+    public static string NormalizeQuery(string? value) => string.IsNullOrWhiteSpace(value)
+        ? string.Empty
+        : string.Join(' ', new string(value
+                .Select(character => char.IsLetterOrDigit(character) ? character : ' ')
+                .ToArray())
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries));
+
+    /// <summary>The stored author snapshot is a comma-joined list; a release
+    /// name almost never carries every co-author.</summary>
+    public static string FirstAuthor(string? authors) => authors?
+        .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        .FirstOrDefault() ?? string.Empty;
 
     public async Task<AudiobookReleaseGrabResponse> GrabReleaseAsync(
         string ownerKey, int listenarrId, string selectionToken, CancellationToken ct)
@@ -206,6 +317,61 @@ public sealed class AudiobookRequestService(
             SafeUser(ownerKey), listenarrId, download.Id);
     }
 
+    /// <summary>
+    /// Undoes a request. Cancel stops an active download; this removes the
+    /// wanted entry entirely, which is the only way out of a request that
+    /// never started one — a book with no findable release would otherwise sit
+    /// on the page forever with no action that does anything.
+    ///
+    /// Deliberately narrower than library deletion: once a book has imported
+    /// and reached Audiobookshelf it is media, not a request, and removing it
+    /// stays the Audiobook Library page's job behind its hard-delete warning.
+    ///
+    /// The Listenarr entry only goes when the last requester withdraws.
+    /// </summary>
+    public async Task<AudiobookRequestRemovalResult> RemoveRequestAsync(
+        string ownerKey, bool isAdmin, int listenarrId, CancellationToken ct)
+    {
+        EnsureMutationAuthority(ownerKey, isAdmin, listenarrId);
+        var request = store.GetByListenarrId(listenarrId)
+            ?? throw new AudiobookRequestValidationException("That audiobook request was not found.");
+
+        if (!string.IsNullOrWhiteSpace(request.AbsItemId))
+        {
+            throw new AudiobookRequestValidationException(
+                "This audiobook is already in your library. Remove it from the Audiobook Library page instead.");
+        }
+
+        // An in-flight download has to leave the client before the wanted
+        // entry does, or the job keeps running against a book Listenarr no
+        // longer knows about.
+        var downloads = await listenarr.GetDownloadsAsync(ct);
+        var active = downloads
+            .Where(item => item.AudiobookId == listenarrId &&
+                MapState(item.Status) is "Queued" or "Downloading" or "Paused")
+            .OrderByDescending(item => item.StartedAt)
+            .FirstOrDefault();
+        if (active is not null)
+            await listenarr.RemoveDownloadFromQueueAsync(active.Id, ct);
+
+        var remaining = store.RemoveRequester(
+            listenarrId, AudiobookRequestTokenStore.StableUserId(ownerKey));
+        if (remaining > 0 && !isAdmin)
+        {
+            Log.Information(
+                "[Listenarr] requester withdrawn from audiobook {ListenarrId}; {Remaining} requester(s) remain",
+                listenarrId, remaining);
+            return new AudiobookRequestRemovalResult(listenarrId, false, remaining);
+        }
+
+        await listenarr.DeleteFromLibraryAsync(listenarrId, ct);
+        store.DeleteRequest(listenarrId);
+        Log.Information(
+            "[Listenarr] request removed entirely by user {UserId}, audiobook {ListenarrId}/{Asin}, downloadCanceled {Canceled}",
+            SafeUser(ownerKey), listenarrId, request.Asin, active is not null);
+        return new AudiobookRequestRemovalResult(listenarrId, true, 0);
+    }
+
     public async Task RetryImportAsync(
         string ownerKey, bool isAdmin, int listenarrId, CancellationToken ct)
     {
@@ -227,17 +393,22 @@ public sealed class AudiobookRequestService(
     private async Task<AudiobookRequestResponse> ConfirmLockedAsync(
         string ownerKey,
         string ownerLabel,
-        AudiobookRequestPreviewToken preview,
+        string asin,
+        string region,
+        bool autoSearch,
         CancellationToken ct)
     {
         var started = Stopwatch.GetTimestamp();
-        var metadata = await listenarr.GetAudibleMetadataAsync(preview.Asin, preview.Region, ct)
+        var metadata = await listenarr.GetAudibleMetadataAsync(asin, region, ct)
             ?? throw new AudiobookRequestValidationException("That audiobook edition is no longer available.");
-        if (!string.Equals(metadata.Asin, preview.Asin, StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(metadata.Asin, asin, StringComparison.OrdinalIgnoreCase))
             throw new AudiobookRequestValidationException("Listenarr returned a different edition. Search again.");
 
-        var existing = await listenarr.GetLibraryByAsinAsync(preview.Asin, ct);
+        var existing = await listenarr.GetLibraryByAsinAsync(asin, ct);
         var alreadyExisted = existing is not null;
+        // An edition already in Listenarr keeps whatever acquisition it
+        // already has: a second requester must never kick off a second search.
+        var searchStarted = false;
         if (existing is null)
         {
             var profileTask = listenarr.GetDefaultQualityProfileAsync(ct);
@@ -247,19 +418,20 @@ public sealed class AudiobookRequestService(
                 throw new AudiobookRequestValidationException("Listenarr has no audiobook destination configured.");
 
             var addRequest = new ListenarrAddToLibraryRequest(
-                ToLibraryMetadata(metadata, preview.Asin, preview.Region),
+                ToLibraryMetadata(metadata, asin, region),
                 Monitored: true,
                 QualityProfileId: (await profileTask).Id,
-                AutoSearch: false);
+                AutoSearch: autoSearch);
             try
             {
                 var add = await listenarr.AddToLibraryAsync(addRequest, ct);
                 existing = add.Audiobook;
                 alreadyExisted = add.AlreadyExisted;
+                searchStarted = autoSearch && !add.AlreadyExisted;
             }
             catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
             {
-                existing = await ReconcileAmbiguousAddAsync(preview.Asin);
+                existing = await ReconcileAmbiguousAddAsync(asin);
                 if (existing is null)
                     throw;
                 alreadyExisted = true;
@@ -269,29 +441,30 @@ public sealed class AudiobookRequestService(
         if (existing is null || existing.Id <= 0)
             throw new InvalidOperationException("Listenarr did not return the added audiobook.");
 
-        var title = metadata.Title?.Trim() ?? existing.Title?.Trim() ?? preview.Asin;
+        var title = metadata.Title?.Trim() ?? existing.Title?.Trim() ?? asin;
         var authors = Names(metadata.Authors);
+        var status = searchStarted ? "Searching" : "Monitored";
         var requesterAdded = store.SaveRequestAndRequester(
             existing,
-            preview.Asin,
+            asin,
             string.IsNullOrWhiteSpace(metadata.Isbn) ? [] : [metadata.Isbn],
             title,
             string.Join(", ", authors),
-            "Monitored",
+            status,
             AudiobookRequestTokenStore.StableUserId(ownerKey),
             ownerLabel,
             timeProvider.GetUtcNow());
 
         Log.Information(
-            "[Listenarr] request confirmed for user {UserId}, audiobook {ListenarrId}/{Asin}, existing {AlreadyExisted}, requesterAdded {RequesterAdded}, autoSearch false, elapsed {ElapsedMs}ms",
-            SafeUser(ownerKey), existing.Id, preview.Asin, alreadyExisted, requesterAdded,
+            "[Listenarr] request confirmed for user {UserId}, audiobook {ListenarrId}/{Asin}, existing {AlreadyExisted}, requesterAdded {RequesterAdded}, autoSearch {AutoSearch}, elapsed {ElapsedMs}ms",
+            SafeUser(ownerKey), existing.Id, asin, alreadyExisted, requesterAdded, searchStarted,
             Stopwatch.GetElapsedTime(started).TotalMilliseconds);
 
         return new AudiobookRequestResponse(
             existing.Id,
-            preview.Asin,
+            asin,
             title,
-            "Monitored",
+            status,
             alreadyExisted,
             requesterAdded);
     }

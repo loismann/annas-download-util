@@ -15,7 +15,7 @@ public sealed class AudiobookRequestSafetyTests : IDisposable
     public void PreviewAndReleaseTokens_AreOwnerScopedAndSingleUse()
     {
         var tokens = new AudiobookRequestTokenStore(TimeProvider.System);
-        var preview = tokens.CreatePreview("owner-a", "B012345678", "us");
+        var preview = tokens.CreatePreview("owner-a", "B012345678", "us", autoSearch: false);
 
         tokens.ConsumePreview("owner-b", preview.Token).Should().BeNull();
         // A failed owner check consumes the capability, so it cannot be probed
@@ -25,6 +25,25 @@ public sealed class AudiobookRequestSafetyTests : IDisposable
         var release = tokens.CreateRelease("owner-a", 42, "B012345678", "upstream-reference");
         tokens.ConsumeRelease("owner-a", 99, release.Token).Should().BeNull();
         tokens.ConsumeRelease("owner-a", 42, release.Token).Should().BeNull();
+
+        var series = tokens.CreateSeries("owner-a", "B0SERIES01", "us", ["B012345678"]);
+        tokens.ConsumeSeries("owner-b", series.Token).Should().BeNull();
+        tokens.ConsumeSeries("owner-a", series.Token).Should().BeNull();
+    }
+
+    /// <summary>The browser reports the auto-search decision; it cannot make
+    /// one. Whatever the server decided during preview is what the token
+    /// carries into confirmation.</summary>
+    [Fact]
+    public void PreviewToken_CarriesTheServersAutoSearchDecision()
+    {
+        var tokens = new AudiobookRequestTokenStore(TimeProvider.System);
+
+        var reviewed = tokens.CreatePreview("owner-a", "B012345678", "us", autoSearch: false);
+        var automatic = tokens.CreatePreview("owner-a", "B087654321", "us", autoSearch: true);
+
+        tokens.ConsumePreview("owner-a", reviewed.Token)!.AutoSearch.Should().BeFalse();
+        tokens.ConsumePreview("owner-a", automatic.Token)!.AutoSearch.Should().BeTrue();
     }
 
     [Fact]
@@ -50,6 +69,29 @@ public sealed class AudiobookRequestSafetyTests : IDisposable
         store.GetByAsin("b012345678")!.ListenarrId.Should().Be(42);
         store.GetOwnerLabels(42).Should().Equal("Paul", "Mom");
     }
+
+    /// <summary>Measured against the live indexers on 2026-08-02: an apostrophe
+    /// must become a space. "Pandora's Star" and "Pandoras Star" both return
+    /// zero releases, while "Pandora Star" returns three. The leftover "s"
+    /// token is harmless — "Pandora s Star" returns the same three — so this
+    /// deliberately does not special-case possessives.</summary>
+    [Theory]
+    [InlineData("Pandora's Star", "Pandora s Star")]
+    [InlineData("Carl's Doomsday Scenario", "Carl s Doomsday Scenario")]
+    [InlineData("Judas Unchained", "Judas Unchained")]
+    [InlineData("Peter F. Hamilton", "Peter F Hamilton")]
+    [InlineData("  Spaced   Out  ", "Spaced Out")]
+    [InlineData(null, "")]
+    public void ReleaseQuery_ReplacesPunctuationWithSpace_RatherThanDeletingIt(
+        string? input, string expected) =>
+        AudiobookRequestService.NormalizeQuery(input).Should().Be(expected);
+
+    [Theory]
+    [InlineData("Peter F. Hamilton", "Peter F. Hamilton")]
+    [InlineData("Neil Gaiman, Terry Pratchett", "Neil Gaiman")]
+    [InlineData("", "")]
+    public void ReleaseQuery_UsesOnlyTheFirstAuthor(string authors, string expected) =>
+        AudiobookRequestService.FirstAuthor(authors).Should().Be(expected);
 
     public void Dispose()
     {

@@ -70,8 +70,86 @@ export interface AudiobookRequestPreview {
   format?: string;
   abridged: boolean;
   qualityProfile: string;
-  autoSearch: false;
+  /** Decided by the server and carried inside the preview token — the browser
+   * reports it, it never requests it. */
+  autoSearch: boolean;
+  autoSearchReason: string;
   alreadyRequested: boolean;
+}
+
+/* ─────────────── AI discovery (phase 5) ─────────────────────────────── */
+
+export type AudiobookResolution = 'resolved' | 'ambiguous' | 'notFound';
+
+export interface AudiobookDiscoveryResult {
+  resolution: AudiobookResolution;
+  suggestedTitle: string;
+  suggestedAuthor?: string;
+  /** The model's recommendation reason — shown only for AI results. */
+  reason?: string;
+  /** Present only when exactly one real edition was matched. */
+  match?: AudiobookSearchResult;
+  /** Editions to choose between when the suggestion stayed ambiguous. */
+  choices: AudiobookSearchResult[];
+  resolutionNote?: string;
+  /** A narrator the user named in their query. Sent back with the request so
+   * the server keeps it on manual release review. */
+  narratorPreference?: string;
+}
+
+export interface AudiobookDiscoveryResponse {
+  summary?: string;
+  region: string;
+  resolvedCount: number;
+  ambiguousCount: number;
+  notFoundCount: number;
+  ownedCount: number;
+  results: AudiobookDiscoveryResult[];
+}
+
+/* ─────────────── Series requests (phase 6) ──────────────────────────── */
+
+export type AudiobookSeriesClassification =
+  'owned' | 'requested' | 'requestable' | 'ambiguous' | 'unavailable';
+
+export interface AudiobookSeriesMemberPreview {
+  classification: AudiobookSeriesClassification;
+  position?: string;
+  title: string;
+  asin?: string;
+  edition?: AudiobookSearchResult;
+  note?: string;
+}
+
+export interface AudiobookSeriesPreview {
+  previewToken: string;
+  expiresAt: string;
+  seriesAsin: string;
+  seriesName?: string;
+  region: string;
+  ownedCount: number;
+  requestedCount: number;
+  requestableCount: number;
+  unavailableCount: number;
+  requestCeiling: number;
+  exceedsCeiling: boolean;
+  members: AudiobookSeriesMemberPreview[];
+}
+
+export interface AudiobookSeriesRequestOutcome {
+  asin: string;
+  title: string;
+  outcome: 'requested' | 'alreadyRequested' | 'failed';
+  listenarrId?: number;
+  error?: string;
+}
+
+export interface AudiobookSeriesConfirmResult {
+  seriesAsin: string;
+  requestedCount: number;
+  alreadyExistedCount: number;
+  failedCount: number;
+  outcomes: AudiobookSeriesRequestOutcome[];
 }
 
 export interface AudiobookRequestResult {
@@ -114,8 +192,14 @@ export interface AudiobookReleaseGrabResult {
   status: string;
 }
 
+export interface AudiobookRequestRemoval {
+  listenarrId: number;
+  removedFromListenarr: boolean;
+  remainingRequesters: number;
+}
+
 export type AudiobookRequestState =
-  'Monitored' | 'Queued' | 'Downloading' | 'Paused' | 'Processing' | 'Importing' |
+  'Monitored' | 'Searching' | 'Queued' | 'Downloading' | 'Paused' | 'Processing' | 'Importing' |
   'ImportBlocked' | 'ReadyToScan' | 'InLibrary' | 'Failed' | 'Canceled';
 
 export interface AudiobookRequestStatus {
@@ -136,9 +220,17 @@ export interface AudiobookRequestStatus {
   updatedAt: string;
 }
 
+/**
+ * Listenarr-backed audiobook search, discovery, and requests. Kept separate
+ * from AudiobookApiService, which owns the playable Audiobookshelf library:
+ * the two answer different questions about different systems.
+ */
 @Injectable({ providedIn: 'root' })
 export class AudiobookRequestApiService {
   private readonly baseUrl = `${apiBase()}/api/audiobook-requests`;
+  /** AI discovery lives under the shared /api/ai prefix like every other AI
+   * endpoint, but its response is audiobook-shaped, so it belongs here. */
+  private readonly discoverUrl = `${apiBase()}/api/ai/audiobook-search`;
 
   constructor(private http: HttpClient) {}
 
@@ -152,8 +244,38 @@ export class AudiobookRequestApiService {
     return this.http.get<AudiobookSearchResponse>(`${this.baseUrl}/search`, { params });
   }
 
-  previewRequest(asin: string, region: string): Observable<AudiobookRequestPreview> {
-    return this.http.post<AudiobookRequestPreview>(`${this.baseUrl}/preview`, { asin, region });
+  discover(query: string, count?: number, region = 'us'): Observable<AudiobookDiscoveryResponse> {
+    return this.http.post<AudiobookDiscoveryResponse>(this.discoverUrl, { query, count, region });
+  }
+
+  previewRequest(
+    asin: string,
+    region: string,
+    narratorPreference?: string,
+    languagePreference?: string
+  ): Observable<AudiobookRequestPreview> {
+    return this.http.post<AudiobookRequestPreview>(`${this.baseUrl}/preview`, {
+      asin,
+      region,
+      narratorPreference,
+      languagePreference
+    });
+  }
+
+  previewSeries(seriesAsin: string, region: string): Observable<AudiobookSeriesPreview> {
+    return this.http.post<AudiobookSeriesPreview>(`${this.baseUrl}/series/preview`, { seriesAsin, region });
+  }
+
+  confirmSeries(
+    previewToken: string,
+    asins: string[],
+    confirmLarge = false
+  ): Observable<AudiobookSeriesConfirmResult> {
+    return this.http.post<AudiobookSeriesConfirmResult>(`${this.baseUrl}/series/confirm`, {
+      previewToken,
+      asins,
+      confirmLarge
+    });
   }
 
   confirmRequest(previewToken: string): Observable<AudiobookRequestResult> {
@@ -180,6 +302,12 @@ export class AudiobookRequestApiService {
       `${this.baseUrl}/${listenarrId}/cancel`,
       { removeFromClient: true }
     );
+  }
+
+  /** Undo a request. Only removes the Listenarr entry when the caller was the
+   * last person wanting it; refused once the book has reached the library. */
+  removeRequest(listenarrId: number): Observable<AudiobookRequestRemoval> {
+    return this.http.delete<AudiobookRequestRemoval>(`${this.baseUrl}/${listenarrId}`);
   }
 
   retryImport(listenarrId: number): Observable<{ listenarrId: number; status: string }> {

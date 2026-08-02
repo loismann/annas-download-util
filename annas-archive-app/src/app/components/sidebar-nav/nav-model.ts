@@ -37,16 +37,24 @@ export interface NavEntry {
 }
 
 export const NAV_ENTRIES: NavEntry[] = [
-  { label: 'Book Search', shortLabel: 'Book Search', route: '/search', icon: 'search' },
-  // `local_library` is a person reading — the civic-library glyph. A shelf of
-  // books says "collection", which is what this page actually is.
-  { label: 'Ebook Library', shortLabel: 'Ebook Library', route: '/library', icon: 'library_books' },
-  { label: 'Ebook Reader', shortLabel: 'Reader', route: '/reader', icon: 'chrome_reader_mode' },
+  // Grouped like Audiobooks and TV & Movies below — these three were the only
+  // media type still spilling its pages across the top level.
+  {
+    label: 'Ebooks',
+    icon: 'library_books',
+    children: [
+      { label: 'Book Search', shortLabel: 'Book Search', route: '/search', icon: 'search' },
+      // `local_library` is a person reading — the civic-library glyph. A shelf of
+      // books says "collection", which is what this page actually is.
+      { label: 'Ebook Library', shortLabel: 'Ebook Library', route: '/library', icon: 'library_books' },
+      { label: 'Ebook Reader', shortLabel: 'Reader', route: '/reader', icon: 'chrome_reader_mode' }
+    ]
+  },
   {
     label: 'Audiobooks',
     icon: 'menu_book',
     children: [
-      { label: 'Audiobook Search', shortLabel: 'Audio Search', route: '/audiobook-search', icon: 'search' },
+      { label: 'Audiobook Search', shortLabel: 'Audiobook Search', route: '/audiobook-search', icon: 'search' },
       { label: 'Audiobook Library', shortLabel: 'Audiobooks', route: '/audiobooks', icon: 'menu_book', overlayIcon: 'headphones' }
     ]
   },

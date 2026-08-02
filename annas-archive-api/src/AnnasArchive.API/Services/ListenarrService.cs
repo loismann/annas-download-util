@@ -1,6 +1,7 @@
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Net;
+using System.Text.Json;
 using AnnasArchive.API.Models;
 
 namespace AnnasArchive.API.Services;
@@ -22,6 +23,8 @@ public interface IListenarrService
         string query, string region, string? language = null, CancellationToken ct = default);
     Task<ListenarrAudibleBook?> GetAudibleMetadataAsync(
         string asin, string region, CancellationToken ct = default);
+    Task<IReadOnlyList<ListenarrAudibleSearchResult>> GetSeriesBooksAsync(
+        string seriesAsin, string region, CancellationToken ct = default);
     Task<ListenarrLibraryItem?> GetLibraryByAsinAsync(string asin, CancellationToken ct = default);
     Task<ListenarrQualityProfile> GetDefaultQualityProfileAsync(CancellationToken ct = default);
     Task<ListenarrLibraryAddResponse> AddToLibraryAsync(
@@ -32,6 +35,7 @@ public interface IListenarrService
         string downloadReference, int audiobookId, CancellationToken ct = default);
     Task<IReadOnlyList<ListenarrDownload>> GetDownloadsAsync(CancellationToken ct = default);
     Task RemoveDownloadFromQueueAsync(string downloadId, CancellationToken ct = default);
+    Task<bool> DeleteFromLibraryAsync(int listenarrId, CancellationToken ct = default);
     Task RetryImportAsync(string downloadId, CancellationToken ct = default);
 }
 
@@ -168,6 +172,43 @@ public sealed class ListenarrService : IListenarrService
         return await response.Content.ReadFromJsonAsync<ListenarrAudibleBook>(cancellationToken: ct);
     }
 
+    public async Task<IReadOnlyList<ListenarrAudibleSearchResult>> GetSeriesBooksAsync(
+        string seriesAsin, string region, CancellationToken ct = default)
+    {
+        var path = $"/api/v1/search/audible/series/books/{Uri.EscapeDataString(seriesAsin)}" +
+            $"?region={Uri.EscapeDataString(region)}";
+        using var response = await _http.GetAsync(path, ct);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+            return [];
+        response.EnsureSuccessStatusCode();
+
+        using var stream = await response.Content.ReadAsStreamAsync(ct);
+        using var document = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
+        return ReadEditions(document.RootElement);
+    }
+
+    /// <summary>
+    /// The published OpenAPI snapshot was generated from Listenarr 1.0.11
+    /// while the pinned runtime is 1.2.2, and the series endpoint is where
+    /// the two disagree: it may return a bare array or an envelope. Accepting
+    /// both costs a few lines and survives that specific upstream churn.
+    /// </summary>
+    private static IReadOnlyList<ListenarrAudibleSearchResult> ReadEditions(JsonElement root)
+    {
+        var editions = root;
+        if (root.ValueKind == JsonValueKind.Object)
+        {
+            if (root.TryGetProperty("results", out var results) && results.ValueKind == JsonValueKind.Array)
+                editions = results;
+            else if (root.TryGetProperty("books", out var books) && books.ValueKind == JsonValueKind.Array)
+                editions = books;
+        }
+
+        return editions.ValueKind == JsonValueKind.Array
+            ? editions.Deserialize<List<ListenarrAudibleSearchResult>>(JsonSerializerOptions.Web) ?? []
+            : [];
+    }
+
     public async Task<ListenarrLibraryItem?> GetLibraryByAsinAsync(
         string asin, CancellationToken ct = default)
     {
@@ -225,6 +266,18 @@ public sealed class ListenarrService : IListenarrService
         using var response = await _http.DeleteAsync(
             $"/api/v1/download/queue/{Uri.EscapeDataString(downloadId)}", ct);
         response.EnsureSuccessStatusCode();
+    }
+
+    /// <summary>Removes a monitored entry from Listenarr's library. Returns
+    /// false when it was already gone, which is a success for the caller:
+    /// the desired end state is "not in the library".</summary>
+    public async Task<bool> DeleteFromLibraryAsync(int listenarrId, CancellationToken ct = default)
+    {
+        using var response = await _http.DeleteAsync($"/api/v1/library/{listenarrId}", ct);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+            return false;
+        response.EnsureSuccessStatusCode();
+        return true;
     }
 
     public async Task RetryImportAsync(string downloadId, CancellationToken ct = default)

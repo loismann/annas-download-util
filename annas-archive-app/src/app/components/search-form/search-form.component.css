@@ -9,18 +9,33 @@
   flex-direction: column;
   align-items: center;
   padding: 1.5rem 1rem;
+  /* The hero centres this component, so it has to claim the full row itself —
+     without this it shrink-wraps its content and the column below jumps width
+     as the extras panel opens and closes. */
+  width: 100%;
 }
 
 .search-form form {
   width: 100%;
-  /* Desktop gets a wide, roomy column — width:100% below still lets it
-     compress naturally on narrower viewports (tablet/phone), same as
-     every field inside it. */
-  max-width: 1280px;
+  /* 640px matches the TV/movie search bar exactly. This was 1280px, which made
+     the same control twice as wide on one page as the other. */
+  max-width: 640px;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
   gap: var(--form-item-gap);
+  /* Children may not widen the column. The extras panel holds a five-item
+     health row and the filter controls, whose min-content width exceeds
+     640px; without this the form stretched while open and snapped back when
+     closed. */
+  min-width: 0;
+}
+
+/* Same reasoning one level down: each row is free to scroll or wrap inside
+   the fixed column rather than push it wider. */
+.search-form form > * {
+  min-width: 0;
+  max-width: 100%;
 }
 
 /* Book name field — full width of the shared 640px column, same as Author

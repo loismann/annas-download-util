@@ -536,8 +536,10 @@ public static class ServiceConfiguration
         // clients. It holds no state; scoped lifetime keeps those HTTP client
         // dependencies aligned with the request that initiated the search.
         services.AddScoped<AudiobookAvailabilityService>();
+        services.AddScoped<AudiobookDiscoveryService>();
         services.AddScoped<AudiobookRequestReconciler>();
         services.AddScoped<AudiobookRequestService>();
+        services.AddScoped<AudiobookSeriesService>();
 
         // External API services
         services.AddSingleton<IOpenLibraryService, OpenLibraryService>();

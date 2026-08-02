@@ -111,6 +111,7 @@ app.MapAiFlashcardsEndpoints();
 app.MapAiVocabEndpoints();
 app.MapAiBookSearchEndpoints();
 app.MapAiMediaSearchEndpoints();
+app.MapAiAudiobookSearchEndpoints();
 app.MapAiCharacterEndpoints();
 app.MapAiSummarizeEndpoints();
 app.MapAiSectionSummaryEndpoints();

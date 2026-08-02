@@ -1,6 +1,7 @@
 using System.Text.Json.Nodes;
 using AnnasArchive.API.Models;
 using AnnasArchive.API.Services;
+using AnnasArchive.API.Data;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Moq;
@@ -73,9 +74,11 @@ public sealed class AudiobookAvailabilityServiceTests
     {
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {
-            ["Listenarr:DefaultRegion"] = "us"
+            ["Listenarr:DefaultRegion"] = "us",
+            ["Database:Path"] = Path.Combine(Path.GetTempPath(), $"listenarr-availability-{Guid.NewGuid():N}.db")
         }).Build();
-        return new AudiobookAvailabilityService(listenarr, abs, configuration);
+        var requests = new AudiobookRequestStore(new AppDatabase(configuration));
+        return new AudiobookAvailabilityService(listenarr, abs, requests, configuration);
     }
 
     private static Mock<IListenarrService> ListenarrReturning(

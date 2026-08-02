@@ -28,7 +28,7 @@ describe('AudiobookSearchComponent', () => {
     }));
     api.search.and.returnValue(of({ query: 'Pride', region: 'us', totalResults: 1, results: [{
       asin: 'ASIN1', title: 'Pride and Prejudice', authors: ['Jane Austen'], narrators: ['Rosamund Pike'],
-      genres: [], series: [], availability: 'available'
+      genres: [], series: [], availability: 'available', requestTracked: false
     }] }));
 
     await TestBed.configureTestingModule({

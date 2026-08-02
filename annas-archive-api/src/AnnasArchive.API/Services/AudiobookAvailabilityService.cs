@@ -19,29 +19,42 @@ public sealed class AudiobookAvailabilityService(
 {
     private const int MaxResults = 25;
 
+    /// <summary>Resolves the effective Audible region once, so catalog search
+    /// and AI discovery cannot drift onto different defaults.</summary>
+    public string ResolveRegion(string? region) => string.IsNullOrWhiteSpace(region)
+        ? configuration["Listenarr:DefaultRegion"] ?? "us"
+        : region.Trim().ToLowerInvariant();
+
+    /// <summary>Loads the two cross-reference sets once. AI discovery resolves
+    /// many candidates against the same snapshot instead of re-reading the
+    /// Listenarr library and the Audiobookshelf catalog per candidate.</summary>
+    public async Task<AudiobookAvailabilityContext> LoadContextAsync(CancellationToken ct = default)
+    {
+        var requestedTask = listenarr.GetLibraryAsync(ct);
+        var ownedTask = audiobookshelf.GetLibraryItemsAsync(ct);
+        await Task.WhenAll(requestedTask, ownedTask);
+        return new AudiobookAvailabilityContext(await requestedTask, await ownedTask);
+    }
+
     public async Task<AudiobookSearchResponse> SearchAsync(
         string query,
         string? region,
         string? language,
         CancellationToken ct = default)
     {
-        var resolvedRegion = string.IsNullOrWhiteSpace(region)
-            ? configuration["Listenarr:DefaultRegion"] ?? "us"
-            : region.Trim().ToLowerInvariant();
+        var resolvedRegion = ResolveRegion(region);
 
         var searchTask = listenarr.SearchAudibleAsync(query, resolvedRegion, language, ct);
-        var requestedTask = listenarr.GetLibraryAsync(ct);
-        var ownedTask = audiobookshelf.GetLibraryItemsAsync(ct);
+        var contextTask = LoadContextAsync(ct);
 
-        await Task.WhenAll(searchTask, requestedTask, ownedTask);
+        await Task.WhenAll(searchTask, contextTask);
 
         var search = await searchTask;
-        var requested = await requestedTask;
-        var owned = await ownedTask;
+        var context = await contextTask;
         var results = (search.Results ?? [])
             .Where(candidate => !string.IsNullOrWhiteSpace(candidate.Asin) && !string.IsNullOrWhiteSpace(candidate.Title))
             .Take(MaxResults)
-            .Select(candidate => Map(candidate, requested, owned))
+            .Select(candidate => Annotate(candidate, context))
             .ToList();
 
         return new AudiobookSearchResponse(
@@ -52,11 +65,15 @@ public sealed class AudiobookAvailabilityService(
             results);
     }
 
-    private AudiobookSearchResult Map(
+    /// <summary>Turns one Audible edition into an app-facing card annotated
+    /// with ownership and acquisition state.</summary>
+    public AudiobookSearchResult Annotate(
         ListenarrAudibleSearchResult candidate,
-        IReadOnlyList<ListenarrLibraryItem> requested,
-        JsonArray owned)
+        AudiobookAvailabilityContext context)
     {
+        var requested = context.Requested;
+        var owned = context.Owned;
+
         var authors = candidate.Authors?.Select(author => author.Name)
             .Where(name => !string.IsNullOrWhiteSpace(name)).Select(name => name!).ToArray() ?? [];
         var narrators = candidate.Narrators?.Select(narrator => narrator.Name)
@@ -165,3 +182,9 @@ public sealed class AudiobookAvailabilityService(
 
     private sealed record OwnedMatch(string ItemId, string Reason);
 }
+
+/// <summary>One snapshot of everything already requested in Listenarr and
+/// everything playable in Audiobookshelf.</summary>
+public sealed record AudiobookAvailabilityContext(
+    IReadOnlyList<ListenarrLibraryItem> Requested,
+    JsonArray Owned);

@@ -220,7 +220,16 @@ public sealed record AudiobookRequestStatusResponse(
 
 public sealed record AudiobookRequestCancelRequest(bool RemoveFromClient = true);
 
-public sealed record AudiobookRequestPreviewRequest(string? Asin, string? Region);
+/// <summary>Preferences the user stated themselves. They never widen what the
+/// app will do — they only force an automatic acquisition back to manual
+/// release review, because no automatic release match can prove a narrator or
+/// language preference before the file arrives.</summary>
+public sealed record AudiobookRequestPreviewRequest(
+    string? Asin,
+    string? Region,
+    string? NarratorPreference = null,
+    string? LanguagePreference = null);
+
 public sealed record AudiobookRequestConfirmRequest(string? PreviewToken);
 
 public sealed record AudiobookRequestPreviewResponse(
@@ -235,6 +244,7 @@ public sealed record AudiobookRequestPreviewResponse(
     bool Abridged,
     string QualityProfile,
     bool AutoSearch,
+    string AutoSearchReason,
     bool AlreadyRequested);
 
 public sealed record AudiobookRequestResponse(
@@ -312,6 +322,93 @@ public sealed record AudiobookSearchResponse(
     string? Language,
     int TotalResults,
     IReadOnlyList<AudiobookSearchResult> Results);
+
+// ─── Series requests (phase 6) ───────────────────────────────────────────
+
+public sealed record AudiobookSeriesPreviewRequest(string? SeriesAsin, string? Region);
+
+/// <summary>ConfirmLarge is the deliberate second confirmation required above
+/// the standard ceiling; it is honoured for administrators only.</summary>
+public sealed record AudiobookSeriesConfirmRequest(
+    string? PreviewToken,
+    IReadOnlyList<string>? Asins,
+    bool ConfirmLarge = false);
+
+/// <summary>Classification is "owned", "requested", "requestable",
+/// "ambiguous" (a member the catalog did not return a single edition for) or
+/// "unavailable". Only "requestable" members may be confirmed.</summary>
+public sealed record AudiobookSeriesMember(
+    string Classification,
+    string? Position,
+    string Title,
+    string? Asin,
+    AudiobookSearchResult? Edition,
+    string? Note);
+
+public sealed record AudiobookSeriesPreviewResponse(
+    string PreviewToken,
+    DateTimeOffset ExpiresAt,
+    string SeriesAsin,
+    string? SeriesName,
+    string Region,
+    int OwnedCount,
+    int RequestedCount,
+    int RequestableCount,
+    int UnavailableCount,
+    int RequestCeiling,
+    bool ExceedsCeiling,
+    IReadOnlyList<AudiobookSeriesMember> Members);
+
+public sealed record AudiobookSeriesRequestOutcome(
+    string Asin,
+    string Title,
+    string Outcome,
+    int? ListenarrId,
+    string? Error);
+
+public sealed record AudiobookSeriesConfirmResponse(
+    string SeriesAsin,
+    int RequestedCount,
+    int AlreadyExistedCount,
+    int FailedCount,
+    IReadOnlyList<AudiobookSeriesRequestOutcome> Outcomes);
+
+// ─── AI discovery (phase 5) ──────────────────────────────────────────────
+
+public sealed record AiAudiobookSearchRequest(string? Query, int? Count, string? Region);
+
+/// <summary>One AI-proposed work. It deliberately carries no ASIN, release,
+/// or URL: identity is established only by deterministic catalog resolution,
+/// so a hallucinated identifier can never reach Listenarr.</summary>
+public sealed record AudiobookDiscoveryCandidate(
+    string Title,
+    string? Author,
+    int? Year,
+    string? Series,
+    string? SeriesNumber,
+    string? NarratorPreference,
+    string? Reason);
+
+/// <summary>Resolution is "resolved" (one confident edition), "ambiguous"
+/// (the user must pick an edition) or "notFound". Only a resolved or
+/// user-selected edition carries a requestable ASIN.</summary>
+public sealed record AudiobookDiscoveryResult(
+    string Resolution,
+    string SuggestedTitle,
+    string? SuggestedAuthor,
+    string? Reason,
+    AudiobookSearchResult? Match,
+    IReadOnlyList<AudiobookSearchResult> Choices,
+    string? ResolutionNote = null);
+
+public sealed record AudiobookDiscoveryResponse(
+    string? Summary,
+    string Region,
+    int ResolvedCount,
+    int AmbiguousCount,
+    int NotFoundCount,
+    int OwnedCount,
+    IReadOnlyList<AudiobookDiscoveryResult> Results);
 
 /// <summary>Safe app-facing status. It deliberately contains no upstream URL,
 /// API key, credentials, download paths, or raw provider responses.</summary>

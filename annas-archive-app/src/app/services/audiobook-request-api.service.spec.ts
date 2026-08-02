@@ -36,4 +36,26 @@ describe('AudiobookRequestApiService', () => {
     expect(request.request.params.get('language')).toBe('english');
     request.flush({ query: 'Pride & Prejudice', region: 'uk', language: 'english', totalResults: 0, results: [] });
   });
+
+  it('confirms only an opaque preview token', () => {
+    const token = 'A'.repeat(64);
+    service.confirmRequest(token).subscribe();
+
+    const request = http.expectOne(req => req.url.endsWith('/api/audiobook-requests'));
+    expect(request.request.method).toBe('POST');
+    expect(request.request.body).toEqual({ previewToken: token });
+    expect(JSON.stringify(request.request.body)).not.toContain('destinationPath');
+    request.flush({ listenarrId: 42, asin: 'B012345678', title: 'Book', status: 'Monitored', alreadyExisted: false, requesterAdded: true });
+  });
+
+  it('grabs a release using only the app selection token', () => {
+    const token = 'B'.repeat(64);
+    service.grabRelease(42, token).subscribe();
+
+    const request = http.expectOne(req => req.url.includes('/42/releases/') && req.url.endsWith('/grab'));
+    expect(request.request.method).toBe('POST');
+    expect(request.request.body).toEqual({});
+    expect(request.request.url).not.toContain('magnet:');
+    request.flush({ listenarrId: 42, asin: 'B012345678', downloadId: 'download-1', status: 'Queued' });
+  });
 });

@@ -15,7 +15,9 @@ import {
   SpotifyKnownMusicOverrideResult,
   SpotifyDiscoveryDraft,
   SpotifyDiscoveryDraftUpdate,
-  CommandResponse
+  CommandResponse,
+  SpotifyPlan,
+  SpotifyAuditEvent
 } from '../spotifinator/spotifinator.models';
 import { apiBase } from './api-base';
 
@@ -111,6 +113,40 @@ export class SpotifinatorApiService {
   ): Observable<SpotifyDiscoveryDraft> {
     return this.http.patch<SpotifyDiscoveryDraft>(
       `${this.baseUrl}/drafts/${encodeURIComponent(draftId)}`, update);
+  }
+
+  // ─── Change plans ──────────────────────────────────────────────────────────
+
+  getPlan(planId: string): Observable<SpotifyPlan> {
+    return this.http.get<SpotifyPlan>(`${this.baseUrl}/plans/${planId}`);
+  }
+
+  /**
+   * Executes the plan. `highImpactAcknowledged` is a separate flag rather than
+   * part of the plan itself so that a replace or merge cannot be confirmed by the
+   * same click that confirms an ordinary add.
+   */
+  confirmPlan(planId: string, highImpactAcknowledged = false): Observable<SpotifyPlan> {
+    return this.http.post<SpotifyPlan>(`${this.baseUrl}/plans/${planId}/confirm`, {
+      highImpactAcknowledged
+    }).pipe(
+      tap(plan => this.logger.log('[Spotifinator] Plan executed', { planId, status: plan.status }))
+    );
+  }
+
+  cancelPlan(planId: string): Observable<SpotifyPlan> {
+    return this.http.post<SpotifyPlan>(`${this.baseUrl}/plans/${planId}/cancel`, {});
+  }
+
+  /** Returns a *new* plan that still needs confirming — undo is reviewed too. */
+  undoPlan(planId: string): Observable<SpotifyPlan> {
+    return this.http.post<SpotifyPlan>(`${this.baseUrl}/plans/${planId}/undo`, {});
+  }
+
+  getAudit(planId?: string, limit = 100): Observable<SpotifyAuditEvent[]> {
+    const params: Record<string, string> = { limit: limit.toString() };
+    if (planId) params['planId'] = planId;
+    return this.http.get<SpotifyAuditEvent[]>(`${this.baseUrl}/audit`, { params });
   }
 
   // ─── Conversation ──────────────────────────────────────────────────────────

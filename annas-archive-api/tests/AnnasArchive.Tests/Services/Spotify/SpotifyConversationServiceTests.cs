@@ -577,5 +577,27 @@ public class SpotifyConversationServiceTests
         public Task RemovePlaylistsFromLibraryAsync(
             List<string> playlistUris, CancellationToken token = default) =>
             throw new InvalidOperationException("Writes are not part of the read-only inspector.");
+
+        public Task<string?> AddItemsAsync(
+            string playlistId, IReadOnlyList<string> uris, CancellationToken token = default) =>
+            Task.FromResult<string?>("snapshot");
+
+        public Task<string?> RemoveItemsAsync(
+            string playlistId, IReadOnlyList<string> uris, string? snapshotId = null,
+            CancellationToken token = default) => Task.FromResult<string?>("snapshot");
+
+        public Task<string?> ReplaceItemsAsync(
+            string playlistId, IReadOnlyList<string> orderedUris, CancellationToken token = default) =>
+            Task.FromResult<string?>("snapshot");
+
+        public Task<string?> ReorderItemsAsync(
+            string playlistId, int rangeStart, int insertBefore, int rangeLength,
+            string? snapshotId = null, CancellationToken token = default) =>
+            Task.FromResult<string?>("snapshot");
+
+        public Task ChangePlaylistDetailsAsync(
+            string playlistId, string? name = null, string? description = null, bool? isPublic = null,
+            CancellationToken token = default) => Task.CompletedTask;
+
     }
 }

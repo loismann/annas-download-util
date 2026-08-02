@@ -1,0 +1,162 @@
+using System.Text.Json.Serialization;
+
+namespace AnnasArchive.API.Models;
+
+/// <summary>
+/// One Spotify write. Plans are ordered lists of these, and execution stops at the
+/// first failure rather than pressing on — a merge whose target was never populated
+/// must not go on to remove the sources.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum SpotifyPlanStepKind
+{
+    CreatePlaylist,
+    AddItems,
+    RemoveItems,
+    ReplaceItems,
+    ReorderItems,
+    ChangeDetails,
+    RemoveFromLibrary
+}
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum SpotifyPlanStepStatus
+{
+    Pending,
+    Succeeded,
+    Failed,
+    Skipped
+}
+
+/// <summary>
+/// A single step's payload. Which fields matter depends on <see cref="Kind"/>;
+/// the rest stay null rather than being overloaded, so a persisted plan reads
+/// honestly months later.
+///
+/// <paramref name="ResultingSnapshotId"/> is what Spotify returned after the write.
+/// It is the receipt: it proves the step landed, and it is what a later undo has to
+/// check before assuming the playlist still looks the way this step left it.
+/// </summary>
+public sealed record SpotifyPlanStep(
+    int Ordinal,
+    SpotifyPlanStepKind Kind,
+    string? PlaylistId,
+    string? PlaylistName,
+    IReadOnlyList<string>? Uris = null,
+    IReadOnlyList<int>? Positions = null,
+    string? Name = null,
+    string? Description = null,
+    bool? IsPublic = null,
+    int? RangeStart = null,
+    int? InsertBefore = null,
+    int? RangeLength = null,
+    SpotifyPlanStepStatus Status = SpotifyPlanStepStatus.Pending,
+    string? ResultingSnapshotId = null,
+    string? CreatedPlaylistId = null,
+    string? Failure = null
+);
+
+/// <summary>
+/// Everything needed to put a playlist back the way it was, captured *before* the
+/// write. Undo is best-effort and this records why: a removed local file cannot be
+/// re-added through the API at all, and exact positions can only be restored while
+/// the snapshot still matches.
+/// </summary>
+public sealed record SpotifyRestoreManifest(
+    string PlaylistId,
+    string PlaylistName,
+    string? SnapshotId,
+    IReadOnlyList<string> OrderedUris,
+    string? PreviousName = null,
+    string? PreviousDescription = null,
+    bool? PreviousIsPublic = null,
+    IReadOnlyList<string>? UnrestorableItems = null
+);
+
+/// <summary>
+/// What the user sees before confirming. Deliberately separate from the stored plan:
+/// the review surface must describe consequences in plain language, and the numbers
+/// here are computed once at build time so the screen cannot disagree with the plan.
+/// </summary>
+public sealed record SpotifyPlanPreview(
+    string Summary,
+    string ConfirmLabel,
+    IReadOnlyList<string> Effects,
+    IReadOnlyList<string> Warnings,
+    bool RequiresHighImpactAcknowledgement,
+    int ItemsAdded = 0,
+    int ItemsRemoved = 0,
+    int ItemsSkippedAsDuplicates = 0,
+    int ItemsUnresolved = 0,
+    int PlaylistsAffected = 0
+);
+
+public sealed record SpotifyPlanDto(
+    Guid Id,
+    SpotifyPlanAction Action,
+    SpotifyPlanSafetyTier SafetyTier,
+    SpotifyPlanStatus Status,
+    DateTimeOffset CreatedAtUtc,
+    DateTimeOffset ExpiresAtUtc,
+    IReadOnlyList<SpotifyPlanTarget> Targets,
+    SpotifyPlanPreview Preview,
+    IReadOnlyList<SpotifyPlanStep> Steps,
+    string? OriginalRequest,
+    string? ConfirmedBy,
+    DateTimeOffset? ConfirmedAtUtc,
+    string? Failure,
+    bool CanUndo,
+    Guid? UndoOfPlanId
+);
+
+// ─── audit ───────────────────────────────────────────────────────────────────
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum SpotifyAuditEventKind
+{
+    PlanBuilt,
+    PlanConfirmed,
+    PlanCancelled,
+    PlanExpired,
+    StepSucceeded,
+    StepFailed,
+    PlanCompleted,
+    PlanPartiallyCompleted,
+    PlanFailed,
+    PlanReverted
+}
+
+/// <summary>
+/// Append-only. Records who asked, who confirmed, and exactly what changed — with
+/// sanitized names and IDs only. Never tokens, never whole Spotify payloads.
+/// </summary>
+public sealed record SpotifyAuditEvent(
+    Guid Id,
+    Guid PlanId,
+    SpotifyAuditEventKind Kind,
+    DateTimeOffset AtUtc,
+    string? ApplicationUser,
+    string? SpotifyAccountId,
+    string Detail
+);
+
+// ─── requests ────────────────────────────────────────────────────────────────
+
+public sealed record SpotifyBuildPlanRequest(
+    SpotifyPlanAction Action,
+    string? PlaylistReference = null,
+    string? PlaylistId = null,
+    string? DraftId = null,
+    string? Name = null,
+    string? Description = null,
+    bool? IsPublic = null,
+    IReadOnlyList<string>? Uris = null,
+    IReadOnlyList<int>? Positions = null,
+    IReadOnlyList<string>? OrderedUris = null,
+    int? RangeStart = null,
+    int? InsertBefore = null,
+    int? RangeLength = null,
+    string? OriginalRequest = null
+);
+
+public sealed record SpotifyConfirmPlanRequest(bool HighImpactAcknowledged = false);

@@ -561,3 +561,91 @@
     height: 40px !important;
   }
 }
+
+// ─── Change plan review (phases 6/7) ─────────────────────────────────────────
+// A plan is the last thing between a sentence and a real change to someone's
+// Spotify account, so it is styled to be read rather than skimmed past.
+
+.plan-card {
+  border: 1px solid rgba(29, 185, 84, 0.4);
+  border-radius: 8px;
+  padding: 0.85rem 1rem;
+
+  &.plan-high-impact {
+    border-color: rgba(214, 108, 44, 0.75);
+    background: rgba(214, 108, 44, 0.06);
+  }
+
+  .plan-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 600;
+
+    .plan-summary { flex: 1; }
+
+    .plan-status {
+      font-weight: 400;
+      font-size: 0.8rem;
+      opacity: 0.7;
+    }
+  }
+
+  .plan-effects,
+  .plan-warnings {
+    margin: 0.6rem 0 0;
+    padding-left: 1.15rem;
+    font-size: 0.9rem;
+  }
+
+  .plan-warnings {
+    list-style: none;
+    padding-left: 0;
+    color: #b3541e;
+
+    li {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.35rem;
+    }
+  }
+
+  // Deliberately not styled as a subtle hint: this is the second gate on a
+  // destructive change and should look like one.
+  .plan-ack {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+    font-size: 0.9rem;
+    font-weight: 500;
+  }
+
+  .plan-actions {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.85rem;
+  }
+
+  .plan-steps {
+    margin-top: 0.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    font-size: 0.85rem;
+
+    .plan-step {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    // Skipped is visually distinct from failed on purpose — "we did not try this"
+    // is a different fact from "this went wrong".
+    .plan-step-succeeded { color: #1a7f37; }
+    .plan-step-failed    { color: #b3261e; }
+    .plan-step-skipped   { opacity: 0.55; }
+
+    .plan-step-failure { opacity: 0.8; font-style: italic; }
+  }
+}

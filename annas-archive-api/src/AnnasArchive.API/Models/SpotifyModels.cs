@@ -185,6 +185,15 @@ public record SpotifyTopItem(
     [property: JsonPropertyName("external_urls")] SpotifyExternalUrls? ExternalUrls
 );
 
+/// <summary>
+/// Every playlist mutation answers with a new snapshot ID. It is the receipt that
+/// the write landed, and the token a later edit or undo uses to prove the playlist
+/// has not moved underneath it.
+/// </summary>
+public record SpotifySnapshotResponse(
+    [property: JsonPropertyName("snapshot_id")] string? SnapshotId
+);
+
 // ─── Request/Response DTOs for Endpoints ─────────────────────────────────────
 
 public record SpotifySearchRequest(

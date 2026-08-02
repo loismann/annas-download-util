@@ -1,3 +1,4 @@
+using AnnasArchive.API.Helpers;
 using AnnasArchive.API.Models;
 using AnnasArchive.API.Services;
 using AnnasArchive.API.Services.Spotify;
@@ -31,6 +32,13 @@ public static class SpotifyEndpoints
         group.MapGet("/drafts", HandleListDiscoveryDrafts);
         group.MapGet("/drafts/{draftId}", HandleGetDiscoveryDraft);
         group.MapPatch("/drafts/{draftId}", HandleUpdateDiscoveryDraft);
+        group.MapPost("/plans", HandleBuildPlan);
+        group.MapGet("/plans", HandleListPlans);
+        group.MapGet("/plans/{planId:guid}", HandleGetPlan);
+        group.MapPost("/plans/{planId:guid}/confirm", HandleConfirmPlan);
+        group.MapPost("/plans/{planId:guid}/cancel", HandleCancelPlan);
+        group.MapPost("/plans/{planId:guid}/undo", HandleUndoPlan);
+        group.MapGet("/audit", HandleGetAudit);
         group.MapPost("/command", HandleCommand);
 
         app.MapGet("/api/spotify/oauth/callback", HandleOAuthCallback)
@@ -282,6 +290,117 @@ public static class SpotifyEndpoints
             return MapFailure(ex, context);
         }
     }
+
+    // ─── change plans (phases 6/7) ───────────────────────────────────────────
+
+    private static async Task<IResult> HandleBuildPlan(
+        [FromBody] SpotifyBuildPlanRequest request,
+        [FromServices] ISpotifyPlanService plans,
+        [FromServices] ISpotifyCurrentUser currentUser,
+        HttpContext context,
+        CancellationToken token)
+    {
+        try
+        {
+            var result = await plans.BuildAsync(currentUser.GetRequiredOwnerKey(), request, token);
+
+            // A refusal is a normal answer, not a server error: the user asked for
+            // something that is bounded, unreadable, or already true.
+            return result.Refused
+                ? Results.BadRequest(new { error = result.Refusal })
+                : Results.Ok(SpotifyPlanService.ToDto(result.Plan!));
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "[Spotify] Plan build failed");
+            return MapFailure(ex, context);
+        }
+    }
+
+    private static IResult HandleListPlans(
+        ISpotifyPlanService plans, ISpotifyCurrentUser currentUser, int? limit) =>
+        Results.Ok(plans.List(currentUser.GetRequiredOwnerKey(), limit ?? 25));
+
+    private static IResult HandleGetPlan(
+        Guid planId, ISpotifyPlanService plans, ISpotifyCurrentUser currentUser) =>
+        plans.Get(currentUser.GetRequiredOwnerKey(), planId) is { } plan
+            ? Results.Ok(plan)
+            : Results.NotFound(new { error = "That plan does not exist." });
+
+    private static async Task<IResult> HandleConfirmPlan(
+        Guid planId,
+        [FromBody] SpotifyConfirmPlanRequest? request,
+        [FromServices] ISpotifyPlanExecutor executor,
+        [FromServices] ISpotifyCurrentUser currentUser,
+        HttpContext context,
+        CancellationToken token)
+    {
+        try
+        {
+            var ownerKey = currentUser.GetRequiredOwnerKey();
+            var confirmedBy = LibraryHelpers.ResolveUserDisplayName(context) ?? "unknown";
+
+            var plan = await executor.ConfirmAndExecuteAsync(
+                ownerKey, planId, confirmedBy, request?.HighImpactAcknowledged ?? false, token);
+
+            return Results.Ok(SpotifyPlanService.ToDto(plan));
+        }
+        catch (InvalidOperationException ex)
+        {
+            // Expired, already-changed, or missing high-impact acknowledgement. The
+            // user needs the sentence, not a stack trace.
+            return Results.Conflict(new { error = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "[Spotify] Plan {PlanId} execution failed", planId);
+            return MapFailure(ex, context);
+        }
+    }
+
+    private static IResult HandleCancelPlan(
+        Guid planId, ISpotifyPlanService plans, ISpotifyCurrentUser currentUser)
+    {
+        try
+        {
+            return plans.Cancel(currentUser.GetRequiredOwnerKey(), planId) is { } plan
+                ? Results.Ok(plan)
+                : Results.NotFound(new { error = "That plan does not exist." });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.Conflict(new { error = ex.Message });
+        }
+    }
+
+    private static async Task<IResult> HandleUndoPlan(
+        Guid planId,
+        [FromServices] ISpotifyPlanExecutor executor,
+        [FromServices] ISpotifyCurrentUser currentUser,
+        HttpContext context,
+        CancellationToken token)
+    {
+        try
+        {
+            // Returns a *new* plan awaiting its own confirmation. Undo is a change
+            // like any other and gets reviewed like one.
+            var undo = await executor.BuildUndoAsync(currentUser.GetRequiredOwnerKey(), planId, token);
+            return Results.Ok(SpotifyPlanService.ToDto(undo));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.Conflict(new { error = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "[Spotify] Undo build failed for plan {PlanId}", planId);
+            return MapFailure(ex, context);
+        }
+    }
+
+    private static IResult HandleGetAudit(
+        ISpotifyAuditService audit, ISpotifyCurrentUser currentUser, Guid? planId, int? limit) =>
+        Results.Ok(audit.List(currentUser.GetRequiredOwnerKey(), planId, limit ?? 100));
 
     private static IResult MapFailure(Exception exception, HttpContext? context = null)
     {

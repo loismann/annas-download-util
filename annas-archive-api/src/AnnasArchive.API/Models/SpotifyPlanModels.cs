@@ -47,9 +47,13 @@ public sealed record SpotifyPlanTarget(
 );
 
 /// <summary>
-/// Immutable phase-one representation of a proposed Spotify mutation. Persistence,
-/// step manifests, and execution are intentionally added in later phases; this
-/// record establishes the lifecycle and safety contract they must follow.
+/// A proposed Spotify mutation, from draft through execution.
+///
+/// The plan is the safety model. Nothing writes to Spotify except by executing the
+/// <see cref="Steps"/> of a plan that reached <see cref="SpotifyPlanStatus.Executing"/>
+/// through <see cref="Services.SpotifyPlanStateMachine"/>, and the targets recorded
+/// at build time are the only playlists execution may touch — a confirmed plan can
+/// never widen its own scope.
 /// </summary>
 public sealed record SpotifyChangePlan(
     Guid Id,
@@ -61,8 +65,30 @@ public sealed record SpotifyChangePlan(
     IReadOnlyList<SpotifyPlanTarget> Targets,
     string? ConfirmedBy = null,
     DateTimeOffset? ConfirmedAtUtc = null,
-    string? Failure = null
+    string? Failure = null,
+    IReadOnlyList<SpotifyPlanStep>? Steps = null,
+    SpotifyPlanPreview? Preview = null,
+    IReadOnlyList<SpotifyRestoreManifest>? RestoreManifests = null,
+    string? OriginalRequest = null,
+    string? SourceDraftId = null,
+    /// <summary>Set when this plan is itself the undo of an earlier one.</summary>
+    Guid? UndoOfPlanId = null,
+    /// <summary>Set once an undo has been executed, so it cannot be run twice.</summary>
+    Guid? UndoneByPlanId = null
 )
 {
     public bool IsExpired(DateTimeOffset nowUtc) => nowUtc >= ExpiresAtUtc;
+
+    public IReadOnlyList<SpotifyPlanStep> OrderedSteps =>
+        (Steps ?? []).OrderBy(step => step.Ordinal).ToList();
+
+    /// <summary>
+    /// Undo is offered only for a plan that actually changed something, captured a
+    /// way back, and has not already been reverted.
+    /// </summary>
+    public bool CanUndo =>
+        Status is SpotifyPlanStatus.Completed or SpotifyPlanStatus.PartiallyCompleted
+        && UndoOfPlanId is null
+        && UndoneByPlanId is null
+        && RestoreManifests is { Count: > 0 };
 }

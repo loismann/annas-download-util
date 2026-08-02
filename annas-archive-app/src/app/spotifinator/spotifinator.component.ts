@@ -19,6 +19,7 @@ import { LoggerService } from '../services/logger.service';
 import {
   ChatMessage,
   CommandData,
+  SpotifyPlan,
   ViewState,
   SpotifyPlaylist,
   SpotifyPlaylistItem,
@@ -71,6 +72,10 @@ export class SpotifinatorComponent implements OnInit, OnDestroy, AfterViewChecke
   activeDraft: SpotifyDiscoveryDraft | null = null;
   savedDrafts: SpotifyDiscoveryDraft[] = [];
   draftActionPending = false;
+
+  /** Plan IDs the user has ticked the high-impact box for. */
+  highImpactAcknowledged = new Set<string>();
+  planActionPending: string | null = null;
 
   private destroy$ = new Subject<void>();
   private inventoryPollStop$ = new Subject<void>();
@@ -633,6 +638,117 @@ export class SpotifinatorComponent implements OnInit, OnDestroy, AfterViewChecke
     const minutes = Math.floor(ms / 60000);
     const seconds = Math.floor((ms % 60000) / 1000);
     return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+  }
+
+  // ─── Change plans ──────────────────────────────────────────────────────────
+
+  isPlan(data: unknown): data is SpotifyPlan {
+    return !!data && typeof data === 'object' && !Array.isArray(data) && 'preview' in data && 'steps' in data;
+  }
+
+  /** Only a plan still awaiting a decision can be acted on. */
+  planIsPending(plan: SpotifyPlan): boolean {
+    return plan.status === 'AwaitingConfirmation' || plan.status === 'Draft';
+  }
+
+  planIsBlocked(plan: SpotifyPlan): boolean {
+    return plan.preview.requiresHighImpactAcknowledgement && !this.highImpactAcknowledged.has(plan.id);
+  }
+
+  toggleHighImpact(plan: SpotifyPlan, acknowledged: boolean): void {
+    if (acknowledged) this.highImpactAcknowledged.add(plan.id);
+    else this.highImpactAcknowledged.delete(plan.id);
+  }
+
+  planStatusLabel(plan: SpotifyPlan): string {
+    switch (plan.status) {
+      case 'Completed': return 'Done';
+      case 'PartiallyCompleted': return 'Partly done';
+      case 'Failed': return 'Failed';
+      case 'Cancelled': return 'Cancelled';
+      case 'Expired': return 'Expired — the playlist changed';
+      case 'Reverted': return 'Undone';
+      case 'Executing': return 'Running…';
+      default: return 'Waiting for you';
+    }
+  }
+
+  confirmPlan(plan: SpotifyPlan): void {
+    if (this.planActionPending || this.planIsBlocked(plan)) return;
+
+    this.planActionPending = plan.id;
+    this.api.confirmPlan(plan.id, this.highImpactAcknowledged.has(plan.id))
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (executed) => {
+          this.planActionPending = null;
+          this.replacePlanInTranscript(executed);
+          this.addAssistantMessage(this.describeOutcome(executed), executed);
+        },
+        error: (err) => {
+          this.planActionPending = null;
+          // 409 carries the real explanation — expired, drifted, or needing the
+          // high-impact tick — and it is the sentence the user needs to read.
+          this.addAssistantMessage(err.error?.error || 'That change could not be applied.', null, true);
+        }
+      });
+  }
+
+  cancelPlan(plan: SpotifyPlan): void {
+    if (this.planActionPending) return;
+
+    this.planActionPending = plan.id;
+    this.api.cancelPlan(plan.id).pipe(takeUntil(this.destroy$)).subscribe({
+      next: (cancelled) => {
+        this.planActionPending = null;
+        this.replacePlanInTranscript(cancelled);
+        this.addAssistantMessage('Cancelled — nothing was changed.', null);
+      },
+      error: (err) => {
+        this.planActionPending = null;
+        this.addAssistantMessage(err.error?.error || 'Could not cancel that.', null, true);
+      }
+    });
+  }
+
+  undoPlan(plan: SpotifyPlan): void {
+    if (this.planActionPending) return;
+
+    this.planActionPending = plan.id;
+    this.api.undoPlan(plan.id).pipe(takeUntil(this.destroy$)).subscribe({
+      next: (undo) => {
+        this.planActionPending = null;
+        this.addAssistantMessage(
+          'Here is what undoing that would do. It needs confirming like any other change.', undo);
+      },
+      error: (err) => {
+        this.planActionPending = null;
+        this.addAssistantMessage(err.error?.error || 'That cannot be undone.', null, true);
+      }
+    });
+  }
+
+  private describeOutcome(plan: SpotifyPlan): string {
+    switch (plan.status) {
+      case 'Completed':
+        return 'Done. ' + plan.preview.effects.join(' ');
+      case 'PartiallyCompleted':
+        return `Partly done — ${plan.failure} The steps that succeeded are listed above; `
+             + 'the rest were not attempted.';
+      case 'Failed':
+        return `Nothing changed. ${plan.failure}`;
+      default:
+        return this.planStatusLabel(plan);
+    }
+  }
+
+  /** Keeps the reviewed card in the transcript in step with what actually happened. */
+  private replacePlanInTranscript(plan: SpotifyPlan): void {
+    for (const message of this.messages) {
+      if (this.isPlan(message.data) && message.data.id === plan.id) {
+        message.data = plan;
+      }
+    }
   }
 
   // ─── Utilities ─────────────────────────────────────────────────────────────

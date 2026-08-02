@@ -27,6 +27,7 @@ public sealed class SpotifyConversationService : ISpotifyConversationService
     private readonly ISpotifyCurrentUser? _currentUser;
     private readonly ISpotifyKnownMusicService? _knownMusic;
     private readonly ISpotifyDiscoveryService? _discovery;
+    private readonly ISpotifyPlanService? _plans;
 
     public SpotifyConversationService(
         ISpotifyCommandParser parser, ISpotifyService spotify, ISpotifyInventoryService inventory)
@@ -72,6 +73,23 @@ public sealed class SpotifyConversationService : ISpotifyConversationService
         _discovery = discovery;
     }
 
+    // NOTE: this constructor chain has reached six overloads. It works because DI
+    // picks the greediest one it can satisfy and tests use the shorter ones, but it
+    // is the wrong shape now — see REFACTORING_TODO.md.
+    public SpotifyConversationService(
+        ISpotifyCommandParser parser,
+        ISpotifyService spotify,
+        ISpotifyInventoryService inventory,
+        ISpotifyInventoryJobService inventoryJobs,
+        ISpotifyCurrentUser currentUser,
+        ISpotifyKnownMusicService knownMusic,
+        ISpotifyDiscoveryService discovery,
+        ISpotifyPlanService plans)
+        : this(parser, spotify, inventory, inventoryJobs, currentUser, knownMusic, discovery)
+    {
+        _plans = plans;
+    }
+
     public async Task<SpotifyConversationResponse> HandleAsync(
         SpotifyConversationRequest request,
         CancellationToken token = default)
@@ -101,6 +119,10 @@ public sealed class SpotifyConversationService : ISpotifyConversationService
             SpotifyReadAction.SuggestMusic => await SuggestMusicAsync(command, request.Message, token),
             SpotifyReadAction.RefineMusicDraft => await RefineMusicAsync(command, request.DraftId, request.Message, token),
             SpotifyReadAction.CompareDraftToKnownMusic => CompareDraftAsync(command, request.DraftId),
+            SpotifyReadAction.PlanCreatePlaylist => await PlanCreateAsync(command, request.DraftId, token),
+            SpotifyReadAction.PlanAddItems => await PlanAddItemsAsync(command, request.DraftId, token),
+            SpotifyReadAction.PlanRenamePlaylist => await PlanRenameAsync(command, token),
+            SpotifyReadAction.PlanRemoveItems => await PlanRemoveItemsAsync(command, request, token),
             SpotifyReadAction.ExplainCapability => ExplainCapability(command),
             _ => Unknown(command)
         };
@@ -434,6 +456,129 @@ public sealed class SpotifyConversationService : ISpotifyConversationService
             : $"Your most-played {top.Kind} over {window}, as Spotify ranks them:";
 
         return Respond(command, message, top);
+    }
+
+    // ─── plan-producing handlers (phases 6/7) ────────────────────────────────
+
+    /// <summary>
+    /// Builds a plan and hands it back for review. Nothing is written here — the
+    /// user confirms the returned plan separately, which is what keeps "create it"
+    /// from being a sentence the model can accidentally act on.
+    /// </summary>
+    private async Task<SpotifyConversationResponse> PlanCreateAsync(
+        SpotifyValidatedCommand command, string? draftId, CancellationToken token)
+    {
+        if (_plans is null || _currentUser is null)
+            return Respond(command, "Change plans are not available in this environment.", null);
+
+        if (string.IsNullOrWhiteSpace(draftId))
+            return Respond(command, "Start a music-discovery draft first, then I can create it.", null);
+
+        return await BuildAndDescribeAsync(command, new SpotifyBuildPlanRequest(
+            SpotifyPlanAction.CreatePlaylist,
+            DraftId: draftId,
+            Name: command.Arguments.Query,
+            OriginalRequest: command.Arguments.Query), token);
+    }
+
+    private async Task<SpotifyConversationResponse> PlanAddItemsAsync(
+        SpotifyValidatedCommand command, string? draftId, CancellationToken token)
+    {
+        if (_plans is null || _currentUser is null)
+            return Respond(command, "Change plans are not available in this environment.", null);
+
+        var draft = string.IsNullOrWhiteSpace(draftId) ? null : _discovery?.Get(draftId);
+        if (draft is null)
+            return Respond(command, "Start a music-discovery draft first so I know what to add.", null);
+
+        var uris = draft.Candidates
+            .Where(c => c.Resolution == SpotifyCandidateResolution.Resolved && c.Track is not null)
+            .OrderBy(c => c.Position)
+            .Select(c => c.Track!.Uri)
+            .ToList();
+
+        return await BuildAndDescribeAsync(command, new SpotifyBuildPlanRequest(
+            SpotifyPlanAction.AddItems,
+            PlaylistReference: command.Arguments.PlaylistReference,
+            Uris: uris,
+            OriginalRequest: command.Arguments.PlaylistReference), token);
+    }
+
+    private async Task<SpotifyConversationResponse> PlanRenameAsync(
+        SpotifyValidatedCommand command, CancellationToken token)
+    {
+        if (_plans is null || _currentUser is null)
+            return Respond(command, "Change plans are not available in this environment.", null);
+
+        return await BuildAndDescribeAsync(command, new SpotifyBuildPlanRequest(
+            SpotifyPlanAction.RenamePlaylist,
+            PlaylistReference: command.Arguments.PlaylistReference,
+            Name: command.Arguments.Query,
+            OriginalRequest: command.Arguments.Query), token);
+    }
+
+    /// <summary>
+    /// Removing duplicates keeps the first occurrence of each repeated URI and drops
+    /// the rest. Only exact repeats are auto-selected; a "probable" match is a
+    /// judgement about recordings that only the listener can make.
+    /// </summary>
+    private async Task<SpotifyConversationResponse> PlanRemoveItemsAsync(
+        SpotifyValidatedCommand command, SpotifyConversationRequest request, CancellationToken token)
+    {
+        if (_plans is null || _currentUser is null)
+            return Respond(command, "Change plans are not available in this environment.", null);
+
+        var (resolution, playlists) = await ResolveAsync(command, request.PlaylistId, token);
+        if (resolution.Kind != SpotifyPlaylistMatchKind.Resolved)
+            return DescribeResolutionFailure(command, resolution, playlists.Count);
+
+        var contents = await _inventory.GetContentsAsync(resolution.Playlist!, token);
+        var duplicates = SpotifyAnalysis.FindDuplicateItems(contents)
+            .Where(group => group.Confidence == SpotifyDuplicateConfidence.Exact)
+            .ToList();
+
+        if (duplicates.Count == 0)
+        {
+            return Respond(command,
+                $"There are no exact repeats in “{resolution.Playlist!.Name}” to remove. "
+                + "If you meant specific songs, name them and I will build a plan for those.", null);
+        }
+
+        var uris = duplicates
+            .Select(group => contents.Items.FirstOrDefault(i => i.Position == group.Positions[0])?.Uri)
+            .Where(uri => !string.IsNullOrWhiteSpace(uri))
+            .Select(uri => uri!)
+            .ToList();
+
+        return await BuildAndDescribeAsync(command, new SpotifyBuildPlanRequest(
+            SpotifyPlanAction.RemoveItems,
+            PlaylistId: resolution.Playlist!.Id,
+            Uris: uris,
+            OriginalRequest: request.Message), token);
+    }
+
+    private async Task<SpotifyConversationResponse> BuildAndDescribeAsync(
+        SpotifyValidatedCommand command, SpotifyBuildPlanRequest request, CancellationToken token)
+    {
+        var result = await _plans!.BuildAsync(_currentUser!.GetRequiredOwnerKey(), request, token);
+
+        if (result.Refused)
+            return Respond(command, result.Refusal!, null);
+
+        var dto = SpotifyPlanService.ToDto(result.Plan!);
+        var lines = new List<string> { dto.Preview.Summary, "" };
+        lines.AddRange(dto.Preview.Effects.Select(effect => $"• {effect}"));
+
+        if (dto.Preview.Warnings.Count > 0)
+        {
+            lines.Add("");
+            lines.AddRange(dto.Preview.Warnings.Select(warning => $"⚠ {warning}"));
+        }
+
+        lines.Add("");
+        lines.Add("Nothing has changed yet. Review it and confirm if that is right.");
+
+        return Respond(command, string.Join("\n", lines), dto);
     }
 
     // ─── Shared steps ────────────────────────────────────────────────────────

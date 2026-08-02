@@ -202,6 +202,94 @@
               </div>
 
               <!-- Track results -->
+              <!-- Change plan review -->
+              @if (isPlan(message.data)) {
+                <div class="results-container plan-card"
+                     [class.plan-high-impact]="message.data.preview.requiresHighImpactAcknowledgement">
+                  <div class="plan-header">
+                    <mat-icon>{{ message.data.preview.requiresHighImpactAcknowledgement ? 'warning' : 'fact_check' }}</mat-icon>
+                    <span class="plan-summary">{{ message.data.preview.summary }}</span>
+                    <span class="plan-status">{{ planStatusLabel(message.data) }}</span>
+                  </div>
+
+                  @if (message.data.preview.effects.length > 0) {
+                    <ul class="plan-effects">
+                      @for (effect of message.data.preview.effects; track effect) {
+                        <li>{{ effect }}</li>
+                      }
+                    </ul>
+                  }
+
+                  @if (message.data.preview.warnings.length > 0) {
+                    <ul class="plan-warnings">
+                      @for (warning of message.data.preview.warnings; track warning) {
+                        <li><mat-icon inline>warning</mat-icon> {{ warning }}</li>
+                      }
+                    </ul>
+                  }
+
+                  @if (planIsPending(message.data)) {
+                    @if (message.data.preview.requiresHighImpactAcknowledgement) {
+                      <label class="plan-ack">
+                        <input
+                          type="checkbox"
+                          [checked]="highImpactAcknowledged.has(message.data.id)"
+                          (change)="toggleHighImpact(message.data, $any($event.target).checked)"
+                        />
+                        I understand this discards content and may not be fully reversible
+                      </label>
+                    }
+
+                    <div class="plan-actions">
+                      <button
+                        mat-flat-button
+                        color="primary"
+                        [disabled]="planIsBlocked(message.data) || planActionPending === message.data.id"
+                        (click)="confirmPlan(message.data)"
+                      >
+                        {{ message.data.preview.confirmLabel }}
+                      </button>
+                      <button
+                        mat-stroked-button
+                        [disabled]="planActionPending === message.data.id"
+                        (click)="cancelPlan(message.data)"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  } @else {
+                    <div class="plan-steps">
+                      @for (step of message.data.steps; track step.ordinal) {
+                        <div class="plan-step" [class]="'plan-step-' + step.status.toLowerCase()">
+                          <mat-icon inline>
+                            {{ step.status === 'Succeeded' ? 'check_circle'
+                             : step.status === 'Failed' ? 'error'
+                             : step.status === 'Skipped' ? 'remove_circle_outline' : 'schedule' }}
+                          </mat-icon>
+                          <span>{{ step.kind }}{{ step.playlistName ? ' — ' + step.playlistName : '' }}</span>
+                          @if (step.failure) {
+                            <span class="plan-step-failure">{{ step.failure }}</span>
+                          }
+                        </div>
+                      }
+                    </div>
+
+                    @if (message.data.canUndo) {
+                      <div class="plan-actions">
+                        <button
+                          mat-stroked-button
+                          [disabled]="planActionPending === message.data.id"
+                          (click)="undoPlan(message.data)"
+                        >
+                          <mat-icon>undo</mat-icon> Undo this
+                        </button>
+                      </div>
+                    }
+                  }
+                </div>
+              }
+
+
               @if (isSearchResult(message.data) && message.data.tracks.length > 0) {
                 <div class="results-container">
                   <mat-list class="track-list">

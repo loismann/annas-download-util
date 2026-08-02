@@ -629,6 +629,13 @@ public static class ServiceConfiguration
         // and supplies an explicit owner key after the browser disconnects.
         services.AddSingleton<ISpotifyInventoryStore, SpotifyInventoryStore>();
         services.AddScoped<ISpotifyInventoryService, SpotifyInventoryService>();
+
+        // Phase 6/7 — reviewed change plans. Nothing writes to Spotify except by
+        // executing a confirmed plan through SpotifyPlanExecutor.
+        services.AddSingleton<ISpotifyPlanStore, SpotifyPlanStore>();
+        services.AddSingleton<ISpotifyAuditService, SpotifyAuditService>();
+        services.AddScoped<ISpotifyPlanService, SpotifyPlanService>();
+        services.AddScoped<ISpotifyPlanExecutor, SpotifyPlanExecutor>();
         services.AddSingleton<ISpotifyInventoryJobService, SpotifyInventoryJobService>();
         services.AddScoped<ISpotifyKnownMusicService, SpotifyKnownMusicService>();
         services.AddSingleton<ISpotifyDiscoveryStore, SpotifyDiscoveryStore>();

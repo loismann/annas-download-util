@@ -265,6 +265,78 @@ export interface SpotifyKnownMusicOverrideResult {
  * design: mutations are unreachable until the reviewed change-plan flow exists,
  * so there is deliberately no `create_playlist` here to render against.
  */
+// ─── Change plans (phases 6/7) ───────────────────────────────────────────────
+
+export type SpotifyPlanStatus =
+  | 'Draft' | 'AwaitingConfirmation' | 'Executing' | 'Completed'
+  | 'PartiallyCompleted' | 'Failed' | 'Cancelled' | 'Expired' | 'Reverted';
+
+export type SpotifyPlanSafetyTier = 'ReadOnly' | 'Additive' | 'Modifying' | 'HighImpact';
+
+export type SpotifyPlanStepStatus = 'Pending' | 'Succeeded' | 'Failed' | 'Skipped';
+
+export interface SpotifyPlanStep {
+  ordinal: number;
+  kind: string;
+  playlistId: string | null;
+  playlistName: string | null;
+  uris: string[] | null;
+  status: SpotifyPlanStepStatus;
+  resultingSnapshotId: string | null;
+  failure: string | null;
+}
+
+export interface SpotifyPlanTarget {
+  playlistId: string;
+  displayName: string;
+  snapshotId: string | null;
+}
+
+/**
+ * What the user reads before confirming. Computed server-side at build time from
+ * the same data the steps came from, so the screen cannot disagree with the plan.
+ */
+export interface SpotifyPlanPreview {
+  summary: string;
+  confirmLabel: string;
+  effects: string[];
+  warnings: string[];
+  requiresHighImpactAcknowledgement: boolean;
+  itemsAdded: number;
+  itemsRemoved: number;
+  itemsSkippedAsDuplicates: number;
+  itemsUnresolved: number;
+  playlistsAffected: number;
+}
+
+export interface SpotifyPlan {
+  id: string;
+  action: string;
+  safetyTier: SpotifyPlanSafetyTier;
+  status: SpotifyPlanStatus;
+  createdAtUtc: string;
+  expiresAtUtc: string;
+  targets: SpotifyPlanTarget[];
+  preview: SpotifyPlanPreview;
+  steps: SpotifyPlanStep[];
+  originalRequest: string | null;
+  confirmedBy: string | null;
+  confirmedAtUtc: string | null;
+  failure: string | null;
+  canUndo: boolean;
+  undoOfPlanId: string | null;
+}
+
+export interface SpotifyAuditEvent {
+  id: string;
+  planId: string;
+  kind: string;
+  atUtc: string;
+  applicationUser: string | null;
+  spotifyAccountId: string | null;
+  detail: string;
+}
+
 export type SpotifyAction =
   | 'search_tracks'
   | 'list_playlists'
@@ -280,10 +352,15 @@ export type SpotifyAction =
   | 'suggest_music'
   | 'refine_music_draft'
   | 'compare_draft_to_known_music'
+  | 'plan_create_playlist'
+  | 'plan_add_items'
+  | 'plan_rename_playlist'
+  | 'plan_remove_items'
   | 'explain_capability'
   | 'unknown';
 
 export type CommandData =
+  | SpotifyPlan
   | SpotifySearchResult
   | SpotifyPlaylist[]
   | SpotifyPlaylist

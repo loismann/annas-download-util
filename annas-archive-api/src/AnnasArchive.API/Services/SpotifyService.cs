@@ -35,6 +35,19 @@ public interface ISpotifyService
     Task AddTracksToPlaylistAsync(string playlistId, List<string> trackUris, CancellationToken token = default);
     Task RemoveTracksFromPlaylistAsync(string playlistId, List<string> trackUris, CancellationToken token = default);
     Task RemovePlaylistsFromLibraryAsync(List<string> playlistUris, CancellationToken token = default);
+
+    // ─── phase 6/7 writes: every one returns the resulting snapshot ──────────
+    Task<string?> AddItemsAsync(string playlistId, IReadOnlyList<string> uris, CancellationToken token = default);
+    Task<string?> RemoveItemsAsync(
+        string playlistId, IReadOnlyList<string> uris, string? snapshotId = null, CancellationToken token = default);
+    Task<string?> ReplaceItemsAsync(
+        string playlistId, IReadOnlyList<string> orderedUris, CancellationToken token = default);
+    Task<string?> ReorderItemsAsync(
+        string playlistId, int rangeStart, int insertBefore, int rangeLength,
+        string? snapshotId = null, CancellationToken token = default);
+    Task ChangePlaylistDetailsAsync(
+        string playlistId, string? name = null, string? description = null, bool? isPublic = null,
+        CancellationToken token = default);
 }
 
 public class SpotifyService : ISpotifyService
@@ -424,6 +437,130 @@ public class SpotifyService : ISpotifyService
                 $"{ApiBaseUrl}/me/library?uris={uris}",
                 token);
         }
+    }
+
+    /// <summary>
+    /// Spotify accepts at most 100 URIs per add. Batching is not an optimisation —
+    /// a 300-track draft simply fails without it. Each batch returns a snapshot; the
+    /// last one is what the playlist now looks like.
+    /// </summary>
+    public async Task<string?> AddItemsAsync(
+        string playlistId, IReadOnlyList<string> uris, CancellationToken token = default)
+    {
+        string? snapshot = null;
+
+        foreach (var batch in uris.Where(u => !string.IsNullOrWhiteSpace(u)).Chunk(100))
+        {
+            var response = await SendAuthenticatedRequestAsync<SpotifySnapshotResponse>(
+                HttpMethod.Post,
+                $"{ApiBaseUrl}/playlists/{Uri.EscapeDataString(playlistId)}/items",
+                token,
+                new { uris = batch });
+
+            snapshot = response?.SnapshotId ?? snapshot;
+        }
+
+        Log.Information("[Spotify] Added {Count} item(s) to playlist {PlaylistId}", uris.Count, playlistId);
+        return snapshot;
+    }
+
+    /// <summary>
+    /// Removes every occurrence of each URI. Passing the snapshot we planned against
+    /// makes Spotify reject the call if the playlist changed in between, which is the
+    /// behaviour we want: better a conflict than deleting whatever moved into that slot.
+    /// </summary>
+    public async Task<string?> RemoveItemsAsync(
+        string playlistId, IReadOnlyList<string> uris, string? snapshotId = null, CancellationToken token = default)
+    {
+        string? snapshot = snapshotId;
+
+        foreach (var batch in uris.Where(u => !string.IsNullOrWhiteSpace(u)).Chunk(100))
+        {
+            object body = snapshot is null
+                ? new { items = batch.Select(uri => new { uri }).ToArray() }
+                : new { items = batch.Select(uri => new { uri }).ToArray(), snapshot_id = snapshot };
+
+            var response = await SendAuthenticatedRequestAsync<SpotifySnapshotResponse>(
+                HttpMethod.Delete,
+                $"{ApiBaseUrl}/playlists/{Uri.EscapeDataString(playlistId)}/items",
+                token,
+                body);
+
+            snapshot = response?.SnapshotId ?? snapshot;
+        }
+
+        Log.Information("[Spotify] Removed {Count} item(s) from playlist {PlaylistId}", uris.Count, playlistId);
+        return snapshot;
+    }
+
+    /// <summary>
+    /// Replaces the whole item list. The first PUT of up to 100 URIs *is* the
+    /// replacement — an empty list clears the playlist — and any remainder is appended,
+    /// because Spotify has no single call that sets more than 100 at once.
+    /// </summary>
+    public async Task<string?> ReplaceItemsAsync(
+        string playlistId, IReadOnlyList<string> orderedUris, CancellationToken token = default)
+    {
+        var clean = orderedUris.Where(u => !string.IsNullOrWhiteSpace(u)).ToList();
+        var url = $"{ApiBaseUrl}/playlists/{Uri.EscapeDataString(playlistId)}/items";
+
+        var first = await SendAuthenticatedRequestAsync<SpotifySnapshotResponse>(
+            HttpMethod.Put, url, token, new { uris = clean.Take(100).ToArray() });
+
+        var snapshot = first?.SnapshotId;
+
+        if (clean.Count > 100)
+        {
+            var appended = await AddItemsAsync(playlistId, clean.Skip(100).ToList(), token);
+            snapshot = appended ?? snapshot;
+        }
+
+        Log.Information("[Spotify] Replaced playlist {PlaylistId} with {Count} item(s)", playlistId, clean.Count);
+        return snapshot;
+    }
+
+    public async Task<string?> ReorderItemsAsync(
+        string playlistId, int rangeStart, int insertBefore, int rangeLength,
+        string? snapshotId = null, CancellationToken token = default)
+    {
+        object body = snapshotId is null
+            ? new { range_start = rangeStart, insert_before = insertBefore, range_length = Math.Max(1, rangeLength) }
+            : new
+            {
+                range_start = rangeStart,
+                insert_before = insertBefore,
+                range_length = Math.Max(1, rangeLength),
+                snapshot_id = snapshotId
+            };
+
+        var response = await SendAuthenticatedRequestAsync<SpotifySnapshotResponse>(
+            HttpMethod.Put, $"{ApiBaseUrl}/playlists/{Uri.EscapeDataString(playlistId)}/items", token, body);
+
+        Log.Information("[Spotify] Reordered playlist {PlaylistId}", playlistId);
+        return response?.SnapshotId;
+    }
+
+    /// <summary>
+    /// Only the fields the caller actually wants changed are sent. Spotify treats an
+    /// omitted field as "leave alone", so sending nulls wholesale would blank a
+    /// description nobody asked to touch.
+    /// </summary>
+    public async Task ChangePlaylistDetailsAsync(
+        string playlistId, string? name = null, string? description = null, bool? isPublic = null,
+        CancellationToken token = default)
+    {
+        var body = new Dictionary<string, object>();
+        if (!string.IsNullOrWhiteSpace(name)) body["name"] = name;
+        if (description is not null) body["description"] = description;
+        if (isPublic is not null) body["public"] = isPublic.Value;
+
+        if (body.Count == 0)
+            return;
+
+        await SendAuthenticatedRequestAsync<object>(
+            HttpMethod.Put, $"{ApiBaseUrl}/playlists/{Uri.EscapeDataString(playlistId)}", token, body);
+
+        Log.Information("[Spotify] Updated details of playlist {PlaylistId}", playlistId);
     }
 
     // ─── Private Helpers ─────────────────────────────────────────────────────────

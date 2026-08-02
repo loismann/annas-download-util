@@ -4,7 +4,7 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { provideRouter } from '@angular/router';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { SpotifinatorComponent } from './spotifinator.component';
-import { SpotifyPlaylist, SpotifyPlaylistItem } from './spotifinator.models';
+import { SpotifyPlaylist, SpotifyPlaylistItem, SpotifyPlan, SpotifyPlanPreview } from './spotifinator.models';
 
 describe('SpotifinatorComponent', () => {
   beforeEach(async () => {
@@ -306,5 +306,83 @@ describe('SpotifinatorComponent', () => {
     expect(component.savedDrafts).toHaveSize(1);
     expect(localStorage.getItem('spotifinator.activeDraftId')).toBeNull();
     http.verify();
+  });
+
+  // ─── change plan gating ────────────────────────────────────────────────────
+
+  describe('change plans', () => {
+    const plan = (over: Partial<SpotifyPlan> = {}, preview: Partial<SpotifyPlanPreview> = {}): SpotifyPlan => ({
+      id: 'plan-1', action: 'AddItems', safetyTier: 'Additive', status: 'AwaitingConfirmation',
+      createdAtUtc: '2026-08-02T12:00:00Z', expiresAtUtc: '2026-08-02T12:30:00Z',
+      targets: [], steps: [], originalRequest: null, confirmedBy: null, confirmedAtUtc: null,
+      failure: null, canUndo: false, undoOfPlanId: null,
+      preview: {
+        summary: 'Add 3 tracks', confirmLabel: 'Add 3 tracks', effects: [], warnings: [],
+        requiresHighImpactAcknowledgement: false, itemsAdded: 3, itemsRemoved: 0,
+        itemsSkippedAsDuplicates: 0, itemsUnresolved: 0, playlistsAffected: 1,
+        ...preview
+      },
+      ...over
+    });
+
+    let component: SpotifinatorComponent;
+    beforeEach(() => {
+      component = TestBed.createComponent(SpotifinatorComponent).componentInstance;
+    });
+
+    it('lets an ordinary additive plan be confirmed straight away', () => {
+      expect(component.planIsBlocked(plan())).toBe(false);
+    });
+
+    it('blocks a high-impact plan until the box is ticked', () => {
+      // The second gate on a destructive change. Without this a replace could be
+      // confirmed by the same single click as an ordinary add.
+      const destructive = plan({}, { requiresHighImpactAcknowledgement: true });
+
+      expect(component.planIsBlocked(destructive)).toBe(true);
+
+      component.toggleHighImpact(destructive, true);
+      expect(component.planIsBlocked(destructive)).toBe(false);
+    });
+
+    it('re-blocks when the acknowledgement is unticked', () => {
+      const destructive = plan({}, { requiresHighImpactAcknowledgement: true });
+
+      component.toggleHighImpact(destructive, true);
+      component.toggleHighImpact(destructive, false);
+
+      expect(component.planIsBlocked(destructive)).toBe(true);
+    });
+
+    it('does not carry an acknowledgement across to a different plan', () => {
+      const first = plan({ id: 'a' }, { requiresHighImpactAcknowledgement: true });
+      const second = plan({ id: 'b' }, { requiresHighImpactAcknowledgement: true });
+
+      component.toggleHighImpact(first, true);
+
+      expect(component.planIsBlocked(second)).toBe(true);
+    });
+
+    it('only offers actions while the plan is still awaiting a decision', () => {
+      expect(component.planIsPending(plan({ status: 'AwaitingConfirmation' }))).toBe(true);
+      expect(component.planIsPending(plan({ status: 'Completed' }))).toBe(false);
+      expect(component.planIsPending(plan({ status: 'Cancelled' }))).toBe(false);
+      expect(component.planIsPending(plan({ status: 'Expired' }))).toBe(false);
+    });
+
+    it('explains an expired plan in terms of what happened', () => {
+      expect(component.planStatusLabel(plan({ status: 'Expired' }))).toContain('playlist changed');
+    });
+
+    it('distinguishes partly done from failed', () => {
+      expect(component.planStatusLabel(plan({ status: 'PartiallyCompleted' }))).toBe('Partly done');
+      expect(component.planStatusLabel(plan({ status: 'Failed' }))).toBe('Failed');
+    });
+
+    it('recognises a plan in the transcript', () => {
+      expect(component.isPlan(plan())).toBe(true);
+      expect(component.isPlan({ tracks: [] })).toBe(false);
+      expect(component.isPlan(null)).toBe(false);
+    });
   });
 });

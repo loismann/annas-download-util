@@ -125,6 +125,7 @@ public class SpotifyServiceTests
         await service.RemoveTracksFromPlaylistAsync("created-playlist", ["spotify:track:one"]);
         await service.RemovePlaylistsFromLibraryAsync(["spotify:playlist:created-playlist"]);
 
+
         spotifyRequests.Should().HaveCount(4);
         spotifyRequests[0].Uri.AbsolutePath.Should().Be("/v1/me/playlists");
         spotifyRequests[1].Uri.AbsolutePath.Should().Be("/v1/playlists/created-playlist/items");

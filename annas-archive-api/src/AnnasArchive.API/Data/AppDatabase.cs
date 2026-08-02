@@ -108,6 +108,26 @@ public class AppDatabase
                 PRIMARY KEY (owner_hash, cache_key)
             );
 
+            CREATE TABLE IF NOT EXISTS spotify_change_plan (
+                owner_hash TEXT NOT NULL,
+                plan_id    TEXT NOT NULL,
+                status     TEXT NOT NULL,
+                json       TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (owner_hash, plan_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS spotify_audit_event (
+                owner_hash TEXT NOT NULL,
+                event_id   TEXT NOT NULL,
+                plan_id    TEXT NOT NULL,
+                kind       TEXT NOT NULL,
+                at_utc     TEXT NOT NULL,
+                json       TEXT NOT NULL,
+                PRIMARY KEY (owner_hash, event_id)
+            );
+
             CREATE TABLE IF NOT EXISTS spotify_discovery_draft (
                 owner_hash TEXT NOT NULL,
                 draft_id   TEXT NOT NULL,

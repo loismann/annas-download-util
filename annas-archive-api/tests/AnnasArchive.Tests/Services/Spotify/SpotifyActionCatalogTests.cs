@@ -62,8 +62,12 @@ public class SpotifyActionCatalogTests
         foreach (var definition in SpotifyActionCatalog.All)
             prompt.Should().Contain(definition.WireName);
 
-        prompt.Should().NotContain("create_playlist");
-        prompt.Should().NotContain("add_tracks");
+        // Checked as whole action lines, not substrings: `plan_create_playlist` is a
+        // legitimate action that happens to contain "create_playlist". What must
+        // never appear is a bare write verb the model could dispatch directly.
+        prompt.Should().NotContain("- create_playlist:");
+        prompt.Should().NotContain("- add_tracks:");
+        prompt.Should().NotContain("- delete_playlist:");
     }
 
     // ─── validation ──────────────────────────────────────────────────────────

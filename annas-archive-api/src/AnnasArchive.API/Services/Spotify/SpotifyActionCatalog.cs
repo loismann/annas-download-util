@@ -28,6 +28,10 @@ public enum SpotifyReadAction
     SuggestMusic,
     RefineMusicDraft,
     CompareDraftToKnownMusic,
+    PlanCreatePlaylist,
+    PlanAddItems,
+    PlanRenamePlaylist,
+    PlanRemoveItems,
     ExplainCapability
 }
 
@@ -109,6 +113,28 @@ public static class SpotifyActionCatalog
 
         new(SpotifyReadAction.CompareDraftToKnownMusic, "compare_draft_to_known_music",
             "Explain which candidates in the active discovery draft are or are not represented in accessible known-music evidence."),
+
+        // Plan-producing actions. These never write — they build a reviewable plan
+        // that the user confirms separately, so wording a sentence differently can
+        // never cause a change on its own.
+        new(SpotifyReadAction.PlanCreatePlaylist, "plan_create_playlist",
+            "The user wants to actually create the playlist from the current discovery draft. "
+            + "Put any name they gave in arguments.query."),
+
+        new(SpotifyReadAction.PlanAddItems, "plan_add_items",
+            "Add the current draft's tracks to an existing playlist. Put the playlist name in "
+            + "arguments.playlistReference.",
+            RequiresPlaylistReference: true),
+
+        new(SpotifyReadAction.PlanRenamePlaylist, "plan_rename_playlist",
+            "Rename a playlist. Put the current name in arguments.playlistReference and the new "
+            + "name in arguments.query.",
+            RequiresPlaylistReference: true, RequiresQuery: true),
+
+        new(SpotifyReadAction.PlanRemoveItems, "plan_remove_items",
+            "Remove songs from a playlist — for example the duplicates found by an analysis. Put "
+            + "the playlist name in arguments.playlistReference.",
+            RequiresPlaylistReference: true),
 
         new(SpotifyReadAction.ExplainCapability, "explain_capability",
             "The user is asking what this assistant can or cannot do, or why something is unavailable.")

@@ -9,6 +9,7 @@ namespace AnnasArchive.API.Services.Spotify;
 public interface ISpotifyDiscoveryStore
 {
     SpotifyDiscoveryDraft? Get(string ownerKey, string draftId);
+    IReadOnlyList<SpotifyDiscoveryDraft> List(string ownerKey);
     void Save(string ownerKey, SpotifyDiscoveryDraft draft);
 }
 
@@ -26,8 +27,23 @@ public sealed class SpotifyDiscoveryStore(AppDatabase database) : ISpotifyDiscov
         command.Parameters.AddWithValue("$id", draftId);
         var json = command.ExecuteScalar() as string;
         if (json == null) return null;
-        try { return JsonSerializer.Deserialize<SpotifyDiscoveryDraft>(json, JsonOptions); }
-        catch (JsonException) { return null; }
+        return Deserialize(json);
+    }
+
+    public IReadOnlyList<SpotifyDiscoveryDraft> List(string ownerKey)
+    {
+        using var connection = database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT json FROM spotify_discovery_draft WHERE owner_hash = $owner ORDER BY updated_at DESC";
+        command.Parameters.AddWithValue("$owner", OwnerHash(ownerKey));
+        using var reader = command.ExecuteReader();
+        var drafts = new List<SpotifyDiscoveryDraft>();
+        while (reader.Read())
+        {
+            var draft = Deserialize(reader.GetString(0));
+            if (draft != null) drafts.Add(draft);
+        }
+        return drafts;
     }
 
     public void Save(string ownerKey, SpotifyDiscoveryDraft draft)
@@ -53,4 +69,10 @@ public sealed class SpotifyDiscoveryStore(AppDatabase database) : ISpotifyDiscov
 
     private static string OwnerHash(string ownerKey) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(ownerKey)));
+
+    private static SpotifyDiscoveryDraft? Deserialize(string json)
+    {
+        try { return JsonSerializer.Deserialize<SpotifyDiscoveryDraft>(json, JsonOptions); }
+        catch (JsonException) { return null; }
+    }
 }

@@ -54,6 +54,7 @@ public sealed class SpotifyDiscoveryServiceTests : IDisposable
         draft.Candidates.Should().ContainSingle();
         draft.Candidates[0].Track!.Uri.Should().Be("spotify:track:catalog-secret");
         draft.Candidates[0].ProbablyUnfamiliar.Should().BeTrue();
+        draft.Candidates[0].FamiliarityLabel.Should().StartWith("Probably unfamiliar");
         handler.Bodies.Should().ContainSingle();
         handler.Bodies[0].Should().Contain("1950s Deep South music");
         handler.Bodies[0].Should().NotContain("private-library-sentinel");
@@ -131,7 +132,37 @@ public sealed class SpotifyDiscoveryServiceTests : IDisposable
         _store.Save("owner-a", draft);
 
         _store.Get("owner-a", "draft").Should().BeEquivalentTo(draft);
+        _store.List("owner-a").Should().ContainSingle(item => item.Id == "draft");
+        _store.List("owner-b").Should().BeEmpty();
         _store.Get("owner-b", "draft").Should().BeNull();
+    }
+
+    [Fact]
+    public async Task OnlyExplicitlySavedDraftsAppearInTheSavedSidebarList()
+    {
+        var handler = new CapturingHandler([
+            AiResponse(CandidateResponse("Draft", "Mystery Train", "Little Junior's Blue Flames"))
+        ]);
+        var service = CreateService(handler, StrictSpotify([
+            Track("one", "Mystery Train", "Little Junior's Blue Flames")
+        ]).Object, KnownMusic().Object);
+        var draft = await service.CreateAsync("Sun Records roots");
+
+        service.ListSaved().Should().BeEmpty();
+        var saved = service.Update(draft.Id, new SpotifyDiscoveryDraftUpdateRequest(Saved: true));
+
+        saved.SavedAt.Should().NotBeNull();
+        service.ListSaved().Should().ContainSingle(item => item.Id == draft.Id);
+    }
+
+    [Fact]
+    public void SpotifyApiEnumsSerializeAsTheStringNamesTheFrontendContractUses()
+    {
+        JsonSerializer.Serialize(SpotifyCandidateResolution.Ambiguous).Should().Be("\"Ambiguous\"");
+        JsonSerializer.Serialize(SpotifyDiscoveryDraftState.Ready).Should().Be("\"Ready\"");
+        JsonSerializer.Serialize(SpotifyInventoryJobState.Running).Should().Be("\"Running\"");
+        JsonSerializer.Serialize(SpotifyContentsAccess.Forbidden).Should().Be("\"Forbidden\"");
+        JsonSerializer.Serialize(SpotifyConnectionState.RateLimited).Should().Be("\"RateLimited\"");
     }
 
     private SpotifyDiscoveryService CreateService(

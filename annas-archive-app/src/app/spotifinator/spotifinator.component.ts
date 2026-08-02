@@ -69,6 +69,8 @@ export class SpotifinatorComponent implements OnInit, OnDestroy, AfterViewChecke
   inventoryStatus: SpotifyInventoryStatus | null = null;
   inventoryActionPending = false;
   activeDraft: SpotifyDiscoveryDraft | null = null;
+  savedDrafts: SpotifyDiscoveryDraft[] = [];
+  draftActionPending = false;
 
   private destroy$ = new Subject<void>();
   private inventoryPollStop$ = new Subject<void>();
@@ -137,6 +139,7 @@ export class SpotifinatorComponent implements OnInit, OnDestroy, AfterViewChecke
         this.connectionLoading = false;
         if (connection.isConnected) {
           this.loadInventoryStatus();
+          this.loadSavedDrafts();
           this.loadActiveDraft();
         }
       },
@@ -169,6 +172,7 @@ export class SpotifinatorComponent implements OnInit, OnDestroy, AfterViewChecke
         this.connectionActionPending = false;
         this.connectionNotice = 'Spotify disconnected from Spotifinator.';
         this.activeDraft = null;
+        this.savedDrafts = [];
         localStorage.removeItem('spotifinator.activeDraftId');
         this.loadConnection();
       },
@@ -290,19 +294,7 @@ export class SpotifinatorComponent implements OnInit, OnDestroy, AfterViewChecke
     this.messages.push({
       id: this.generateId(),
       role: 'assistant',
-      content: `Hey! I can read your Spotify library. Try:
-
-- "Show me my playlists"
-- "What songs are in <playlist name>?"
-- "List my Best Of playlists"
-- "What have I been listening to lately?"
-- "Build me a discovery draft of 1950s Deep South music"
-
-I can build and edit a proposed playlist, but I can't create, rename, or delete
-anything in Spotify yet — those arrive with the reviewed change-plan flow, where
-you'll see exactly what will happen before it does.
-
-What would you like to know?`,
+      content: 'Ask about your Spotify library, or describe the music you want me to build into a draft.',
       timestamp: new Date()
     });
   }
@@ -393,6 +385,17 @@ What would you like to know?`,
       'candidates' in data && 'desiredTrackCount' in data && 'userPrompts' in data;
   }
 
+  candidateResolutionLabel(candidate: SpotifyDiscoveryDraft['candidates'][number]): string {
+    // Numeric values keep already-persisted Phase 5 drafts readable across the
+    // deployment that changes the API contract to string enum names.
+    switch (candidate.resolution as unknown) {
+      case 'Resolved': case 0: return 'Matched in Spotify catalog';
+      case 'Ambiguous': case 1: return 'Multiple Spotify catalog matches';
+      case 'NotFound': case 2: return 'No confident Spotify catalog match';
+      default: return 'Spotify catalog status unavailable';
+    }
+  }
+
   removeDraftCandidate(draft: SpotifyDiscoveryDraft, candidateId: string): void {
     this.api.updateDiscoveryDraft(draft.id, { removeCandidateIds: [candidateId] })
       .pipe(takeUntil(this.destroy$)).subscribe({
@@ -423,6 +426,39 @@ What would you like to know?`,
     });
   }
 
+  saveActiveDraft(): void {
+    if (!this.activeDraft || this.draftActionPending) return;
+    this.draftActionPending = true;
+    this.api.updateDiscoveryDraft(this.activeDraft.id, { saved: true })
+      .pipe(takeUntil(this.destroy$)).subscribe({
+        next: updated => {
+          this.draftActionPending = false;
+          this.setActiveDraft(updated);
+          this.loadSavedDrafts();
+        },
+        error: err => {
+          this.draftActionPending = false;
+          this.logger.error('[Spotifinator] Could not save draft:', err);
+        }
+      });
+  }
+
+  closeActiveDraft(): void {
+    this.activeDraft = null;
+    localStorage.removeItem('spotifinator.activeDraftId');
+  }
+
+  openSavedDraft(draft: SpotifyDiscoveryDraft): void {
+    this.setActiveDraft(draft);
+  }
+
+  private loadSavedDrafts(): void {
+    this.api.getSavedDiscoveryDrafts().pipe(takeUntil(this.destroy$)).subscribe({
+      next: drafts => this.savedDrafts = drafts,
+      error: err => this.logger.error('[Spotifinator] Could not load saved drafts:', err)
+    });
+  }
+
   private loadActiveDraft(): void {
     const draftId = localStorage.getItem('spotifinator.activeDraftId');
     if (!draftId) return;
@@ -438,6 +474,10 @@ What would you like to know?`,
     for (const message of this.messages) {
       if (this.isDiscoveryDraft(message.data) && message.data.id === draft.id)
         message.data = draft;
+    }
+    if (draft.savedAt) {
+      const index = this.savedDrafts.findIndex(saved => saved.id === draft.id);
+      if (index >= 0) this.savedDrafts[index] = draft;
     }
   }
 

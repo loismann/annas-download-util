@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using AnnasArchive.API.Services.Spotify;
 
 namespace AnnasArchive.API.Models;
@@ -10,6 +11,7 @@ namespace AnnasArchive.API.Models;
 /// prototype collapsed a missing 2026 <c>items</c> field to "0 tracks", which is
 /// how a followed playlist full of music looked identical to one you had emptied.
 /// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum SpotifyContentsAccess
 {
     /// <summary>Spotify returned an item collection. The count is real.</summary>
@@ -34,6 +36,7 @@ public enum SpotifyContentsAccess
 /// episodes have no artists, local files have no playable URI, and an entry whose
 /// <c>item</c> is null is a real thing Spotify returns for removed content.
 /// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum SpotifyItemKind
 {
     Track,
@@ -68,6 +71,7 @@ public record SpotifyPlaylistItemsPageDto(
     string? SnapshotId = null
 );
 
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum SpotifyPlaylistMatchKind
 {
     Resolved,

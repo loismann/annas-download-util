@@ -1,5 +1,8 @@
+using System.Text.Json.Serialization;
+
 namespace AnnasArchive.API.Models;
 
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum SpotifyPlanStatus
 {
     Draft,
@@ -13,6 +16,7 @@ public enum SpotifyPlanStatus
     Reverted
 }
 
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum SpotifyPlanSafetyTier
 {
     ReadOnly = 0,
@@ -21,6 +25,7 @@ public enum SpotifyPlanSafetyTier
     HighImpact = 3
 }
 
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum SpotifyPlanAction
 {
     CreatePlaylist,

@@ -39,6 +39,7 @@ describe('SpotifinatorComponent', () => {
     const component = fixture.componentInstance;
     expect(component.messages.length).toBe(1);
     expect(component.messages[0].role).toBe('assistant');
+    expect(component.messages[0].content.split('\n')).toHaveSize(1);
   });
 
   it('should render the input area', () => {
@@ -234,6 +235,23 @@ describe('SpotifinatorComponent', () => {
       expect(component.isDiscoveryDraft(draft)).toBe(true);
       expect(component.isInventoryStatus(draft)).toBe(false);
     });
+
+    it('renders catalog resolution independently from familiarity evidence', () => {
+      const candidate = (resolution: any) => ({
+        id: 'candidate', position: 0, artist: 'Artist', title: 'Song', rationale: null,
+        resolution, track: null, alternatives: [], probablyUnfamiliar: true,
+        familiarityLabel: 'Probably unfamiliar'
+      });
+
+      expect(component.candidateResolutionLabel(candidate('Resolved')))
+        .toBe('Matched in Spotify catalog');
+      expect(component.candidateResolutionLabel(candidate('Ambiguous')))
+        .toBe('Multiple Spotify catalog matches');
+      expect(component.candidateResolutionLabel(candidate('NotFound')))
+        .toBe('No confident Spotify catalog match');
+      expect(component.candidateResolutionLabel(candidate(1)))
+        .toBe('Multiple Spotify catalog matches');
+    });
   });
 
   it('replaces a queued chat card when the dedicated status endpoint advances', () => {
@@ -261,6 +279,32 @@ describe('SpotifinatorComponent', () => {
     expect(component.inventoryStatus?.state).toBe('Partial');
     expect((component.messages.at(-1)!.data as any).state).toBe('Partial');
     expect((component.messages.at(-1)!.data as any).processedPlaylists).toBe(258);
+    http.verify();
+  });
+
+  it('saves a draft into the sidebar and can close the active workspace', () => {
+    const component = TestBed.createComponent(SpotifinatorComponent).componentInstance;
+    const http = TestBed.inject(HttpTestingController);
+    const draft: any = {
+      id: 'draft', state: 'Ready', name: 'Deep South', summary: 'A sequence',
+      userPrompts: ['prompt'], desiredTrackCount: 25, clarifyingQuestion: null,
+      candidates: [], knownMusicCoverage: 'coverage', createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(), savedAt: null
+    };
+    component.activeDraft = draft;
+
+    component.saveActiveDraft();
+    const save = http.expectOne(req => req.method === 'PATCH' && req.url.endsWith('/drafts/draft'));
+    expect(save.request.body.saved).toBe(true);
+    const saved = { ...draft, savedAt: new Date().toISOString() };
+    save.flush(saved);
+    http.expectOne(req => req.method === 'GET' && req.url.endsWith('/drafts')).flush([saved]);
+
+    expect(component.savedDrafts).toHaveSize(1);
+    component.closeActiveDraft();
+    expect(component.activeDraft).toBeNull();
+    expect(component.savedDrafts).toHaveSize(1);
+    expect(localStorage.getItem('spotifinator.activeDraftId')).toBeNull();
     http.verify();
   });
 });

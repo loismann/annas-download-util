@@ -240,6 +240,7 @@ export interface SpotifyDiscoveryDraft {
   knownMusicCoverage: string;
   createdAt: string;
   updatedAt: string;
+  savedAt: string | null;
 }
 
 export interface SpotifyDiscoveryDraftUpdate {
@@ -247,6 +248,7 @@ export interface SpotifyDiscoveryDraftUpdate {
   orderedCandidateIds?: string[];
   removeCandidateIds?: string[];
   candidateSelections?: Record<string, string>;
+  saved?: boolean;
 }
 
 export interface SpotifyKnownMusicOverrideResult {

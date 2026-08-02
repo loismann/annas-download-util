@@ -297,9 +297,10 @@ public sealed class SpotifyConversationService : ISpotifyConversationService
         var resolved = draft.Candidates.Count(candidate => candidate.Resolution == SpotifyCandidateResolution.Resolved);
         var unfamiliar = draft.Candidates.Count(candidate => candidate.ProbablyUnfamiliar);
         var unresolved = draft.Candidates.Count - resolved;
-        var message = $"I built “{draft.Name}”: {resolved} Spotify matches and {unfamiliar} candidates not found in accessible known-music evidence.";
+        var message = $"I built “{draft.Name}”. Spotify catalog: {resolved} matched; {unresolved} need review. "
+            + $"Familiarity estimate: {unfamiliar} were not seen in your accessible library or listening evidence.";
         if (unresolved > 0)
-            message += $" {unresolved} candidate(s) need review because Spotify had no unique exact match.";
+            message += " Review rows marked as multiple matches or no confident match.";
         message += " This is an editable draft; I have not created or changed a Spotify playlist.";
         return Respond(command, message, draft);
     }

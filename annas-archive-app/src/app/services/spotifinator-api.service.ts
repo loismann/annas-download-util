@@ -102,6 +102,10 @@ export class SpotifinatorApiService {
     return this.http.get<SpotifyDiscoveryDraft>(`${this.baseUrl}/drafts/${encodeURIComponent(draftId)}`);
   }
 
+  getSavedDiscoveryDrafts(): Observable<SpotifyDiscoveryDraft[]> {
+    return this.http.get<SpotifyDiscoveryDraft[]>(`${this.baseUrl}/drafts`);
+  }
+
   updateDiscoveryDraft(
     draftId: string, update: SpotifyDiscoveryDraftUpdate
   ): Observable<SpotifyDiscoveryDraft> {

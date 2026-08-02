@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace AnnasArchive.API.Models;
 
 /// <summary>
@@ -13,6 +15,7 @@ public record SpotifyPlaylistContents(
     public bool IsReadable => Access == SpotifyContentsAccess.Available;
 }
 
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum SpotifyDuplicateConfidence
 {
     /// <summary>The same Spotify URI. Not a judgement call.</summary>
@@ -105,6 +108,7 @@ public record SpotifyKnownMusicReport(
     DateTimeOffset GeneratedAt
 );
 
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum SpotifyInventoryJobState
 {
     NotStarted,

@@ -1,5 +1,8 @@
+using System.Text.Json.Serialization;
+
 namespace AnnasArchive.API.Models;
 
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum SpotifyConnectionState
 {
     Connected,

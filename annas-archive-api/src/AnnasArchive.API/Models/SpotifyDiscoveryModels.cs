@@ -1,5 +1,8 @@
+using System.Text.Json.Serialization;
+
 namespace AnnasArchive.API.Models;
 
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum SpotifyDiscoveryDraftState
 {
     AwaitingClarification,
@@ -8,6 +11,7 @@ public enum SpotifyDiscoveryDraftState
     Partial
 }
 
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum SpotifyCandidateResolution
 {
     Resolved,
@@ -39,14 +43,16 @@ public record SpotifyDiscoveryDraft(
     IReadOnlyList<SpotifyDiscoveryCandidate> Candidates,
     string KnownMusicCoverage,
     DateTimeOffset CreatedAt,
-    DateTimeOffset UpdatedAt
+    DateTimeOffset UpdatedAt,
+    DateTimeOffset? SavedAt = null
 );
 
 public record SpotifyDiscoveryDraftUpdateRequest(
     string? Name = null,
     IReadOnlyList<string>? OrderedCandidateIds = null,
     IReadOnlyList<string>? RemoveCandidateIds = null,
-    IReadOnlyDictionary<string, string>? CandidateSelections = null
+    IReadOnlyDictionary<string, string>? CandidateSelections = null,
+    bool? Saved = null
 );
 
 internal record SpotifyDiscoveryAiCandidate(string Artist, string Title, string? Rationale = null);

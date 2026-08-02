@@ -6,6 +6,8 @@
       <mat-card-subtitle>Natural language Spotify control</mat-card-subtitle>
     </mat-card-header>
 
+    <mat-card-content class="workspace">
+      <aside class="spotify-sidebar">
     <section class="connection-panel" [class.connected]="connection?.isConnected">
       @if (connectionLoading) {
         <div class="connection-loading">
@@ -92,16 +94,52 @@
       }
     </section>
 
-    <mat-card-content>
+        <section class="saved-drafts-panel">
+          <div class="sidebar-heading">
+            <span>Saved drafts</span>
+            <small>{{ savedDrafts.length }}</small>
+          </div>
+          @if (savedDrafts.length > 0) {
+            <div class="saved-draft-list">
+              @for (draft of savedDrafts; track draft.id) {
+                <button type="button" class="saved-draft"
+                        [class.active]="activeDraft?.id === draft.id"
+                        (click)="openSavedDraft(draft)">
+                  <strong>{{ draft.name }}</strong>
+                  <span>{{ draft.candidates.length }} candidates · {{ draft.state }}</span>
+                </button>
+              }
+            </div>
+          } @else {
+            <p class="sidebar-empty">Drafts you save will appear here.</p>
+          }
+        </section>
+      </aside>
+
+      <section class="conversation-pane">
       @if (activeDraft) {
         <details class="discovery-draft" open>
           <summary>
-            <span>
+            <span class="draft-title">
               <strong>{{ activeDraft.name }}</strong>
               <small>{{ activeDraft.candidates.length }} candidates · {{ activeDraft.state }}</small>
             </span>
-            <span class="draft-read-only">Draft only — Spotify unchanged</span>
+            <span class="draft-header-actions" (click)="$event.preventDefault(); $event.stopPropagation()">
+              @if (!activeDraft.savedAt) {
+                <button mat-stroked-button type="button" (click)="saveActiveDraft()"
+                        [disabled]="draftActionPending">
+                  <mat-icon>bookmark_add</mat-icon> Save draft
+                </button>
+              } @else {
+                <span class="draft-saved"><mat-icon>bookmark</mat-icon> Saved</span>
+              }
+              <button mat-icon-button type="button" matTooltip="Close draft"
+                      (click)="closeActiveDraft()">
+                <mat-icon>close</mat-icon>
+              </button>
+            </span>
           </summary>
+          <div class="draft-status-line">Draft only — Spotify unchanged</div>
           <p>{{ activeDraft.summary }}</p>
           @if (activeDraft.clarifyingQuestion) {
             <div class="analysis-note">{{ activeDraft.clarifyingQuestion }}</div>
@@ -113,7 +151,7 @@
                   <span class="draft-position">{{ candidate.position + 1 }}</span>
                   <div class="draft-candidate-copy" (click)="openInSpotify(candidate.track?.spotifyUrl || null)">
                     <strong>{{ candidate.title }}</strong>
-                    <span>{{ candidate.artist }} · {{ candidate.resolution }}</span>
+                    <span>{{ candidate.artist }} · {{ candidateResolutionLabel(candidate) }}</span>
                     <small [class.unfamiliar]="candidate.probablyUnfamiliar">{{ candidate.familiarityLabel }}</small>
                     @if (candidate.rationale) { <small>{{ candidate.rationale }}</small> }
                     @if (candidate.alternatives.length > 0) {
@@ -431,6 +469,7 @@
           }
         </button>
       </div>
+      </section>
     </mat-card-content>
   </mat-card>
 </div>

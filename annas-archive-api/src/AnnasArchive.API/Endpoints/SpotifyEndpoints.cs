@@ -28,6 +28,7 @@ public static class SpotifyEndpoints
         group.MapGet("/analysis", HandleGetAnalysis);
         group.MapGet("/known-music", HandleGetKnownMusic);
         group.MapPut("/known-music/override", HandleKnownMusicOverride);
+        group.MapGet("/drafts", HandleListDiscoveryDrafts);
         group.MapGet("/drafts/{draftId}", HandleGetDiscoveryDraft);
         group.MapPatch("/drafts/{draftId}", HandleUpdateDiscoveryDraft);
         group.MapPost("/command", HandleCommand);
@@ -198,6 +199,9 @@ public static class SpotifyEndpoints
         discovery.Get(draftId) is { } draft
             ? Results.Ok(draft)
             : Results.NotFound(new { error = "That discovery draft was not found." });
+
+    private static IResult HandleListDiscoveryDrafts(ISpotifyDiscoveryService discovery) =>
+        Results.Ok(discovery.ListSaved());
 
     private static IResult HandleUpdateDiscoveryDraft(
         string draftId,

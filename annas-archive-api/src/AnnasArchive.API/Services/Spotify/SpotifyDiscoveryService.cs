@@ -14,6 +14,7 @@ public interface ISpotifyDiscoveryService
     Task<SpotifyDiscoveryDraft> RefineAsync(
         string draftId, string prompt, int? desiredCount = null, CancellationToken token = default);
     SpotifyDiscoveryDraft? Get(string draftId);
+    IReadOnlyList<SpotifyDiscoveryDraft> ListSaved();
     SpotifyDiscoveryDraft Update(string draftId, SpotifyDiscoveryDraftUpdateRequest request);
 }
 
@@ -51,13 +52,24 @@ public sealed class SpotifyDiscoveryService(
         return await GenerateAsync(existing, prompt, count, token);
     }
 
-    public SpotifyDiscoveryDraft? Get(string draftId) =>
-        store.Get(currentUser.GetRequiredOwnerKey(), draftId);
+    public SpotifyDiscoveryDraft? Get(string draftId)
+    {
+        var draft = store.Get(currentUser.GetRequiredOwnerKey(), draftId);
+        return draft == null ? null : NormalizeDisplayLabels(draft);
+    }
+
+    public IReadOnlyList<SpotifyDiscoveryDraft> ListSaved() =>
+        store.List(currentUser.GetRequiredOwnerKey())
+            .Where(draft => draft.SavedAt != null)
+            .OrderByDescending(draft => draft.SavedAt)
+            .Select(NormalizeDisplayLabels)
+            .ToList();
 
     public SpotifyDiscoveryDraft Update(string draftId, SpotifyDiscoveryDraftUpdateRequest request)
     {
         var ownerKey = currentUser.GetRequiredOwnerKey();
         var draft = store.Get(ownerKey, draftId) ?? throw new KeyNotFoundException("That discovery draft was not found.");
+        draft = NormalizeDisplayLabels(draft);
         var removed = (request.RemoveCandidateIds ?? []).ToHashSet(StringComparer.Ordinal);
         var remaining = draft.Candidates.Where(candidate => !removed.Contains(candidate.Id)).ToList();
 
@@ -105,7 +117,13 @@ public sealed class SpotifyDiscoveryService(
                     remaining.All(candidate => candidate.Resolution == SpotifyCandidateResolution.Resolved)
                 ? SpotifyDiscoveryDraftState.Ready
                 : SpotifyDiscoveryDraftState.Partial,
-            UpdatedAt = timeProvider.GetUtcNow()
+            UpdatedAt = timeProvider.GetUtcNow(),
+            SavedAt = request.Saved switch
+            {
+                true => draft.SavedAt ?? timeProvider.GetUtcNow(),
+                false => null,
+                _ => draft.SavedAt
+            }
         };
         store.Save(ownerKey, updated);
         return updated;
@@ -142,7 +160,7 @@ public sealed class SpotifyDiscoveryService(
             var awaiting = new SpotifyDiscoveryDraft(
                 id, SpotifyDiscoveryDraftState.AwaitingClarification, name, summary,
                 prompts, desiredCount, question, [], string.Empty,
-                existing?.CreatedAt ?? now, now);
+                existing?.CreatedAt ?? now, now, existing?.SavedAt);
             store.Save(currentUser.GetRequiredOwnerKey(), awaiting);
             return awaiting;
         }
@@ -157,7 +175,7 @@ public sealed class SpotifyDiscoveryService(
             : SpotifyDiscoveryDraftState.Partial;
         var draft = new SpotifyDiscoveryDraft(
             id, state, name, summary, prompts, desiredCount, null, candidates,
-            known.Coverage, existing?.CreatedAt ?? now, timeProvider.GetUtcNow());
+            known.Coverage, existing?.CreatedAt ?? now, timeProvider.GetUtcNow(), existing?.SavedAt);
         store.Save(currentUser.GetRequiredOwnerKey(), draft);
         Log.Information(
             "[Spotify] Discovery draft {DraftId} generated: {Candidates} candidates, {Resolved} resolved, {Unresolved} unresolved",
@@ -197,9 +215,7 @@ public sealed class SpotifyDiscoveryService(
                     resolution, track,
                     resolution == SpotifyCandidateResolution.Ambiguous ? search.Tracks.Take(3).ToList() : [],
                     probablyUnfamiliar,
-                    probablyUnfamiliar
-                        ? "Not found in the Spotify data I can access"
-                        : "Represented in accessible Spotify evidence");
+                    FamiliarityLabel(probablyUnfamiliar));
             }
             finally
             {
@@ -287,4 +303,20 @@ public sealed class SpotifyDiscoveryService(
         var result = string.IsNullOrWhiteSpace(value) ? fallback ?? string.Empty : value.Trim();
         return result[..Math.Min(result.Length, maxLength)];
     }
+
+    private static SpotifyDiscoveryDraft NormalizeDisplayLabels(SpotifyDiscoveryDraft draft) =>
+        draft with
+        {
+            Candidates = draft.Candidates
+                .Select(candidate => candidate with
+                {
+                    FamiliarityLabel = FamiliarityLabel(candidate.ProbablyUnfamiliar)
+                })
+                .ToList()
+        };
+
+    private static string FamiliarityLabel(bool probablyUnfamiliar) =>
+        probablyUnfamiliar
+            ? "Probably unfamiliar — absent from your accessible library and listening evidence"
+            : "Found in your accessible library or listening evidence";
 }

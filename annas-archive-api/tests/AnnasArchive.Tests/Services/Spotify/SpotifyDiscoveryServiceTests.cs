@@ -79,9 +79,10 @@ public sealed class SpotifyDiscoveryServiceTests : IDisposable
         var service = CreateService(handler, spotify.Object, KnownMusic().Object);
 
         var first = await service.CreateAsync("Start with gospel");
-        var second = await service.RefineAsync(first.Id, "More blues, less country");
+        var second = await service.RefineAsync(first.Id, "More blues, less country", 30);
 
         second.Id.Should().Be(first.Id);
+        second.DesiredTrackCount.Should().Be(30);
         second.UserPrompts.Should().Equal("Start with gospel", "More blues, less country");
         handler.Bodies.Should().HaveCount(2);
         handler.Bodies[1].Should().Contain("Start with gospel");

@@ -271,7 +271,8 @@ public sealed class SpotifyConversationService : ISpotifyConversationService
             return Respond(command, "Music discovery drafts are not available in this environment.", null);
         if (string.IsNullOrWhiteSpace(draftId) || _discovery.Get(draftId) == null)
             return Respond(command, "Start a music-discovery draft first so I know what you want to refine.", null);
-        var draft = await _discovery.RefineAsync(draftId, userMessage, token);
+        var draft = await _discovery.RefineAsync(
+            draftId, userMessage, command.Arguments.Limit, token);
         return DescribeDraft(command, draft);
     }
 

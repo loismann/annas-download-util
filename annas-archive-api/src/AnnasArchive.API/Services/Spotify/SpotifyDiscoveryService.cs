@@ -11,7 +11,8 @@ namespace AnnasArchive.API.Services.Spotify;
 public interface ISpotifyDiscoveryService
 {
     Task<SpotifyDiscoveryDraft> CreateAsync(string prompt, int desiredCount = 25, CancellationToken token = default);
-    Task<SpotifyDiscoveryDraft> RefineAsync(string draftId, string prompt, CancellationToken token = default);
+    Task<SpotifyDiscoveryDraft> RefineAsync(
+        string draftId, string prompt, int? desiredCount = null, CancellationToken token = default);
     SpotifyDiscoveryDraft? Get(string draftId);
     SpotifyDiscoveryDraft Update(string draftId, SpotifyDiscoveryDraftUpdateRequest request);
 }
@@ -41,10 +42,13 @@ public sealed class SpotifyDiscoveryService(
         GenerateAsync(null, prompt, Math.Clamp(desiredCount, 5, 50), token);
 
     public async Task<SpotifyDiscoveryDraft> RefineAsync(
-        string draftId, string prompt, CancellationToken token = default)
+        string draftId, string prompt, int? desiredCount = null, CancellationToken token = default)
     {
         var existing = Get(draftId) ?? throw new KeyNotFoundException("That discovery draft was not found.");
-        return await GenerateAsync(existing, prompt, existing.DesiredTrackCount, token);
+        var count = desiredCount.HasValue
+            ? Math.Clamp(desiredCount.Value, 5, 50)
+            : existing.DesiredTrackCount;
+        return await GenerateAsync(existing, prompt, count, token);
     }
 
     public SpotifyDiscoveryDraft? Get(string draftId) =>

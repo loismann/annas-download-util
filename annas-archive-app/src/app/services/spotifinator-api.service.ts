@@ -59,8 +59,14 @@ export class SpotifinatorApiService {
     );
   }
 
-  getPlaylists(): Observable<SpotifyPlaylist[]> {
-    return this.http.get<SpotifyPlaylist[]>(`${this.baseUrl}/playlists`).pipe(
+  /**
+   * `forceRefresh` skips the server's fifteen-minute cache. Use it after *we* changed
+   * something — a playlist we just created is not stale by age, it is stale because
+   * we know about it and the cache does not.
+   */
+  getPlaylists(forceRefresh = false): Observable<SpotifyPlaylist[]> {
+    const params: Record<string, string> = forceRefresh ? { refresh: 'true' } : {};
+    return this.http.get<SpotifyPlaylist[]>(`${this.baseUrl}/playlists`, { params }).pipe(
       tap(playlists => this.logger.log('[Spotifinator] Playlists loaded', { count: playlists.length }))
     );
   }

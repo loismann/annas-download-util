@@ -20,6 +20,7 @@ import {
 import { LoggerService } from '../services/logger.service';
 import { AuthService } from '../services/auth.service';
 import { TileSizeControlsComponent } from '../components/shared/tile-size-controls/tile-size-controls.component';
+import { ActivatedRoute } from '@angular/router';
 
 type SortOrder = 'title' | 'author' | 'recent';
 type TileSize = 'small' | 'medium' | 'large';
@@ -129,6 +130,7 @@ export class AudiobooksComponent implements OnInit {
    * param changes — cover responses carry a 1-day Cache-Control, so without
    * this the browser would keep showing the pre-edit cached image. */
   private coverVersions = new Map<string, number>();
+  private deepLinkItemId: string | null = null;
 
   readonly owners = OWNERS;
 
@@ -136,10 +138,12 @@ export class AudiobooksComponent implements OnInit {
     private api: AudiobookApiService,
     private dialog: MatDialog,
     private logger: LoggerService,
-    private authService: AuthService
+    private authService: AuthService,
+    private route: ActivatedRoute
   ) {}
 
   ngOnInit(): void {
+    this.deepLinkItemId = this.route.snapshot.queryParamMap.get('item');
     // On mobile the filter sheet starts closed so the grid is what loads first
     if (window.innerWidth <= 768) {
       this.sidebarCollapsed = true;
@@ -163,6 +167,11 @@ export class AudiobooksComponent implements OnInit {
       next: (items) => {
         this.items = items;
         this.loading = false;
+        if (this.deepLinkItemId) {
+          const item = items.find(candidate => candidate.id === this.deepLinkItemId);
+          this.deepLinkItemId = null;
+          if (item) this.openPlayer(item);
+        }
       },
       error: (err) => {
         this.logger.error('[AudiobooksComponent] load failed', err);

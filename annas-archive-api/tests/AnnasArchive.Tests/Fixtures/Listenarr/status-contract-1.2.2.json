@@ -1,0 +1,58 @@
+{
+  "ready": {
+    "isReady": true,
+    "status": "ready",
+    "databaseConnected": true,
+    "migrationsCurrent": true
+  },
+  "health": {
+    "status": "healthy",
+    "version": "1.2.2",
+    "uptime": "2 minutes",
+    "downloadClients": {
+      "status": "healthy",
+      "connected": 1,
+      "total": 1,
+      "clients": [
+        { "name": "qBittorrent", "status": "connected", "type": "qbittorrent" }
+      ]
+    },
+    "externalApis": {
+      "status": "healthy",
+      "connected": 2,
+      "total": 2,
+      "apis": [
+        { "name": "Audible", "status": "connected", "type": null },
+        { "name": "Audnexus", "status": "connected", "type": null }
+      ]
+    }
+  },
+  "info": {
+    "version": "1.2.2",
+    "operatingSystem": "Linux (X64)",
+    "runtime": ".NET 10.0.9",
+    "uptime": "2 minutes",
+    "startTime": "2026-08-02T17:01:36Z"
+  },
+  "rootfolders": [
+    { "id": 1, "name": "Audiobooks", "path": "/data/audiobooks", "isDefault": true }
+  ],
+  "qualityprofiles": [
+    { "id": 1, "name": "AAC M4B", "isDefault": true }
+  ],
+  "indexers": [
+    {
+      "id": 1,
+      "name": "Audiobooks (Prowlarr)",
+      "type": "Torznab",
+      "implementation": "Torznab",
+      "isEnabled": true,
+      "enableInteractiveSearch": true,
+      "lastTestSuccessful": true
+    }
+  ],
+  "downloadclients": [
+    { "id": "client-1", "name": "qBittorrent", "type": "qBittorrent", "isEnabled": true }
+  ],
+  "library": []
+}

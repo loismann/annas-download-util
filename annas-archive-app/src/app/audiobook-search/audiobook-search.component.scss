@@ -1,0 +1,86 @@
+:host { display: block; }
+
+.audiobook-search-page {
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 28px clamp(16px, 4vw, 48px) 56px;
+}
+
+.page-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  align-items: flex-start;
+  margin-bottom: 24px;
+
+  h1 { margin: 2px 0 8px; font-size: clamp(2rem, 4vw, 3rem); }
+  p:not(.eyebrow) { margin: 0; max-width: 760px; color: var(--text-secondary, #666); }
+}
+
+.eyebrow { margin: 0; color: #137a42; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+
+.setup-warning, .error-state {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-radius: 10px;
+  padding: 12px 16px;
+  margin-bottom: 18px;
+}
+.setup-warning { background: #fff6dc; color: #644b00; }
+.setup-warning button { margin-left: auto; }
+.error-state { background: #fde7e7; color: #8b1a1a; }
+
+.search-panel {
+  display: grid;
+  grid-template-columns: minmax(280px, 2fr) minmax(170px, .7fr) minmax(180px, .7fr) auto;
+  align-items: start;
+  gap: 12px;
+}
+.search-panel mat-form-field { width: 100%; }
+.search-button { min-height: 56px; min-width: 110px; }
+.search-button mat-spinner { margin: 0 auto; }
+
+.result-summary { color: var(--text-secondary, #666); margin: 4px 0 18px; }
+.results-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 18px; }
+.result-card { overflow: hidden; display: flex; flex-direction: column; }
+.cover-wrap { position: relative; aspect-ratio: 1 / 1; background: #ececec; }
+.cover-wrap img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.availability {
+  position: absolute; left: 10px; bottom: 10px; padding: 5px 9px; border-radius: 999px;
+  background: rgba(255,255,255,.94); color: #333; font-size: .78rem; font-weight: 700;
+  box-shadow: 0 1px 6px rgba(0,0,0,.18);
+}
+.availability.owned { background: #dff6e7; color: #126135; }
+.availability.requested { background: #e4edff; color: #234f9b; }
+
+mat-card-content { flex: 1; padding-top: 18px; }
+mat-card-content h2 { margin: 0; font-size: 1.2rem; line-height: 1.25; }
+.subtitle { color: var(--text-secondary, #666); margin: 4px 0; }
+.authors { font-weight: 600; margin: 10px 0 14px; }
+dl { margin: 0; }
+dl div { display: grid; grid-template-columns: 88px 1fr; gap: 8px; margin: 5px 0; }
+dt { color: var(--text-secondary, #666); }
+dd { margin: 0; }
+.match-reason { margin: 14px 0 0; font-size: .86rem; color: #35634a; }
+.card-message { margin: 10px 0 0; font-size: .86rem; color: #126135; }
+.card-error { margin: 10px 0 0; font-size: .86rem; color: #a61b1b; }
+.request-progress { margin-top: 14px; border-top: 1px solid rgba(0,0,0,.1); padding-top: 12px; }
+.progress-heading { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 7px; font-size: .87rem; }
+mat-card-actions { padding: 8px 16px 16px; }
+mat-card-actions { flex-wrap: wrap; gap: 6px; }
+mat-card-actions mat-spinner { display: inline-block; }
+.empty-state { text-align: center; color: var(--text-secondary, #666); padding: 56px 16px; }
+
+@media (max-width: 900px) {
+  .search-panel { grid-template-columns: 1fr 1fr; }
+  .query-field { grid-column: 1 / -1; }
+}
+
+@media (max-width: 600px) {
+  .audiobook-search-page { padding-inline: 12px; }
+  .page-heading { flex-direction: column; }
+  .search-panel { grid-template-columns: 1fr; }
+  .query-field { grid-column: auto; }
+  .search-button { width: 100%; }
+}

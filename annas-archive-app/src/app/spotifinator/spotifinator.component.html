@@ -434,115 +434,50 @@
                 <pre class="message-text">{{ message.content }}</pre>
               </div>
 
-              <!-- Track results -->
-              <!-- Change plan review -->
+              <!--
+                What a change leaves behind: a receipt, not a report.
+
+                The plan itself was reviewed in a modal — effects, warnings, steps and
+                the acknowledgement all happened there. Repeating them here is what
+                filled the chat with text and icons nobody needed to read twice, so
+                what stays is one line, and buttons only where they still apply.
+                The step list is collapsed and only exists at all when something went
+                wrong, because that is the only time it answers a question.
+              -->
               @if (isPlan(message.data)) {
-                <div class="results-container plan-card"
-                     [class.plan-high-impact]="message.data.preview.requiresHighImpactAcknowledgement">
-                  <div class="plan-header">
-                    <mat-icon>{{ message.data.preview.requiresHighImpactAcknowledgement ? 'warning' : 'fact_check' }}</mat-icon>
-                    <span class="plan-summary">{{ message.data.preview.summary }}</span>
-                    <span class="plan-status">{{ planStatusLabel(message.data) }}</span>
-                  </div>
+                <div class="plan-receipt" [class]="'plan-receipt-' + message.data.status.toLowerCase()">
+                  <mat-icon inline>{{ planOutcomeIcon(message.data) }}</mat-icon>
+                  <span class="plan-receipt-text">{{ planStatusLabel(message.data) }}</span>
 
-                  @if (message.data.preview.effects.length > 0) {
-                    <ul class="plan-effects">
-                      @for (effect of message.data.preview.effects; track effect) {
-                        <li>{{ effect }}</li>
-                      }
-                    </ul>
-                  }
-
-                  @if (message.data.preview.warnings.length > 0) {
-                    <ul class="plan-warnings">
-                      @for (warning of message.data.preview.warnings; track warning) {
-                        <li><mat-icon inline>warning</mat-icon> {{ warning }}</li>
-                      }
-                    </ul>
-                  }
-
-                  @if (planIsPending(message.data)) {
-                    @if (message.data.preview.requiresHighImpactAcknowledgement) {
-                      <label class="plan-ack">
-                        <input
-                          type="checkbox"
-                          [checked]="highImpactAcknowledged.has(message.data.id)"
-                          (change)="toggleHighImpact(message.data, $any($event.target).checked)"
-                        />
-                        I understand this discards content and may not be fully reversible
-                      </label>
-                    }
-
-                    <div class="plan-actions">
-                      <button
-                        mat-flat-button
-                        color="primary"
-                        [disabled]="planIsBlocked(message.data) || planActionPending === message.data.id"
-                        (click)="confirmPlan(message.data)"
-                      >
-                        {{ message.data.preview.confirmLabel }}
-                      </button>
-                      <button
-                        mat-stroked-button
-                        [disabled]="planActionPending === message.data.id"
-                        (click)="cancelPlan(message.data)"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  } @else {
-                    <div class="plan-steps">
-                      @for (step of message.data.steps; track step.ordinal) {
-                        <div class="plan-step" [class]="'plan-step-' + step.status.toLowerCase()">
-                          <mat-icon inline>
-                            {{ step.status === 'Succeeded' ? 'check_circle'
-                             : step.status === 'Failed' ? 'error'
-                             : step.status === 'Skipped' ? 'remove_circle_outline' : 'schedule' }}
-                          </mat-icon>
-                          <span>{{ planStepLabel(step) }}</span>
-                          @if (step.status === 'Skipped') {
-                            <span class="plan-step-note">not attempted</span>
-                          }
-                          @if (step.failure) {
-                            <span class="plan-step-failure">{{ step.failure }}</span>
-                          }
-                        </div>
-                      }
-                    </div>
-
-                    <!--
-                      Recovery. Present only when a plan actually stopped part-way,
-                      so "pick this back up" never appears next to work that finished.
-                    -->
-                    @if (message.data.recovery) {
-                      <p class="plan-recovery">{{ message.data.recovery.advice }}</p>
-                    }
-
-                    @if (message.data.recovery?.canResume || message.data.canUndo) {
-                      <div class="plan-actions">
-                        @if (message.data.recovery?.canResume) {
-                          <button
-                            mat-flat-button
-                            color="primary"
+                  @if (message.data.recovery?.canResume) {
+                    <button mat-button
                             [disabled]="planActionPending === message.data.id"
-                            (click)="retryPlan(message.data)"
-                          >
-                            <mat-icon>replay</mat-icon> Finish the rest
-                          </button>
-                        }
-                        @if (message.data.canUndo) {
-                          <button
-                            mat-stroked-button
+                            (click)="retryPlan(message.data)">Finish the rest</button>
+                  }
+                  @if (message.data.canUndo) {
+                    <button mat-button
                             [disabled]="planActionPending === message.data.id"
-                            (click)="undoPlan(message.data)"
-                          >
-                            <mat-icon>undo</mat-icon> Undo this
-                          </button>
-                        }
-                      </div>
-                    }
+                            (click)="undoPlan(message.data)">Undo</button>
                   }
                 </div>
+
+                @if (planHasTrouble(message.data)) {
+                  <details class="plan-trouble">
+                    <summary>What happened</summary>
+                    @if (message.data.recovery) {
+                      <p>{{ message.data.recovery.advice }}</p>
+                    }
+                    <ul>
+                      @for (step of message.data.steps; track step.ordinal) {
+                        <li [class]="'plan-step-' + step.status.toLowerCase()">
+                          {{ planStepLabel(step) }}
+                          @if (step.status === 'Skipped') { — not attempted }
+                          @if (step.failure) { — {{ step.failure }} }
+                        </li>
+                      }
+                    </ul>
+                  </details>
+                }
               }
 
 

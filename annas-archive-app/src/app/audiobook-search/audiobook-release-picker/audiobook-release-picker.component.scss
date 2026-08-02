@@ -1,0 +1,16 @@
+.intro { margin-top: 0; line-height: 1.45; }
+mat-radio-group { display: grid; gap: 10px; min-width: min(720px, 76vw); }
+.release { display: block; border: 1px solid rgba(255, 255, 255, .13); border-radius: 10px; padding: 12px; cursor: pointer; }
+.release:hover, .release.selected { border-color: #7c4dff; background: rgba(124, 77, 255, .08); }
+.release-title { white-space: normal; font-weight: 600; }
+.release-facts { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 8px 0 0 34px; color: rgba(255, 255, 255, .66); font-size: .86rem; }
+.empty, .privacy { display: flex; align-items: center; gap: 10px; }
+.empty { padding: 24px 0; color: rgba(255, 255, 255, .68); }
+.privacy { margin: 18px 0 0; color: rgba(255, 255, 255, .58); font-size: .86rem; }
+.privacy mat-icon { font-size: 17px; width: 17px; height: 17px; }
+.error { color: #ff8a80; }
+mat-spinner { display: inline-block; }
+@media (max-width: 600px) {
+  mat-radio-group { min-width: 0; }
+  .release-facts { margin-left: 0; }
+}

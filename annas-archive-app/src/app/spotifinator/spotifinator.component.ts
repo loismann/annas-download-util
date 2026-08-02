@@ -10,6 +10,7 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatListModule } from '@angular/material/list';
 import { MatTooltipModule } from '@angular/material/tooltip';
+import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import { Subject, timer } from 'rxjs';
 import { switchMap, takeUntil, takeWhile } from 'rxjs/operators';
 import { ActivatedRoute } from '@angular/router';
@@ -17,6 +18,7 @@ import { ActivatedRoute } from '@angular/router';
 import { SpotifinatorApiService } from '../services/spotifinator-api.service';
 import { LoggerService } from '../services/logger.service';
 import { SpotifyPlaybackService } from '../services/spotify-playback.service';
+import { PlanReviewDialogComponent } from './plan-review-dialog/plan-review-dialog.component';
 import {
   ChatMessage,
   CommandData,
@@ -55,7 +57,8 @@ import {
     MatProgressSpinnerModule,
     MatProgressBarModule,
     MatListModule,
-    MatTooltipModule
+    MatTooltipModule,
+    MatDialogModule
   ],
   templateUrl: './spotifinator.component.html',
   styleUrl: './spotifinator.component.scss'
@@ -103,8 +106,8 @@ export class SpotifinatorComponent implements OnInit, OnDestroy, AfterViewChecke
   savedDrafts: SpotifyDiscoveryDraft[] = [];
   draftActionPending = false;
 
-  /** Plan IDs the user has ticked the high-impact box for. */
-  highImpactAcknowledged = new Set<string>();
+  // The high-impact acknowledgement lives in PlanReviewDialogComponent now. Keeping
+  // a copy here would let a plan be confirmed by a tick made against a different one.
   planActionPending: string | null = null;
 
   private destroy$ = new Subject<void>();
@@ -119,7 +122,8 @@ export class SpotifinatorComponent implements OnInit, OnDestroy, AfterViewChecke
     private api: SpotifinatorApiService,
     private logger: LoggerService,
     private route: ActivatedRoute,
-    private playbackService: SpotifyPlaybackService
+    private playbackService: SpotifyPlaybackService,
+    private dialog: MatDialog
   ) {
     this.addWelcomeMessage();
   }
@@ -335,7 +339,15 @@ export class SpotifinatorComponent implements OnInit, OnDestroy, AfterViewChecke
       next: (response) => {
         this.removePendingMessage(pendingId);
         this.lastMessage = message;
-        this.addAssistantMessage(response.message, response.data);
+
+        // A plan the assistant built is a decision, so it opens the review modal
+        // and is kept out of the transcript — the reply sentence stays as context.
+        // Without this a typed command and the draft button would review changes in
+        // two different places.
+        const pending = this.isPlan(response.data) && this.planIsPending(response.data);
+        this.addAssistantMessage(response.message, pending ? null : response.data);
+        if (pending) this.reviewPlan(response.data as SpotifyPlan);
+
         if (this.isDiscoveryDraft(response.data)) this.setActiveDraft(response.data);
         this.viewState = 'idle';
         if (response.action === 'analyze_playlist_library' && !this.isAnalysis(response.data))
@@ -548,8 +560,9 @@ export class SpotifinatorComponent implements OnInit, OnDestroy, AfterViewChecke
 
   /**
    * Turns the draft into a real playlist — via the plan flow, not directly. The
-   * button produces a review card showing the name and every track; nothing is
-   * written until that card is confirmed.
+   * review opens as a modal right here, rather than as a card in the chat: the
+   * button used to build a plan into a pane the user was not looking at, so it
+   * looked like it had done nothing at all.
    */
   createDraftInSpotify(): void {
     if (!this.activeDraft || this.draftActionPending) return;
@@ -562,9 +575,7 @@ export class SpotifinatorComponent implements OnInit, OnDestroy, AfterViewChecke
       .pipe(takeUntil(this.destroy$)).subscribe({
         next: plan => {
           this.draftActionPending = false;
-          this.addAssistantMessage(
-            'Here is what creating that would do. Nothing has changed yet — confirm it and I will build it.',
-            plan);
+          this.reviewPlan(plan);
         },
         error: err => {
           this.draftActionPending = false;
@@ -815,13 +826,23 @@ export class SpotifinatorComponent implements OnInit, OnDestroy, AfterViewChecke
     return plan.status === 'AwaitingConfirmation' || plan.status === 'Draft';
   }
 
-  planIsBlocked(plan: SpotifyPlan): boolean {
-    return plan.preview.requiresHighImpactAcknowledgement && !this.highImpactAcknowledged.has(plan.id);
+  /** The receipt's icon. Deliberately three outcomes and no more — a row of status
+   *  glyphs per step is what made the transcript unreadable. */
+  planOutcomeIcon(plan: SpotifyPlan): string {
+    switch (plan.status) {
+      case 'Completed': return 'check_circle';
+      case 'PartiallyCompleted': return 'error_outline';
+      case 'Failed': return 'cancel';
+      default: return 'info_outline';
+    }
   }
 
-  toggleHighImpact(plan: SpotifyPlan, acknowledged: boolean): void {
-    if (acknowledged) this.highImpactAcknowledged.add(plan.id);
-    else this.highImpactAcknowledged.delete(plan.id);
+  /** Whether the step list is worth offering at all. A plan that simply worked has
+   *  nothing to explain, so it gets no expander to ignore. */
+  planHasTrouble(plan: SpotifyPlan): boolean {
+    return plan.status === 'PartiallyCompleted'
+      || plan.status === 'Failed'
+      || plan.steps.some(step => step.status === 'Failed' || step.status === 'Skipped');
   }
 
   planStatusLabel(plan: SpotifyPlan): string {
@@ -837,42 +858,41 @@ export class SpotifinatorComponent implements OnInit, OnDestroy, AfterViewChecke
     }
   }
 
-  confirmPlan(plan: SpotifyPlan): void {
-    if (this.planActionPending || this.planIsBlocked(plan)) return;
+  /**
+   * The single door every change goes through, wherever it came from — the draft
+   * panel, a typed command, or an undo.
+   *
+   * It has to be one function. When the review lived in the transcript, a plan built
+   * from the draft panel put its decision in a pane the user was not looking at, and
+   * the button appeared to do nothing. A modal cannot be missed, and routing every
+   * source through here means no future entry point can reintroduce that.
+   */
+  reviewPlan(plan: SpotifyPlan): void {
+    this.dialog.open(PlanReviewDialogComponent, {
+      data: { plan },
+      width: '540px',
+      maxWidth: '94vw',
+      autoFocus: false
+    }).afterClosed().pipe(takeUntil(this.destroy$)).subscribe(executed => {
+      // Undefined means cancelled or dismissed. Nothing happened, and saying so in
+      // the transcript would be noise about a non-event.
+      if (!executed) return;
 
-    this.planActionPending = plan.id;
-    this.api.confirmPlan(plan.id, this.highImpactAcknowledged.has(plan.id))
-      .pipe(takeUntil(this.destroy$))
-      .subscribe({
-        next: (executed) => {
-          this.planActionPending = null;
-          this.replacePlanInTranscript(executed);
-          this.addAssistantMessage(this.describeOutcome(executed), executed);
-        },
-        error: (err) => {
-          this.planActionPending = null;
-          // 409 carries the real explanation — expired, drifted, or needing the
-          // high-impact tick — and it is the sentence the user needs to read.
-          this.addAssistantMessage(err.error?.error || 'That change could not be applied.', null, true);
-        }
-      });
+      this.recordOutcome(executed);
+      this.refreshAfterChange(executed);
+    });
   }
 
-  cancelPlan(plan: SpotifyPlan): void {
-    if (this.planActionPending) return;
-
-    this.planActionPending = plan.id;
-    this.api.cancelPlan(plan.id).pipe(takeUntil(this.destroy$)).subscribe({
-      next: (cancelled) => {
-        this.planActionPending = null;
-        this.replacePlanInTranscript(cancelled);
-        this.addAssistantMessage('Cancelled — nothing was changed.', null);
-      },
-      error: (err) => {
-        this.planActionPending = null;
-        this.addAssistantMessage(err.error?.error || 'Could not cancel that.', null, true);
-      }
-    });
+  /**
+   * One line in the transcript, not a panel.
+   *
+   * The plan is still attached so the receipt can offer Undo or "finish the rest"
+   * when those genuinely apply — but the effects, warnings, steps and tick box all
+   * did their job in the dialog and do not get a second showing.
+   */
+  private recordOutcome(plan: SpotifyPlan): void {
+    this.addAssistantMessage(
+      this.describeOutcome(plan), plan, plan.status === 'Failed');
   }
 
   /** A friendlier name than the enum for each step in the progress list. */
@@ -901,8 +921,10 @@ export class SpotifinatorComponent implements OnInit, OnDestroy, AfterViewChecke
     this.api.retryPlan(plan.id).pipe(takeUntil(this.destroy$)).subscribe({
       next: (resumed) => {
         this.planActionPending = null;
-        this.replacePlanInTranscript(resumed);
-        this.addAssistantMessage(this.describeOutcome(resumed), resumed);
+        // Resuming needs no fresh review — the acknowledgement already given still
+        // stands — so this runs and reports rather than reopening the dialog.
+        this.recordOutcome(resumed);
+        this.refreshAfterChange(resumed);
       },
       error: (err) => {
         this.planActionPending = null;
@@ -918,8 +940,8 @@ export class SpotifinatorComponent implements OnInit, OnDestroy, AfterViewChecke
     this.api.undoPlan(plan.id).pipe(takeUntil(this.destroy$)).subscribe({
       next: (undo) => {
         this.planActionPending = null;
-        this.addAssistantMessage(
-          'Here is what undoing that would do. It needs confirming like any other change.', undo);
+        // An undo is a change like any other, so it gets the same review.
+        this.reviewPlan(undo);
       },
       error: (err) => {
         this.planActionPending = null;
@@ -928,13 +950,16 @@ export class SpotifinatorComponent implements OnInit, OnDestroy, AfterViewChecke
     });
   }
 
+  /**
+   * A receipt, not a report. The full effects list was already read in the dialog;
+   * repeating it here is the wall of text that made the chat unusable.
+   */
   private describeOutcome(plan: SpotifyPlan): string {
     switch (plan.status) {
       case 'Completed':
-        return 'Done. ' + plan.preview.effects.join(' ');
+        return plan.preview.summary;
       case 'PartiallyCompleted':
-        return `Partly done — ${plan.failure} The steps that succeeded are listed above; `
-             + 'the rest were not attempted.';
+        return `Partly done — ${plan.failure}`;
       case 'Failed':
         return `Nothing changed. ${plan.failure}`;
       default:
@@ -942,20 +967,32 @@ export class SpotifinatorComponent implements OnInit, OnDestroy, AfterViewChecke
     }
   }
 
-  /** Keeps the reviewed card in the transcript in step with what actually happened. */
-  private replacePlanInTranscript(plan: SpotifyPlan): void {
-    for (const message of this.messages) {
-      if (this.isPlan(message.data) && message.data.id === plan.id) {
-        message.data = plan;
-      }
+  /**
+   * Puts the catalog back in step with what just happened.
+   *
+   * The server caches the playlist list for fifteen minutes, so without the forced
+   * refresh a playlist you just created is invisible — which reads as the change
+   * having failed. The open playlist is reloaded too, since a plan can add to or
+   * empty the very list being looked at.
+   */
+  private refreshAfterChange(plan: SpotifyPlan): void {
+    if (plan.status !== 'Completed' && plan.status !== 'PartiallyCompleted') return;
+
+    this.loadPlaylists(true);
+
+    const open = this.selectedPlaylist;
+    if (open && plan.steps.some(step => step.playlistId === open.id)) {
+      this.openPlaylist(open);
     }
   }
 
   // ─── Library pane ──────────────────────────────────────────────────────────
 
-  loadPlaylists(): void {
+  /** `forceRefresh` bypasses the server's fifteen-minute cache — used after a change
+   *  of ours, which the cache has no way to know about. */
+  loadPlaylists(forceRefresh = false): void {
     this.playlistsLoading = true;
-    this.api.getPlaylists().pipe(takeUntil(this.destroy$)).subscribe({
+    this.api.getPlaylists(forceRefresh).pipe(takeUntil(this.destroy$)).subscribe({
       next: playlists => {
         this.playlistsLoading = false;
         // Yours first, then collaborative, then followed — the order you can

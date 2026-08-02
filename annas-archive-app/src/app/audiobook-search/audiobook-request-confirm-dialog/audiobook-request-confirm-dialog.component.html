@@ -1,0 +1,32 @@
+<h2 mat-dialog-title>Review audiobook request</h2>
+<mat-dialog-content>
+  <div class="edition-heading">
+    <mat-icon>headphones</mat-icon>
+    <div>
+      <strong>{{ data.title }}</strong>
+      <span>{{ data.authors.join(', ') || 'Unknown author' }}</span>
+    </div>
+  </div>
+
+  <dl>
+    <div *ngIf="data.narrators.length"><dt>Narrator</dt><dd>{{ data.narrators.join(', ') }}</dd></div>
+    <div *ngIf="data.language"><dt>Language</dt><dd>{{ data.language }}</dd></div>
+    <div *ngIf="data.format"><dt>Edition</dt><dd>{{ data.format }}</dd></div>
+    <div><dt>Quality profile</dt><dd>{{ data.qualityProfile }}</dd></div>
+    <div><dt>ASIN</dt><dd>{{ data.asin }}</dd></div>
+  </dl>
+
+  <p class="warning" *ngIf="data.abridged"><mat-icon>warning</mat-icon>This edition is marked abridged.</p>
+  <p class="policy">
+    {{ data.alreadyRequested ? 'This edition already exists in Listenarr. Confirming adds you as a requester.' : 'This adds the exact edition to Listenarr as monitored.' }}
+    It will <strong>not download automatically</strong>; you will review a release separately.
+  </p>
+  <p class="error" *ngIf="error" role="alert">{{ error }}</p>
+</mat-dialog-content>
+<mat-dialog-actions align="end">
+  <button mat-button type="button" [disabled]="busy" (click)="cancel()">Cancel</button>
+  <button mat-raised-button color="primary" type="button" [disabled]="busy" (click)="confirm()">
+    <mat-spinner *ngIf="busy" diameter="18"></mat-spinner>
+    <span *ngIf="!busy">{{ data.alreadyRequested ? 'Add me as requester' : 'Add monitored request' }}</span>
+  </button>
+</mat-dialog-actions>

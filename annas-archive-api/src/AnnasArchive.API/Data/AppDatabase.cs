@@ -136,6 +136,29 @@ public class AppDatabase
                 updated_at TEXT NOT NULL,
                 PRIMARY KEY (owner_hash, draft_id)
             );
+
+            CREATE TABLE IF NOT EXISTS audiobook_request (
+                listenarr_id        INTEGER PRIMARY KEY,
+                asin                TEXT NOT NULL UNIQUE,
+                isbn_json           TEXT NOT NULL DEFAULT '[]',
+                title_snapshot      TEXT NOT NULL,
+                author_snapshot     TEXT NOT NULL,
+                abs_item_id         TEXT,
+                last_observed_status TEXT NOT NULL,
+                last_error          TEXT,
+                created_at          TEXT NOT NULL,
+                updated_at          TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS audiobook_request_user (
+                listenarr_id INTEGER NOT NULL,
+                app_user_id  TEXT NOT NULL,
+                owner_label  TEXT NOT NULL,
+                requested_at TEXT NOT NULL,
+                PRIMARY KEY (listenarr_id, app_user_id),
+                FOREIGN KEY (listenarr_id) REFERENCES audiobook_request(listenarr_id)
+                    ON DELETE CASCADE
+            );
             """;
         cmd.ExecuteNonQuery();
         EnsureColumn(conn, "spotify_inventory_meta", "full_inventory_at", "TEXT");

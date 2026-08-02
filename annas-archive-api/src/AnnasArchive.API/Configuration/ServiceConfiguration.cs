@@ -437,6 +437,18 @@ public static class ServiceConfiguration
             c.Timeout = HttpTimeouts.MediaStreamingTimeout;
         }).AddMediaProxyResilience("Audiobookshelf");
 
+        // Listenarr has a versioned v1 contract that is deliberately kept
+        // separate from ArrServiceBase. Do not attach the generic retry policy:
+        // this same client performs non-idempotent add/grab mutations, and
+        // Listenarr does not publish an idempotency-key contract. The request
+        // service preflights and reconciles mutations by ASIN instead.
+        services.AddHttpClient<IListenarrService, ListenarrService>(c =>
+        {
+            // Interactive indexer fan-out is the longest operation on this
+            // client. Ordinary metadata/health calls return much sooner.
+            c.Timeout = HttpTimeouts.ArrOperationTimeout;
+        });
+
         return services;
     }
 
@@ -481,6 +493,8 @@ public static class ServiceConfiguration
         // structurally separate from the enrichment sidecars. See DOCS/reference/PROJECT_AUDIT.md §8.6.
         services.AddSingleton<Data.AppDatabase>();
         services.AddSingleton<Data.BookPersonalizationStore>();
+        services.AddSingleton<Data.AudiobookRequestStore>();
+        services.AddSingleton<AudiobookRequestTokenStore>();
 
         // Library services - LibraryIndexCache warms on startup via IHostedService
         services.AddSingleton<LibraryIndexCache>();
@@ -517,6 +531,13 @@ public static class ServiceConfiguration
         services.AddSingleton<IDuplicateDetectionService, DuplicateDetectionService>();
         services.AddSingleton<IMetadataExtractionService, MetadataExtractionService>();
         services.AddSingleton<IEnrichmentStatsService, EnrichmentStatsService>();
+
+        // Per-request orchestration over the typed Listenarr and Audiobookshelf
+        // clients. It holds no state; scoped lifetime keeps those HTTP client
+        // dependencies aligned with the request that initiated the search.
+        services.AddScoped<AudiobookAvailabilityService>();
+        services.AddScoped<AudiobookRequestReconciler>();
+        services.AddScoped<AudiobookRequestService>();
 
         // External API services
         services.AddSingleton<IOpenLibraryService, OpenLibraryService>();

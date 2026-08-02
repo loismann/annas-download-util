@@ -44,10 +44,11 @@ export const NAV_ENTRIES: NavEntry[] = [
   { label: 'Ebook Reader', shortLabel: 'Reader', route: '/reader', icon: 'chrome_reader_mode' },
   {
     label: 'Audiobooks',
-    shortLabel: 'Audiobooks',
-    route: '/audiobooks',
     icon: 'menu_book',
-    overlayIcon: 'headphones'
+    children: [
+      { label: 'Audiobook Search', shortLabel: 'Audio Search', route: '/audiobook-search', icon: 'search' },
+      { label: 'Audiobook Library', shortLabel: 'Audiobooks', route: '/audiobooks', icon: 'menu_book', overlayIcon: 'headphones' }
+    ]
   },
   {
     label: 'TV & Movies',

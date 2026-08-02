@@ -143,6 +143,15 @@ services:
       # Audiobookshelf itself on first admin setup, not chosen up front.
       - Audiobookshelf__BaseUrl=http://audiobookshelf:80
       - Audiobookshelf__ApiKey=${AUDIOBOOKSHELF_API_KEY:-}
+      # Listenarr — audiobook acquisition manager. The feature remains disabled
+      # until its read-only contract and filesystem gates pass; keeping the
+      # server connection configured now lets those checks run without exposing
+      # any request/download action in the household UI.
+      - Listenarr__Enabled=false
+      - Listenarr__BaseUrl=http://listenarr:4545
+      - Listenarr__ApiKey=${LISTENARR_API_KEY:-}
+      - Listenarr__QualityProfile=AAC M4B
+      - Listenarr__DefaultRegion=us
       # Audiobook enrichment/rename background service — deliberately breaks
       # the "never touch the files directly" pattern used for Sonarr/Radarr/
       # Jellyfin/Audiobookshelf above: file reorganization is a different
@@ -180,7 +189,7 @@ services:
       # managed media files directly. Points at the *staging* copy, not the
       # live Audiobookshelf-scanned folder (see the audiobookshelf service
       # below) — raw/messy audiobooks get sorted out here first, then moved
-      # into _audiobook once clean and ready to be scanned.
+      # into audiobooks once clean and ready to be scanned.
       - /home/pferrer/Media/_audiobook_staging:/audiobooks
       # Secrets — never baked into the image. This mounts the same
       # appsettings.json used for local dev, synced over from the Mac.
@@ -312,6 +321,37 @@ services:
       - "127.0.0.1:9696:9696"
     volumes:
       - ../data/prowlarr:/config
+
+  # Audiobook acquisition — the audiobook counterpart to Sonarr/Radarr.
+  # Listenarr owns metadata search, wanted state, release selection, download
+  # monitoring and final import. Audiobookshelf remains the library/player.
+  #
+  # One /data bind is deliberate: /data/downloads and /data/audiobooks must be
+  # on the same container-visible filesystem for hardlinks to work. qBittorrent
+  # is reached through http://gluetun-torrent:8090 because it shares that VPN
+  # container's network namespace; Prowlarr/SABnzbd retain their own hostnames.
+  listenarr:
+    image: ghcr.io/listenarrs/listenarr:canary-1.2.2@sha256:7aa44d67b649cd401507b763733f93e90ea4f12e2001e2bc67e31199366bb3a9
+    container_name: listenarr
+    restart: unless-stopped
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - UMASK=002
+      - TZ=Etc/UTC
+    ports:
+      - "127.0.0.1:4545:4545"
+    volumes:
+      - ../data/listenarr:/app/config
+      - /home/pferrer/Media:/data
+    healthcheck:
+      # The pinned image has Python but no curl/wget. /system/ready is the
+      # unauthenticated lightweight probe published by Listenarr's v1 API.
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4545/api/v1/system/ready', timeout=5).read()"]
+      interval: 30s
+      timeout: 7s
+      retries: 5
+      start_period: 30s
 
   # TV show acquisition: search/identify, watch for new episodes, hand
   # matching releases to qBittorrent (via gluetun-torrent, see setup notes),
@@ -448,13 +488,13 @@ services:
     devices:
       - /dev/dri:/dev/dri
 
-  # Audiobook library — catalogs Media/_audiobook (author/series/book folder
+  # Audiobook library — catalogs Media/audiobooks (author/series/book folder
   # parsing, M4B/ID3 chapter metadata, cover art), serves raw audio bytes.
   # annas-archive-api talks to it purely as an HTTP API client (same as
   # Sonarr/Radarr/Jellyfin) — it never touches /home/pferrer/Media directly,
   # so unlike those, this only mounts its own scoped library subfolder.
   #
-  # Deliberately points at _audiobook, NOT _audiobook_staging (see the
+  # Deliberately points at audiobooks, NOT _audiobook_staging (see the
   # annas-archive service above) — only clean, already-sorted books that have
   # been manually reviewed/moved out of staging land here, so Audiobookshelf
   # only ever scans finished content, never messy in-progress folders.
@@ -471,4 +511,4 @@ services:
     volumes:
       - ../data/audiobookshelf/config:/config
       - ../data/audiobookshelf/metadata:/metadata
-      - /home/pferrer/Media/_audiobook:/audiobooks
+      - /home/pferrer/Media/audiobooks:/audiobooks

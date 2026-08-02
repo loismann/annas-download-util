@@ -33,6 +33,10 @@ public interface IAudiobookshelfService
     /// as Radarr/SonarrService's DeleteFiles=true. A soft delete would leave the files
     /// in place, and Audiobookshelf's next library scan would just re-import them.</summary>
     Task DeleteItemAsync(string itemId, CancellationToken ct = default);
+
+    /// <summary>Starts one non-forced scan of the configured library. Callers
+    /// must debounce/coalesce requests rather than invoking this on every poll.</summary>
+    Task ScanLibraryAsync(bool force = false, CancellationToken ct = default);
 }
 
 /// <summary>
@@ -118,6 +122,17 @@ public class AudiobookshelfService : IAudiobookshelfService
         // 404ing or files stop actually being removed — same caveat as the API-key
         // auth assumption above; this hasn't been confirmed against a live instance.
         var response = await _http.DeleteAsync($"/api/items/{Uri.EscapeDataString(itemId)}?hard=1", ct);
+        response.EnsureSuccessStatusCode();
+    }
+
+    public async Task ScanLibraryAsync(bool force = false, CancellationToken ct = default)
+    {
+        var libraryId = await ResolveLibraryIdAsync(ct)
+            ?? throw new InvalidOperationException("Audiobookshelf has no configured library.");
+        using var response = await _http.PostAsync(
+            $"/api/libraries/{Uri.EscapeDataString(libraryId)}/scan?force={(force ? 1 : 0)}",
+            content: null,
+            ct);
         response.EnsureSuccessStatusCode();
     }
 

@@ -1124,107 +1124,49 @@
   }
 }
 
-// ─── Change plan review (phases 6/7) ─────────────────────────────────────────
-// A plan is the last thing between a sentence and a real change to someone's
-// Spotify account, so it is styled to be read rather than skimmed past.
+// ─── What a change leaves behind ─────────────────────────────────────────────
+// The review itself is a modal now (PlanReviewDialogComponent). What lands in the
+// transcript is a receipt: one line, an outcome, and only the buttons that still
+// do something. The old expanded card is why the chat filled up.
 
-.plan-card {
-  border: 1px solid rgba(29, 185, 84, 0.4);
-  border-radius: 8px;
-  padding: 0.85rem 1rem;
+.plan-receipt {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.4rem;
+  font-size: 0.85rem;
 
-  &.plan-high-impact {
-    border-color: rgba(214, 108, 44, 0.75);
-    background: rgba(214, 108, 44, 0.06);
-  }
+  mat-icon { flex: 0 0 auto; }
+  .plan-receipt-text { font-weight: 600; }
 
-  .plan-header {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    font-weight: 600;
+  // Compact enough that a receipt does not out-weigh the sentence above it.
+  button { min-width: 0; padding: 0 0.55rem; line-height: 28px; font-size: 0.8rem; }
+}
 
-    .plan-summary { flex: 1; }
+.plan-receipt-completed          { color: #1a7f37; }
+.plan-receipt-partiallycompleted { color: #9a5b00; }
+.plan-receipt-failed             { color: #b3261e; }
 
-    .plan-status {
-      font-weight: 400;
-      font-size: 0.8rem;
-      opacity: 0.7;
-    }
-  }
+// Only rendered when something actually went wrong, and collapsed even then.
+.plan-trouble {
+  margin-top: 0.35rem;
+  font-size: 0.82rem;
 
-  .plan-effects,
-  .plan-warnings {
-    margin: 0.6rem 0 0;
-    padding-left: 1.15rem;
-    font-size: 0.9rem;
-  }
+  summary { cursor: pointer; opacity: 0.8; }
 
-  .plan-warnings {
-    list-style: none;
-    padding-left: 0;
-    color: #b3541e;
-
-    li {
-      display: flex;
-      align-items: flex-start;
-      gap: 0.35rem;
-    }
-  }
-
-  // Deliberately not styled as a subtle hint: this is the second gate on a
-  // destructive change and should look like one.
-  .plan-ack {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    margin-top: 0.75rem;
-    font-size: 0.9rem;
-    font-weight: 500;
-  }
-
-  .plan-actions {
-    display: flex;
-    gap: 0.5rem;
-    margin-top: 0.85rem;
-  }
-
-  .plan-steps {
-    margin-top: 0.75rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.3rem;
-    font-size: 0.85rem;
-
-    .plan-step {
-      display: flex;
-      align-items: center;
-      gap: 0.4rem;
-    }
-
-    // Skipped is visually distinct from failed on purpose — "we did not try this"
-    // is a different fact from "this went wrong".
-    .plan-step-succeeded { color: #1a7f37; }
-    .plan-step-failed    { color: #b3261e; }
-    .plan-step-skipped   { opacity: 0.55; }
-
-    .plan-step-failure { opacity: 0.8; font-style: italic; }
-
-    // "not attempted" is the fact that matters most on a stalled merge: it is why
-    // the source playlists are still there.
-    .plan-step-note {
-      font-size: 0.78rem;
-      opacity: 0.75;
-      font-style: italic;
-    }
-  }
-
-  .plan-recovery {
-    margin: 0.75rem 0 0;
-    padding: 0.55rem 0.7rem;
+  p {
+    margin: 0.4rem 0 0.3rem;
+    padding-left: 0.6rem;
     border-left: 3px solid #b3261e;
-    background: rgba(179, 38, 30, 0.06);
-    font-size: 0.85rem;
     line-height: 1.4;
   }
+
+  ul { margin: 0.3rem 0 0; padding-left: 1.2rem; line-height: 1.5; }
+
+  // Skipped reads differently from failed on purpose: "we did not try this" is a
+  // different fact from "this went wrong", and on a stalled merge it is the reason
+  // the source playlists are still there.
+  .plan-step-succeeded { color: #1a7f37; }
+  .plan-step-failed    { color: #b3261e; }
+  .plan-step-skipped   { opacity: 0.6; font-style: italic; }
 }

@@ -1,0 +1,36 @@
+<h2 mat-dialog-title>Choose a release</h2>
+<mat-dialog-content>
+  <p class="intro">Select the exact release for <strong>{{ data.title }}</strong>. Nothing is sent until you confirm below.</p>
+
+  <div class="empty" *ngIf="!data.releases.length">
+    <mat-icon>search_off</mat-icon>
+    <span>No releases were found. You can close this and try again later.</span>
+  </div>
+
+  <mat-radio-group [(ngModel)]="selectedToken" aria-label="Available audiobook releases">
+    <label class="release" *ngFor="let release of data.releases" [class.selected]="selectedToken === release.selectionToken">
+      <mat-radio-button [value]="release.selectionToken">
+        <span class="release-title">{{ release.title }}</span>
+      </mat-radio-button>
+      <div class="release-facts">
+        <span>{{ release.source }}</span>
+        <span>{{ release.downloadType }}</span>
+        <span *ngIf="release.quality || release.format">{{ release.quality || release.format }}</span>
+        <span *ngIf="release.language">{{ release.language }}</span>
+        <span>{{ sizeLabel(release.size) }}</span>
+        <span *ngIf="release.seeders != null">{{ release.seeders }} seeders</span>
+        <span *ngIf="release.files">{{ release.files }} files</span>
+      </div>
+    </label>
+  </mat-radio-group>
+
+  <p class="privacy"><mat-icon>lock</mat-icon>Download locations and credentials stay on the server.</p>
+  <p class="error" *ngIf="error" role="alert">{{ error }}</p>
+</mat-dialog-content>
+<mat-dialog-actions align="end">
+  <button mat-button type="button" [disabled]="busy" (click)="cancel()">Cancel</button>
+  <button mat-raised-button color="primary" type="button" [disabled]="busy || !selectedToken" (click)="grab()">
+    <mat-spinner *ngIf="busy" diameter="18"></mat-spinner>
+    <span *ngIf="!busy">Send selected release</span>
+  </button>
+</mat-dialog-actions>

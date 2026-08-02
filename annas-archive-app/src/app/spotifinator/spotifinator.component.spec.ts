@@ -3,6 +3,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideRouter } from '@angular/router';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
+import { MatDialog } from '@angular/material/dialog';
 import { SpotifinatorComponent } from './spotifinator.component';
 import { Subject, of } from 'rxjs';
 import { SpotifinatorApiService } from '../services/spotifinator-api.service';
@@ -329,42 +330,24 @@ describe('SpotifinatorComponent', () => {
     });
 
     let component: SpotifinatorComponent;
+    // Overridden rather than spied on: MatDialogModule re-provides MatDialog, so a
+    // spy installed on TestBed.inject(MatDialog) is not necessarily the instance the
+    // component received.
+    let dialog: { open: jasmine.Spy };
+
     beforeEach(() => {
+      dialog = { open: jasmine.createSpy('open') };
+      dialog.open.and.returnValue({ afterClosed: () => of(undefined) });
+      TestBed.overrideProvider(MatDialog, { useValue: dialog });
       component = TestBed.createComponent(SpotifinatorComponent).componentInstance;
     });
 
-    it('lets an ordinary additive plan be confirmed straight away', () => {
-      expect(component.planIsBlocked(plan())).toBe(false);
-    });
+    /** What the review modal hands back when it closes. */
+    const closesWith = (result: SpotifyPlan | undefined) =>
+      dialog.open.and.returnValue({ afterClosed: () => of(result) });
 
-    it('blocks a high-impact plan until the box is ticked', () => {
-      // The second gate on a destructive change. Without this a replace could be
-      // confirmed by the same single click as an ordinary add.
-      const destructive = plan({}, { requiresHighImpactAcknowledgement: true });
-
-      expect(component.planIsBlocked(destructive)).toBe(true);
-
-      component.toggleHighImpact(destructive, true);
-      expect(component.planIsBlocked(destructive)).toBe(false);
-    });
-
-    it('re-blocks when the acknowledgement is unticked', () => {
-      const destructive = plan({}, { requiresHighImpactAcknowledgement: true });
-
-      component.toggleHighImpact(destructive, true);
-      component.toggleHighImpact(destructive, false);
-
-      expect(component.planIsBlocked(destructive)).toBe(true);
-    });
-
-    it('does not carry an acknowledgement across to a different plan', () => {
-      const first = plan({ id: 'a' }, { requiresHighImpactAcknowledgement: true });
-      const second = plan({ id: 'b' }, { requiresHighImpactAcknowledgement: true });
-
-      component.toggleHighImpact(first, true);
-
-      expect(component.planIsBlocked(second)).toBe(true);
-    });
+    // The high-impact gate itself moved to PlanReviewDialogComponent and is tested
+    // there. What stays here is everything about how a *finished* plan is reported.
 
     it('only offers actions while the plan is still awaiting a decision', () => {
       expect(component.planIsPending(plan({ status: 'AwaitingConfirmation' }))).toBe(true);
@@ -389,14 +372,6 @@ describe('SpotifinatorComponent', () => {
     });
 
     // ─── bulk plans (phase 8) ─────────────────────────────────────────────────
-
-    it('makes a merge acknowledge itself like any other destructive change', () => {
-      const merge = plan(
-        { action: 'MergePlaylists', safetyTier: 'HighImpact' },
-        { requiresHighImpactAcknowledgement: true });
-
-      expect(component.planIsBlocked(merge)).toBe(true);
-    });
 
     it('describes each step in words rather than showing the enum', () => {
       // The step list is the only place a user sees what a merge is doing, and
@@ -466,21 +441,69 @@ describe('SpotifinatorComponent', () => {
       expect(build).not.toHaveBeenCalled();
     });
 
-    it('creating from a draft opens a plan for review rather than writing', () => {
-      // The button must not be a shortcut past the confirmation card.
+    it('creating from a draft opens the review modal rather than writing', () => {
+      // Two properties in one, and both were broken before. The button must not be
+      // a shortcut past the confirmation — and the confirmation must appear *here*,
+      // not as a card in the chat pane the user is not looking at, which is what
+      // made the button seem to do nothing at all.
       const api = TestBed.inject(SpotifinatorApiService);
+      const confirmPlan = spyOn(api, 'confirmPlan');
       const built = plan({ action: 'CreatePlaylist', status: 'AwaitingConfirmation' });
       spyOn(api, 'buildCreateFromDraftPlan').and.returnValue(of(built));
+
       component.activeDraft = {
         id: 'd1', name: 'Morr', candidates: [{ id: 'c1', resolution: 'Resolved', track: { id: 't' } }]
       } as never;
 
       component.createDraftInSpotify();
 
+      expect(dialog.open).toHaveBeenCalled();
+      expect(dialog.open.calls.mostRecent().args[1].data.plan).toBe(built);
+      expect(confirmPlan).not.toHaveBeenCalled();
+    });
+
+    it('leaves nothing in the transcript when a review is abandoned', () => {
+      // Cancelling changed nothing, so a line saying so would be noise about a
+      // non-event — exactly the clutter the modal was meant to remove.
+      closesWith(undefined);
+      const before = component.messages.length;
+
+      component.reviewPlan(plan());
+
+      expect(component.messages.length).toBe(before);
+    });
+
+    it('reports a completed change in one line and refreshes the catalog', () => {
+      // The catalog is cached for fifteen minutes server-side, so without the
+      // forced refresh a playlist you just created stays invisible — which reads
+      // as the change not having worked.
+      const api = TestBed.inject(SpotifinatorApiService);
+      const getPlaylists = spyOn(api, 'getPlaylists').and.returnValue(of([]));
+      closesWith(plan({ status: 'Completed' }));
+
+      component.reviewPlan(plan());
+
+      expect(getPlaylists).toHaveBeenCalledWith(true);
       const last = component.messages[component.messages.length - 1];
-      expect(component.isPlan(last.data)).toBe(true);
-      expect((last.data as SpotifyPlan).status).toBe('AwaitingConfirmation');
-      expect(last.content).toContain('Nothing has changed yet');
+      expect(last.content).toBe('Add 3 tracks');
+    });
+
+    it('does not refresh the catalog when nothing was applied', () => {
+      const api = TestBed.inject(SpotifinatorApiService);
+      const getPlaylists = spyOn(api, 'getPlaylists').and.returnValue(of([]));
+      closesWith(plan({ status: 'Failed', failure: 'Spotify said no.' }));
+
+      component.reviewPlan(plan());
+
+      expect(getPlaylists).not.toHaveBeenCalled();
+    });
+
+    it('offers the step list only when something went wrong', () => {
+      // A plan that simply worked has nothing to explain, and an expander nobody
+      // needs is the clutter this whole change is about.
+      expect(component.planHasTrouble(plan({ status: 'Completed' }))).toBe(false);
+      expect(component.planHasTrouble(plan({ status: 'PartiallyCompleted' }))).toBe(true);
+      expect(component.planHasTrouble(plan({ status: 'Failed' }))).toBe(true);
     });
 
     it('asks before deleting a draft, and does nothing if you say no', () => {

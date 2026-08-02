@@ -71,6 +71,11 @@ export const routes: Routes = [
     loadComponent: () => import('./audiobooks/audiobooks.component').then(m => m.AudiobooksComponent),
     canActivate: [authGuard]
   },
+  {
+    path: 'audiobook-search',
+    loadComponent: () => import('./audiobook-search/audiobook-search.component').then(m => m.AudiobookSearchComponent),
+    canActivate: [authGuard]
+  },
   // The household-facing Date Night page — where Mom and Dad pick movies and
   // agree a night. See DOCS/features/DATE_NIGHT.md.
   {

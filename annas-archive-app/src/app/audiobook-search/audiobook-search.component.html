@@ -1,0 +1,114 @@
+<main class="audiobook-search-page">
+  <header class="page-heading">
+    <div>
+      <p class="eyebrow">Listenarr discovery</p>
+      <h1>Find audiobooks</h1>
+      <p>Search by title, author, series, or narrator. Results are checked against your library before anything can be requested.</p>
+    </div>
+    <a mat-stroked-button routerLink="/audiobooks"><mat-icon>headphones</mat-icon> Your library</a>
+  </header>
+
+  <section class="setup-warning" *ngIf="statusMessage" role="status">
+    <mat-icon>info</mat-icon>
+    <span>{{ statusMessage }}</span>
+    <button mat-button type="button" (click)="loadStatus()">Check again</button>
+  </section>
+
+  <section class="search-panel">
+    <mat-form-field appearance="outline" class="query-field">
+      <mat-label>Title, author, series, or narrator</mat-label>
+      <input matInput [(ngModel)]="searchTerm" name="searchTerm" maxlength="200" (keyup.enter)="search()" />
+      <mat-icon matSuffix>search</mat-icon>
+    </mat-form-field>
+
+    <mat-form-field appearance="outline">
+      <mat-label>Audible region</mat-label>
+      <mat-select [(ngModel)]="region" name="region">
+        <mat-option *ngFor="let option of regions" [value]="option.value">{{ option.label }}</mat-option>
+      </mat-select>
+    </mat-form-field>
+
+    <mat-form-field appearance="outline">
+      <mat-label>Language (optional)</mat-label>
+      <input matInput [(ngModel)]="language" name="language" maxlength="50" (keyup.enter)="search()" />
+    </mat-form-field>
+
+    <button mat-raised-button color="primary" class="search-button" type="button"
+            [disabled]="loading || searchDisabled || searchTerm.trim().length < 2" (click)="search()">
+      <mat-spinner *ngIf="loading" diameter="18"></mat-spinner>
+      <span *ngIf="!loading">Search</span>
+    </button>
+  </section>
+
+  <p class="result-summary" *ngIf="!loading && results.length">
+    Showing {{ results.length }} of {{ totalResults | number }} catalog matches. Editions are listed separately by narrator and format.
+  </p>
+
+  <section class="error-state" *ngIf="error" role="alert">{{ error }}</section>
+
+  <section class="results-grid" *ngIf="!loading && results.length">
+    <mat-card class="result-card" *ngFor="let result of results">
+      <div class="cover-wrap">
+        <img [src]="result.imageUrl || '/assets/placeholder.jpg'" (error)="onImageError($event)"
+             [alt]="result.title + ' audiobook cover'" loading="lazy" />
+        <span class="availability" [class.owned]="result.availability === 'owned'"
+              [class.requested]="result.availability === 'requested'">
+          {{ availabilityLabel(result) }}
+        </span>
+      </div>
+
+      <mat-card-content>
+        <h2>{{ result.title }}</h2>
+        <p class="subtitle" *ngIf="result.subtitle">{{ result.subtitle }}</p>
+        <p class="authors">{{ result.authors.join(', ') || 'Unknown author' }}</p>
+        <dl>
+          <div *ngIf="result.narrators.length"><dt>Narrated by</dt><dd>{{ result.narrators.join(', ') }}</dd></div>
+          <div *ngIf="result.series.length"><dt>Series</dt><dd>{{ result.series[0].name }}<span *ngIf="result.series[0].position"> #{{ result.series[0].position }}</span></dd></div>
+          <div *ngIf="result.format"><dt>Format</dt><dd>{{ result.format }}</dd></div>
+          <div *ngIf="runtimeLabel(result.runtimeMinutes) as runtime"><dt>Length</dt><dd>{{ runtime }}</dd></div>
+          <div *ngIf="result.language"><dt>Language</dt><dd>{{ result.language }}</dd></div>
+        </dl>
+        <p class="match-reason" *ngIf="result.availabilityReason">{{ result.availabilityReason }}</p>
+        <p class="card-message" *ngIf="cardMessages[result.asin]" role="status">{{ cardMessages[result.asin] }}</p>
+        <p class="card-error" *ngIf="cardErrors[result.asin]" role="alert">{{ cardErrors[result.asin] }}</p>
+        <section class="request-progress" *ngIf="requestStatuses[result.asin] as requestStatus" aria-live="polite">
+          <div class="progress-heading">
+            <strong>{{ stateLabel(requestStatus.state) }}</strong>
+            <span *ngIf="requestStatus.state === 'Downloading'">{{ requestStatus.progress | number:'1.0-0' }}%</span>
+          </div>
+          <mat-progress-bar *ngIf="requestStatus.state === 'Downloading'"
+                            mode="determinate" [value]="requestStatus.progress"></mat-progress-bar>
+          <p class="card-error" *ngIf="requestStatus.error">{{ requestStatus.error }}</p>
+          <p class="card-error" *ngFor="let message of requestStatus.importBlockMessages">{{ message }}</p>
+        </section>
+      </mat-card-content>
+
+      <mat-card-actions align="end">
+        <a mat-button *ngIf="result.availability === 'owned'" routerLink="/audiobooks"
+           [queryParams]="result.ownedAudiobookshelfId ? { item: result.ownedAudiobookshelfId } : null">Listen</a>
+        <button mat-stroked-button type="button"
+                *ngIf="result.availability === 'available' || (result.availability === 'requested' && !result.requestTracked)"
+                [disabled]="previewingAsin !== null" (click)="reviewRequest(result)">
+          <mat-spinner *ngIf="previewingAsin === result.asin" diameter="17"></mat-spinner>
+          <span *ngIf="previewingAsin !== result.asin">{{ result.availability === 'requested' ? 'Review existing request' : 'Review request' }}</span>
+        </button>
+        <button mat-raised-button color="primary" type="button"
+                *ngIf="result.availability === 'requested' && result.requestTracked && canChooseRelease(result)"
+                [disabled]="loadingReleasesFor !== null" (click)="chooseRelease(result)">
+          <mat-spinner *ngIf="loadingReleasesFor === result.listenarrId" diameter="17"></mat-spinner>
+          <span *ngIf="loadingReleasesFor !== result.listenarrId">Choose release</span>
+        </button>
+        <button mat-stroked-button color="warn" type="button"
+                *ngIf="requestStatuses[result.asin]?.canCancel"
+                [disabled]="mutatingRequestId !== null" (click)="cancelRequest(result)">Cancel download</button>
+        <button mat-raised-button color="primary" type="button"
+                *ngIf="requestStatuses[result.asin]?.canRetryImport"
+                [disabled]="mutatingRequestId !== null" (click)="retryImport(result)">Retry import</button>
+      </mat-card-actions>
+    </mat-card>
+  </section>
+
+  <section class="empty-state" *ngIf="!loading && !error && searchTerm.trim().length >= 2 && totalResults === 0 && !searchDisabled">
+    No matching audiobook editions were found. Try a shorter title or the author's name.
+  </section>
+</main>

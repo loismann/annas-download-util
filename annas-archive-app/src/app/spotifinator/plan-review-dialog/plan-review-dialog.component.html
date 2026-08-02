@@ -1,0 +1,66 @@
+<h2 mat-dialog-title class="review-title" [class.review-title-high-impact]="needsAcknowledgement">
+  <mat-icon>{{ needsAcknowledgement ? 'warning' : 'fact_check' }}</mat-icon>
+  {{ plan.preview.summary }}
+</h2>
+
+<mat-dialog-content class="review-body">
+  <!--
+    "Nothing has happened yet" as the first line, not the last. It is the fact that
+    makes reading the rest optional rather than urgent.
+  -->
+  <p class="review-lede">Nothing has changed yet. Here is what confirming would do.</p>
+
+  @if (plan.preview.effects.length > 0) {
+    <ul class="review-effects">
+      @for (effect of plan.preview.effects; track effect) {
+        <li>{{ effect }}</li>
+      }
+    </ul>
+  }
+
+  @if (plan.preview.warnings.length > 0) {
+    <ul class="review-warnings">
+      @for (warning of plan.preview.warnings; track warning) {
+        <li><mat-icon inline>warning</mat-icon> {{ warning }}</li>
+      }
+    </ul>
+  }
+
+  <!--
+    The steps are the mechanics, not the decision, so they are collapsed. Someone
+    who wants to check the order can open them; nobody has to scroll past them.
+  -->
+  @if (plan.steps.length > 1) {
+    <details class="review-steps">
+      <summary>{{ plan.steps.length }} steps</summary>
+      <ol>
+        @for (step of plan.steps; track step.ordinal) {
+          <li>{{ step.kind }}{{ step.playlistName ? ' — ' + step.playlistName : '' }}</li>
+        }
+      </ol>
+    </details>
+  }
+
+  @if (needsAcknowledgement) {
+    <label class="review-ack">
+      <input type="checkbox" [checked]="acknowledged"
+             (change)="acknowledged = $any($event.target).checked" />
+      I understand this discards content and may not be fully reversible
+    </label>
+  }
+
+  @if (error) {
+    <p class="review-error"><mat-icon inline>error_outline</mat-icon> {{ error }}</p>
+  }
+</mat-dialog-content>
+
+<mat-dialog-actions align="end">
+  <button mat-stroked-button [disabled]="busy" (click)="cancel()">Cancel</button>
+  <button mat-flat-button color="primary" [disabled]="!canConfirm" (click)="confirm()">
+    @if (busy) {
+      <mat-spinner diameter="18"></mat-spinner>
+    } @else {
+      {{ plan.preview.confirmLabel }}
+    }
+  </button>
+</mat-dialog-actions>

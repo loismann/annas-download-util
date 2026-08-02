@@ -156,14 +156,23 @@ public static class SpotifyEndpoints
         }
     }
 
+    /// <summary>
+    /// The playlist list, cached for fifteen minutes.
+    ///
+    /// <paramref name="refresh"/> exists because the caller sometimes knows the cache
+    /// is stale in a way freshness cannot detect: we just created or unfollowed a
+    /// playlist ourselves. Without it the new playlist is invisible for a quarter of
+    /// an hour, which reads as the change not having worked.
+    /// </summary>
     private static async Task<IResult> HandleGetPlaylists(
+        bool? refresh,
         ISpotifyInventoryService inventory,
         HttpContext context,
         CancellationToken token)
     {
         try
         {
-            var playlists = await inventory.GetPlaylistsAsync(token: token);
+            var playlists = await inventory.GetPlaylistsAsync(refresh == true, token);
             return Results.Ok(playlists);
         }
         catch (Exception ex)

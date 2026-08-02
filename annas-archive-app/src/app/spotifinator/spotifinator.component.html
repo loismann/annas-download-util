@@ -6,7 +6,36 @@
       <mat-card-subtitle>Natural language Spotify control</mat-card-subtitle>
     </mat-card-header>
 
-    <mat-card-content class="workspace">
+    <!--
+      Only visible once the screen is too narrow for all three panes. It switches
+      between them rather than shrinking them, because the assistant has no other
+      route in: a playlist can still be reached from the rail or the library, but a
+      hidden assistant is simply gone.
+    -->
+    <nav class="pane-switch" role="tablist" aria-label="Panes">
+      <button class="pane-switch-btn switch-playlists" type="button" role="tab"
+              [class.active]="activePane === 'playlists'"
+              [attr.aria-selected]="activePane === 'playlists'"
+              (click)="activePane = 'playlists'">
+        <mat-icon>queue_music</mat-icon><span>Playlists</span>
+      </button>
+      <button class="pane-switch-btn" type="button" role="tab"
+              [class.active]="activePane === 'library'"
+              [attr.aria-selected]="activePane === 'library'"
+              (click)="activePane = 'library'">
+        <mat-icon>library_music</mat-icon><span>Songs</span>
+      </button>
+      <button class="pane-switch-btn" type="button" role="tab"
+              [class.active]="activePane === 'assistant'"
+              [attr.aria-selected]="activePane === 'assistant'"
+              (click)="activePane = 'assistant'">
+        <mat-icon>chat</mat-icon><span>Assistant</span>
+      </button>
+    </nav>
+
+    <mat-card-content class="workspace"
+                      [class.pane-playlists]="activePane === 'playlists'"
+                      [class.pane-assistant]="activePane === 'assistant'">
       <aside class="spotify-sidebar">
     <!--
       Account and inventory plumbing. Collapsed by default: it is the least
@@ -110,6 +139,50 @@
       }
     </details>
 
+        <!-- Playlists. The rail is the entry point the feature never had. -->
+        <section class="playlist-rail">
+          <div class="sidebar-heading">
+            <span>Playlists</span>
+            <small>{{ playlists.length }}</small>
+          </div>
+
+          @if (playlists.length > 6) {
+            <input class="playlist-filter" type="text"
+                   [(ngModel)]="playlistFilter"
+                   placeholder="Filter by name" />
+          }
+
+          @if (playlistsLoading && playlists.length === 0) {
+            <div class="rail-loading"><mat-spinner diameter="20"></mat-spinner></div>
+          } @else if (playlists.length === 0) {
+            <p class="sidebar-empty">No playlists loaded yet.</p>
+          } @else {
+            <div class="playlist-list">
+              @for (playlist of filteredPlaylists; track playlist.id) {
+                <button type="button" class="playlist-row"
+                        [class.active]="selectedPlaylist?.id === playlist.id"
+                        (click)="openPlaylist(playlist)">
+                  @if (playlist.imageUrl) {
+                    <img [src]="playlist.imageUrl" [alt]="" class="playlist-thumb" />
+                  } @else {
+                    <span class="playlist-thumb playlist-thumb-blank">
+                      <mat-icon>queue_music</mat-icon>
+                    </span>
+                  }
+                  <span class="playlist-row-copy">
+                    <strong>{{ playlist.name }}</strong>
+                    <!--
+                      "Contents unavailable", never 0 — a followed playlist full of
+                      music must not look identical to an empty one.
+                    -->
+                    <small>{{ itemCountLabel(playlist) }}</small>
+                  </span>
+                </button>
+              }
+            </div>
+          }
+        </section>
+
         <section class="saved-drafts-panel">
           <div class="sidebar-heading">
             <span>Saved drafts</span>
@@ -131,6 +204,128 @@
           }
         </section>
       </aside>
+
+      <!--
+        The library. This is the pane the feature was missing: everything used to be
+        reachable only by typing it. Playlists on the left, their contents here,
+        assistant to the right — Spotify's own shape, with the assistant alongside
+        rather than in place of it.
+      -->
+      <section class="library-pane">
+        @if (!selectedPlaylist) {
+          <div class="library-empty">
+            <mat-icon>library_music</mat-icon>
+            <p>Pick a playlist on the left to see what is in it.</p>
+            <small>Or ask the assistant on the right to find or build something.</small>
+          </div>
+        } @else {
+          <header class="library-header">
+            @if (selectedPlaylist.imageUrl) {
+              <img class="library-cover" [src]="selectedPlaylist.imageUrl"
+                   [alt]="selectedPlaylist.name" />
+            } @else {
+              <div class="library-cover library-cover-blank"><mat-icon>queue_music</mat-icon></div>
+            }
+
+            <div class="library-heading">
+              <span class="library-eyebrow">{{ ownershipLabel(selectedPlaylist) }}</span>
+              <h2>{{ selectedPlaylist.name }}</h2>
+              <span class="library-meta">
+                {{ itemCountLabel(selectedPlaylist) }}
+                @if (selectedItemsAccess === 'Forbidden') {
+                  · Spotify will not show what is inside
+                }
+              </span>
+
+              <div class="library-header-actions">
+                <button mat-flat-button color="primary"
+                        [disabled]="!canPlayPlaylist(selectedPlaylist)"
+                        (click)="playPlaylist(selectedPlaylist)"
+                        [matTooltip]="playDisabledReason() || 'Play this playlist'">
+                  <mat-icon>play_arrow</mat-icon> Play
+                </button>
+                @if (selectedPlaylist.spotifyUrl) {
+                  <button mat-stroked-button (click)="openInSpotify(selectedPlaylist.spotifyUrl)">
+                    <mat-icon>open_in_new</mat-icon> Open in Spotify
+                  </button>
+                }
+              </div>
+            </div>
+          </header>
+
+          @if (selectedItemsLoading && selectedItems.length === 0) {
+            <div class="library-loading"><mat-spinner diameter="28"></mat-spinner></div>
+          } @else if (selectedItemsAccess !== 'Available') {
+            <!--
+              Not "0 songs". A playlist Spotify will not read is unknown, and saying
+              zero is how a followed playlist full of music looks empty.
+            -->
+            <div class="library-note">
+              Spotify did not return the contents of this playlist. That is not the same
+              as it being empty — you follow it, but do not own or collaborate on it, so
+              Spotify shows the playlist without its songs.
+            </div>
+          } @else if (selectedItems.length === 0) {
+            <div class="library-note">This playlist really is empty — Spotify reports 0 items.</div>
+          } @else {
+            <ol class="track-list">
+              @for (item of selectedItems; track item.position) {
+                <li class="track-row"
+                    [class.is-playing]="isTrackPlaying(item)"
+                    [class.unplayable]="!canPlayItem(item)">
+                  <button class="track-play" type="button"
+                          [disabled]="!canPlayItem(item)"
+                          (click)="playItem(item)"
+                          [matTooltip]="canPlayItem(item)
+                            ? 'Play ' + (item.name || 'this')
+                            : itemUnplayableReason(item)">
+                    @if (isTrackPlaying(item) && playback?.isPlaying) {
+                      <mat-icon>volume_up</mat-icon>
+                    } @else {
+                      <span class="track-number">{{ item.position + 1 }}</span>
+                      <mat-icon class="track-play-icon">play_arrow</mat-icon>
+                    }
+                  </button>
+
+                  @if (item.albumArtUrl) {
+                    <img class="track-art" [src]="item.albumArtUrl" [alt]="item.albumName || ''" />
+                  } @else {
+                    <div class="track-art track-art-blank"><mat-icon>music_note</mat-icon></div>
+                  }
+
+                  <div class="track-copy">
+                    <span class="track-name">{{ item.name || 'Unknown' }}</span>
+                    <span class="track-meta">{{ itemMeta(item) }}</span>
+                  </div>
+
+                  <span class="track-duration">
+                    {{ item.durationMs ? formatDuration(item.durationMs) : '' }}
+                  </span>
+
+                  @if (item.spotifyUrl) {
+                    <button mat-icon-button class="track-open"
+                            matTooltip="Open in Spotify"
+                            (click)="openInSpotify(item.spotifyUrl)">
+                      <mat-icon>open_in_new</mat-icon>
+                    </button>
+                  }
+                </li>
+              }
+            </ol>
+
+            @if (selectedItems.length < selectedItemsTotal) {
+              <div class="library-more">
+                <button mat-stroked-button
+                        [disabled]="selectedItemsLoading"
+                        (click)="loadMoreSelectedItems()">
+                  {{ selectedItemsLoading ? 'Loading…' : 'Show more' }}
+                  ({{ selectedItems.length }} of {{ selectedItemsTotal }})
+                </button>
+              </div>
+            }
+          }
+        }
+      </section>
 
       <section class="conversation-pane">
       @if (activeDraft) {
@@ -620,5 +815,75 @@
       </div>
       </section>
     </mat-card-content>
+
+    <!--
+      Now playing. Present whenever Spotify reports something active anywhere, which
+      in remote mode is a device that is not this browser at all — hence the device
+      name: on the iPads it is the only clue about where the sound is coming from.
+    -->
+    @if (playback?.track) {
+      <footer class="now-playing">
+        @if (playback!.track!.albumArtUrl) {
+          <img class="now-art" [src]="playback!.track!.albumArtUrl" alt="" />
+        }
+        <div class="now-copy">
+          <strong>{{ playback!.track!.name }}</strong>
+          <span>{{ playback!.track!.artists }}</span>
+        </div>
+
+        <!--
+          Transport controls. Skipping needs playback to have started from a
+          playlist rather than a single track — a lone track has nothing after it —
+          so the tooltip says so instead of leaving a dead-looking button.
+        -->
+        <div class="now-transport">
+          <button mat-icon-button class="now-toggle"
+                  [matTooltip]="shuffleLabel()"
+                  [class.shuffle-on]="playback!.isShuffling"
+                  (click)="toggleShuffle()">
+            <mat-icon>shuffle</mat-icon>
+          </button>
+
+          <button mat-icon-button class="now-toggle"
+                  matTooltip="Previous track"
+                  (click)="skipPrevious()">
+            <mat-icon>skip_previous</mat-icon>
+          </button>
+
+          <button mat-icon-button class="now-toggle"
+                  (click)="togglePlayPause()"
+                  [matTooltip]="playback!.isPlaying ? 'Pause' : 'Play'">
+            <mat-icon>{{ playback!.isPlaying ? 'pause' : 'play_arrow' }}</mat-icon>
+          </button>
+
+          <button mat-icon-button class="now-toggle"
+                  matTooltip="Next track"
+                  (click)="skipNext()">
+            <mat-icon>skip_next</mat-icon>
+          </button>
+        </div>
+
+        <div class="now-progress">
+          <div class="now-progress-fill" [style.width.%]="playbackProgressPercent()"></div>
+        </div>
+
+        <span class="now-time">
+          {{ formatDuration(playback!.progressMs) }} / {{ formatDuration(playback!.track!.durationMs) }}
+        </span>
+
+        @if (playback!.device) {
+          <span class="now-device" [matTooltip]="'Playing on ' + playback!.device!.name">
+            <mat-icon inline>{{ deviceIcon(playback!.device!.type) }}</mat-icon>
+            <span class="now-device-name">{{ playback!.device!.name }}</span>
+          </span>
+        }
+      </footer>
+    } @else if (playbackProblem) {
+      <footer class="now-playing now-playing-problem">
+        <mat-icon>info_outline</mat-icon>
+        <span>{{ playbackProblem }}</span>
+        <button mat-button (click)="refreshDevices()">Check again</button>
+      </footer>
+    }
   </mat-card>
 </div>

@@ -26,6 +26,11 @@ export interface NavEntry {
    *  Children need one too: the rail flattens groups away, so every leaf shows
    *  up there on its own. */
   shortLabel?: string;
+  /** A second glyph drawn as a small badge over the first. The Material Icons
+   *  font this app loads has no single "audiobook" icon, so the one place that
+   *  needs one composes it from a book and a pair of headphones rather than
+   *  settling for an icon that means something else. */
+  overlayIcon?: string;
   /** Hidden from non-admins. Route guards are the real enforcement — this only
    *  keeps the menu honest about where a person can actually go. */
   adminOnly?: boolean;
@@ -33,9 +38,17 @@ export interface NavEntry {
 
 export const NAV_ENTRIES: NavEntry[] = [
   { label: 'Book Search', shortLabel: 'Book Search', route: '/search', icon: 'search' },
-  { label: 'Ebook Library', shortLabel: 'Ebooks', route: '/library', icon: 'local_library' },
+  // `local_library` is a person reading — the civic-library glyph. A shelf of
+  // books says "collection", which is what this page actually is.
+  { label: 'Ebook Library', shortLabel: 'Ebook Library', route: '/library', icon: 'library_books' },
   { label: 'Ebook Reader', shortLabel: 'Reader', route: '/reader', icon: 'chrome_reader_mode' },
-  { label: 'Audiobooks', shortLabel: 'Audio', route: '/audiobooks', icon: 'headphones' },
+  {
+    label: 'Audiobooks',
+    shortLabel: 'Audiobooks',
+    route: '/audiobooks',
+    icon: 'menu_book',
+    overlayIcon: 'headphones'
+  },
   {
     label: 'TV & Movies',
     icon: 'live_tv',
@@ -63,6 +76,9 @@ export const NAV_ENTRIES: NavEntry[] = [
       }
     ]
   },
-  { label: 'Spotif-inator', shortLabel: 'Music', route: '/spotifinator', icon: 'queue_music', adminOnly: true },
+  // Not admin-only: each person connects their own Spotify account, and the
+  // connection is stored per app user, so opening this up gives nobody access to
+  // anybody else's library.
+  { label: 'Spotify', shortLabel: 'Spotify', route: '/spotifinator', icon: 'queue_music' },
   { label: 'Lucy Quiz', shortLabel: 'Quiz', route: '/quiz', icon: 'quiz', adminOnly: true }
 ];

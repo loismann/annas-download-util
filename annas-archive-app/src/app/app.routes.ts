@@ -39,7 +39,11 @@ export const routes: Routes = [
   {
     path: 'spotifinator',
     loadComponent: () => import('./spotifinator/spotifinator.component').then(m => m.SpotifinatorComponent),
-    canActivate: [authGuard, adminGuard]
+    // Signed in is enough. Everything on this page is scoped to the Spotify
+    // account the person connects themselves, and the connection, drafts and plan
+    // history are all keyed to the app user — so there is no shared library here
+    // for one household member to reach into.
+    canActivate: [authGuard]
   },
   {
     path: 'quiz',

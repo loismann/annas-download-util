@@ -56,6 +56,8 @@ export interface SpotifyPlaylistItem {
   isLocal: boolean;
   addedAt: string | null;
   isrc: string | null;
+  /** Null for episodes, local files, and items no longer on Spotify. */
+  albumArtUrl: string | null;
 }
 
 export interface SpotifyPlaylistItemsPage {
@@ -416,3 +418,49 @@ export interface ChatMessage {
 // ─── Component State ─────────────────────────────────────────────────────────
 
 export type ViewState = 'idle' | 'processing' | 'error';
+
+// ─── Playback ────────────────────────────────────────────────────────────────
+
+export interface SpotifyDevice {
+  id: string;
+  name: string;
+  type: string;
+  isActive: boolean;
+  /** Spotify exposes it but will not let the Web API control it. */
+  isRestricted: boolean;
+  volumePercent: number | null;
+}
+
+export interface SpotifyPlaybackState {
+  device: SpotifyDevice | null;
+  isPlaying: boolean;
+  progressMs: number;
+  track: SpotifyTrack | null;
+  /** Read from Spotify, not remembered here, so the toggle stays true after
+   *  someone flips shuffle on their phone. */
+  isShuffling: boolean;
+}
+
+export interface SpotifyPlaybackToken {
+  accessToken: string;
+  expiresInSeconds: number;
+}
+
+export interface SpotifyPlayCommand {
+  deviceId?: string;
+  uris?: string[];
+  contextUri?: string;
+  offsetPosition?: number;
+  positionMs?: number;
+}
+
+/**
+ * How this browser can make sound.
+ *
+ * `local` means the Web Playback SDK turned this tab into a Spotify device. It is
+ * unavailable on iOS/iPadOS — Spotify does not support the SDK in mobile browsers —
+ * so on the iPads the only option is `remote`, where the page drives a device the
+ * user already has open. `unavailable` means neither, and the UI must say why
+ * rather than showing play buttons that do nothing.
+ */
+export type PlaybackMode = 'local' | 'remote' | 'unavailable';

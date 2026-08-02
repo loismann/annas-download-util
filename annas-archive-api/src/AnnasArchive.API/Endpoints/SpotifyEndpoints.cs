@@ -13,8 +13,11 @@ public static class SpotifyEndpoints
 {
     public static WebApplication MapSpotifyEndpoints(this WebApplication app)
     {
+        // Any signed-in person, not admins only. Every route below resolves its
+        // data through GetRequiredOwnerKey(), so a request can only ever reach the
+        // caller's own Spotify connection, drafts, plans and audit trail.
         var group = app.MapGroup("/api/spotify")
-            .RequireAuthorization("AdminOnly")
+            .RequireAuthorization()
             .RequireRateLimiting("api");
 
         group.MapGet("/connection", HandleGetConnection);
@@ -41,6 +44,16 @@ public static class SpotifyEndpoints
         group.MapPost("/plans/{planId:guid}/retry", HandleRetryPlan);
         group.MapPost("/plans/{planId:guid}/undo", HandleUndoPlan);
         group.MapGet("/audit", HandleGetAudit);
+        group.MapGet("/playback/devices", HandleGetDevices);
+        group.MapGet("/playback/state", HandleGetPlaybackState);
+        group.MapPut("/playback/play", HandlePlay);
+        group.MapPut("/playback/pause", HandlePause);
+        // POST for the skips because that is the verb Spotify's own API uses for them.
+        group.MapPost("/playback/next", HandleSkipNext);
+        group.MapPost("/playback/previous", HandleSkipPrevious);
+        group.MapPut("/playback/shuffle", HandleSetShuffle);
+        group.MapPut("/playback/transfer", HandleTransferPlayback);
+        group.MapGet("/playback/token", HandleGetPlaybackToken);
         group.MapPost("/command", HandleCommand);
 
         app.MapGet("/api/spotify/oauth/callback", HandleOAuthCallback)
@@ -445,6 +458,165 @@ public static class SpotifyEndpoints
     private static IResult HandleGetAudit(
         ISpotifyAuditService audit, ISpotifyCurrentUser currentUser, Guid? planId, int? limit) =>
         Results.Ok(audit.List(currentUser.GetRequiredOwnerKey(), planId, limit ?? 100));
+
+    // ─── playback ────────────────────────────────────────────────────────────
+
+    private static async Task<IResult> HandleGetDevices(
+        ISpotifyService spotify, HttpContext context, CancellationToken token)
+    {
+        try { return Results.Ok(await spotify.GetDevicesAsync(token)); }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "[Spotify] Could not list playback devices");
+            return MapFailure(ex, context);
+        }
+    }
+
+    /// <summary>
+    /// Nothing playing is a 204, not an error. The browser polls this, so a null
+    /// body has to mean "idle" rather than triggering a failure banner.
+    /// </summary>
+    private static async Task<IResult> HandleGetPlaybackState(
+        ISpotifyService spotify, HttpContext context, CancellationToken token)
+    {
+        try
+        {
+            var state = await spotify.GetPlaybackStateAsync(token);
+            return state == null ? Results.NoContent() : Results.Ok(state);
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "[Spotify] Could not read playback state");
+            return MapFailure(ex, context);
+        }
+    }
+
+    private static async Task<IResult> HandlePlay(
+        [FromBody] SpotifyPlayRequest? request,
+        [FromServices] ISpotifyService spotify,
+        HttpContext context,
+        CancellationToken token)
+    {
+        try
+        {
+            await spotify.PlayAsync(request ?? new SpotifyPlayRequest(), token);
+            return Results.NoContent();
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "[Spotify] Play failed");
+            return MapFailure(ex, context);
+        }
+    }
+
+    private static async Task<IResult> HandlePause(
+        string? deviceId, ISpotifyService spotify, HttpContext context, CancellationToken token)
+    {
+        try
+        {
+            await spotify.PauseAsync(deviceId, token);
+            return Results.NoContent();
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "[Spotify] Pause failed");
+            return MapFailure(ex, context);
+        }
+    }
+
+    private static async Task<IResult> HandleSkipNext(
+        string? deviceId, ISpotifyService spotify, HttpContext context, CancellationToken token)
+    {
+        try
+        {
+            await spotify.SkipNextAsync(deviceId, token);
+            return Results.NoContent();
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "[Spotify] Skip to next failed");
+            return MapFailure(ex, context);
+        }
+    }
+
+    private static async Task<IResult> HandleSkipPrevious(
+        string? deviceId, ISpotifyService spotify, HttpContext context, CancellationToken token)
+    {
+        try
+        {
+            await spotify.SkipPreviousAsync(deviceId, token);
+            return Results.NoContent();
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "[Spotify] Skip to previous failed");
+            return MapFailure(ex, context);
+        }
+    }
+
+    private static async Task<IResult> HandleSetShuffle(
+        bool state, string? deviceId, ISpotifyService spotify, HttpContext context, CancellationToken token)
+    {
+        try
+        {
+            await spotify.SetShuffleAsync(state, deviceId, token);
+            return Results.NoContent();
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "[Spotify] Setting shuffle failed");
+            return MapFailure(ex, context);
+        }
+    }
+
+    private static async Task<IResult> HandleTransferPlayback(
+        [FromBody] SpotifyTransferRequest request,
+        [FromServices] ISpotifyService spotify,
+        HttpContext context,
+        CancellationToken token)
+    {
+        if (string.IsNullOrWhiteSpace(request?.DeviceId))
+            return Results.BadRequest(new { error = "A device is required." });
+
+        try
+        {
+            await spotify.TransferPlaybackAsync(request.DeviceId, request.Play, token);
+            return Results.NoContent();
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "[Spotify] Playback transfer failed");
+            return MapFailure(ex, context);
+        }
+    }
+
+    /// <summary>
+    /// Hands the browser a Spotify access token, because the Web Playback SDK runs
+    /// in the page and has no server-side variant — it takes a token or it does not
+    /// play. That makes this the one route where a Spotify credential leaves the
+    /// server, so it stays inside the authenticated, same-origin group and is
+    /// never cached: `no-store` keeps it out of the browser's disk cache and any
+    /// proxy in between.
+    /// </summary>
+    private static async Task<IResult> HandleGetPlaybackToken(
+        ISpotifyAccessTokenProvider tokens, HttpContext context, CancellationToken token)
+    {
+        try
+        {
+            var accessToken = await tokens.GetAccessTokenAsync(token: token);
+            context.Response.Headers.CacheControl = "no-store";
+
+            // Spotify access tokens last an hour. The SDK re-requests through its
+            // own callback well before then, so a conservative figure is safer than
+            // reporting a lifetime we did not measure.
+            return Results.Ok(new SpotifyPlaybackTokenDto(accessToken, 1800));
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "[Spotify] Could not issue a playback token");
+            return MapFailure(ex, context);
+        }
+    }
 
     private static IResult MapFailure(Exception exception, HttpContext? context = null)
     {

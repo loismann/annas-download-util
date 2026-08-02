@@ -79,7 +79,7 @@ public sealed class SpotifyCurrentUser(IHttpContextAccessor httpContextAccessor)
     {
         var ownerKey = httpContextAccessor.HttpContext?.User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (string.IsNullOrWhiteSpace(ownerKey))
-            throw new UnauthorizedAccessException("A logged-in administrator is required for Spotify.");
+            throw new UnauthorizedAccessException("A signed-in user is required for Spotify.");
 
         return ownerKey;
     }

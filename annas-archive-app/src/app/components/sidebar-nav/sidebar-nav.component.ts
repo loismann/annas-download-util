@@ -29,6 +29,15 @@ import { NAV_ENTRIES, NavEntry } from './nav-model';
   standalone: true,
   imports: [CommonModule, RouterLink, RouterLinkActive, MatIconModule, MatTooltipModule],
   template: `
+    <!-- One definition of "an entry's icon", so a badged icon renders identically
+         in the rail, the expanded list and a group's children. -->
+    <ng-template #icon let-entry>
+      <span class="nav-icon-stack">
+        <mat-icon class="nav-icon">{{ entry.icon }}</mat-icon>
+        <mat-icon *ngIf="entry.overlayIcon" class="nav-icon-badge">{{ entry.overlayIcon }}</mat-icon>
+      </span>
+    </ng-template>
+
     <nav class="sidebar-nav" [class.rail]="collapsed" [class.dark]="dark" aria-label="Main navigation">
 
       <!-- ── Rail: one icon per destination, groups flattened away ────────
@@ -44,7 +53,7 @@ import { NAV_ENTRIES, NavEntry } from './nav-model';
           [matTooltip]="entry.label"
           matTooltipPosition="right"
           (click)="navigated.emit()">
-          <mat-icon class="nav-icon">{{ entry.icon }}</mat-icon>
+          <ng-container *ngTemplateOutlet="icon; context: { $implicit: entry }"></ng-container>
           <span class="nav-text">{{ entry.shortLabel ?? entry.label }}</span>
         </a>
       </ng-container>
@@ -59,7 +68,7 @@ import { NAV_ENTRIES, NavEntry } from './nav-model';
             routerLinkActive="active"
             [routerLinkActiveOptions]="{ exact: true }"
             (click)="navigated.emit()">
-            <mat-icon class="nav-icon">{{ entry.icon }}</mat-icon>
+            <ng-container *ngTemplateOutlet="icon; context: { $implicit: entry }"></ng-container>
             <span class="nav-text">{{ entry.label }}</span>
           </a>
 
@@ -69,7 +78,7 @@ import { NAV_ENTRIES, NavEntry } from './nav-model';
               class="nav-link nav-group"
               [attr.aria-expanded]="isOpen(entry)"
               (click)="toggle(entry)">
-              <mat-icon class="nav-icon">{{ entry.icon }}</mat-icon>
+              <ng-container *ngTemplateOutlet="icon; context: { $implicit: entry }"></ng-container>
               <span class="nav-text">{{ entry.label }}</span>
               <mat-icon class="nav-chevron">{{ isOpen(entry) ? 'expand_more' : 'chevron_right' }}</mat-icon>
             </button>
@@ -81,7 +90,7 @@ import { NAV_ENTRIES, NavEntry } from './nav-model';
               routerLinkActive="active"
               [routerLinkActiveOptions]="{ exact: true }"
               (click)="navigated.emit()">
-              <mat-icon class="nav-icon">{{ child.icon }}</mat-icon>
+              <ng-container *ngTemplateOutlet="icon; context: { $implicit: child }"></ng-container>
               <span class="nav-text">{{ child.label }}</span>
             </a>
           </ng-container>
@@ -119,7 +128,34 @@ import { NAV_ENTRIES, NavEntry } from './nav-model';
     }
     .nav-link:hover { background: rgba(0, 0, 0, 0.04); }
 
+    /* The stack owns the row's layout slot so the badge, which is positioned out
+       of flow, cannot change how much width the icon takes. */
+    .nav-icon-stack {
+      position: relative;
+      flex: 0 0 auto;
+      display: inline-flex;
+      width: 24px;
+      height: 24px;
+    }
+
     .nav-icon { flex: 0 0 auto; color: #5f6368; }
+
+    /* Bottom-right, with a ring in the sidebar's own background colour so the
+       badge reads as sitting on top of the book rather than merged into it. */
+    .nav-icon-badge {
+      position: absolute;
+      right: -5px;
+      bottom: -4px;
+      width: 15px;
+      height: 15px;
+      font-size: 15px;
+      line-height: 15px;
+      border-radius: 50%;
+      background: #fff;
+      box-shadow: 0 0 0 1.5px #fff;
+      color: #5f6368;
+    }
+
     .nav-text { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; }
 
     .nav-group { font-weight: 600; color: #1f2937; }
@@ -134,7 +170,8 @@ import { NAV_ENTRIES, NavEntry } from './nav-model';
       color: #3f51b5;
       font-weight: 600;
     }
-    .nav-link.active .nav-icon { color: #3f51b5; }
+    .nav-link.active .nav-icon,
+    .nav-link.active .nav-icon-badge { color: #3f51b5; }
 
     /* ── Rail ──────────────────────────────────────────────────────────────
        Icon over a short caption, centred, in a strip narrow enough that the
@@ -166,7 +203,8 @@ import { NAV_ENTRIES, NavEntry } from './nav-model';
       border-right-color: #3f51b5;
       color: #3f51b5;
     }
-    .sidebar-nav.rail .nav-link.active .nav-icon { color: #3f51b5; }
+    .sidebar-nav.rail .nav-link.active .nav-icon,
+    .sidebar-nav.rail .nav-link.active .nav-icon-badge { color: #3f51b5; }
 
 
     /* ── Date Night ──────────────────────────────────────────────────────────
@@ -178,6 +216,15 @@ import { NAV_ENTRIES, NavEntry } from './nav-model';
     .sidebar-nav.dark .nav-link { color: var(--thtr-parchment, #e8dcc0); }
     .sidebar-nav.dark .nav-link:hover { background: rgba(255, 238, 201, 0.08); }
     .sidebar-nav.dark .nav-icon { color: var(--thtr-gilt, #d9a441); }
+
+    /* The badge's ring exists to separate it from the icon beneath, so on the
+       black theater pages it has to be the black — a white ring would read as a
+       rendering fault. */
+    .sidebar-nav.dark .nav-icon-badge {
+      color: var(--thtr-gilt, #d9a441);
+      background: #000;
+      box-shadow: 0 0 0 1.5px #000;
+    }
     .sidebar-nav.dark .nav-group { color: var(--thtr-cream, #ffeec9); }
     .sidebar-nav.dark .nav-chevron { color: rgba(217, 164, 65, 0.7); }
 
@@ -186,14 +233,16 @@ import { NAV_ENTRIES, NavEntry } from './nav-model';
       border-left-color: var(--thtr-gilt-bright, #ffdf7e);
       color: var(--thtr-gilt-bright, #ffdf7e);
     }
-    .sidebar-nav.dark .nav-link.active .nav-icon { color: var(--thtr-gilt-bright, #ffdf7e); }
+    .sidebar-nav.dark .nav-link.active .nav-icon,
+    .sidebar-nav.dark .nav-link.active .nav-icon-badge { color: var(--thtr-gilt-bright, #ffdf7e); }
 
     .sidebar-nav.dark.rail .nav-link.active {
       background: rgba(217, 164, 65, 0.16);
       border-right-color: var(--thtr-gilt-bright, #ffdf7e);
       color: var(--thtr-gilt-bright, #ffdf7e);
     }
-    .sidebar-nav.dark.rail .nav-link.active .nav-icon {
+    .sidebar-nav.dark.rail .nav-link.active .nav-icon,
+    .sidebar-nav.dark.rail .nav-link.active .nav-icon-badge {
       color: var(--thtr-gilt-bright, #ffdf7e);
     }
   `]

@@ -51,14 +51,522 @@
     line-height: 1;
   }
 
+  // Spotify's shape: rail, library, assistant. The assistant is fixed-width so the
+  // track list gets the space it needs; it collapses away first on narrow screens.
   mat-card-content.workspace {
     flex: 1;
     display: grid;
-    grid-template-columns: 300px minmax(0, 1fr);
+    grid-template-columns: 280px minmax(0, 1fr) 360px;
     gap: 1rem;
     min-height: 0;
     overflow: hidden;
     padding: 8px 16px 16px;
+  }
+
+  // Below three columns the assistant is *switched to*, never dropped. It used to
+  // be hidden outright here, which on an iPad (1024 landscape, 768 portrait) meant
+  // the assistant simply did not exist — the one pane you cannot reach any other
+  // way, unlike a playlist, which the rail or the library still leads to.
+  @media (max-width: 1200px) {
+    .pane-switch { display: flex; }
+
+    mat-card-content.workspace {
+      grid-template-columns: 250px minmax(0, 1fr);
+
+      .conversation-pane { display: none; }
+
+      &.pane-assistant {
+        .library-pane { display: none; }
+        .conversation-pane { display: flex; }
+      }
+    }
+  }
+
+  // One column: the playlist rail becomes a third destination rather than
+  // vanishing, so every pane stays reachable at phone width too.
+  @media (max-width: 800px) {
+    .pane-switch .switch-playlists { display: inline-flex; }
+
+    mat-card-content.workspace {
+      grid-template-columns: minmax(0, 1fr);
+
+      .spotify-sidebar { display: none; }
+
+      &.pane-playlists {
+        .spotify-sidebar { display: flex; }
+        .library-pane { display: none; }
+      }
+    }
+  }
+}
+
+// ─── Pane switcher ───────────────────────────────────────────────────────────
+
+// Hidden whenever all three panes fit, so the wide layout gains no chrome it
+// does not need.
+.pane-switch {
+  display: none;
+  gap: 0.4rem;
+  flex: 0 0 auto;
+  padding: 0 16px 8px;
+}
+
+.pane-switch-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex: 1 1 0;
+  justify-content: center;
+  min-width: 0;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid #d8d8d8;
+  border-radius: 999px;
+  background: #fff;
+  color: #444;
+  font: inherit;
+  font-size: 0.83rem;
+  cursor: pointer;
+
+  // The rail is a column of its own until 800px, so its button would be a way to
+  // hide a pane that is already on screen.
+  &.switch-playlists { display: none; }
+
+  mat-icon {
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+    font-size: 18px;
+  }
+
+  span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &.active {
+    border-color: rgba(29, 185, 84, 0.6);
+    background: #f0fbf4;
+    color: #15722f;
+    font-weight: 600;
+  }
+}
+
+// ─── Library pane ────────────────────────────────────────────────────────────
+
+.library-pane {
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  border: 1px solid #e3e3e3;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.library-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  height: 100%;
+  color: #777;
+  text-align: center;
+
+  mat-icon { width: 48px; height: 48px; font-size: 48px; opacity: 0.35; }
+  p { margin: 0; font-size: 0.95rem; }
+  small { font-size: 0.8rem; opacity: 0.8; }
+}
+
+.library-header {
+  display: flex;
+  gap: 1rem;
+  padding: 1.1rem;
+  background: linear-gradient(160deg, rgba(29, 185, 84, 0.16), transparent 70%);
+}
+
+.library-cover {
+  flex: 0 0 auto;
+  width: 128px;
+  height: 128px;
+  border-radius: 6px;
+  object-fit: cover;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.22);
+}
+
+.library-cover-blank {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #e4e4e4;
+  color: #999;
+
+  mat-icon { width: 48px; height: 48px; font-size: 48px; }
+}
+
+.library-heading {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  min-width: 0;
+  gap: 0.25rem;
+
+  h2 {
+    margin: 0;
+    font-size: 1.85rem;
+    line-height: 1.1;
+    font-weight: 700;
+  }
+}
+
+.library-eyebrow {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: #176c37;
+}
+
+.library-meta { color: #555; font-size: 0.82rem; }
+
+.library-header-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.55rem;
+  flex-wrap: wrap;
+}
+
+.library-loading { display: flex; justify-content: center; padding: 2.5rem; }
+
+.library-note {
+  margin: 1rem;
+  padding: 0.75rem 0.85rem;
+  border-left: 3px solid #9a5b00;
+  background: rgba(154, 91, 0, 0.07);
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+
+.library-more { display: flex; justify-content: center; padding: 0.9rem; }
+
+// ─── Track list ──────────────────────────────────────────────────────────────
+
+.track-list {
+  list-style: none;
+  margin: 0;
+  padding: 0.35rem 0.5rem 0.5rem;
+}
+
+.track-row {
+  display: grid;
+  grid-template-columns: 2.4rem 40px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.3rem 0.4rem;
+  border-radius: 6px;
+
+  &:hover { background: rgba(0, 0, 0, 0.045); }
+
+  &.is-playing {
+    background: rgba(29, 185, 84, 0.1);
+    .track-name { color: #1a7f37; font-weight: 600; }
+  }
+
+  // Local files and removed items can never play. Dimmed rather than hidden:
+  // they are genuinely in the playlist and pretending otherwise would be a lie.
+  &.unplayable {
+    .track-name, .track-meta { opacity: 0.55; }
+    .track-play { cursor: not-allowed; }
+  }
+
+  // Swapping the number for a play arrow on hover only works where hover exists.
+  // On the iPads it never fires, so the play affordance was permanently invisible;
+  // there, the arrow is simply always shown.
+  @media (hover: hover) {
+    &:hover .track-play-icon { display: inline-flex; }
+    &:hover .track-number { display: none; }
+  }
+}
+
+.track-play {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  // border-box plus an explicit padding reset: a button carries user-agent
+  // padding, and without both the 24px glyph is laid out inside a box narrower
+  // than itself and gets clipped.
+  box-sizing: border-box;
+  padding: 0;
+  width: 2.2rem;
+  height: 2.2rem;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+
+  &:disabled { opacity: 0.4; }
+  mat-icon { flex: 0 0 auto; }
+  .track-play-icon { display: none; }
+  .track-number { color: #777; font-size: 0.85rem; font-variant-numeric: tabular-nums; }
+}
+
+@media (hover: none) {
+  .track-play {
+    .track-play-icon { display: inline-flex; }
+    .track-number { display: none; }
+  }
+}
+
+.track-art {
+  width: 40px;
+  height: 40px;
+  border-radius: 4px;
+  object-fit: cover;
+}
+
+.track-art-blank {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #ececec;
+  color: #aaa;
+
+  mat-icon { width: 20px; height: 20px; font-size: 20px; }
+}
+
+.track-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+
+  .track-name,
+  .track-meta {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .track-name { font-size: 0.9rem; }
+  .track-meta { color: #6b6b6b; font-size: 0.78rem; }
+}
+
+.track-duration {
+  color: #777;
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+
+// Revealed on hover where hovering is possible, permanently visible where it is
+// not — an opacity-0 control on a touch screen is a control that never appears.
+@media (hover: hover) {
+  .track-open { opacity: 0; }
+  .track-row:hover .track-open { opacity: 1; }
+}
+
+// ─── Playlist rail ───────────────────────────────────────────────────────────
+
+.playlist-rail {
+  border: 1px solid #dedede;
+  border-radius: 10px;
+  background: #fff;
+  padding: 0.75rem;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.playlist-filter {
+  width: 100%;
+  margin-top: 0.55rem;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid #d8d8d8;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 0.82rem;
+  box-sizing: border-box;
+}
+
+.rail-loading { display: flex; justify-content: center; padding: 1rem; }
+
+.playlist-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  margin-top: 0.5rem;
+  overflow-y: auto;
+  max-height: 46vh;
+}
+
+.playlist-row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  width: 100%;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  padding: 0.35rem 0.4rem;
+  text-align: left;
+  cursor: pointer;
+
+  &:hover { background: #f4f4f4; }
+
+  &.active {
+    border-color: rgba(29, 185, 84, 0.55);
+    background: #f0fbf4;
+  }
+}
+
+.playlist-thumb {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  border-radius: 4px;
+  object-fit: cover;
+}
+
+.playlist-thumb-blank {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #ececec;
+  color: #aaa;
+
+  mat-icon { width: 18px; height: 18px; font-size: 18px; }
+}
+
+.playlist-row-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+
+  strong,
+  small {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  strong { font-size: 0.83rem; font-weight: 500; }
+  small { color: #777; font-size: 0.71rem; }
+}
+
+// ─── Now playing ─────────────────────────────────────────────────────────────
+
+.now-playing {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex: 0 0 auto;
+  // Rather than squeeze everything onto one line at iPad width, the progress bar
+  // and its clock drop to a second row. Everything that is an icon or a control
+  // keeps its full size on the first row.
+  flex-wrap: wrap;
+  row-gap: 0.35rem;
+  padding: 0.55rem 1rem;
+  border-top: 1px solid #e0e0e0;
+  background: #fafafa;
+
+  // Nothing here may shrink: these are fixed-size glyphs, and a flex item that
+  // gives up width does not scale its icon, it clips it.
+  > mat-icon,
+  .now-art,
+  .now-transport,
+  .now-device { flex: 0 0 auto; }
+
+  &.now-playing-problem {
+    color: #7a5200;
+    background: rgba(154, 91, 0, 0.07);
+    font-size: 0.85rem;
+
+    span { flex: 1 1 12rem; min-width: 0; }
+  }
+}
+
+.now-art { width: 44px; height: 44px; border-radius: 4px; object-fit: cover; }
+
+// Shuffle, back, play/pause, forward — kept together as one unit so the wrap at
+// narrow widths moves the progress bar away from them rather than splitting them.
+.now-transport {
+  display: flex;
+  align-items: center;
+
+  .now-toggle {
+    flex: 0 0 auto;
+    // Tighter than Material's default 40px so four controls still fit on a phone
+    // without the row wrapping mid-transport.
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    line-height: 36px;
+  }
+
+  // Shuffle is the only one of the four with a state, so it is the only one that
+  // needs to look different when it is on.
+  .shuffle-on { color: #1db954; }
+}
+
+.now-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  // Was `0 0 200px`: rigid, so on a narrow screen the title kept its 200px and
+  // the play button and device icon were the ones squeezed instead.
+  flex: 1 1 10rem;
+
+  strong, span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  strong { font-size: 0.86rem; }
+  span { color: #666; font-size: 0.76rem; }
+}
+
+.now-progress {
+  // Wide enough to be worth reading or it wraps to its own row with the clock,
+  // instead of shrinking to a stub that pushes the controls out of shape.
+  flex: 1 1 8rem;
+  height: 4px;
+  min-width: 6rem;
+  border-radius: 2px;
+  background: #dcdcdc;
+  overflow: hidden;
+}
+
+.now-progress-fill {
+  height: 100%;
+  background: #1db954;
+  transition: width 0.9s linear;
+}
+
+.now-time {
+  color: #666;
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+
+// On the iPads this is the only clue about where the sound is actually coming
+// from, since the browser is a remote rather than the player.
+.now-device {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: #176c37;
+  font-size: 0.75rem;
+  max-width: 160px;
+  min-width: 0;
+  white-space: nowrap;
+
+  // The overflow lives on the *name*, not on the row. With it on the row the
+  // speaker glyph was the thing that got clipped when the name was long, which
+  // is backwards — the icon is the part that still means something truncated.
+  .now-device-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 }
 
@@ -585,24 +1093,23 @@
 
 // ─── Responsive ───────────────────────────────────────────────────────────────
 
-@media (max-width: 860px) {
+// 800px, matching the single-column breakpoint above. This used to be 860px and
+// set its own `grid-template-columns`, which meant a 20px band where two rules
+// disagreed about how many columns there were.
+@media (max-width: 800px) {
   .spotifinator-container {
     padding: 0.5rem;
   }
 
-  .chat-card {
-    mat-card-header {
-      padding: 12px 16px;
-    }
-
-    mat-card-content.workspace {
-      grid-template-columns: 1fr;
-      overflow-y: auto;
-    }
+  .chat-card mat-card-header {
+    padding: 12px 16px;
   }
 
-  .spotify-sidebar { overflow: visible; }
-  .conversation-pane { min-height: 70vh; overflow: visible; }
+  .pane-switch { padding: 0 8px 8px; }
+
+  // The rail owns the whole screen here, so the height cap that keeps it from
+  // crowding out the connection panel in a narrow column is just wasted space.
+  .playlist-list { max-height: none; }
 
   .message {
     max-width: 95%;

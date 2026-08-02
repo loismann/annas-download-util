@@ -792,6 +792,37 @@ public class EndpointIntegrationTests : IClassFixture<WebApplicationFactory<Prog
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
+    // ─── Spotify access boundary ─────────────────────────────────────────────
+    // Spotifinator is open to every signed-in household member, not just admins:
+    // each person authorizes their own Spotify account and every route resolves
+    // its data through the caller's own owner key. These two tests pin both halves
+    // of that boundary, because "signed in" is now the only thing standing between
+    // an anonymous request and someone's music library.
+
+    [Fact]
+    public async Task Spotify_WithoutAuth_ShouldReturnUnauthorized()
+    {
+        using var client = _factory.CreateClient();
+
+        var response = await client.GetAsync("/api/spotify/connection");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task Spotify_WithNonAdminAuth_ShouldNotBeForbidden()
+    {
+        // The point of the test: a non-admin gets *through* the policy. Anything
+        // other than 403 means the gate opened; what happens after depends on
+        // whether that user has connected Spotify, which is not what this pins.
+        using var client = CreateAuthenticatedClient(isAdmin: false);
+
+        var response = await client.GetAsync("/api/spotify/connection");
+
+        response.StatusCode.Should().NotBe(HttpStatusCode.Forbidden);
+        response.StatusCode.Should().NotBe(HttpStatusCode.Unauthorized);
+    }
+
     [Fact]
     public async Task QuizSubjects_WithNonAdminAuth_ShouldReturnForbidden()
     {

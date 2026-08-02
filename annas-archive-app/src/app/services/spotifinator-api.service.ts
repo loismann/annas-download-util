@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
-import { tap } from 'rxjs/operators';
+import { tap, map } from 'rxjs/operators';
 import { LoggerService } from './logger.service';
 import {
   SpotifySearchResult,
@@ -17,7 +17,11 @@ import {
   SpotifyDiscoveryDraftUpdate,
   CommandResponse,
   SpotifyPlan,
-  SpotifyAuditEvent
+  SpotifyAuditEvent,
+  SpotifyDevice,
+  SpotifyPlaybackState,
+  SpotifyPlaybackToken,
+  SpotifyPlayCommand
 } from '../spotifinator/spotifinator.models';
 import { apiBase } from './api-base';
 
@@ -182,6 +186,61 @@ export class SpotifinatorApiService {
     const params: Record<string, string> = { limit: limit.toString() };
     if (planId) params['planId'] = planId;
     return this.http.get<SpotifyAuditEvent[]>(`${this.baseUrl}/audit`, { params });
+  }
+
+  // ─── Playback ──────────────────────────────────────────────────────────────
+
+  getDevices(): Observable<SpotifyDevice[]> {
+    return this.http.get<SpotifyDevice[]>(`${this.baseUrl}/playback/devices`);
+  }
+
+  /**
+   * Null means nothing is playing anywhere — the ordinary idle state. The server
+   * answers 204, which arrives here as an empty body.
+   */
+  getPlaybackState(): Observable<SpotifyPlaybackState | null> {
+    return this.http.get<SpotifyPlaybackState>(`${this.baseUrl}/playback/state`).pipe(
+      map(state => state ?? null)
+    );
+  }
+
+  play(command: SpotifyPlayCommand): Observable<void> {
+    return this.http.put<void>(`${this.baseUrl}/playback/play`, command);
+  }
+
+  pause(deviceId?: string): Observable<void> {
+    const params: Record<string, string> = deviceId ? { deviceId } : {};
+    return this.http.put<void>(`${this.baseUrl}/playback/pause`, {}, { params });
+  }
+
+  /**
+   * Skipping only goes anywhere when playback started from a *context* — a bare
+   * list of URIs has no next track. That is why playing a playlist sends
+   * `contextUri` rather than the tracks it contains.
+   */
+  skipNext(deviceId?: string): Observable<void> {
+    const params: Record<string, string> = deviceId ? { deviceId } : {};
+    return this.http.post<void>(`${this.baseUrl}/playback/next`, {}, { params });
+  }
+
+  skipPrevious(deviceId?: string): Observable<void> {
+    const params: Record<string, string> = deviceId ? { deviceId } : {};
+    return this.http.post<void>(`${this.baseUrl}/playback/previous`, {}, { params });
+  }
+
+  setShuffle(state: boolean, deviceId?: string): Observable<void> {
+    const params: Record<string, string> = { state: String(state) };
+    if (deviceId) params['deviceId'] = deviceId;
+    return this.http.put<void>(`${this.baseUrl}/playback/shuffle`, {}, { params });
+  }
+
+  transferPlayback(deviceId: string, play = true): Observable<void> {
+    return this.http.put<void>(`${this.baseUrl}/playback/transfer`, { deviceId, play });
+  }
+
+  /** Short-lived token for the Web Playback SDK, which has no server-side variant. */
+  getPlaybackToken(): Observable<SpotifyPlaybackToken> {
+    return this.http.get<SpotifyPlaybackToken>(`${this.baseUrl}/playback/token`);
   }
 
   // ─── Conversation ──────────────────────────────────────────────────────────

@@ -55,6 +55,33 @@ public interface ISpotifyService
     Task ChangePlaylistDetailsAsync(
         string playlistId, string? name = null, string? description = null, bool? isPublic = null,
         CancellationToken token = default);
+
+    // ─── playback ────────────────────────────────────────────────────────────
+    // Default-implemented so existing test doubles keep compiling.
+
+    Task<IReadOnlyList<SpotifyDeviceDto>> GetDevicesAsync(CancellationToken token = default) =>
+        Task.FromResult<IReadOnlyList<SpotifyDeviceDto>>([]);
+
+    Task<SpotifyPlaybackStateDto?> GetPlaybackStateAsync(CancellationToken token = default) =>
+        Task.FromResult<SpotifyPlaybackStateDto?>(null);
+
+    Task PlayAsync(SpotifyPlayRequest request, CancellationToken token = default) =>
+        throw new NotSupportedException("Playback is not available here.");
+
+    Task PauseAsync(string? deviceId = null, CancellationToken token = default) =>
+        throw new NotSupportedException("Playback is not available here.");
+
+    Task SkipNextAsync(string? deviceId = null, CancellationToken token = default) =>
+        throw new NotSupportedException("Playback is not available here.");
+
+    Task SkipPreviousAsync(string? deviceId = null, CancellationToken token = default) =>
+        throw new NotSupportedException("Playback is not available here.");
+
+    Task SetShuffleAsync(bool state, string? deviceId = null, CancellationToken token = default) =>
+        throw new NotSupportedException("Playback is not available here.");
+
+    Task TransferPlaybackAsync(string deviceId, bool play, CancellationToken token = default) =>
+        throw new NotSupportedException("Playback is not available here.");
 }
 
 public class SpotifyService : ISpotifyService
@@ -765,6 +792,149 @@ public class SpotifyService : ISpotifyService
         {
             return (null, null);
         }
+    }
+
+    // ─── playback ────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Everything Spotify will let us start audio on. Restricted devices are kept
+    /// rather than filtered: the UI has to show why a speaker it can see is not
+    /// offered, otherwise the device simply appears to be missing.
+    /// </summary>
+    public async Task<IReadOnlyList<SpotifyDeviceDto>> GetDevicesAsync(CancellationToken token = default)
+    {
+        var response = await SendAuthenticatedRequestAsync<SpotifyDevicesResponse>(
+            HttpMethod.Get, $"{ApiBaseUrl}/me/player/devices", token);
+
+        return (response?.Devices ?? [])
+            .Where(device => !string.IsNullOrWhiteSpace(device.Id))
+            .Select(device => new SpotifyDeviceDto(
+                device.Id!, device.Name, device.Type, device.IsActive,
+                device.IsRestricted, device.VolumePercent))
+            .ToList();
+    }
+
+    /// <summary>
+    /// What is playing anywhere on the account. Spotify answers 204 with no body
+    /// when nothing is active, which deserializes to null — that is the ordinary
+    /// idle state, not a failure, and callers must render it as "nothing playing".
+    /// </summary>
+    public async Task<SpotifyPlaybackStateDto?> GetPlaybackStateAsync(CancellationToken token = default)
+    {
+        var response = await SendAuthenticatedRequestAsync<SpotifyPlaybackStateResponse>(
+            HttpMethod.Get, $"{ApiBaseUrl}/me/player", token);
+
+        if (response == null)
+            return null;
+
+        var device = response.Device is { Id: not null } d
+            ? new SpotifyDeviceDto(d.Id, d.Name, d.Type, d.IsActive, d.IsRestricted, d.VolumePercent)
+            : null;
+
+        return new SpotifyPlaybackStateDto(
+            device,
+            response.IsPlaying,
+            response.ProgressMs ?? 0,
+            response.Item == null ? null : MapToDto(response.Item),
+            response.ShuffleState);
+    }
+
+    /// <summary>
+    /// Starts playback. Explicit URIs win over a context: "play this song" must play
+    /// that song, while "play this playlist" sends a context so skipping forward
+    /// continues through the playlist instead of stopping at one track.
+    /// </summary>
+    public async Task PlayAsync(SpotifyPlayRequest request, CancellationToken token = default)
+    {
+        var url = $"{ApiBaseUrl}/me/player/play";
+        if (!string.IsNullOrWhiteSpace(request.DeviceId))
+            url += $"?device_id={Uri.EscapeDataString(request.DeviceId)}";
+
+        object body;
+        if (request.Uris is { Count: > 0 } uris)
+        {
+            body = new { uris = uris.Take(100).ToList(), position_ms = request.PositionMs };
+        }
+        else if (!string.IsNullOrWhiteSpace(request.ContextUri))
+        {
+            body = request.OffsetPosition is { } offset
+                ? new
+                {
+                    context_uri = request.ContextUri,
+                    offset = new { position = offset },
+                    position_ms = request.PositionMs
+                }
+                : new { context_uri = request.ContextUri, position_ms = request.PositionMs };
+        }
+        else
+        {
+            // No URIs and no context means "resume whatever was paused".
+            body = new { position_ms = request.PositionMs };
+        }
+
+        await SendAuthenticatedRequestAsync<object>(HttpMethod.Put, url, token, body);
+    }
+
+    public async Task PauseAsync(string? deviceId = null, CancellationToken token = default)
+    {
+        var url = $"{ApiBaseUrl}/me/player/pause";
+        if (!string.IsNullOrWhiteSpace(deviceId))
+            url += $"?device_id={Uri.EscapeDataString(deviceId)}";
+
+        await SendAuthenticatedRequestAsync<object>(HttpMethod.Put, url, token);
+    }
+
+    /// <summary>
+    /// Skips forward or back within whatever is playing.
+    ///
+    /// POST, not PUT, unlike play/pause — Spotify is inconsistent here and using the
+    /// wrong verb returns 404 rather than anything that names the mistake.
+    ///
+    /// Both only do something useful when playback was started with a *context*: a
+    /// bare list of URIs has nothing after it to skip to. That is why playing a
+    /// playlist sends `context_uri` rather than its tracks.
+    /// </summary>
+    public async Task SkipNextAsync(string? deviceId = null, CancellationToken token = default) =>
+        await SkipAsync("next", deviceId, token);
+
+    public async Task SkipPreviousAsync(string? deviceId = null, CancellationToken token = default) =>
+        await SkipAsync("previous", deviceId, token);
+
+    private async Task SkipAsync(string direction, string? deviceId, CancellationToken token)
+    {
+        var url = $"{ApiBaseUrl}/me/player/{direction}";
+        if (!string.IsNullOrWhiteSpace(deviceId))
+            url += $"?device_id={Uri.EscapeDataString(deviceId)}";
+
+        await SendAuthenticatedRequestAsync<object>(HttpMethod.Post, url, token);
+    }
+
+    /// <summary>
+    /// Turns shuffle on or off. The desired state goes in the query string, not a
+    /// body — Spotify ignores a body here entirely, so sending one looks like it
+    /// worked while changing nothing.
+    /// </summary>
+    public async Task SetShuffleAsync(
+        bool state, string? deviceId = null, CancellationToken token = default)
+    {
+        // Lowercase because Spotify parses this literally; "True" is rejected.
+        var url = $"{ApiBaseUrl}/me/player/shuffle?state={(state ? "true" : "false")}";
+        if (!string.IsNullOrWhiteSpace(deviceId))
+            url += $"&device_id={Uri.EscapeDataString(deviceId)}";
+
+        await SendAuthenticatedRequestAsync<object>(HttpMethod.Put, url, token);
+    }
+
+    /// <summary>
+    /// Moves playback to another device. This is how a browser tab running the Web
+    /// Playback SDK becomes the thing making noise.
+    /// </summary>
+    public async Task TransferPlaybackAsync(
+        string deviceId, bool play, CancellationToken token = default)
+    {
+        await SendAuthenticatedRequestAsync<object>(
+            HttpMethod.Put, $"{ApiBaseUrl}/me/player", token,
+            new { device_ids = new[] { deviceId }, play });
     }
 
     private static SpotifyTrackDto MapToDto(SpotifyTrackItem track)

@@ -21,7 +21,8 @@ public record SpotifyPlaybackStateResponse(
     [property: JsonPropertyName("device")] SpotifyDeviceResponse? Device,
     [property: JsonPropertyName("is_playing")] bool IsPlaying,
     [property: JsonPropertyName("progress_ms")] int? ProgressMs,
-    [property: JsonPropertyName("item")] SpotifyTrackItem? Item
+    [property: JsonPropertyName("item")] SpotifyTrackItem? Item,
+    [property: JsonPropertyName("shuffle_state")] bool ShuffleState = false
 );
 
 // ─── What the browser sees ───────────────────────────────────────────────────
@@ -49,7 +50,10 @@ public record SpotifyPlaybackStateDto(
     SpotifyDeviceDto? Device,
     bool IsPlaying,
     int ProgressMs,
-    SpotifyTrackDto? Track
+    SpotifyTrackDto? Track,
+    /// <summary>Read back from Spotify rather than tracked here, so the toggle
+    /// reflects shuffle turned on elsewhere — the phone, the desktop app.</summary>
+    bool IsShuffling = false
 );
 
 public record SpotifyPlayRequest(
@@ -70,7 +74,8 @@ public record SpotifyTransferRequest(string DeviceId, bool Play = true);
 /// The SDK runs in the page and demands a token client-side — there is no
 /// server-side variant. So this endpoint necessarily hands the browser a token
 /// carrying every granted scope. That is acceptable only because the surface is
-/// admin-authenticated and same-origin; it is the one place Spotify credentials
-/// leave the server, and it must never be widened to an anonymous route.
+/// authenticated and same-origin, and the token is the caller's own — it is the
+/// one place Spotify credentials leave the server, and it must never be widened
+/// to an anonymous route.
 /// </summary>
 public record SpotifyPlaybackTokenDto(string AccessToken, int ExpiresInSeconds);

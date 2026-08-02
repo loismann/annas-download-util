@@ -6,6 +6,7 @@ import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { SpotifinatorComponent } from './spotifinator.component';
 import { Subject, of } from 'rxjs';
 import { SpotifinatorApiService } from '../services/spotifinator-api.service';
+import { SpotifyPlaybackService } from '../services/spotify-playback.service';
 import { SpotifyPlaylist, SpotifyPlaylistItem, SpotifyPlan, SpotifyPlanPreview } from './spotifinator.models';
 
 describe('SpotifinatorComponent', () => {
@@ -153,7 +154,7 @@ describe('SpotifinatorComponent', () => {
     const item = (over: Partial<SpotifyPlaylistItem>): SpotifyPlaylistItem => ({
       position: 0, kind: 'Track', id: 't', name: 'Song', uri: 'spotify:track:t',
       artists: 'Artist', albumName: 'Album', durationMs: 180000, spotifyUrl: null,
-      isLocal: false, addedAt: null, isrc: null,
+      isLocal: false, addedAt: null, isrc: null, albumArtUrl: null,
       ...over
     });
 
@@ -544,6 +545,108 @@ describe('SpotifinatorComponent', () => {
         isConnected: true, missingScopes: ['streaming'], warning: null, lastError: null
       } as never;
       expect(component.connectionNeedsAttention()).toBe(true);
+    });
+
+    // ─── library pane and playback ────────────────────────────────────────────
+
+    const listItem = (over: Partial<SpotifyPlaylistItem> = {}): SpotifyPlaylistItem => ({
+      position: 0, kind: 'Track', id: 't', name: 'Mystery Train',
+      uri: 'spotify:track:t', artists: 'Elvis', albumName: 'Sun', durationMs: 146000,
+      spotifyUrl: null, isLocal: false, addedAt: null, isrc: null, albumArtUrl: null,
+      ...over
+    });
+
+    it('will not offer to play a local file even though it has a URI', () => {
+      // The discriminating case. Spotify gives local files a spotify:local: URI, so
+      // a "does it have a URI" check alone would happily offer to play one — and the
+      // API cannot play it. The kind is what makes this safe, not the URI.
+      component.playbackMode = 'local';
+      const local = listItem({ kind: 'Local', isLocal: true, uri: 'spotify:local:Us:Home+Recording::214' });
+
+      expect(local.uri).toBeTruthy();
+      expect(component.canPlayItem(local)).toBe(false);
+      expect(component.itemUnplayableReason(local)).toContain('Local files cannot be played');
+    });
+
+    it('will not offer to play an item that has left Spotify but kept its URI', () => {
+      // Same shape of trap: a removed track can still carry the URI it had.
+      component.playbackMode = 'local';
+      const gone = listItem({ kind: 'Unavailable', uri: 'spotify:track:removed' });
+
+      expect(component.canPlayItem(gone)).toBe(false);
+      expect(component.itemUnplayableReason(gone)).toContain('no longer on Spotify');
+    });
+
+    it('offers no play buttons at all when nothing can play', () => {
+      component.playbackMode = 'unavailable';
+
+      expect(component.canPlayItem(listItem())).toBe(false);
+    });
+
+    it('explains why playback is impossible on a device that cannot do it', () => {
+      spyOnProperty(navigator, 'userAgent', 'get')
+        .and.returnValue('Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X)');
+      component.playbackMode = 'unavailable';
+
+      // The iPad case has to name the workaround, not just refuse.
+      expect(component.playDisabledReason()).toContain('Open Spotify on your phone');
+    });
+
+    it('plays a track inside its playlist so the next song follows', () => {
+      // With bare URIs playback stops after one song. The context is what makes
+      // clicking track 3 continue into track 4.
+      const playback = TestBed.inject(SpotifyPlaybackService);
+      const play = spyOn(playback, 'play').and.resolveTo();
+      component.playbackMode = 'local';
+      component.selectedPlaylist = { id: 'p1', uri: 'spotify:playlist:p1' } as never;
+
+      component.playItem(listItem({ position: 3 }));
+
+      expect(play).toHaveBeenCalledWith({
+        contextUri: 'spotify:playlist:p1', offsetPosition: 3
+      });
+    });
+
+    it('does not lose the playlist you are looking at to a slow response', () => {
+      // Click A, click B, then A's page arrives. Without the guard it overwrites B.
+      const api = TestBed.inject(SpotifinatorApiService);
+      const slow = new Subject<never>();
+      spyOn(api, 'getPlaylistItems').and.returnValue(slow as never);
+
+      component.openPlaylist({ id: 'a', name: 'A' } as never);
+      component.openPlaylist({ id: 'b', name: 'B' } as never);
+
+      slow.next({ playlistId: 'a', items: [listItem()], total: 1, offset: 0,
+                  limit: 50, hasMore: false, access: 'Available', snapshotId: null } as never);
+
+      expect(component.selectedPlaylist!.id).toBe('b');
+      expect(component.selectedItems).toEqual([]);
+    });
+
+    it('sorts your own playlists above ones you merely follow', () => {
+      const api = TestBed.inject(SpotifinatorApiService);
+      spyOn(api, 'getPlaylists').and.returnValue(of([
+        { id: '1', name: 'Zed', isOwnedByUser: false, isCollaborative: false },
+        { id: '2', name: 'Alpha', isOwnedByUser: false, isCollaborative: true },
+        { id: '3', name: 'Mine', isOwnedByUser: true, isCollaborative: false }
+      ] as unknown as SpotifyPlaylist[]));
+
+      component.loadPlaylists();
+
+      expect(component.playlists.map(p => p.name)).toEqual(['Mine', 'Alpha', 'Zed']);
+    });
+
+    it('reports progress as a percentage of the track, guarding zero length', () => {
+      component.playback = {
+        isPlaying: true, progressMs: 73000, device: null,
+        track: { durationMs: 146000 } as never
+      } as never;
+      expect(component.playbackProgressPercent()).toBe(50);
+
+      component.playback = {
+        isPlaying: true, progressMs: 10, device: null, track: { durationMs: 0 } as never
+      } as never;
+      expect(component.playbackProgressPercent()).toBe(0);
     });
 
     it('sends exactly one resume even if the button is hit twice', () => {

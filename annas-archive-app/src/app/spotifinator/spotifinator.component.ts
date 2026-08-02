@@ -16,11 +16,16 @@ import { ActivatedRoute } from '@angular/router';
 
 import { SpotifinatorApiService } from '../services/spotifinator-api.service';
 import { LoggerService } from '../services/logger.service';
+import { SpotifyPlaybackService } from '../services/spotify-playback.service';
 import {
   ChatMessage,
   CommandData,
   SpotifyPlan,
   SpotifyPlanStep,
+  SpotifyContentsAccess,
+  SpotifyPlaybackState,
+  SpotifyDevice,
+  PlaybackMode,
   ViewState,
   SpotifyPlaylist,
   SpotifyPlaylistItem,
@@ -71,6 +76,30 @@ export class SpotifinatorComponent implements OnInit, OnDestroy, AfterViewChecke
   inventoryStatus: SpotifyInventoryStatus | null = null;
   inventoryActionPending = false;
   activeDraft: SpotifyDiscoveryDraft | null = null;
+
+  /**
+   * Which pane wins when the screen is too narrow to show all three. Ignored
+   * entirely on a wide screen — CSS only consults it under the breakpoints — so
+   * there is no second layout to keep in step, just a preference the narrow
+   * layouts read.
+   */
+  activePane: 'playlists' | 'library' | 'assistant' = 'library';
+
+  // ─── library pane ─────────────────────────────────────────────────────────
+  playlists: SpotifyPlaylist[] = [];
+  playlistsLoading = false;
+  playlistFilter = '';
+  selectedPlaylist: SpotifyPlaylist | null = null;
+  selectedItems: SpotifyPlaylistItem[] = [];
+  selectedItemsTotal = 0;
+  selectedItemsLoading = false;
+  selectedItemsAccess: SpotifyContentsAccess = 'Available';
+
+  // ─── playback ─────────────────────────────────────────────────────────────
+  playback: SpotifyPlaybackState | null = null;
+  playbackMode: PlaybackMode = 'unavailable';
+  playbackProblem: string | null = null;
+  playbackDevices: SpotifyDevice[] = [];
   savedDrafts: SpotifyDiscoveryDraft[] = [];
   draftActionPending = false;
 
@@ -89,7 +118,8 @@ export class SpotifinatorComponent implements OnInit, OnDestroy, AfterViewChecke
   constructor(
     private api: SpotifinatorApiService,
     private logger: LoggerService,
-    private route: ActivatedRoute
+    private route: ActivatedRoute,
+    private playbackService: SpotifyPlaybackService
   ) {
     this.addWelcomeMessage();
   }
@@ -105,6 +135,32 @@ export class SpotifinatorComponent implements OnInit, OnDestroy, AfterViewChecke
     this.loadConnection();
   }
 
+  /**
+   * Playback and the library only start once Spotify is actually connected —
+   * otherwise the SDK asks for a token that cannot be issued and the device list is
+   * a guaranteed 401.
+   */
+  private startLibraryAndPlayback(): void {
+    if (this.libraryStarted || !this.canUseSpotify) return;
+    this.libraryStarted = true;
+
+    this.loadPlaylists();
+
+    this.playbackService.mode.pipe(takeUntil(this.destroy$))
+      .subscribe(mode => this.playbackMode = mode);
+    this.playbackService.state.pipe(takeUntil(this.destroy$))
+      .subscribe(state => this.playback = state);
+    this.playbackService.problem.pipe(takeUntil(this.destroy$))
+      .subscribe(problem => this.playbackProblem = problem);
+    this.playbackService.devices.pipe(takeUntil(this.destroy$))
+      .subscribe(devices => this.playbackDevices = devices);
+
+    this.playbackService.initialize()
+      .catch(error => this.logger.warn('[Spotifinator] Playback unavailable', error));
+  }
+
+  private libraryStarted = false;
+
   ngAfterViewChecked(): void {
     if (this.shouldScrollToBottom) {
       this.scrollToBottom();
@@ -117,6 +173,7 @@ export class SpotifinatorComponent implements OnInit, OnDestroy, AfterViewChecke
     this.destroy$.complete();
     this.inventoryPollStop$.next();
     this.inventoryPollStop$.complete();
+    this.playbackService.dispose();
   }
 
   // ─── Message Handling ──────────────────────────────────────────────────────
@@ -147,6 +204,7 @@ export class SpotifinatorComponent implements OnInit, OnDestroy, AfterViewChecke
           this.loadInventoryStatus();
           this.loadSavedDrafts();
           this.loadActiveDraft();
+          this.startLibraryAndPlayback();
         }
       },
       error: (err) => {
@@ -890,6 +948,164 @@ export class SpotifinatorComponent implements OnInit, OnDestroy, AfterViewChecke
       if (this.isPlan(message.data) && message.data.id === plan.id) {
         message.data = plan;
       }
+    }
+  }
+
+  // ─── Library pane ──────────────────────────────────────────────────────────
+
+  loadPlaylists(): void {
+    this.playlistsLoading = true;
+    this.api.getPlaylists().pipe(takeUntil(this.destroy$)).subscribe({
+      next: playlists => {
+        this.playlistsLoading = false;
+        // Yours first, then collaborative, then followed — the order you can
+        // actually act on. Alphabetical within each group.
+        this.playlists = [...playlists].sort((a, b) => {
+          const rank = (p: SpotifyPlaylist) => p.isOwnedByUser ? 0 : p.isCollaborative ? 1 : 2;
+          return rank(a) - rank(b) || a.name.localeCompare(b.name);
+        });
+      },
+      error: err => {
+        this.playlistsLoading = false;
+        this.logger.error('[Spotifinator] Could not load playlists:', err);
+      }
+    });
+  }
+
+  get filteredPlaylists(): SpotifyPlaylist[] {
+    const needle = this.playlistFilter.trim().toLowerCase();
+    return needle
+      ? this.playlists.filter(p => p.name.toLowerCase().includes(needle))
+      : this.playlists;
+  }
+
+  /** Opens a playlist in the library pane. Distinct from selectPlaylist, which
+   *  answers a disambiguation question the assistant asked. */
+  openPlaylist(playlist: SpotifyPlaylist): void {
+    // On a phone the rail is occupying the only column, so picking a playlist has
+    // to hand that column over or the songs land somewhere off screen.
+    this.activePane = 'library';
+    this.selectedPlaylist = playlist;
+    this.selectedItems = [];
+    this.selectedItemsTotal = 0;
+    this.selectedItemsAccess = 'Available';
+    this.loadMoreSelectedItems();
+  }
+
+  loadMoreSelectedItems(): void {
+    if (!this.selectedPlaylist || this.selectedItemsLoading) return;
+
+    const playlist = this.selectedPlaylist;
+    this.selectedItemsLoading = true;
+
+    this.api.getPlaylistItems(playlist.id, this.selectedItems.length, 50)
+      .pipe(takeUntil(this.destroy$)).subscribe({
+        next: page => {
+          this.selectedItemsLoading = false;
+          // A slow response for a playlist the user has since navigated away from
+          // must not overwrite what they are looking at now.
+          if (this.selectedPlaylist?.id !== playlist.id) return;
+
+          this.selectedItems = [...this.selectedItems, ...page.items];
+          this.selectedItemsTotal = page.total;
+          this.selectedItemsAccess = page.access;
+        },
+        error: err => {
+          this.selectedItemsLoading = false;
+          this.logger.error('[Spotifinator] Could not load playlist items:', err);
+        }
+      });
+  }
+
+  // ─── Playback ──────────────────────────────────────────────────────────────
+
+  /** Local files and removed items have no URI, so nothing can play them. */
+  canPlayItem(item: SpotifyPlaylistItem): boolean {
+    return this.playbackMode !== 'unavailable'
+      && !!item.uri
+      && item.kind !== 'Local'
+      && item.kind !== 'Unavailable';
+  }
+
+  itemUnplayableReason(item: SpotifyPlaylistItem): string {
+    if (item.kind === 'Local') return 'Local files cannot be played through the Spotify API.';
+    if (item.kind === 'Unavailable') return 'This item is no longer on Spotify.';
+    if (!item.uri) return 'Spotify gave no playable address for this item.';
+    return this.playDisabledReason() ?? '';
+  }
+
+  canPlayPlaylist(playlist: SpotifyPlaylist): boolean {
+    return this.playbackMode !== 'unavailable' && !!playlist.uri;
+  }
+
+  /** Why the play buttons are dead, in words the user can act on. */
+  playDisabledReason(): string | null {
+    if (this.playbackMode !== 'unavailable') return null;
+
+    return SpotifyPlaybackService.supportsLocalPlayback()
+      ? 'Nothing to play on yet. Open Spotify somewhere and press "Check again".'
+      : 'This device cannot play in the browser — Spotify does not allow it here. '
+        + 'Open Spotify on your phone or a speaker and it will play there.';
+  }
+
+  playItem(item: SpotifyPlaylistItem): void {
+    if (!this.canPlayItem(item)) return;
+
+    // A track inside a playlist plays *in* that playlist, so what follows is the
+    // next song rather than silence.
+    const context = this.selectedPlaylist?.uri;
+    this.playbackService.play(context
+      ? { contextUri: context, offsetPosition: item.position }
+      : { uris: [item.uri!] });
+  }
+
+  playPlaylist(playlist: SpotifyPlaylist): void {
+    if (!this.canPlayPlaylist(playlist)) return;
+    this.playbackService.play({ contextUri: playlist.uri! });
+  }
+
+  togglePlayPause(): void {
+    if (this.playback?.isPlaying) this.playbackService.pause();
+    else this.playbackService.play({});
+  }
+
+  skipNext(): void { this.playbackService.skipNext(); }
+  skipPrevious(): void { this.playbackService.skipPrevious(); }
+
+  toggleShuffle(): void {
+    this.playbackService.setShuffle(!this.playback?.isShuffling);
+  }
+
+  /** Names the state the press will produce, not the one it is in — a toggle
+   *  labelled "Shuffle" tells you nothing about which way it is pointing. */
+  shuffleLabel(): string {
+    return this.playback?.isShuffling ? 'Turn shuffle off' : 'Turn shuffle on';
+  }
+
+  refreshDevices(): void {
+    this.playbackService.refreshDevices();
+    this.playbackService.refreshState();
+  }
+
+  isTrackPlaying(item: SpotifyPlaylistItem): boolean {
+    return !!item.uri && this.playback?.track?.uri === item.uri;
+  }
+
+  playbackProgressPercent(): number {
+    const duration = this.playback?.track?.durationMs ?? 0;
+    if (duration <= 0) return 0;
+    return Math.min(100, ((this.playback?.progressMs ?? 0) / duration) * 100);
+  }
+
+  deviceIcon(type: string): string {
+    switch (type.toLowerCase()) {
+      case 'computer': return 'computer';
+      case 'smartphone': return 'smartphone';
+      case 'tablet': return 'tablet';
+      case 'speaker': return 'speaker';
+      case 'tv': case 'castvideo': return 'tv';
+      case 'automobile': return 'directions_car';
+      default: return 'devices';
     }
   }
 

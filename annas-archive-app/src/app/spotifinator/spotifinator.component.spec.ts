@@ -4,6 +4,8 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { provideRouter } from '@angular/router';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { SpotifinatorComponent } from './spotifinator.component';
+import { Subject, of } from 'rxjs';
+import { SpotifinatorApiService } from '../services/spotifinator-api.service';
 import { SpotifyPlaylist, SpotifyPlaylistItem, SpotifyPlan, SpotifyPlanPreview } from './spotifinator.models';
 
 describe('SpotifinatorComponent', () => {
@@ -315,7 +317,7 @@ describe('SpotifinatorComponent', () => {
       id: 'plan-1', action: 'AddItems', safetyTier: 'Additive', status: 'AwaitingConfirmation',
       createdAtUtc: '2026-08-02T12:00:00Z', expiresAtUtc: '2026-08-02T12:30:00Z',
       targets: [], steps: [], originalRequest: null, confirmedBy: null, confirmedAtUtc: null,
-      failure: null, canUndo: false, undoOfPlanId: null,
+      failure: null, canUndo: false, undoOfPlanId: null, recovery: null,
       preview: {
         summary: 'Add 3 tracks', confirmLabel: 'Add 3 tracks', effects: [], warnings: [],
         requiresHighImpactAcknowledgement: false, itemsAdded: 3, itemsRemoved: 0,
@@ -383,6 +385,182 @@ describe('SpotifinatorComponent', () => {
       expect(component.isPlan(plan())).toBe(true);
       expect(component.isPlan({ tracks: [] })).toBe(false);
       expect(component.isPlan(null)).toBe(false);
+    });
+
+    // ─── bulk plans (phase 8) ─────────────────────────────────────────────────
+
+    it('makes a merge acknowledge itself like any other destructive change', () => {
+      const merge = plan(
+        { action: 'MergePlaylists', safetyTier: 'HighImpact' },
+        { requiresHighImpactAcknowledgement: true });
+
+      expect(component.planIsBlocked(merge)).toBe(true);
+    });
+
+    it('describes each step in words rather than showing the enum', () => {
+      // The step list is the only place a user sees what a merge is doing, and
+      // "VerifyPlaylistPopulated" tells them nothing about why it matters.
+      const step = (kind: string, playlistName: string | null = null) => ({
+        ordinal: 0, kind, playlistId: null, playlistName, uris: null,
+        status: 'Pending' as const, resultingSnapshotId: null, failure: null
+      });
+
+      expect(component.planStepLabel(step('VerifyPlaylistPopulated')))
+        .toContain('Check everything arrived');
+      expect(component.planStepLabel(step('RemoveFromLibrary', 'Road Trip')))
+        .toBe('Remove from your library — Road Trip');
+      expect(component.planStepLabel(step('AddToLibrary', 'Road Trip')))
+        .toBe('Put back in your library — Road Trip');
+    });
+
+    it('offers to finish the rest only when something is left to finish', () => {
+      const stalled = plan({
+        status: 'PartiallyCompleted',
+        recovery: {
+          canResume: true, stepsSucceeded: 3, stepsFailed: 1, stepsNotAttempted: 1,
+          advice: '3 step(s) landed and 2 did not.'
+        }
+      });
+
+      expect(stalled.recovery?.canResume).toBe(true);
+      expect(plan({ status: 'Completed' }).recovery).toBeNull();
+    });
+
+    it('does nothing when asked to resume a plan that has nothing to resume', () => {
+      // Guards the button being clicked on a completed plan — re-running work that
+      // already landed is the one thing resume must never do.
+      const api = TestBed.inject(SpotifinatorApiService);
+      const retry = spyOn(api, 'retryPlan');
+
+      component.retryPlan(plan({ status: 'Completed' }));
+
+      expect(retry).not.toHaveBeenCalled();
+    });
+
+    // ─── draft actions ────────────────────────────────────────────────────────
+
+    it('counts only candidates that matched a real Spotify track', () => {
+      // The create button is labelled with this number and disabled at zero, so an
+      // unmatched candidate must not be counted as creatable.
+      const draft = {
+        id: 'd1', name: 'Morr Music Essentials', candidates: [
+          { id: 'c1', resolution: 'Resolved', track: { id: 't1' } },
+          { id: 'c2', resolution: 'NotFound', track: null },
+          { id: 'c3', resolution: 'Ambiguous', track: null }
+        ]
+      } as never;
+
+      expect(component.resolvedCandidateCount(draft)).toBe(1);
+    });
+
+    it('will not offer to create a draft where nothing matched', () => {
+      const api = TestBed.inject(SpotifinatorApiService);
+      const build = spyOn(api, 'buildCreateFromDraftPlan');
+      component.activeDraft = {
+        id: 'd1', name: 'Empty', candidates: [{ id: 'c1', resolution: 'NotFound', track: null }]
+      } as never;
+
+      component.createDraftInSpotify();
+
+      expect(build).not.toHaveBeenCalled();
+    });
+
+    it('creating from a draft opens a plan for review rather than writing', () => {
+      // The button must not be a shortcut past the confirmation card.
+      const api = TestBed.inject(SpotifinatorApiService);
+      const built = plan({ action: 'CreatePlaylist', status: 'AwaitingConfirmation' });
+      spyOn(api, 'buildCreateFromDraftPlan').and.returnValue(of(built));
+      component.activeDraft = {
+        id: 'd1', name: 'Morr', candidates: [{ id: 'c1', resolution: 'Resolved', track: { id: 't' } }]
+      } as never;
+
+      component.createDraftInSpotify();
+
+      const last = component.messages[component.messages.length - 1];
+      expect(component.isPlan(last.data)).toBe(true);
+      expect((last.data as SpotifyPlan).status).toBe('AwaitingConfirmation');
+      expect(last.content).toContain('Nothing has changed yet');
+    });
+
+    it('asks before deleting a draft, and does nothing if you say no', () => {
+      const api = TestBed.inject(SpotifinatorApiService);
+      const del = spyOn(api, 'deleteDiscoveryDraft');
+      spyOn(window, 'confirm').and.returnValue(false);
+      component.activeDraft = { id: 'd1', name: 'Morr', candidates: [] } as never;
+
+      component.deleteActiveDraft();
+
+      expect(del).not.toHaveBeenCalled();
+      expect(component.activeDraft).not.toBeNull();
+    });
+
+    it('clears the draft everywhere once it is deleted', () => {
+      const api = TestBed.inject(SpotifinatorApiService);
+      spyOn(api, 'deleteDiscoveryDraft').and.returnValue(of(void 0));
+      spyOn(window, 'confirm').and.returnValue(true);
+
+      // Must be a full draft shape: the transcript sweep uses isDiscoveryDraft,
+      // which checks for candidates + desiredTrackCount + userPrompts.
+      const draft = {
+        id: 'd1', name: 'Morr', candidates: [], savedAt: '2026-08-01T00:00:00Z',
+        desiredTrackCount: 25, userPrompts: ['morr music'], state: 'Ready',
+        summary: '', clarifyingQuestion: null, knownMusicCoverage: '',
+        createdAt: '2026-08-01T00:00:00Z', updatedAt: '2026-08-01T00:00:00Z'
+      } as never;
+      component.activeDraft = draft;
+      component.savedDrafts = [draft];
+      component.messages.push({
+        id: 'm1', role: 'assistant', content: 'here', timestamp: new Date(), data: draft
+      });
+
+      component.deleteActiveDraft();
+
+      // Left anywhere, a stale card could be re-opened after the draft is gone.
+      expect(component.activeDraft).toBeNull();
+      expect(component.savedDrafts).toEqual([]);
+      expect(component.messages.find(m => m.id === 'm1')!.data).toBeNull();
+    });
+
+    // ─── connection foldout ───────────────────────────────────────────────────
+
+    it('keeps the connection panel shut when everything is healthy', () => {
+      component.connectionLoading = false;
+      component.connection = {
+        isConnected: true, missingScopes: [], warning: null, lastError: null, displayName: 'tamupino'
+      } as never;
+
+      expect(component.connectionNeedsAttention()).toBe(false);
+    });
+
+    it('opens the connection panel whenever something needs doing', () => {
+      component.connectionLoading = false;
+
+      component.connection = { isConnected: false, missingScopes: [], warning: null, lastError: null } as never;
+      expect(component.connectionNeedsAttention()).toBe(true);
+
+      // The case that matters after adding playback scopes: connected, but the new
+      // permissions have not been granted yet.
+      component.connection = {
+        isConnected: true, missingScopes: ['streaming'], warning: null, lastError: null
+      } as never;
+      expect(component.connectionNeedsAttention()).toBe(true);
+    });
+
+    it('sends exactly one resume even if the button is hit twice', () => {
+      const api = TestBed.inject(SpotifinatorApiService);
+      const retry = spyOn(api, 'retryPlan').and.returnValue(new Subject<SpotifyPlan>());
+      const stalled = plan({
+        status: 'PartiallyCompleted',
+        recovery: {
+          canResume: true, stepsSucceeded: 1, stepsFailed: 1, stepsNotAttempted: 0,
+          advice: 'Some of it landed.'
+        }
+      });
+
+      component.retryPlan(stalled);
+      component.retryPlan(stalled);
+
+      expect(retry).toHaveBeenCalledTimes(1);
     });
   });
 });

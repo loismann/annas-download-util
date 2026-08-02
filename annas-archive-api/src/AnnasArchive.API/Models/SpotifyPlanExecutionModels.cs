@@ -16,7 +16,18 @@ public enum SpotifyPlanStepKind
     ReplaceItems,
     ReorderItems,
     ChangeDetails,
-    RemoveFromLibrary
+    RemoveFromLibrary,
+
+    /// <summary>
+    /// Re-reads a playlist and fails unless it holds at least
+    /// <see cref="SpotifyPlanStep.ExpectedItemCount"/> items. It writes nothing; its
+    /// whole purpose is to sit between a merge's population and its source removal
+    /// so that "the target is full" is something we checked rather than assumed.
+    /// </summary>
+    VerifyPlaylistPopulated,
+
+    /// <summary>Re-follows a playlist a previous plan removed. Undo only.</summary>
+    AddToLibrary
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
@@ -50,6 +61,8 @@ public sealed record SpotifyPlanStep(
     int? RangeStart = null,
     int? InsertBefore = null,
     int? RangeLength = null,
+    /// <summary>What a <see cref="SpotifyPlanStepKind.VerifyPlaylistPopulated"/> step must find.</summary>
+    int? ExpectedItemCount = null,
     SpotifyPlanStepStatus Status = SpotifyPlanStepStatus.Pending,
     string? ResultingSnapshotId = null,
     string? CreatedPlaylistId = null,
@@ -70,7 +83,19 @@ public sealed record SpotifyRestoreManifest(
     string? PreviousName = null,
     string? PreviousDescription = null,
     bool? PreviousIsPublic = null,
-    IReadOnlyList<string>? UnrestorableItems = null
+    IReadOnlyList<string>? UnrestorableItems = null,
+    /// <summary>
+    /// Set when the step removed this playlist from the library. Undo re-follows the
+    /// URI. Spotify never deleted anything, so the playlist itself still exists — but
+    /// re-following only works while it does, which is why undo re-checks first.
+    /// </summary>
+    string? RemovedLibraryUri = null,
+    /// <summary>
+    /// Set when the step created this playlist. Undoing a creation means removing it
+    /// from the library again — Spotify has no delete — so this is the one manifest
+    /// whose inverse is itself a removal.
+    /// </summary>
+    bool WasCreated = false
 );
 
 /// <summary>
@@ -91,6 +116,22 @@ public sealed record SpotifyPlanPreview(
     int PlaylistsAffected = 0
 );
 
+/// <summary>
+/// What is left to do after a plan stopped part-way, and what may safely be done
+/// about it.
+///
+/// The distinction that matters: a *skipped* step was never attempted, so re-running
+/// it is unambiguous. A *failed* step may have landed partially, which is why resume
+/// re-reads the playlist before acting rather than replaying the original payload.
+/// </summary>
+public sealed record SpotifyPlanRecovery(
+    bool CanResume,
+    int StepsSucceeded,
+    int StepsFailed,
+    int StepsNotAttempted,
+    string Advice
+);
+
 public sealed record SpotifyPlanDto(
     Guid Id,
     SpotifyPlanAction Action,
@@ -106,7 +147,8 @@ public sealed record SpotifyPlanDto(
     DateTimeOffset? ConfirmedAtUtc,
     string? Failure,
     bool CanUndo,
-    Guid? UndoOfPlanId
+    Guid? UndoOfPlanId,
+    SpotifyPlanRecovery? Recovery = null
 );
 
 // ─── audit ───────────────────────────────────────────────────────────────────
@@ -118,6 +160,7 @@ public enum SpotifyAuditEventKind
     PlanConfirmed,
     PlanCancelled,
     PlanExpired,
+    PlanResumed,
     StepSucceeded,
     StepFailed,
     PlanCompleted,
@@ -156,7 +199,21 @@ public sealed record SpotifyBuildPlanRequest(
     int? RangeStart = null,
     int? InsertBefore = null,
     int? RangeLength = null,
-    string? OriginalRequest = null
+    string? OriginalRequest = null,
+
+    // ─── phase 8: multi-playlist work ───────────────────────────────────────
+    /// <summary>Names the user gave, for merge and library removal.</summary>
+    IReadOnlyList<string>? PlaylistReferences = null,
+    /// <summary>Already-resolved IDs, when the user picked from disambiguation cards.</summary>
+    IReadOnlyList<string>? PlaylistIds = null,
+    /// <summary>An existing merge destination. Absent means create a new private one.</summary>
+    string? TargetPlaylistReference = null,
+    string? TargetPlaylistId = null,
+    /// <summary>
+    /// Whether a merge also removes its sources from the library. Off by default:
+    /// the spec's merge policy leaves sources alone unless removal is asked for.
+    /// </summary>
+    bool RemoveSources = false
 );
 
 public sealed record SpotifyConfirmPlanRequest(bool HighImpactAcknowledged = false);

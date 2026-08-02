@@ -260,12 +260,13 @@ export interface SpotifyKnownMusicOverrideResult {
 
 // ─── Command Types ───────────────────────────────────────────────────────────
 
+// ─── Change plans ────────────────────────────────────────────────────────────
+
 /**
- * Mirrors the server-owned action enum in `SpotifyActionCatalog`. Read-only by
- * design: mutations are unreachable until the reviewed change-plan flow exists,
- * so there is deliberately no `create_playlist` here to render against.
+ * These mirror the server-owned types. Every action that changes anything is named
+ * `plan_*` and returns a proposal, never a result: the confirm and cancel calls are
+ * ordinary authenticated requests the user makes, not something the model can reach.
  */
-// ─── Change plans (phases 6/7) ───────────────────────────────────────────────
 
 export type SpotifyPlanStatus =
   | 'Draft' | 'AwaitingConfirmation' | 'Executing' | 'Completed'
@@ -281,9 +282,24 @@ export interface SpotifyPlanStep {
   playlistId: string | null;
   playlistName: string | null;
   uris: string[] | null;
+  /** Only set on a VerifyPlaylistPopulated step. */
+  expectedItemCount?: number | null;
   status: SpotifyPlanStepStatus;
   resultingSnapshotId: string | null;
   failure: string | null;
+}
+
+/**
+ * What a half-finished plan leaves you able to do. Present only when a plan
+ * actually stopped part-way — a completed plan has nothing to pick back up, and
+ * offering to would invite re-running work that already landed.
+ */
+export interface SpotifyPlanRecovery {
+  canResume: boolean;
+  stepsSucceeded: number;
+  stepsFailed: number;
+  stepsNotAttempted: number;
+  advice: string;
 }
 
 export interface SpotifyPlanTarget {
@@ -325,6 +341,7 @@ export interface SpotifyPlan {
   failure: string | null;
   canUndo: boolean;
   undoOfPlanId: string | null;
+  recovery: SpotifyPlanRecovery | null;
 }
 
 export interface SpotifyAuditEvent {
@@ -356,6 +373,8 @@ export type SpotifyAction =
   | 'plan_add_items'
   | 'plan_rename_playlist'
   | 'plan_remove_items'
+  | 'plan_merge_playlists'
+  | 'plan_remove_playlists_from_library'
   | 'explain_capability'
   | 'unknown';
 

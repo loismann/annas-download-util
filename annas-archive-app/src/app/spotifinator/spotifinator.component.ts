@@ -20,6 +20,7 @@ import {
   ChatMessage,
   CommandData,
   SpotifyPlan,
+  SpotifyPlanStep,
   ViewState,
   SpotifyPlaylist,
   SpotifyPlaylistItem,
@@ -453,6 +454,111 @@ export class SpotifinatorComponent implements OnInit, OnDestroy, AfterViewChecke
     localStorage.removeItem('spotifinator.activeDraftId');
   }
 
+  /**
+   * Whether the connection foldout should start open. Anything the user has to act
+   * on opens it; a healthy connection stays collapsed and out of the way.
+   */
+  connectionNeedsAttention(): boolean {
+    if (this.connectionLoading || !this.connection) return true;
+    if (!this.connection.isConnected) return true;
+    if (this.connection.missingScopes.length > 0) return true;
+    return !!this.connection.warning || !!this.connection.lastError;
+  }
+
+  /** One line standing in for the whole panel while it is collapsed. */
+  connectionSummaryLabel(): string {
+    if (this.connectionLoading) return 'Checking…';
+    if (!this.connection) return 'Not connected';
+    if (!this.connection.isConnected) return 'Not connected — tap to connect';
+    if (this.connection.missingScopes.length > 0) return 'Needs reauthorizing';
+    if (this.connection.warning) return this.connection.warning;
+
+    const unreadable = this.inventoryStatus?.unreadablePlaylists ?? 0;
+    const total = this.inventoryStatus?.totalPlaylists ?? 0;
+
+    if (total === 0) return 'Connected · inventory not refreshed yet';
+
+    return unreadable > 0
+      ? `Connected · ${total} playlists, ${unreadable} unreadable`
+      : `Connected · ${total} playlists`;
+  }
+
+  /** Candidates that actually matched a Spotify track — the only ones creatable. */
+  resolvedCandidateCount(draft: SpotifyDiscoveryDraft): number {
+    return draft.candidates.filter(c => c.resolution === 'Resolved' && c.track).length;
+  }
+
+  /**
+   * Turns the draft into a real playlist — via the plan flow, not directly. The
+   * button produces a review card showing the name and every track; nothing is
+   * written until that card is confirmed.
+   */
+  createDraftInSpotify(): void {
+    if (!this.activeDraft || this.draftActionPending) return;
+    if (this.resolvedCandidateCount(this.activeDraft) === 0) return;
+
+    const draft = this.activeDraft;
+    this.draftActionPending = true;
+
+    this.api.buildCreateFromDraftPlan(draft.id, draft.name)
+      .pipe(takeUntil(this.destroy$)).subscribe({
+        next: plan => {
+          this.draftActionPending = false;
+          this.addAssistantMessage(
+            'Here is what creating that would do. Nothing has changed yet — confirm it and I will build it.',
+            plan);
+        },
+        error: err => {
+          this.draftActionPending = false;
+          // A refusal is a 400 carrying the real sentence: nothing resolved, no
+          // name, over the ceiling. It is an answer, not a crash.
+          this.addAssistantMessage(
+            err.error?.error || 'That draft could not be turned into a playlist.', null, true);
+        }
+      });
+  }
+
+  /**
+   * Throws the draft away for good. Unlike a playlist this really is a delete — the
+   * draft has never touched Spotify — so it asks once here rather than going
+   * through the plan flow.
+   */
+  deleteActiveDraft(): void {
+    if (!this.activeDraft || this.draftActionPending) return;
+
+    const draft = this.activeDraft;
+    const resolved = this.resolvedCandidateCount(draft);
+    const confirmed = confirm(
+      `Delete the draft "${draft.name}"?\n\n`
+      + `${draft.candidates.length} candidates (${resolved} matched) will be lost. `
+      + 'Nothing on Spotify is affected — this draft was never a playlist.');
+
+    if (!confirmed) return;
+
+    this.draftActionPending = true;
+    this.api.deleteDiscoveryDraft(draft.id).pipe(takeUntil(this.destroy$)).subscribe({
+      next: () => {
+        this.draftActionPending = false;
+        this.activeDraft = null;
+        localStorage.removeItem('spotifinator.activeDraftId');
+        this.savedDrafts = this.savedDrafts.filter(d => d.id !== draft.id);
+
+        // Drop it from the transcript too, so a stale card cannot be re-opened.
+        for (const message of this.messages) {
+          if (this.isDiscoveryDraft(message.data) && message.data.id === draft.id)
+            message.data = null;
+        }
+
+        this.addAssistantMessage(`Deleted the draft "${draft.name}". Spotify is untouched.`, null);
+      },
+      error: err => {
+        this.draftActionPending = false;
+        this.addAssistantMessage(
+          err.error?.error || 'That draft could not be deleted.', null, true);
+      }
+    });
+  }
+
   openSavedDraft(draft: SpotifyDiscoveryDraft): void {
     this.setActiveDraft(draft);
   }
@@ -707,6 +813,42 @@ export class SpotifinatorComponent implements OnInit, OnDestroy, AfterViewChecke
       error: (err) => {
         this.planActionPending = null;
         this.addAssistantMessage(err.error?.error || 'Could not cancel that.', null, true);
+      }
+    });
+  }
+
+  /** A friendlier name than the enum for each step in the progress list. */
+  planStepLabel(step: SpotifyPlanStep): string {
+    const name = step.playlistName ? ` — ${step.playlistName}` : '';
+
+    switch (step.kind) {
+      case 'CreatePlaylist': return `Create the playlist${name}`;
+      case 'AddItems': return `Add tracks${name}`;
+      case 'RemoveItems': return `Remove tracks${name}`;
+      case 'ReplaceItems': return `Replace the contents${name}`;
+      case 'ReorderItems': return `Reorder${name}`;
+      case 'ChangeDetails': return `Update the details${name}`;
+      case 'VerifyPlaylistPopulated':
+        return `Check everything arrived${name}`;
+      case 'RemoveFromLibrary': return `Remove from your library${name}`;
+      case 'AddToLibrary': return `Put back in your library${name}`;
+      default: return step.kind + name;
+    }
+  }
+
+  retryPlan(plan: SpotifyPlan): void {
+    if (this.planActionPending || !plan.recovery?.canResume) return;
+
+    this.planActionPending = plan.id;
+    this.api.retryPlan(plan.id).pipe(takeUntil(this.destroy$)).subscribe({
+      next: (resumed) => {
+        this.planActionPending = null;
+        this.replacePlanInTranscript(resumed);
+        this.addAssistantMessage(this.describeOutcome(resumed), resumed);
+      },
+      error: (err) => {
+        this.planActionPending = null;
+        this.addAssistantMessage(err.error?.error || 'That could not be picked back up.', null, true);
       }
     });
   }

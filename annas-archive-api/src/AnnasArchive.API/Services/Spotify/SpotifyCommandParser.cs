@@ -101,6 +101,8 @@ public sealed class SpotifyCommandParser : ISpotifyCommandParser
               "arguments": {
                 "query": "<search or filter text, when the action needs one>",
                 "playlistReference": "<the playlist name exactly as the user wrote it>",
+                "playlistReferences": ["<one entry per playlist name, when they listed several>"],
+                "removeSources": <true only when merging and they said to get rid of the originals>,
                 "limit": <number of results, only if the user asked for a specific count>
               },
               "confidence": <0.0 to 1.0>,
@@ -111,9 +113,15 @@ public sealed class SpotifyCommandParser : ISpotifyCommandParser
             - Use only the action names listed. If none fit, use "unknown" and set clarification.
             - Never invent a playlist name. Copy what the user wrote; the server resolves it.
             - Never output Spotify IDs, URIs, track counts, or ownership. You do not have them.
-            - A music-discovery draft is editable but read-only. Creating a Spotify playlist,
-              renaming, merging, or deleting anything is NOT available. If the user asks for
-              a Spotify account change, use "explain_capability".
+            - Never choose which playlists a change should affect. If the user did not name
+              them, leave the list empty — "clean up whatever you think is best" is not a
+              request you may resolve into targets.
+            - Actions beginning with "plan_" do not change anything. They produce a proposal
+              the user reviews and confirms separately, so classify the intent honestly rather
+              than avoiding it.
+            - Spotify cannot delete a playlist for everyone. "Delete this playlist" means
+              removing it from this user's own library; use
+              "plan_remove_playlists_from_library".
             - Use "suggest_music" for a new theme/history/curation request. When the context
               says a discovery draft is active, use "refine_music_draft" for changes to it.
             - Omit any argument that does not apply.

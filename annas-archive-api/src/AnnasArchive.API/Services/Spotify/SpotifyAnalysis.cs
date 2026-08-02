@@ -51,12 +51,17 @@ public static class SpotifyAnalysis
     /// <summary>
     /// Only playlists Spotify let us read and that genuinely hold nothing. A
     /// playlist we could not open is not empty; it is unknown, and it is reported
-    /// separately so it can never end up in a delete list.
+    /// separately so it can never end up on a removal list.
+    ///
+    /// The readability check is repeated here rather than left to the caller. This
+    /// list now feeds a plan that unfollows playlists, and "0 items because Spotify
+    /// would not show us" must not reach that path through some future caller that
+    /// forgot to filter first.
     /// </summary>
     public static IReadOnlyList<SpotifyEmptyPlaylist> FindEmpty(
         IReadOnlyList<SpotifyPlaylistContents> readable) =>
         readable
-            .Where(c => c.Items.Count == 0)
+            .Where(c => c.IsReadable && c.Items.Count == 0)
             .Select(c => new SpotifyEmptyPlaylist(c.Playlist.Id, c.Playlist.Name))
             .ToList();
 

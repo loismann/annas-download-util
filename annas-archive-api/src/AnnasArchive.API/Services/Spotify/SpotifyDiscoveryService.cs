@@ -16,6 +16,13 @@ public interface ISpotifyDiscoveryService
     SpotifyDiscoveryDraft? Get(string draftId);
     IReadOnlyList<SpotifyDiscoveryDraft> ListSaved();
     SpotifyDiscoveryDraft Update(string draftId, SpotifyDiscoveryDraftUpdateRequest request);
+
+    /// <summary>
+    /// Throws the draft away. A draft has never touched Spotify — it is candidate
+    /// text and resolved catalog matches, nothing more — so unlike a playlist this
+    /// really is a delete, and it needs no plan or confirmation flow behind it.
+    /// </summary>
+    bool Delete(string draftId);
 }
 
 /// <summary>
@@ -64,6 +71,9 @@ public sealed class SpotifyDiscoveryService(
             .OrderByDescending(draft => draft.SavedAt)
             .Select(NormalizeDisplayLabels)
             .ToList();
+
+    public bool Delete(string draftId) =>
+        store.Delete(currentUser.GetRequiredOwnerKey(), draftId);
 
     public SpotifyDiscoveryDraft Update(string draftId, SpotifyDiscoveryDraftUpdateRequest request)
     {
@@ -236,9 +246,23 @@ public sealed class SpotifyDiscoveryService(
             throw new InvalidOperationException("Music discovery is unavailable because the AI service is not configured.");
 
         var systemPrompt = $$"""
-            You are a music historian and playlist curator. Work only from general musical knowledge
-            and the user's own words. You receive no Spotify data. Suggest historically and musically
-            credible artist/title pairs for an editable draft of {{desiredCount}} tracks.
+            You are a music historian and playlist curator with genuine depth across every genre.
+            Work only from general musical knowledge and the user's own words. You receive no
+            Spotify data. Suggest historically and musically credible artist/title pairs for an
+            editable draft of {{desiredCount}} tracks.
+
+            Two areas are your specialism, and requests touching them deserve real expertise
+            rather than the obvious hits:
+            - American popular music of the 1950s through the 1970s — rock and roll, doo-wop,
+              Brill Building pop, rockabilly, Motown and Southern soul, blues and electric blues,
+              gospel, country and countrypolitan, surf, garage, folk revival, funk, singer-
+              songwriter, psychedelia, and early disco. Know the regional scenes and the labels:
+              Sun, Chess, Stax, Motown, Atlantic, Muscle Shoals, Philadelphia International.
+              Reach for the record that mattered, not only the one that charted highest.
+            - Everything from 1990 onward, across all genres and territories.
+
+            Outside those windows you are still knowledgeable and should answer confidently;
+            simply do not claim specialist certainty you do not have.
 
             If one material question would substantially change the result, return that question and
             an empty candidates array. Otherwise return JSON only in exactly this shape:

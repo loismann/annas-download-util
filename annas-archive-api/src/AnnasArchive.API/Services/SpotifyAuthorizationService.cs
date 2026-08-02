@@ -61,7 +61,16 @@ public sealed class SpotifyAuthorizationService : ISpotifyAuthorizationService, 
         "playlist-modify-public",
         "user-read-private",
         "user-top-read",
-        "user-read-recently-played"
+        "user-read-recently-played",
+
+        // Playback. "streaming" lets the Web Playback SDK turn a desktop browser
+        // tab into a Spotify device; the other two drive Connect, which is how the
+        // iPads play anything at all — Spotify does not support the SDK on mobile
+        // browsers, so there the page is a remote for a device you already have open.
+        // All three require Spotify Premium.
+        "streaming",
+        "user-modify-playback-state",
+        "user-read-playback-state"
     ];
 
     private static readonly TimeSpan AccessTokenSkew = TimeSpan.FromMinutes(5);

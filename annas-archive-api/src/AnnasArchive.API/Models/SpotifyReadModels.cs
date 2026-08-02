@@ -57,7 +57,13 @@ public record SpotifyPlaylistItemDto(
     string? SpotifyUrl,
     bool IsLocal,
     DateTimeOffset? AddedAt,
-    string? Isrc = null
+    string? Isrc = null,
+    /// <summary>
+    /// Album cover for this row. Spotify already returns it on every playlist item;
+    /// the mapping used to drop it, which is why the track list had nothing to show.
+    /// Null for episodes, local files, and items no longer on Spotify.
+    /// </summary>
+    string? AlbumArtUrl = null
 );
 
 public record SpotifyPlaylistItemsPageDto(
@@ -141,7 +147,14 @@ public record SpotifyCommandArguments(
     string? Query = null,
     string? PlaylistReference = null,
     int? Limit = null,
-    string? TimeRange = null
+    string? TimeRange = null,
+    /// <summary>Several playlist names, for merge and library removal.</summary>
+    IReadOnlyList<string>? PlaylistReferences = null,
+    /// <summary>
+    /// Whether a merge should also unfollow its sources. A request, not an
+    /// authorization — the plan still has to be confirmed and acknowledged.
+    /// </summary>
+    bool RemoveSources = false
 );
 
 /// <summary>

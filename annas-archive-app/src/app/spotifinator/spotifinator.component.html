@@ -8,7 +8,23 @@
 
     <mat-card-content class="workspace">
       <aside class="spotify-sidebar">
-    <section class="connection-panel" [class.connected]="connection?.isConnected">
+    <!--
+      Account and inventory plumbing. Collapsed by default: it is the least
+      interesting thing on the page once you are connected, and it was occupying the
+      most valuable space. The summary line still surfaces anything that needs
+      action, so a problem is visible without opening it.
+    -->
+    <details class="connection-panel" [class.connected]="connection?.isConnected"
+             [open]="connectionNeedsAttention()">
+      <summary class="connection-summary-line">
+        <span class="connection-dot" [class.ok]="connection?.isConnected"></span>
+        <span class="connection-summary-text">
+          <strong>{{ connection?.displayName || 'Spotify' }}</strong>
+          <small>{{ connectionSummaryLabel() }}</small>
+        </span>
+        <mat-icon class="connection-chevron">expand_more</mat-icon>
+      </summary>
+
       @if (connectionLoading) {
         <div class="connection-loading">
           <mat-spinner diameter="20"></mat-spinner>
@@ -92,7 +108,7 @@
       @if (connectionNotice) {
         <div class="connection-notice">{{ connectionNotice }}</div>
       }
-    </section>
+    </details>
 
         <section class="saved-drafts-panel">
           <div class="sidebar-heading">
@@ -125,6 +141,21 @@
               <small>{{ activeDraft.candidates.length }} candidates · {{ activeDraft.state }}</small>
             </span>
             <span class="draft-header-actions" (click)="$event.preventDefault(); $event.stopPropagation()">
+              <!--
+                Create opens the review card; it does not write. Delete really does
+                delete — a draft has never touched Spotify, so there is nothing to
+                preview and nothing to undo.
+              -->
+              <button mat-flat-button color="primary" type="button"
+                      (click)="createDraftInSpotify()"
+                      [disabled]="draftActionPending || resolvedCandidateCount(activeDraft) === 0"
+                      [matTooltip]="resolvedCandidateCount(activeDraft) === 0
+                        ? 'None of these matched a Spotify track yet'
+                        : 'Review and create this as a real Spotify playlist'">
+                <mat-icon>library_add</mat-icon>
+                Create in Spotify ({{ resolvedCandidateCount(activeDraft) }})
+              </button>
+
               @if (!activeDraft.savedAt) {
                 <button mat-stroked-button type="button" (click)="saveActiveDraft()"
                         [disabled]="draftActionPending">
@@ -133,7 +164,14 @@
               } @else {
                 <span class="draft-saved"><mat-icon>bookmark</mat-icon> Saved</span>
               }
-              <button mat-icon-button type="button" matTooltip="Close draft"
+
+              <button mat-icon-button type="button" matTooltip="Delete this draft"
+                      class="draft-delete"
+                      (click)="deleteActiveDraft()"
+                      [disabled]="draftActionPending">
+                <mat-icon>delete_outline</mat-icon>
+              </button>
+              <button mat-icon-button type="button" matTooltip="Close draft (keeps it)"
                       (click)="closeActiveDraft()">
                 <mat-icon>close</mat-icon>
               </button>
@@ -266,7 +304,10 @@
                              : step.status === 'Failed' ? 'error'
                              : step.status === 'Skipped' ? 'remove_circle_outline' : 'schedule' }}
                           </mat-icon>
-                          <span>{{ step.kind }}{{ step.playlistName ? ' — ' + step.playlistName : '' }}</span>
+                          <span>{{ planStepLabel(step) }}</span>
+                          @if (step.status === 'Skipped') {
+                            <span class="plan-step-note">not attempted</span>
+                          }
                           @if (step.failure) {
                             <span class="plan-step-failure">{{ step.failure }}</span>
                           }
@@ -274,15 +315,35 @@
                       }
                     </div>
 
-                    @if (message.data.canUndo) {
+                    <!--
+                      Recovery. Present only when a plan actually stopped part-way,
+                      so "pick this back up" never appears next to work that finished.
+                    -->
+                    @if (message.data.recovery) {
+                      <p class="plan-recovery">{{ message.data.recovery.advice }}</p>
+                    }
+
+                    @if (message.data.recovery?.canResume || message.data.canUndo) {
                       <div class="plan-actions">
-                        <button
-                          mat-stroked-button
-                          [disabled]="planActionPending === message.data.id"
-                          (click)="undoPlan(message.data)"
-                        >
-                          <mat-icon>undo</mat-icon> Undo this
-                        </button>
+                        @if (message.data.recovery?.canResume) {
+                          <button
+                            mat-flat-button
+                            color="primary"
+                            [disabled]="planActionPending === message.data.id"
+                            (click)="retryPlan(message.data)"
+                          >
+                            <mat-icon>replay</mat-icon> Finish the rest
+                          </button>
+                        }
+                        @if (message.data.canUndo) {
+                          <button
+                            mat-stroked-button
+                            [disabled]="planActionPending === message.data.id"
+                            (click)="undoPlan(message.data)"
+                          >
+                            <mat-icon>undo</mat-icon> Undo this
+                          </button>
+                        }
                       </div>
                     }
                   }

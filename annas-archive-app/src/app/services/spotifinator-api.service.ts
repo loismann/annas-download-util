@@ -115,6 +115,30 @@ export class SpotifinatorApiService {
       `${this.baseUrl}/drafts/${encodeURIComponent(draftId)}`, update);
   }
 
+  /**
+   * Throws a draft away. Unlike anything touching a Spotify playlist this needs no
+   * plan and no confirmation — a draft has never left this application.
+   */
+  deleteDiscoveryDraft(draftId: string): Observable<void> {
+    return this.http.delete<void>(`${this.baseUrl}/drafts/${encodeURIComponent(draftId)}`).pipe(
+      tap(() => this.logger.log('[Spotifinator] Draft deleted', { draftId }))
+    );
+  }
+
+  /**
+   * Builds the plan that turns a draft into a real Spotify playlist. Returns a plan
+   * awaiting confirmation, never a created playlist — pressing "Create" opens the
+   * review, it does not write.
+   */
+  buildCreateFromDraftPlan(draftId: string, name?: string, isPublic = false): Observable<SpotifyPlan> {
+    return this.http.post<SpotifyPlan>(`${this.baseUrl}/plans`, {
+      action: 'CreatePlaylist',
+      draftId,
+      name,
+      isPublic
+    });
+  }
+
   // ─── Change plans ──────────────────────────────────────────────────────────
 
   getPlan(planId: string): Observable<SpotifyPlan> {
@@ -141,6 +165,17 @@ export class SpotifinatorApiService {
   /** Returns a *new* plan that still needs confirming — undo is reviewed too. */
   undoPlan(planId: string): Observable<SpotifyPlan> {
     return this.http.post<SpotifyPlan>(`${this.baseUrl}/plans/${planId}/undo`, {});
+  }
+
+  /**
+   * Picks a plan that stopped part-way back up. Unlike undo this is the *same*
+   * plan, so it needs no fresh confirmation: the steps and the acknowledgement
+   * the user already gave still stand, and steps that succeeded are not re-run.
+   */
+  retryPlan(planId: string): Observable<SpotifyPlan> {
+    return this.http.post<SpotifyPlan>(`${this.baseUrl}/plans/${planId}/retry`, {}).pipe(
+      tap(plan => this.logger.log('[Spotifinator] Plan resumed', { planId, status: plan.status }))
+    );
   }
 
   getAudit(planId?: string, limit = 100): Observable<SpotifyAuditEvent[]> {

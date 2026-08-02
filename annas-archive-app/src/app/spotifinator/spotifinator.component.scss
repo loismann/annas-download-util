@@ -93,6 +93,52 @@
     border-color: rgba(29, 185, 84, 0.5);
     background: rgba(29, 185, 84, 0.06);
   }
+
+  &[open] .connection-chevron { transform: rotate(180deg); }
+}
+
+.connection-summary-line {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  list-style: none;
+
+  // Safari draws its own disclosure triangle; we render our own chevron.
+  &::-webkit-details-marker { display: none; }
+}
+
+.connection-summary-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+
+  strong { font-size: 0.85rem; }
+
+  small {
+    color: #555;
+    font-size: 0.72rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.connection-dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #b3261e;
+
+  &.ok { background: #1db954; }
+}
+
+.connection-chevron {
+  flex: 0 0 auto;
+  color: #777;
+  transition: transform 0.15s ease;
 }
 
 .connection-loading,
@@ -260,6 +306,15 @@
   display: flex;
   align-items: center;
   gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+// Destructive, so it reads as destructive — but only on hover, so it does not
+// shout at you from a card whose main action is "create".
+.draft-delete {
+  color: #8a8f98;
+
+  &:hover:not([disabled]) { color: #b3261e; }
 }
 
 .draft-saved {
@@ -647,5 +702,22 @@
     .plan-step-skipped   { opacity: 0.55; }
 
     .plan-step-failure { opacity: 0.8; font-style: italic; }
+
+    // "not attempted" is the fact that matters most on a stalled merge: it is why
+    // the source playlists are still there.
+    .plan-step-note {
+      font-size: 0.78rem;
+      opacity: 0.75;
+      font-style: italic;
+    }
+  }
+
+  .plan-recovery {
+    margin: 0.75rem 0 0;
+    padding: 0.55rem 0.7rem;
+    border-left: 3px solid #b3261e;
+    background: rgba(179, 38, 30, 0.06);
+    font-size: 0.85rem;
+    line-height: 1.4;
   }
 }

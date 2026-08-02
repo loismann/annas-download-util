@@ -236,7 +236,10 @@ public class SpotifyConversationServiceTests
 
         var response = await service.HandleAsync(new SpotifyConversationRequest("what can you do"));
 
-        response.Message.Should().Contain("cannot create");
+        // The two facts that must survive every phase: nothing changes without a
+        // confirmed plan, and Spotify cannot delete a playlist at all.
+        response.Message.Should().Contain("nothing happens until you");
+        response.Message.Should().Contain("no way to delete a playlist");
         spotify.PlaylistCallCount.Should().Be(0);
     }
 

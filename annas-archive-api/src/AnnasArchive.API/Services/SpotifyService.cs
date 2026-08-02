@@ -36,6 +36,13 @@ public interface ISpotifyService
     Task RemoveTracksFromPlaylistAsync(string playlistId, List<string> trackUris, CancellationToken token = default);
     Task RemovePlaylistsFromLibraryAsync(List<string> playlistUris, CancellationToken token = default);
 
+    /// <summary>
+    /// Re-follows playlists a plan removed. Default-implemented so existing test
+    /// doubles keep compiling; the real client overrides it.
+    /// </summary>
+    Task AddPlaylistsToLibraryAsync(List<string> playlistUris, CancellationToken token = default) =>
+        throw new NotSupportedException("Restoring playlists to the library is not available here.");
+
     // ─── phase 6/7 writes: every one returns the resulting snapshot ──────────
     Task<string?> AddItemsAsync(string playlistId, IReadOnlyList<string> uris, CancellationToken token = default);
     Task<string?> RemoveItemsAsync(
@@ -350,7 +357,10 @@ public class SpotifyService : ISpotifyService
             SpotifyUrl: item.ExternalUrls?.Spotify,
             IsLocal: isLocal,
             AddedAt: entry.AddedAt,
-            Isrc: item.ExternalIds?.Isrc);
+            Isrc: item.ExternalIds?.Isrc,
+            // Smallest image that still looks right at list-row size. Spotify orders
+            // images widest-first, so the last one is the thumbnail.
+            AlbumArtUrl: item.Album?.Images?.LastOrDefault()?.Url);
     }
 
     private static SpotifyPlaylistItemDto MapTrackItem(
@@ -437,6 +447,33 @@ public class SpotifyService : ISpotifyService
                 $"{ApiBaseUrl}/me/library?uris={uris}",
                 token);
         }
+
+        Log.Information("[Spotify] Removed {Count} playlist(s) from the library", playlistUris.Count);
+    }
+
+    /// <summary>
+    /// The inverse of <see cref="RemovePlaylistsFromLibraryAsync"/>, and the only
+    /// reason removing a playlist is undoable at all. Spotify never deleted it — the
+    /// playlist still exists — so following it again restores the library entry.
+    /// Same 40-per-request cap as the removal.
+    /// </summary>
+    public async Task AddPlaylistsToLibraryAsync(
+        List<string> playlistUris,
+        CancellationToken token = default)
+    {
+        foreach (var batch in playlistUris
+                     .Where(uri => !string.IsNullOrWhiteSpace(uri))
+                     .Distinct(StringComparer.Ordinal)
+                     .Chunk(40))
+        {
+            var uris = Uri.EscapeDataString(string.Join(',', batch));
+            await SendAuthenticatedRequestAsync<object>(
+                HttpMethod.Put,
+                $"{ApiBaseUrl}/me/library?uris={uris}",
+                token);
+        }
+
+        Log.Information("[Spotify] Restored {Count} playlist(s) to the library", playlistUris.Count);
     }
 
     /// <summary>

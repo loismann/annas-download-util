@@ -32,6 +32,8 @@ public enum SpotifyReadAction
     PlanAddItems,
     PlanRenamePlaylist,
     PlanRemoveItems,
+    PlanMergePlaylists,
+    PlanRemovePlaylistsFromLibrary,
     ExplainCapability
 }
 
@@ -40,7 +42,9 @@ public sealed record SpotifyActionDefinition(
     string WireName,
     string PromptDescription,
     bool RequiresQuery = false,
-    bool RequiresPlaylistReference = false
+    bool RequiresPlaylistReference = false,
+    /// <summary>Needs two or more named playlists — merge cannot mean one thing.</summary>
+    bool RequiresPlaylistReferences = false
 );
 
 /// <summary>
@@ -136,6 +140,23 @@ public static class SpotifyActionCatalog
             + "the playlist name in arguments.playlistReference.",
             RequiresPlaylistReference: true),
 
+        // Phase 8. Both need a list of names, which the model copies from the user's
+        // own words into arguments.playlistReferences. It supplies no IDs and makes
+        // no selection of its own — "clean up whatever you think" resolves to
+        // nothing and is refused.
+        new(SpotifyReadAction.PlanMergePlaylists, "plan_merge_playlists",
+            "Combine several playlists into one. Put every playlist name the user listed in "
+            + "arguments.playlistReferences, and the name they want for the combined playlist in "
+            + "arguments.query. Set arguments.removeSources to true ONLY if they explicitly said to "
+            + "get rid of the originals afterwards.",
+            RequiresPlaylistReferences: true),
+
+        new(SpotifyReadAction.PlanRemovePlaylistsFromLibrary, "plan_remove_playlists_from_library",
+            "Take playlists out of the user's library — Spotify's unfollow; there is no delete. Put "
+            + "every playlist name they gave in arguments.playlistReferences. If they said to clear out "
+            + "the empty ones without naming any, leave that empty and put their words in arguments.query "
+            + "so the server can look up which playlists are actually empty."),
+
         new(SpotifyReadAction.ExplainCapability, "explain_capability",
             "The user is asking what this assistant can or cannot do, or why something is unavailable.")
     ];
@@ -199,7 +220,35 @@ public static class SpotifyActionCatalog
         if (definition.RequiresPlaylistReference && string.IsNullOrWhiteSpace(arguments.PlaylistReference))
             return Unresolved("Which playlist do you mean?", envelope.Confidence);
 
+        // Merge needs a real list. One name is not a merge, and no names at all is the
+        // "just tidy it all up however you like" request the spec refuses outright.
+        if (definition.RequiresPlaylistReferences && NamedPlaylists(arguments).Count < 2)
+        {
+            return Unresolved(
+                "Which playlists should I merge? Name them and I will show you exactly what would happen "
+                + "before anything changes.",
+                envelope.Confidence);
+        }
+
         return new SpotifyValidatedCommand(action, arguments, envelope.Confidence, envelope.Clarification);
+    }
+
+    /// <summary>
+    /// Playlist names the user actually gave, from either argument shape. The
+    /// singular field is folded in so "merge Road Trip and Road Trip 2" still counts
+    /// as two when the model splits them across both.
+    /// </summary>
+    public static IReadOnlyList<string> NamedPlaylists(SpotifyCommandArguments arguments)
+    {
+        var names = (arguments.PlaylistReferences ?? [])
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Select(name => name.Trim())
+            .ToList();
+
+        if (!string.IsNullOrWhiteSpace(arguments.PlaylistReference))
+            names.Add(arguments.PlaylistReference.Trim());
+
+        return names.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
     }
 
     private static SpotifyValidatedCommand Unresolved(string? clarification, double confidence = 0d) =>

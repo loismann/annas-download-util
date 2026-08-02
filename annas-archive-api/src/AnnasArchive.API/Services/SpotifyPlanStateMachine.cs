@@ -102,6 +102,21 @@ public static class SpotifyPlanStateMachine
         return plan with { Status = SpotifyPlanStatus.Expired };
     }
 
+    /// <summary>
+    /// Puts a stalled plan back into execution. Only a plan that already ran and
+    /// stopped qualifies — this is not a second route into <c>Executing</c> for a
+    /// plan that was never confirmed, and it deliberately does not clear
+    /// <see cref="SpotifyChangePlan.ConfirmedBy"/>: the original confirmation is
+    /// what still authorizes the remaining steps.
+    /// </summary>
+    public static SpotifyChangePlan Resume(SpotifyChangePlan plan)
+    {
+        if (plan.Status is not (SpotifyPlanStatus.PartiallyCompleted or SpotifyPlanStatus.Failed))
+            throw InvalidTransition(plan.Status, SpotifyPlanStatus.Executing);
+
+        return plan with { Status = SpotifyPlanStatus.Executing };
+    }
+
     public static SpotifyChangePlan Revert(SpotifyChangePlan plan)
     {
         if (plan.Status == SpotifyPlanStatus.Reverted)

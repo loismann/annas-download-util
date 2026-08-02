@@ -11,6 +11,9 @@ public interface ISpotifyDiscoveryStore
     SpotifyDiscoveryDraft? Get(string ownerKey, string draftId);
     IReadOnlyList<SpotifyDiscoveryDraft> List(string ownerKey);
     void Save(string ownerKey, SpotifyDiscoveryDraft draft);
+
+    /// <summary>Returns false when the draft did not belong to this owner.</summary>
+    bool Delete(string ownerKey, string draftId);
 }
 
 public sealed class SpotifyDiscoveryStore(AppDatabase database) : ISpotifyDiscoveryStore
@@ -64,6 +67,25 @@ public sealed class SpotifyDiscoveryStore(AppDatabase database) : ISpotifyDiscov
             command.Parameters.AddWithValue("$created", draft.CreatedAt.ToString("o"));
             command.Parameters.AddWithValue("$updated", draft.UpdatedAt.ToString("o"));
             command.ExecuteNonQuery();
+        }
+    }
+
+    /// <summary>
+    /// Owner-scoped, like every other read here: a draft ID alone must not be
+    /// enough to throw away someone else's work. A draft holds no Spotify state,
+    /// so deleting it really is a delete — nothing on Spotify is touched.
+    /// </summary>
+    public bool Delete(string ownerKey, string draftId)
+    {
+        lock (_writeLock)
+        {
+            using var connection = database.OpenConnection();
+            using var command = connection.CreateCommand();
+            command.CommandText =
+                "DELETE FROM spotify_discovery_draft WHERE owner_hash = $owner AND draft_id = $id";
+            command.Parameters.AddWithValue("$owner", OwnerHash(ownerKey));
+            command.Parameters.AddWithValue("$id", draftId);
+            return command.ExecuteNonQuery() > 0;
         }
     }
 

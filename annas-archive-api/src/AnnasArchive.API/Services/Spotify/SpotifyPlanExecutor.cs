@@ -12,6 +12,13 @@ public interface ISpotifyPlanExecutor
 
     Task<SpotifyChangePlan> BuildUndoAsync(
         string ownerKey, Guid planId, CancellationToken token = default);
+
+    /// <summary>
+    /// Picks a stalled plan back up at its first unfinished step. Steps that already
+    /// succeeded are never re-run.
+    /// </summary>
+    Task<SpotifyChangePlan> ResumeAsync(
+        string ownerKey, Guid planId, string confirmedBy, CancellationToken token = default);
 }
 
 /// <summary>
@@ -94,6 +101,47 @@ public sealed class SpotifyPlanExecutor : ISpotifyPlanExecutor
     }
 
     /// <summary>
+    /// Resumes a plan that stopped part-way.
+    ///
+    /// Deliberately narrow. It re-runs only steps that did not succeed, in the
+    /// original order, and it does not re-check the plan's recorded snapshots —
+    /// those are guaranteed stale, because our own successful steps moved them.
+    /// Safety comes from each step revalidating what it needs instead: an add
+    /// re-reads the playlist and skips what is already there, and the merge's
+    /// verify step still stands between population and any source removal.
+    /// </summary>
+    public async Task<SpotifyChangePlan> ResumeAsync(
+        string ownerKey, Guid planId, string confirmedBy, CancellationToken token = default)
+    {
+        var plan = _plans.Get(ownerKey, planId)
+            ?? throw new InvalidOperationException("That plan no longer exists.");
+
+        if (plan.Status is not (SpotifyPlanStatus.PartiallyCompleted or SpotifyPlanStatus.Failed))
+        {
+            throw new InvalidOperationException(
+                "Only a plan that stopped part-way can be picked back up.");
+        }
+
+        var remaining = plan.OrderedSteps.Count(s => s.Status != SpotifyPlanStepStatus.Succeeded);
+        if (remaining == 0)
+            throw new InvalidOperationException("Every step of that plan already succeeded.");
+
+        // Clear the previous failure text so a second stop reports its own reason
+        // rather than the first one.
+        var reset = plan.OrderedSteps
+            .Select(step => step.Status == SpotifyPlanStepStatus.Succeeded
+                ? step
+                : step with { Status = SpotifyPlanStepStatus.Pending, Failure = null })
+            .ToList();
+
+        plan = SpotifyPlanStateMachine.Resume(plan) with { Steps = reset, Failure = null };
+        plan = Persist(ownerKey, plan, SpotifyAuditEventKind.PlanResumed, confirmedBy,
+            $"Resuming {remaining} unfinished step(s).");
+
+        return await RunAsync(ownerKey, plan, confirmedBy, token);
+    }
+
+    /// <summary>
     /// Builds the inverse of a completed plan. It is a *new* plan needing its own
     /// confirmation — undo is a change like any other, and quietly reversing writes
     /// without review would be the same mistake in the opposite direction.
@@ -120,6 +168,31 @@ public sealed class SpotifyPlanExecutor : ISpotifyPlanExecutor
 
         foreach (var manifest in original.RestoreManifests!)
         {
+            // The inverse of a library removal is a re-follow. Handle it before the
+            // read below, because a removed playlist is exactly the case where the
+            // library no longer lists it.
+            if (manifest.RemovedLibraryUri is { } removedUri)
+            {
+                steps.Add(new SpotifyPlanStep(ordinal++, SpotifyPlanStepKind.AddToLibrary,
+                    manifest.PlaylistId, manifest.PlaylistName, Uris: [removedUri]));
+                effects.Add($"Put “{manifest.PlaylistName}” back in your library");
+                continue;
+            }
+
+            // The inverse of creating a playlist is removing it again — Spotify has
+            // no delete, so this unfollows the thing the plan brought into being.
+            if (manifest.WasCreated)
+            {
+                steps.Add(new SpotifyPlanStep(ordinal++, SpotifyPlanStepKind.RemoveFromLibrary,
+                    manifest.PlaylistId, manifest.PlaylistName,
+                    Uris: [SpotifyPlanBuilder.PlaylistUri(manifest.PlaylistId)]));
+                effects.Add($"Remove “{manifest.PlaylistName}” — the playlist that plan created — "
+                          + "from your library again");
+                warnings.Add($"“{manifest.PlaylistName}” is not deleted, only unfollowed. Spotify keeps it "
+                           + "recoverable for a while.");
+                continue;
+            }
+
             // Re-read rather than trusting the manifest's snapshot: if the playlist
             // moved again since, the user must see that before restoring over it.
             var current = await _spotify.GetPlaylistAsync(manifest.PlaylistId, token);
@@ -192,12 +265,21 @@ public sealed class SpotifyPlanExecutor : ISpotifyPlanExecutor
     {
         var steps = plan.OrderedSteps.ToList();
         var manifests = new List<SpotifyRestoreManifest>(plan.RestoreManifests ?? []);
-        string? createdPlaylistId = null;
         string? failure = null;
+
+        // A resumed plan carries the ID of a playlist an earlier attempt created, so
+        // a re-run populates that playlist rather than making a second one.
+        var createdPlaylistId = steps
+            .FirstOrDefault(s => s.CreatedPlaylistId is not null)?.CreatedPlaylistId;
 
         for (var i = 0; i < steps.Count; i++)
         {
             var step = steps[i];
+
+            // Already done on an earlier attempt. Re-running it is the one thing a
+            // resume must never do.
+            if (step.Status == SpotifyPlanStepStatus.Succeeded)
+                continue;
 
             if (failure is not null)
             {
@@ -227,6 +309,11 @@ public sealed class SpotifyPlanExecutor : ISpotifyPlanExecutor
                 Audit(ownerKey, plan, SpotifyAuditEventKind.StepFailed, confirmedBy,
                     $"Step {step.Ordinal} ({step.Kind}) failed: {failure}");
             }
+
+            // Persist after every step, not only at the end. A bulk plan is long
+            // enough to watch, and a process that dies mid-run must leave a record
+            // of what it had already done rather than looking untouched.
+            _plans.Save(ownerKey, plan with { Steps = steps, RestoreManifests = manifests });
         }
 
         var succeeded = steps.Count(s => s.Status == SpotifyPlanStepStatus.Succeeded);
@@ -262,19 +349,34 @@ public sealed class SpotifyPlanExecutor : ISpotifyPlanExecutor
                 var created = await _spotify.CreatePlaylistAsync(
                     step.Name!, step.Description, step.IsPublic ?? false, token);
 
+                // Undoing a creation means unfollowing what we just made. Recording
+                // it here is what makes an unwanted playlist removable without the
+                // user having to go find it in Spotify.
+                var manifest = new SpotifyRestoreManifest(
+                    created.Id, created.Name, created.SnapshotId, [], WasCreated: true);
+
                 return (step with
                 {
                     Status = SpotifyPlanStepStatus.Succeeded,
                     CreatedPlaylistId = created.Id,
                     PlaylistId = created.Id,
                     ResultingSnapshotId = created.SnapshotId
-                }, created.Id, null);
+                }, created.Id, manifest);
             }
 
             case SpotifyPlanStepKind.AddItems:
             {
                 Require(playlistId, step);
-                var snapshot = await _spotify.AddItemsAsync(playlistId!, step.Uris ?? [], token);
+
+                // Add only what is not already there. This matches what the builder
+                // previewed — it refuses to add existing URIs — and it is what makes
+                // re-running a half-finished add safe rather than duplicating tracks.
+                var wanted = await FilterOutItemsAlreadyPresentAsync(
+                    playlistId!, step.Uris ?? [], token);
+
+                var snapshot = wanted.Count > 0
+                    ? await _spotify.AddItemsAsync(playlistId!, wanted, token)
+                    : null;
 
                 // Undoing an add means removing exactly what we added.
                 var manifest = new SpotifyRestoreManifest(
@@ -287,6 +389,74 @@ public sealed class SpotifyPlanExecutor : ISpotifyPlanExecutor
                     PlaylistId = playlistId,
                     ResultingSnapshotId = snapshot
                 }, null, step.PlaylistId is null ? null : manifest);
+            }
+
+            case SpotifyPlanStepKind.VerifyPlaylistPopulated:
+            {
+                Require(playlistId, step);
+
+                var playlist = await _spotify.GetPlaylistAsync(playlistId!, token)
+                    ?? throw new InvalidOperationException(
+                        $"“{step.PlaylistName ?? playlistId}” could not be read back, so I cannot confirm "
+                        + "the merge landed. Nothing further will run.");
+
+                var contents = await _inventory.GetContentsAsync(playlist, token);
+                var expected = step.ExpectedItemCount ?? 0;
+
+                if (!contents.IsReadable)
+                {
+                    throw new InvalidOperationException(
+                        $"Spotify would not let me read “{playlist.Name}” back, so I cannot confirm it holds "
+                        + $"the {expected} items before going any further. Nothing else has been touched.");
+                }
+
+                if (contents.Items.Count < expected)
+                {
+                    throw new InvalidOperationException(
+                        $"“{playlist.Name}” has {contents.Items.Count} items but should have {expected}. "
+                        + "Stopping here — the original playlists have not been touched.");
+                }
+
+                return (step with
+                {
+                    Status = SpotifyPlanStepStatus.Succeeded,
+                    PlaylistId = playlistId,
+                    ResultingSnapshotId = contents.SnapshotId
+                }, null, null);
+            }
+
+            case SpotifyPlanStepKind.RemoveFromLibrary:
+            {
+                Require(playlistId, step);
+                var uris = (step.Uris ?? []).Where(u => !string.IsNullOrWhiteSpace(u)).ToList();
+
+                if (uris.Count == 0)
+                    throw new InvalidOperationException($"Step {step.Ordinal} has no playlist URI to remove.");
+
+                // Record the way back before removing. Spotify keeps the playlist —
+                // this is an unfollow — so re-following it is a real undo.
+                var manifest = new SpotifyRestoreManifest(
+                    playlistId!, step.PlaylistName ?? playlistId!, null, [],
+                    RemovedLibraryUri: uris[0]);
+
+                await _spotify.RemovePlaylistsFromLibraryAsync(uris, token);
+
+                return (step with { Status = SpotifyPlanStepStatus.Succeeded, PlaylistId = playlistId },
+                    null, manifest);
+            }
+
+            case SpotifyPlanStepKind.AddToLibrary:
+            {
+                Require(playlistId, step);
+                var uris = (step.Uris ?? []).Where(u => !string.IsNullOrWhiteSpace(u)).ToList();
+
+                if (uris.Count == 0)
+                    throw new InvalidOperationException($"Step {step.Ordinal} has no playlist URI to restore.");
+
+                await _spotify.AddPlaylistsToLibraryAsync(uris, token);
+
+                return (step with { Status = SpotifyPlanStepStatus.Succeeded, PlaylistId = playlistId },
+                    null, null);
             }
 
             case SpotifyPlanStepKind.RemoveItems:
@@ -346,6 +516,39 @@ public sealed class SpotifyPlanExecutor : ISpotifyPlanExecutor
             default:
                 throw new InvalidOperationException($"{step.Kind} is not executable yet.");
         }
+    }
+
+    /// <summary>
+    /// Drops URIs the playlist already holds.
+    ///
+    /// A newly created playlist is empty and this costs one read, which is cheap
+    /// beside the alternative: an add that ran, timed out on the response, and got
+    /// retried would otherwise put every track in twice.
+    /// </summary>
+    private async Task<IReadOnlyList<string>> FilterOutItemsAlreadyPresentAsync(
+        string playlistId, IReadOnlyList<string> uris, CancellationToken token)
+    {
+        var wanted = uris.Where(u => !string.IsNullOrWhiteSpace(u)).ToList();
+        if (wanted.Count == 0)
+            return wanted;
+
+        var playlist = await _spotify.GetPlaylistAsync(playlistId, token);
+        if (playlist is null)
+            return wanted;
+
+        var contents = await _inventory.GetContentsAsync(playlist, token);
+
+        // Only an authoritative read may be used to skip an add. If Spotify would
+        // not show us the contents, adding the full list is the safer error.
+        if (!contents.IsReadable)
+            return wanted;
+
+        var present = contents.Items
+            .Where(i => !string.IsNullOrWhiteSpace(i.Uri))
+            .Select(i => i.Uri!)
+            .ToHashSet(StringComparer.Ordinal);
+
+        return wanted.Where(uri => !present.Contains(uri)).ToList();
     }
 
     /// <summary>

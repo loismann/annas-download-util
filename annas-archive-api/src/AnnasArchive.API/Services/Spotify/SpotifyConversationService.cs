@@ -123,6 +123,8 @@ public sealed class SpotifyConversationService : ISpotifyConversationService
             SpotifyReadAction.PlanAddItems => await PlanAddItemsAsync(command, request.DraftId, token),
             SpotifyReadAction.PlanRenamePlaylist => await PlanRenameAsync(command, token),
             SpotifyReadAction.PlanRemoveItems => await PlanRemoveItemsAsync(command, request, token),
+            SpotifyReadAction.PlanMergePlaylists => await PlanMergeAsync(command, token),
+            SpotifyReadAction.PlanRemovePlaylistsFromLibrary => await PlanLibraryRemovalAsync(command, token),
             SpotifyReadAction.ExplainCapability => ExplainCapability(command),
             _ => Unknown(command)
         };
@@ -244,7 +246,7 @@ public sealed class SpotifyConversationService : ISpotifyConversationService
     private static SpotifyConversationResponse ExplainCapability(SpotifyValidatedCommand command) =>
         Respond(command,
             """
-            Right now I can read your Spotify library, but not change it:
+            Reading, which happens straight away:
 
             - List your playlists, or filter them by name
             - Describe one playlist — owner, visibility, item count, whether I can read inside it
@@ -253,14 +255,27 @@ public sealed class SpotifyConversationService : ISpotifyConversationService
             - Analyze empty, repeated, overlapping, and similarly named playlists
             - Tell you which playlists show up most in recent listening history
             - Summarize the artists and tracks represented in the Spotify data I can access
+            - Build a music-discovery draft from a theme and check it against what you know
 
-            I cannot create, rename, merge, or delete anything yet. Those arrive with the
-            reviewed change-plan flow, where you see exactly what will happen before it does.
+            Changing, which never happens straight away:
 
-            Two things worth knowing: a playlist you only follow may show its details but not
-            its contents — Spotify's rule, not mine — and I will always say so rather than
-            reporting it as empty. And Spotify has no way to truly delete a playlist; it only
-            removes it from your own library.
+            - Create a playlist from a draft, or add a draft's tracks to one you already have
+            - Rename a playlist
+            - Remove songs from a playlist, including exact duplicates
+            - Merge several playlists into one
+            - Take playlists out of your library
+
+            Every one of those produces a plan first. You see the playlists it names, what it
+            would add or remove, and what cannot be undone — and nothing happens until you
+            confirm it. The ones that discard something ask a second time. I cap a plan at 20
+            playlists or 500 item changes so a batch stays reviewable, and I will not choose
+            which playlists a change applies to: you name them.
+
+            Two things worth knowing. A playlist you only follow may show its details but not
+            its contents — Spotify's rule, not mine — and I will say so rather than reporting
+            it as empty, which is also why I refuse to put one on a removal list. And Spotify
+            has no way to delete a playlist at all: removing one takes it out of your library
+            and leaves it for anyone else who follows it.
             """,
             data: null);
 
@@ -557,6 +572,77 @@ public sealed class SpotifyConversationService : ISpotifyConversationService
             OriginalRequest: request.Message), token);
     }
 
+    // ─── plan-producing handlers (phase 8) ───────────────────────────────────
+
+    private async Task<SpotifyConversationResponse> PlanMergeAsync(
+        SpotifyValidatedCommand command, CancellationToken token)
+    {
+        if (_plans is null || _currentUser is null)
+            return Respond(command, "Change plans are not available in this environment.", null);
+
+        var names = SpotifyActionCatalog.NamedPlaylists(command.Arguments);
+
+        return await BuildAndDescribeAsync(command, new SpotifyBuildPlanRequest(
+            SpotifyPlanAction.MergePlaylists,
+            Name: command.Arguments.Query,
+            PlaylistReferences: names,
+            RemoveSources: command.Arguments.RemoveSources,
+            OriginalRequest: command.Arguments.Query), token);
+    }
+
+    /// <summary>
+    /// Removing playlists from the library needs a concrete list, never a category
+    /// the assistant chose. Named playlists are used as given; "clear out the empty
+    /// ones" is answered from the analysis, which only ever calls a playlist empty
+    /// when Spotify let us read it and it genuinely held nothing. Anything else is
+    /// refused rather than interpreted.
+    /// </summary>
+    private async Task<SpotifyConversationResponse> PlanLibraryRemovalAsync(
+        SpotifyValidatedCommand command, CancellationToken token)
+    {
+        if (_plans is null || _currentUser is null)
+            return Respond(command, "Change plans are not available in this environment.", null);
+
+        var names = SpotifyActionCatalog.NamedPlaylists(command.Arguments);
+
+        if (names.Count > 0)
+        {
+            return await BuildAndDescribeAsync(command, new SpotifyBuildPlanRequest(
+                SpotifyPlanAction.RemovePlaylistsFromLibrary,
+                PlaylistReferences: names,
+                OriginalRequest: command.Arguments.Query), token);
+        }
+
+        if (!MentionsEmptyPlaylists(command.Arguments.Query))
+        {
+            return Respond(command,
+                "Tell me which playlists to take out of your library and I will show you exactly what "
+                + "would happen first. I will not pick them for you.", null);
+        }
+
+        var library = await ReadLibraryAsync(token);
+        var empty = SpotifyAnalysis.FindEmpty(library.Where(c => c.IsReadable).ToList());
+        var unreadable = library.Count(c => !c.IsReadable);
+
+        if (empty.Count == 0)
+        {
+            var caveat = unreadable == 0
+                ? ""
+                : $" I could not read {unreadable} of them, and unreadable is unknown rather than empty — "
+                  + "those are not candidates.";
+            return Respond(command, $"None of the playlists I can read are empty.{caveat}", null);
+        }
+
+        return await BuildAndDescribeAsync(command, new SpotifyBuildPlanRequest(
+            SpotifyPlanAction.RemovePlaylistsFromLibrary,
+            PlaylistIds: empty.Select(e => e.PlaylistId).ToList(),
+            OriginalRequest: command.Arguments.Query), token);
+    }
+
+    private static bool MentionsEmptyPlaylists(string? query) =>
+        !string.IsNullOrWhiteSpace(query)
+        && SpotifyPlaylistResolver.Normalize(query).Contains("empty", StringComparison.Ordinal);
+
     private async Task<SpotifyConversationResponse> BuildAndDescribeAsync(
         SpotifyValidatedCommand command, SpotifyBuildPlanRequest request, CancellationToken token)
     {
@@ -747,7 +833,8 @@ public sealed class SpotifyConversationService : ISpotifyConversationService
             : "No playlist contexts appeared in Spotify's recent playback window; that is not evidence of no use.");
 
         lines.Add("");
-        lines.Add("I have not changed anything. Making changes needs the reviewed plan flow, which is not built yet.");
+        lines.Add("I have not changed anything — this is only what I found. Tell me which playlists to act "
+                + "on and I will build a plan you can look over before anything happens.");
 
         return string.Join("\n", lines);
     }

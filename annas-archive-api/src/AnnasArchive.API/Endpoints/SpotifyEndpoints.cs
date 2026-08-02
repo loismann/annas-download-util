@@ -32,11 +32,13 @@ public static class SpotifyEndpoints
         group.MapGet("/drafts", HandleListDiscoveryDrafts);
         group.MapGet("/drafts/{draftId}", HandleGetDiscoveryDraft);
         group.MapPatch("/drafts/{draftId}", HandleUpdateDiscoveryDraft);
+        group.MapDelete("/drafts/{draftId}", HandleDeleteDiscoveryDraft);
         group.MapPost("/plans", HandleBuildPlan);
         group.MapGet("/plans", HandleListPlans);
         group.MapGet("/plans/{planId:guid}", HandleGetPlan);
         group.MapPost("/plans/{planId:guid}/confirm", HandleConfirmPlan);
         group.MapPost("/plans/{planId:guid}/cancel", HandleCancelPlan);
+        group.MapPost("/plans/{planId:guid}/retry", HandleRetryPlan);
         group.MapPost("/plans/{planId:guid}/undo", HandleUndoPlan);
         group.MapGet("/audit", HandleGetAudit);
         group.MapPost("/command", HandleCommand);
@@ -230,6 +232,17 @@ public static class SpotifyEndpoints
         }
     }
 
+    /// <summary>
+    /// Throws a draft away. No plan, no confirmation: a draft has never touched
+    /// Spotify, so there is nothing to preview and nothing to undo.
+    /// </summary>
+    private static IResult HandleDeleteDiscoveryDraft(
+        string draftId,
+        ISpotifyDiscoveryService discovery) =>
+        discovery.Delete(draftId)
+            ? Results.NoContent()
+            : Results.NotFound(new { error = "That discovery draft was not found." });
+
     private static async Task<IResult> HandleGetPlaylist(
         string playlistId,
         ISpotifyService spotifyService,
@@ -370,6 +383,37 @@ public static class SpotifyEndpoints
         catch (InvalidOperationException ex)
         {
             return Results.Conflict(new { error = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Picks a stalled plan back up. There is no new confirmation because there is no
+    /// new plan: the steps, targets, and original acknowledgement all still stand, and
+    /// anything that already succeeded is left alone rather than re-run.
+    /// </summary>
+    private static async Task<IResult> HandleRetryPlan(
+        Guid planId,
+        [FromServices] ISpotifyPlanExecutor executor,
+        [FromServices] ISpotifyCurrentUser currentUser,
+        HttpContext context,
+        CancellationToken token)
+    {
+        try
+        {
+            var confirmedBy = LibraryHelpers.ResolveUserDisplayName(context) ?? "unknown";
+            var plan = await executor.ResumeAsync(
+                currentUser.GetRequiredOwnerKey(), planId, confirmedBy, token);
+
+            return Results.Ok(SpotifyPlanService.ToDto(plan));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.Conflict(new { error = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "[Spotify] Plan {PlanId} resume failed", planId);
+            return MapFailure(ex, context);
         }
     }
 

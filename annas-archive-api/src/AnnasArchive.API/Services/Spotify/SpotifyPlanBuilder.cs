@@ -358,6 +358,327 @@ public static class SpotifyPlanBuilder
             originalRequest);
     }
 
+    // ─── phase 8: bulk cleanup and merge ─────────────────────────────────────
+
+    /// <summary>
+    /// Combine several playlists into one.
+    ///
+    /// Three deliberate choices. The target is populated and then *verified* before
+    /// any source is touched, so a merge can never remove the originals when the
+    /// copy did not land. Sources are left in the library unless removal is asked
+    /// for. And nothing is silently dropped: exact URI repeats collapse, but two
+    /// different recordings of the same song are counted and reported, because
+    /// deciding they are "the same" is a judgement only the listener can make.
+    /// </summary>
+    public static Result Merge(
+        IReadOnlyList<SpotifyPlaylistContents> sources,
+        SpotifyPlaylistContents? existingTarget,
+        string? newTargetName,
+        bool isPublic,
+        bool removeSources,
+        DateTimeOffset nowUtc,
+        string? originalRequest = null)
+    {
+        if (sources.Count < 2)
+            return Result.Refuse("Merging needs at least two playlists. Which ones did you mean?");
+
+        // A partial view is the one thing a merge must not be built on: items we
+        // cannot see would be quietly left behind, and if the sources were then
+        // removed they would be gone from the library with no copy anywhere.
+        var unreadable = sources.Where(s => !s.IsReadable).Select(s => s.Playlist.Name).ToList();
+        if (unreadable.Count > 0)
+        {
+            return Result.Refuse(
+                $"Spotify will not let me read {Join(unreadable)} all the way through, so I cannot "
+                + "promise the merged playlist would contain everything. I will not merge a partial view.");
+        }
+
+        if (existingTarget is not null && Unwritable(existingTarget) is { } targetRefusal)
+            return Result.Refuse(targetRefusal);
+
+        var targetName = string.IsNullOrWhiteSpace(newTargetName)
+            ? existingTarget?.Playlist.Name
+            : newTargetName.Trim();
+
+        if (existingTarget is null && string.IsNullOrWhiteSpace(targetName))
+            return Result.Refuse("What should I call the merged playlist?");
+
+        // Duplicate sources would double-count everything and, worse, put the same
+        // playlist on a removal list twice.
+        var distinctSources = sources
+            .GroupBy(s => s.Playlist.Id, StringComparer.Ordinal)
+            .Select(g => g.First())
+            .ToList();
+
+        if (existingTarget is not null && distinctSources.Any(s => s.Playlist.Id == existingTarget.Playlist.Id))
+        {
+            return Result.Refuse(
+                $"“{existingTarget.Playlist.Name}” is both the destination and one of the sources. "
+                + "Pick a different destination, or leave it out of the list.");
+        }
+
+        var alreadyThere = (existingTarget?.Items ?? [])
+            .Where(i => !string.IsNullOrWhiteSpace(i.Uri))
+            .Select(i => i.Uri!)
+            .ToHashSet(StringComparer.Ordinal);
+
+        // First-encountered ordering, per the merge policy: source order is the one
+        // piece of the user's original curation we can preserve for free.
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var toAdd = new List<string>();
+        var contributed = new List<SpotifyPlaylistItemDto>();
+        var localItems = new List<string>();
+        var alreadyPresent = 0;
+        var exactRepeats = 0;
+
+        foreach (var item in distinctSources.SelectMany(s => s.Items))
+        {
+            if (item.Kind == SpotifyItemKind.Local || string.IsNullOrWhiteSpace(item.Uri))
+            {
+                localItems.Add(item.Name ?? "an unnamed local file");
+                continue;
+            }
+
+            if (!seen.Add(item.Uri))
+            {
+                // The same song in two of the sources. Collapsing exact URI matches
+                // is a fact, not a judgement, so it needs no review.
+                exactRepeats++;
+                continue;
+            }
+
+            contributed.Add(item);
+
+            if (alreadyThere.Contains(item.Uri))
+                alreadyPresent++;
+            else
+                toAdd.Add(item.Uri);
+        }
+
+        if (toAdd.Count == 0)
+        {
+            return Result.Refuse(existingTarget is null
+                ? "Those playlists have nothing in them I can add to a merged playlist."
+                : $"Everything in those playlists is already in “{existingTarget.Playlist.Name}”, "
+                  + "so merging would not change it.");
+        }
+
+        if (toAdd.Count > MaxItemMutationsPerPlan)
+            return Result.Refuse(TooManyItems(toAdd.Count));
+
+        var expectedTotal = alreadyThere.Count + toAdd.Count;
+        var steps = new List<SpotifyPlanStep>();
+        var ordinal = 0;
+        var targetId = existingTarget?.Playlist.Id;
+
+        if (existingTarget is null)
+        {
+            steps.Add(new SpotifyPlanStep(ordinal++, SpotifyPlanStepKind.CreatePlaylist, null, targetName,
+                Name: targetName, IsPublic: isPublic,
+                Description: $"Merged from {Join(distinctSources.Select(s => s.Playlist.Name).ToList())}."));
+        }
+
+        steps.Add(new SpotifyPlanStep(ordinal++, SpotifyPlanStepKind.AddItems, targetId, targetName, Uris: toAdd));
+
+        // The gate. Without this, "the copy worked" is an assumption, and the source
+        // removal below would be acting on it.
+        steps.Add(new SpotifyPlanStep(ordinal++, SpotifyPlanStepKind.VerifyPlaylistPopulated,
+            targetId, targetName, ExpectedItemCount: expectedTotal));
+
+        if (removeSources)
+        {
+            // One step per playlist, so a failure part-way removes strictly fewer —
+            // never more — and the audit trail names exactly which came off.
+            foreach (var source in distinctSources)
+            {
+                steps.Add(new SpotifyPlanStep(ordinal++, SpotifyPlanStepKind.RemoveFromLibrary,
+                    source.Playlist.Id, source.Playlist.Name, Uris: [PlaylistUri(source.Playlist.Id)]));
+            }
+        }
+
+        var effects = new List<string>
+        {
+            existingTarget is null
+                ? $"Create a new {(isPublic ? "public" : "private")} playlist called “{targetName}”"
+                : $"Add to your existing playlist “{targetName}”"
+        };
+
+        effects.AddRange(distinctSources.Select(s =>
+            $"Take {s.Items.Count} {Plural(s.Items.Count, "item", "items")} from “{s.Playlist.Name}”"));
+
+        effects.Add($"“{targetName}” ends up with {expectedTotal} {Plural(expectedTotal, "item", "items")}");
+        effects.Add($"Check “{targetName}” really holds them before doing anything else");
+
+        if (removeSources)
+        {
+            effects.AddRange(distinctSources.Select(s =>
+                $"Remove “{s.Playlist.Name}” from your library"));
+        }
+        else
+        {
+            effects.Add($"Leave all {distinctSources.Count} original playlists exactly as they are");
+        }
+
+        var warnings = new List<string>();
+
+        if (alreadyPresent > 0)
+        {
+            warnings.Add($"{alreadyPresent} {Plural(alreadyPresent, "track is", "tracks are")} already in "
+                       + $"“{targetName}” and will not be added twice.");
+        }
+
+        if (exactRepeats > 0)
+        {
+            warnings.Add($"{exactRepeats} exact {Plural(exactRepeats, "repeat", "repeats")} across the source "
+                       + "playlists will be collapsed into one copy.");
+        }
+
+        var probable = CountProbableRecordingRepeats(contributed);
+        if (probable > 0)
+        {
+            warnings.Add($"{probable} {Plural(probable, "track looks", "tracks look")} like another recording of "
+                       + "a song already in the merge — a live cut or a remaster, say. I am keeping both rather "
+                       + "than deciding for you.");
+        }
+
+        if (localItems.Count > 0)
+        {
+            warnings.Add($"{localItems.Count} local {Plural(localItems.Count, "file", "files")} "
+                       + $"({Join(localItems.Take(3).ToList())}{(localItems.Count > 3 ? ", …" : "")}) cannot be "
+                       + "added through the API and will not make it into the merged playlist.");
+        }
+
+        if (removeSources)
+        {
+            warnings.Add("Removing a playlist from your library is an unfollow, not a delete — Spotify has no "
+                       + "delete. Anyone else following these keeps them, and undo can re-follow them.");
+            if (localItems.Count > 0)
+            {
+                warnings.Add("Those local files exist only in the source playlists. Removing the sources means "
+                           + "losing the only reference to them.");
+            }
+        }
+
+        var targets = new List<SpotifyPlanTarget>();
+        if (existingTarget is not null) targets.Add(TargetOf(existingTarget));
+        targets.AddRange(distinctSources.Select(TargetOf));
+
+        return Ready(
+            SpotifyPlanAction.MergePlaylists,
+            targets,
+            steps,
+            new SpotifyPlanPreview(
+                $"Merge {distinctSources.Count} playlists into “{targetName}” "
+                + $"({toAdd.Count} {Plural(toAdd.Count, "track", "tracks")} to add)",
+                removeSources ? "Merge and remove the originals" : "Merge them",
+                effects, warnings,
+                RequiresHighImpactAcknowledgement: true,
+                ItemsAdded: toAdd.Count,
+                ItemsSkippedAsDuplicates: alreadyPresent + exactRepeats,
+                PlaylistsAffected: targets.Count + (existingTarget is null ? 1 : 0)),
+            nowUtc,
+            originalRequest);
+    }
+
+    /// <summary>
+    /// Remove playlists from the library. This is an unfollow — Spotify has no delete
+    /// operation at all — and every sentence here says so.
+    ///
+    /// Unreadable playlists are refused outright. "I cannot see inside it" is not
+    /// evidence that it is empty, and a removal list is exactly where that confusion
+    /// would cost something.
+    /// </summary>
+    public static Result RemoveFromLibrary(
+        IReadOnlyList<SpotifyPlaylistContents> targets, DateTimeOffset nowUtc, string? originalRequest = null)
+    {
+        if (targets.Count == 0)
+            return Result.Refuse("Which playlists should I take out of your library?");
+
+        var distinct = targets
+            .GroupBy(t => t.Playlist.Id, StringComparer.Ordinal)
+            .Select(g => g.First())
+            .ToList();
+
+        var unreadable = distinct.Where(t => !t.IsReadable).Select(t => t.Playlist.Name).ToList();
+        if (unreadable.Count > 0)
+        {
+            return Result.Refuse(
+                $"I cannot read what is inside {Join(unreadable)}, so I will not put "
+                + $"{Plural(unreadable.Count, "it", "them")} on a removal list. Unreadable is unknown, not empty — "
+                + "if you are sure, remove those in Spotify itself where you can see them first.");
+        }
+
+        var steps = distinct
+            .Select((target, index) => new SpotifyPlanStep(
+                index, SpotifyPlanStepKind.RemoveFromLibrary, target.Playlist.Id, target.Playlist.Name,
+                Uris: [PlaylistUri(target.Playlist.Id)]))
+            .ToList();
+
+        var effects = distinct
+            .Select(t => $"Remove “{t.Playlist.Name}” ({t.Items.Count} {Plural(t.Items.Count, "item", "items")}) "
+                       + "from your library")
+            .ToList();
+
+        var warnings = new List<string>
+        {
+            "This is an unfollow, not a delete. Spotify has no way to delete a playlist: anyone else who "
+            + "follows these keeps them, and yours can be re-followed by undoing this."
+        };
+
+        var withContent = distinct.Where(t => t.Items.Count > 0).ToList();
+        if (withContent.Count > 0)
+        {
+            var total = withContent.Sum(t => t.Items.Count);
+            warnings.Add($"{withContent.Count} of these {Plural(withContent.Count, "is", "are")} not empty — "
+                       + $"{total} {Plural(total, "item", "items")} in total across "
+                       + $"{Join(withContent.Select(t => t.Playlist.Name).ToList())}.");
+        }
+
+        var notOwned = distinct.Where(t => !t.Playlist.IsOwnedByUser).Select(t => t.Playlist.Name).ToList();
+        if (notOwned.Count > 0)
+        {
+            warnings.Add($"You do not own {Join(notOwned)} — removing "
+                       + $"{Plural(notOwned.Count, "it", "them")} only stops you following "
+                       + $"{Plural(notOwned.Count, "it", "them")}.");
+        }
+
+        return Ready(
+            SpotifyPlanAction.RemovePlaylistsFromLibrary,
+            distinct.Select(TargetOf).ToList(),
+            steps,
+            new SpotifyPlanPreview(
+                $"Remove {distinct.Count} {Plural(distinct.Count, "playlist", "playlists")} from your library",
+                $"Remove {Plural(distinct.Count, "it", "them")}",
+                effects, warnings,
+                RequiresHighImpactAcknowledgement: true,
+                PlaylistsAffected: distinct.Count),
+            nowUtc,
+            originalRequest);
+    }
+
+    /// <summary>
+    /// Distinct Spotify URIs that nonetheless look like the same recording. Reported,
+    /// never collapsed — see <see cref="SpotifyAnalysis"/> for why a "probable"
+    /// duplicate is evidence rather than a decision.
+    /// </summary>
+    private static int CountProbableRecordingRepeats(IReadOnlyList<SpotifyPlaylistItemDto> items) =>
+        items
+            .Where(i => i.Kind == SpotifyItemKind.Track && !string.IsNullOrWhiteSpace(i.Name))
+            .GroupBy(SpotifyAnalysis.RecordingKey, StringComparer.Ordinal)
+            .Where(g => g.Key.Length > 1 && g.Count() > 1)
+            .Sum(g => g.Count() - 1);
+
+    public static string PlaylistUri(string playlistId) => $"spotify:playlist:{playlistId}";
+
+    /// <summary>"A", "A and B", "A, B and C" — plain English, not a bracketed list.</summary>
+    private static string Join(IReadOnlyList<string> names) => names.Count switch
+    {
+        0 => "",
+        1 => $"“{names[0]}”",
+        _ => string.Join(", ", names.Take(names.Count - 1).Select(n => $"“{n}”"))
+             + $" and “{names[^1]}”"
+    };
+
     // ─── shared ──────────────────────────────────────────────────────────────
 
     private static Result Ready(

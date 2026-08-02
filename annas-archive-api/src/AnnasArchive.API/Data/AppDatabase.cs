@@ -107,6 +107,15 @@ public class AppDatabase
                 updated_at TEXT NOT NULL,
                 PRIMARY KEY (owner_hash, cache_key)
             );
+
+            CREATE TABLE IF NOT EXISTS spotify_discovery_draft (
+                owner_hash TEXT NOT NULL,
+                draft_id   TEXT NOT NULL,
+                json       TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (owner_hash, draft_id)
+            );
             """;
         cmd.ExecuteNonQuery();
         EnsureColumn(conn, "spotify_inventory_meta", "full_inventory_at", "TEXT");

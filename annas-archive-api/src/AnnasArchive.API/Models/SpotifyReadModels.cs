@@ -154,7 +154,8 @@ public record SpotifyValidatedCommand(
 public record SpotifyConversationRequest(
     string Message,
     string? PlaylistId = null,
-    int? Offset = null
+    int? Offset = null,
+    string? DraftId = null
 );
 
 public record SpotifyConversationResponse(

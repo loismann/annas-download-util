@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
-import { provideHttpClientTesting } from '@angular/common/http/testing';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideRouter } from '@angular/router';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { SpotifinatorComponent } from './spotifinator.component';
@@ -222,5 +222,45 @@ describe('SpotifinatorComponent', () => {
       expect(component.isAnalysis(status)).toBe(false);
       expect(component.inventoryProgress(status as any)).toBe(25);
     });
+
+    it('recognizes a persisted discovery draft', () => {
+      const draft = {
+        id: 'draft', state: 'Ready', name: 'Deep South', summary: 'A sequence',
+        userPrompts: ['1950s Deep South music'], desiredTrackCount: 25,
+        clarifyingQuestion: null, candidates: [], knownMusicCoverage: 'Partial evidence',
+        createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
+      };
+
+      expect(component.isDiscoveryDraft(draft)).toBe(true);
+      expect(component.isInventoryStatus(draft)).toBe(false);
+    });
+  });
+
+  it('replaces a queued chat card when the dedicated status endpoint advances', () => {
+    const fixture = TestBed.createComponent(SpotifinatorComponent);
+    const component = fixture.componentInstance;
+    const http = TestBed.inject(HttpTestingController);
+    const queued = {
+      jobId: 'job', state: 'Queued', totalPlaylists: 0, processedPlaylists: 0,
+      readablePlaylists: 0, partialPlaylists: 0, unreadablePlaylists: 0,
+      startedAt: null, updatedAt: null, completedAt: null, lastInventoryAt: null,
+      message: 'Queued'
+    };
+    component.messages.push({
+      id: 'status', role: 'assistant', content: 'Inventory queued',
+      timestamp: new Date(), data: queued as any
+    });
+
+    component.loadInventoryStatus();
+    const request = http.expectOne(req => req.url.endsWith('/api/spotify/inventory/status'));
+    request.flush({
+      ...queued, state: 'Partial', totalPlaylists: 258, processedPlaylists: 258,
+      readablePlaylists: 177, unreadablePlaylists: 81, message: 'Inventory finished with limits'
+    });
+
+    expect(component.inventoryStatus?.state).toBe('Partial');
+    expect((component.messages.at(-1)!.data as any).state).toBe('Partial');
+    expect((component.messages.at(-1)!.data as any).processedPlaylists).toBe(258);
+    http.verify();
   });
 });

@@ -111,8 +111,11 @@ public sealed class SpotifyCommandParser : ISpotifyCommandParser
             - Use only the action names listed. If none fit, use "unknown" and set clarification.
             - Never invent a playlist name. Copy what the user wrote; the server resolves it.
             - Never output Spotify IDs, URIs, track counts, or ownership. You do not have them.
-            - Creating, renaming, merging, or deleting anything is NOT available. If the user
-              asks for a change, use "explain_capability".
+            - A music-discovery draft is editable but read-only. Creating a Spotify playlist,
+              renaming, merging, or deleting anything is NOT available. If the user asks for
+              a Spotify account change, use "explain_capability".
+            - Use "suggest_music" for a new theme/history/curation request. When the context
+              says a discovery draft is active, use "refine_music_draft" for changes to it.
             - Omit any argument that does not apply.
             """;
 

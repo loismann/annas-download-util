@@ -631,6 +631,8 @@ public static class ServiceConfiguration
         services.AddScoped<ISpotifyInventoryService, SpotifyInventoryService>();
         services.AddSingleton<ISpotifyInventoryJobService, SpotifyInventoryJobService>();
         services.AddScoped<ISpotifyKnownMusicService, SpotifyKnownMusicService>();
+        services.AddSingleton<ISpotifyDiscoveryStore, SpotifyDiscoveryStore>();
+        services.AddScoped<ISpotifyDiscoveryService, SpotifyDiscoveryService>();
 
         // Text processing
         services.AddSingleton<ITextProcessingService, TextProcessingService>();

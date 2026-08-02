@@ -93,6 +93,59 @@
     </section>
 
     <mat-card-content>
+      @if (activeDraft) {
+        <details class="discovery-draft" open>
+          <summary>
+            <span>
+              <strong>{{ activeDraft.name }}</strong>
+              <small>{{ activeDraft.candidates.length }} candidates · {{ activeDraft.state }}</small>
+            </span>
+            <span class="draft-read-only">Draft only — Spotify unchanged</span>
+          </summary>
+          <p>{{ activeDraft.summary }}</p>
+          @if (activeDraft.clarifyingQuestion) {
+            <div class="analysis-note">{{ activeDraft.clarifyingQuestion }}</div>
+          }
+          @if (activeDraft.candidates.length > 0) {
+            <div class="draft-candidates">
+              @for (candidate of activeDraft.candidates; track candidate.id; let first = $first; let last = $last) {
+                <div class="draft-candidate">
+                  <span class="draft-position">{{ candidate.position + 1 }}</span>
+                  <div class="draft-candidate-copy" (click)="openInSpotify(candidate.track?.spotifyUrl || null)">
+                    <strong>{{ candidate.title }}</strong>
+                    <span>{{ candidate.artist }} · {{ candidate.resolution }}</span>
+                    <small [class.unfamiliar]="candidate.probablyUnfamiliar">{{ candidate.familiarityLabel }}</small>
+                    @if (candidate.rationale) { <small>{{ candidate.rationale }}</small> }
+                    @if (candidate.alternatives.length > 0) {
+                      <div class="draft-alternatives">
+                        <small>Choose the Spotify match:</small>
+                        @for (alternative of candidate.alternatives; track alternative.id) {
+                          <button type="button"
+                                  (click)="$event.stopPropagation(); selectDraftAlternative(activeDraft, candidate.id, alternative.id)">
+                            {{ alternative.name }} — {{ alternative.artists }} · {{ alternative.albumName }}
+                          </button>
+                        }
+                      </div>
+                    }
+                  </div>
+                  <div class="draft-actions">
+                    <button mat-icon-button matTooltip="Move up" [disabled]="first"
+                            (click)="moveDraftCandidate(activeDraft, candidate.id, -1)"><mat-icon>arrow_upward</mat-icon></button>
+                    <button mat-icon-button matTooltip="Move down" [disabled]="last"
+                            (click)="moveDraftCandidate(activeDraft, candidate.id, 1)"><mat-icon>arrow_downward</mat-icon></button>
+                    <button mat-icon-button matTooltip="Remove from draft"
+                            (click)="removeDraftCandidate(activeDraft, candidate.id)"><mat-icon>close</mat-icon></button>
+                  </div>
+                </div>
+              }
+            </div>
+          }
+          @if (activeDraft.knownMusicCoverage) {
+            <div class="analysis-note">{{ activeDraft.knownMusicCoverage }}</div>
+          }
+        </details>
+      }
+
       <!-- Chat Messages -->
       <div class="chat-messages" #chatContainer>
         @for (message of messages; track message.id) {

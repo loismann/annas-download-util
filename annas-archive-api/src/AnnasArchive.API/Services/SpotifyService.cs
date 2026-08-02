@@ -436,12 +436,31 @@ public class SpotifyService : ISpotifyService
         string? ownerKey = null) where T : class
     {
         var serializedBody = body == null ? null : JsonSerializer.Serialize(body);
+        var forceRefreshNext = false;
+        var authenticationRetries = 0;
+        var rateLimitRetries = 0;
 
-        for (var attempt = 0; attempt < 2; attempt++)
+        while (true)
         {
-            var accessToken = ownerKey == null
-                ? await _accessTokens.GetAccessTokenAsync(forceRefresh: attempt > 0, token)
-                : await _accessTokens.GetAccessTokenForOwnerAsync(ownerKey, forceRefresh: attempt > 0, token);
+            string accessToken;
+            try
+            {
+                accessToken = ownerKey == null
+                    ? await _accessTokens.GetAccessTokenAsync(forceRefreshNext, token)
+                    : await _accessTokens.GetAccessTokenForOwnerAsync(ownerKey, forceRefreshNext, token);
+                forceRefreshNext = false;
+            }
+            catch (SpotifyConnectionException ex) when (
+                ex.StatusCode == System.Net.HttpStatusCode.TooManyRequests &&
+                ex.RetryAfter is { } providerDelay &&
+                providerDelay <= TimeSpan.FromSeconds(30) &&
+                rateLimitRetries < 3)
+            {
+                rateLimitRetries++;
+                await DelayForRateLimitAsync(providerDelay, token);
+                continue;
+            }
+
             using var request = new HttpRequestMessage(method, url);
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
 
@@ -467,8 +486,12 @@ public class SpotifyService : ISpotifyService
 
             using (response)
             {
-                if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized && attempt == 0)
+                if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized && authenticationRetries == 0)
+                {
+                    authenticationRetries++;
+                    forceRefreshNext = true;
                     continue;
+                }
 
                 if (!response.IsSuccessStatusCode)
                 {
@@ -498,6 +521,18 @@ public class SpotifyService : ISpotifyService
                         await _accessTokens.RecordApiFailureAsync(exception, token);
                     else
                         await _accessTokens.RecordApiFailureForOwnerAsync(ownerKey, exception, token);
+
+                    if (response.StatusCode == System.Net.HttpStatusCode.TooManyRequests &&
+                        !exception.IsQuotaExceeded &&
+                        retryAfter is { } responseDelay &&
+                        responseDelay <= TimeSpan.FromSeconds(30) &&
+                        rateLimitRetries < 3)
+                    {
+                        rateLimitRetries++;
+                        await DelayForRateLimitAsync(responseDelay, token);
+                        continue;
+                    }
+
                     throw exception;
                 }
 
@@ -516,8 +551,15 @@ public class SpotifyService : ISpotifyService
                 return JsonSerializer.Deserialize<T>(content);
             }
         }
+    }
 
-        throw new InvalidOperationException("Spotify request retry flow ended unexpectedly.");
+    private static Task DelayForRateLimitAsync(TimeSpan retryAfter, CancellationToken token)
+    {
+        // Spotify's integer Retry-After can expire on the boundary. A small cushion
+        // avoids immediately receiving the same 429 without materially extending
+        // an inventory scan.
+        var delay = retryAfter < TimeSpan.Zero ? TimeSpan.Zero : retryAfter;
+        return Task.Delay(delay + TimeSpan.FromMilliseconds(150), token);
     }
 
     private static (string? Message, string? Reason) ParseSpotifyError(string content)

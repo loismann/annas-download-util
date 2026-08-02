@@ -50,7 +50,8 @@ public sealed class SpotifyInventoryStore(AppDatabase database) : ISpotifyInvent
                          "spotify_playlist_cache",
                          "spotify_inventory_job",
                          "spotify_known_music_override",
-                         "spotify_signal_cache"
+                         "spotify_signal_cache",
+                         "spotify_discovery_draft"
                      })
             {
                 using var command = connection.CreateCommand();

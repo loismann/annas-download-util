@@ -25,6 +25,9 @@ public enum SpotifyReadAction
     GetTopItems,
     GetRecentPlaylistContexts,
     GetKnownMusic,
+    SuggestMusic,
+    RefineMusicDraft,
+    CompareDraftToKnownMusic,
     ExplainCapability
 }
 
@@ -96,6 +99,17 @@ public static class SpotifyActionCatalog
         new(SpotifyReadAction.GetKnownMusic, "get_known_music",
             "Summarize what artists and tracks appear in the user's accessible playlists, top-item windows, and recent history."),
 
+        new(SpotifyReadAction.SuggestMusic, "suggest_music",
+            "Start a new editable music-discovery draft from a historical theme, place, era, genre, mood, or requested artists. "
+            + "Put the user's complete musical idea in arguments.query.", RequiresQuery: true),
+
+        new(SpotifyReadAction.RefineMusicDraft, "refine_music_draft",
+            "Refine the active music-discovery draft, such as more gospel, less country, or lesser-known artists. "
+            + "Put the user's refinement in arguments.query.", RequiresQuery: true),
+
+        new(SpotifyReadAction.CompareDraftToKnownMusic, "compare_draft_to_known_music",
+            "Explain which candidates in the active discovery draft are or are not represented in accessible known-music evidence."),
+
         new(SpotifyReadAction.ExplainCapability, "explain_capability",
             "The user is asking what this assistant can or cannot do, or why something is unavailable.")
     ];
@@ -150,6 +164,8 @@ public static class SpotifyActionCatalog
             return Unresolved(
                 action == SpotifyReadAction.FindPlaylists
                     ? "Which playlists should I look for? Tell me part of the name."
+                    : action == SpotifyReadAction.SuggestMusic
+                        ? "What musical theme, era, place, genre, or mood should I explore?"
                     : "What should I search for?",
                 envelope.Confidence);
         }

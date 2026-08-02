@@ -145,6 +145,71 @@
   font-size: 0.88rem;
 }
 
+.discovery-draft {
+  margin-top: 0.75rem;
+  border: 1px solid rgba(29, 185, 84, 0.45);
+  border-radius: 10px;
+  background: #f5fff8;
+  overflow: hidden;
+
+  summary {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.7rem 0.9rem;
+    cursor: pointer;
+
+    span:first-child {
+      display: flex;
+      flex-direction: column;
+    }
+  }
+
+  > p, > .analysis-note { margin: 0.25rem 0.9rem 0.7rem; }
+}
+
+.draft-read-only { color: #315b3c; font-size: 0.75rem; }
+
+.draft-candidates {
+  max-height: 300px;
+  overflow-y: auto;
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.draft-candidate {
+  display: grid;
+  grid-template-columns: 2rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.75rem;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.draft-position { color: #666; text-align: center; }
+.draft-candidate-copy { display: flex; flex-direction: column; min-width: 0; cursor: pointer; }
+.draft-candidate-copy span, .draft-candidate-copy small { color: #666; }
+.draft-candidate-copy .unfamiliar { color: #16723a; font-weight: 600; }
+.draft-actions { display: flex; }
+
+.draft-alternatives {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-top: 0.35rem;
+
+  button {
+    border: 1px solid rgba(29, 185, 84, 0.5);
+    border-radius: 5px;
+    background: white;
+    color: #174c29;
+    padding: 0.3rem 0.45rem;
+    text-align: left;
+    cursor: pointer;
+  }
+}
+
 .connection-warning,
 .missing-scopes {
   color: #9a5b00;

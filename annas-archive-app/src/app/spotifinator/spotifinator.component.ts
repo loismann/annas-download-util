@@ -30,7 +30,8 @@ import {
   SpotifyTopItems,
   SpotifySearchResult,
   SpotifyConnectionStatus,
-  SpotifyInventoryStatus
+  SpotifyInventoryStatus,
+  SpotifyDiscoveryDraft
 } from './spotifinator.models';
 
 @Component({
@@ -67,6 +68,7 @@ export class SpotifinatorComponent implements OnInit, OnDestroy, AfterViewChecke
   connectionNotice = '';
   inventoryStatus: SpotifyInventoryStatus | null = null;
   inventoryActionPending = false;
+  activeDraft: SpotifyDiscoveryDraft | null = null;
 
   private destroy$ = new Subject<void>();
   private inventoryPollStop$ = new Subject<void>();
@@ -133,7 +135,10 @@ export class SpotifinatorComponent implements OnInit, OnDestroy, AfterViewChecke
       next: (connection) => {
         this.connection = connection;
         this.connectionLoading = false;
-        if (connection.isConnected) this.loadInventoryStatus();
+        if (connection.isConnected) {
+          this.loadInventoryStatus();
+          this.loadActiveDraft();
+        }
       },
       error: (err) => {
         this.connectionLoading = false;
@@ -163,6 +168,8 @@ export class SpotifinatorComponent implements OnInit, OnDestroy, AfterViewChecke
       next: () => {
         this.connectionActionPending = false;
         this.connectionNotice = 'Spotify disconnected from Spotifinator.';
+        this.activeDraft = null;
+        localStorage.removeItem('spotifinator.activeDraftId');
         this.loadConnection();
       },
       error: (err) => {
@@ -180,7 +187,7 @@ export class SpotifinatorComponent implements OnInit, OnDestroy, AfterViewChecke
   loadInventoryStatus(): void {
     this.api.getInventoryStatus().pipe(takeUntil(this.destroy$)).subscribe({
       next: status => {
-        this.inventoryStatus = status;
+        this.updateInventoryStatusDisplays(status);
         if (this.inventoryIsRunning(status)) this.startInventoryPolling();
       },
       error: err => this.logger.error('[Spotifinator] Inventory status failed:', err)
@@ -192,7 +199,7 @@ export class SpotifinatorComponent implements OnInit, OnDestroy, AfterViewChecke
     this.inventoryActionPending = true;
     this.api.startInventoryRefresh().pipe(takeUntil(this.destroy$)).subscribe({
       next: status => {
-        this.inventoryStatus = status;
+        this.updateInventoryStatusDisplays(status);
         this.inventoryActionPending = false;
         this.startInventoryPolling();
       },
@@ -223,7 +230,7 @@ export class SpotifinatorComponent implements OnInit, OnDestroy, AfterViewChecke
       takeUntil(this.destroy$)
     ).subscribe({
       next: status => {
-        this.inventoryStatus = status;
+        this.updateInventoryStatusDisplays(status);
         if (!this.inventoryIsRunning(status)) {
           this.inventoryActionPending = false;
           if (this.pendingAnalysisMessage &&
@@ -254,19 +261,17 @@ export class SpotifinatorComponent implements OnInit, OnDestroy, AfterViewChecke
     this.viewState = 'processing';
     const pendingId = this.addPendingMessage();
 
-    this.api.processCommand(message, playlistId, offset).pipe(
+    this.api.processCommand(message, playlistId, offset, this.activeDraft?.id).pipe(
       takeUntil(this.destroy$)
     ).subscribe({
       next: (response) => {
         this.removePendingMessage(pendingId);
         this.lastMessage = message;
         this.addAssistantMessage(response.message, response.data);
+        if (this.isDiscoveryDraft(response.data)) this.setActiveDraft(response.data);
         this.viewState = 'idle';
-        if (this.isInventoryStatus(response.data) && this.inventoryIsRunning(response.data)) {
-          this.inventoryStatus = response.data;
-          this.pendingAnalysisMessage = message;
-          this.startInventoryPolling();
-        }
+        if (response.action === 'analyze_playlist_library' && !this.isAnalysis(response.data))
+          this.resumeAnalysisAfterInventory(message, response.data);
       },
       error: (err) => {
         this.removePendingMessage(pendingId);
@@ -291,9 +296,11 @@ export class SpotifinatorComponent implements OnInit, OnDestroy, AfterViewChecke
 - "What songs are in <playlist name>?"
 - "List my Best Of playlists"
 - "What have I been listening to lately?"
+- "Build me a discovery draft of 1950s Deep South music"
 
-I can't create, rename, or delete anything yet — those arrive with the reviewed
-change-plan flow, where you'll see exactly what will happen before it does.
+I can build and edit a proposed playlist, but I can't create, rename, or delete
+anything in Spotify yet — those arrive with the reviewed change-plan flow, where
+you'll see exactly what will happen before it does.
 
 What would you like to know?`,
       timestamp: new Date()
@@ -379,6 +386,93 @@ What would you like to know?`,
   isInventoryStatus(data: unknown): data is SpotifyInventoryStatus {
     return !!data && typeof data === 'object' && !Array.isArray(data) &&
       'processedPlaylists' in data && 'state' in data;
+  }
+
+  isDiscoveryDraft(data: unknown): data is SpotifyDiscoveryDraft {
+    return !!data && typeof data === 'object' && !Array.isArray(data) &&
+      'candidates' in data && 'desiredTrackCount' in data && 'userPrompts' in data;
+  }
+
+  removeDraftCandidate(draft: SpotifyDiscoveryDraft, candidateId: string): void {
+    this.api.updateDiscoveryDraft(draft.id, { removeCandidateIds: [candidateId] })
+      .pipe(takeUntil(this.destroy$)).subscribe({
+        next: updated => this.setActiveDraft(updated),
+        error: err => this.logger.error('[Spotifinator] Could not remove draft candidate:', err)
+      });
+  }
+
+  moveDraftCandidate(draft: SpotifyDiscoveryDraft, candidateId: string, delta: number): void {
+    const ids = draft.candidates.map(candidate => candidate.id);
+    const from = ids.indexOf(candidateId);
+    const to = from + delta;
+    if (from < 0 || to < 0 || to >= ids.length) return;
+    [ids[from], ids[to]] = [ids[to], ids[from]];
+    this.api.updateDiscoveryDraft(draft.id, { orderedCandidateIds: ids })
+      .pipe(takeUntil(this.destroy$)).subscribe({
+        next: updated => this.setActiveDraft(updated),
+        error: err => this.logger.error('[Spotifinator] Could not reorder draft:', err)
+      });
+  }
+
+  selectDraftAlternative(draft: SpotifyDiscoveryDraft, candidateId: string, trackId: string): void {
+    this.api.updateDiscoveryDraft(draft.id, {
+      candidateSelections: { [candidateId]: trackId }
+    }).pipe(takeUntil(this.destroy$)).subscribe({
+      next: updated => this.setActiveDraft(updated),
+      error: err => this.logger.error('[Spotifinator] Could not select Spotify match:', err)
+    });
+  }
+
+  private loadActiveDraft(): void {
+    const draftId = localStorage.getItem('spotifinator.activeDraftId');
+    if (!draftId) return;
+    this.api.getDiscoveryDraft(draftId).pipe(takeUntil(this.destroy$)).subscribe({
+      next: draft => this.setActiveDraft(draft),
+      error: () => localStorage.removeItem('spotifinator.activeDraftId')
+    });
+  }
+
+  private setActiveDraft(draft: SpotifyDiscoveryDraft): void {
+    this.activeDraft = draft;
+    localStorage.setItem('spotifinator.activeDraftId', draft.id);
+    for (const message of this.messages) {
+      if (this.isDiscoveryDraft(message.data) && message.data.id === draft.id)
+        message.data = draft;
+    }
+  }
+
+  private resumeAnalysisAfterInventory(message: string, data: unknown): void {
+    this.pendingAnalysisMessage = message;
+    if (this.isInventoryStatus(data)) {
+      this.updateInventoryStatusDisplays(data);
+      if (this.inventoryIsRunning(data)) {
+        this.startInventoryPolling();
+        return;
+      }
+    }
+
+    // The action is the stable contract. If a serializer/proxy changes the shape
+    // of the embedded status, recover from the dedicated endpoint instead of
+    // leaving a permanently queued chat card.
+    this.api.getInventoryStatus().pipe(takeUntil(this.destroy$)).subscribe({
+      next: status => {
+        this.updateInventoryStatusDisplays(status);
+        if (this.inventoryIsRunning(status)) this.startInventoryPolling();
+        else if (status.state === 'Complete' || status.state === 'Partial') {
+          const pending = this.pendingAnalysisMessage;
+          this.pendingAnalysisMessage = '';
+          if (pending) this.processCommand(pending);
+        }
+      },
+      error: err => this.logger.error('[Spotifinator] Could not resume inventory polling:', err)
+    });
+  }
+
+  private updateInventoryStatusDisplays(status: SpotifyInventoryStatus): void {
+    this.inventoryStatus = status;
+    for (const message of this.messages) {
+      if (this.isInventoryStatus(message.data)) message.data = status;
+    }
   }
 
   // ─── Rendering helpers ─────────────────────────────────────────────────────

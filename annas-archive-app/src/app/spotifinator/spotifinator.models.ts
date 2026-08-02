@@ -212,6 +212,43 @@ export interface SpotifyKnownMusicReport {
   generatedAt: string;
 }
 
+export type SpotifyDiscoveryDraftState = 'AwaitingClarification' | 'Resolving' | 'Ready' | 'Partial';
+export type SpotifyCandidateResolution = 'Resolved' | 'Ambiguous' | 'NotFound';
+
+export interface SpotifyDiscoveryCandidate {
+  id: string;
+  position: number;
+  artist: string;
+  title: string;
+  rationale: string | null;
+  resolution: SpotifyCandidateResolution;
+  track: SpotifyTrack | null;
+  alternatives: SpotifyTrack[];
+  probablyUnfamiliar: boolean;
+  familiarityLabel: string;
+}
+
+export interface SpotifyDiscoveryDraft {
+  id: string;
+  state: SpotifyDiscoveryDraftState;
+  name: string;
+  summary: string;
+  userPrompts: string[];
+  desiredTrackCount: number;
+  clarifyingQuestion: string | null;
+  candidates: SpotifyDiscoveryCandidate[];
+  knownMusicCoverage: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SpotifyDiscoveryDraftUpdate {
+  name?: string;
+  orderedCandidateIds?: string[];
+  removeCandidateIds?: string[];
+  candidateSelections?: Record<string, string>;
+}
+
 export interface SpotifyKnownMusicOverrideResult {
   kind: string;
   name: string;
@@ -238,6 +275,9 @@ export type SpotifyAction =
   | 'get_top_items'
   | 'get_recent_playlist_contexts'
   | 'get_known_music'
+  | 'suggest_music'
+  | 'refine_music_draft'
+  | 'compare_draft_to_known_music'
   | 'explain_capability'
   | 'unknown';
 
@@ -252,6 +292,7 @@ export type CommandData =
   | SpotifyTopItems
   | SpotifyInventoryStatus
   | SpotifyKnownMusicReport
+  | SpotifyDiscoveryDraft
   | null;
 
 export interface CommandResponse {

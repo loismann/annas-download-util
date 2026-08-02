@@ -170,6 +170,38 @@ public class SpotifyServiceTests
         exception.Which.RetryAfter.Should().Be(TimeSpan.FromSeconds(30));
     }
 
+    [Fact]
+    public async Task TransientRateLimit_HonorsRetryAfterAndRetriesTheRequest()
+    {
+        var handler = new StubHttpMessageHandler((_, call) =>
+        {
+            if (call == 1)
+            {
+                var limited = JsonResponse(
+                    """
+                    {
+                      "error": {
+                        "status": 429,
+                        "message": "Slow down"
+                      }
+                    }
+                    """,
+                    HttpStatusCode.TooManyRequests);
+                limited.Headers.RetryAfter = new RetryConditionHeaderValue(TimeSpan.Zero);
+                return Task.FromResult(limited);
+            }
+
+            return Task.FromResult(JsonResponse(
+                """{ "tracks": { "items": [], "total": 0 } }"""));
+        });
+
+        var service = CreateService(handler);
+        var result = await service.SearchTracksAsync("delta blues");
+
+        result.Tracks.Should().BeEmpty();
+        handler.CallCount.Should().Be(2);
+    }
+
     private static SpotifyService CreateService(HttpMessageHandler handler)
     {
         var client = new HttpClient(handler);
@@ -189,6 +221,8 @@ public class SpotifyServiceTests
         Func<HttpRequestMessage, int, Task<HttpResponseMessage>> handler) : HttpMessageHandler
     {
         private int _callCount;
+
+        public int CallCount => _callCount;
 
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,

@@ -13,6 +13,8 @@ import {
   SpotifyLibraryAnalysis,
   SpotifyKnownMusicReport,
   SpotifyKnownMusicOverrideResult,
+  SpotifyDiscoveryDraft,
+  SpotifyDiscoveryDraftUpdate,
   CommandResponse
 } from '../spotifinator/spotifinator.models';
 import { apiBase } from './api-base';
@@ -96,17 +98,31 @@ export class SpotifinatorApiService {
     });
   }
 
+  getDiscoveryDraft(draftId: string): Observable<SpotifyDiscoveryDraft> {
+    return this.http.get<SpotifyDiscoveryDraft>(`${this.baseUrl}/drafts/${encodeURIComponent(draftId)}`);
+  }
+
+  updateDiscoveryDraft(
+    draftId: string, update: SpotifyDiscoveryDraftUpdate
+  ): Observable<SpotifyDiscoveryDraft> {
+    return this.http.patch<SpotifyDiscoveryDraft>(
+      `${this.baseUrl}/drafts/${encodeURIComponent(draftId)}`, update);
+  }
+
   // ─── Conversation ──────────────────────────────────────────────────────────
 
   /**
    * `playlistId` pins a playlist the user picked from a disambiguation card, so
    * the next turn does not re-ask which "Chill" they meant.
    */
-  processCommand(userMessage: string, playlistId?: string, offset?: number): Observable<CommandResponse> {
+  processCommand(
+    userMessage: string, playlistId?: string, offset?: number, draftId?: string
+  ): Observable<CommandResponse> {
     return this.http.post<CommandResponse>(`${this.baseUrl}/command`, {
       message: userMessage,
       playlistId,
-      offset
+      offset,
+      draftId
     }).pipe(
       tap(response => this.logger.log('[Spotifinator] Command processed', {
         action: response.action,

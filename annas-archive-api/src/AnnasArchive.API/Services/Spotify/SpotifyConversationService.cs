@@ -26,6 +26,7 @@ public sealed class SpotifyConversationService : ISpotifyConversationService
     private readonly ISpotifyInventoryJobService? _inventoryJobs;
     private readonly ISpotifyCurrentUser? _currentUser;
     private readonly ISpotifyKnownMusicService? _knownMusic;
+    private readonly ISpotifyDiscoveryService? _discovery;
 
     public SpotifyConversationService(
         ISpotifyCommandParser parser, ISpotifyService spotify, ISpotifyInventoryService inventory)
@@ -58,11 +59,27 @@ public sealed class SpotifyConversationService : ISpotifyConversationService
         _knownMusic = knownMusic;
     }
 
+    public SpotifyConversationService(
+        ISpotifyCommandParser parser,
+        ISpotifyService spotify,
+        ISpotifyInventoryService inventory,
+        ISpotifyInventoryJobService inventoryJobs,
+        ISpotifyCurrentUser currentUser,
+        ISpotifyKnownMusicService knownMusic,
+        ISpotifyDiscoveryService discovery)
+        : this(parser, spotify, inventory, inventoryJobs, currentUser, knownMusic)
+    {
+        _discovery = discovery;
+    }
+
     public async Task<SpotifyConversationResponse> HandleAsync(
         SpotifyConversationRequest request,
         CancellationToken token = default)
     {
-        var command = await _parser.ParseAsync(request.Message, conversationContext: null, token);
+        var parserContext = string.IsNullOrWhiteSpace(request.DraftId)
+            ? null
+            : "An editable music-discovery draft is active. The user's new words may refine that draft. No Spotify content is included here.";
+        var command = await _parser.ParseAsync(request.Message, parserContext, token);
 
         // A playlist the user picked from a disambiguation card wins over anything
         // re-derived from their words — they already answered that question.
@@ -81,6 +98,9 @@ public sealed class SpotifyConversationService : ISpotifyConversationService
             SpotifyReadAction.GetTopItems => await TopItemsAsync(command, token),
             SpotifyReadAction.GetRecentPlaylistContexts => await RecentContextsAsync(token),
             SpotifyReadAction.GetKnownMusic => await KnownMusicAsync(command, token),
+            SpotifyReadAction.SuggestMusic => await SuggestMusicAsync(command, request.Message, token),
+            SpotifyReadAction.RefineMusicDraft => await RefineMusicAsync(command, request.DraftId, request.Message, token),
+            SpotifyReadAction.CompareDraftToKnownMusic => CompareDraftAsync(command, request.DraftId),
             SpotifyReadAction.ExplainCapability => ExplainCapability(command),
             _ => Unknown(command)
         };
@@ -233,6 +253,54 @@ public sealed class SpotifyConversationService : ISpotifyConversationService
             + $"{report.Index.TrackKeys.Count} tracks in the Spotify data I can access. "
             + report.Coverage;
         return Respond(command, message, report);
+    }
+
+    private async Task<SpotifyConversationResponse> SuggestMusicAsync(
+        SpotifyValidatedCommand command, string userMessage, CancellationToken token)
+    {
+        if (_discovery == null)
+            return Respond(command, "Music discovery drafts are not available in this environment.", null);
+        var draft = await _discovery.CreateAsync(userMessage, command.Arguments.Limit ?? 25, token);
+        return DescribeDraft(command, draft);
+    }
+
+    private async Task<SpotifyConversationResponse> RefineMusicAsync(
+        SpotifyValidatedCommand command, string? draftId, string userMessage, CancellationToken token)
+    {
+        if (_discovery == null)
+            return Respond(command, "Music discovery drafts are not available in this environment.", null);
+        if (string.IsNullOrWhiteSpace(draftId) || _discovery.Get(draftId) == null)
+            return Respond(command, "Start a music-discovery draft first so I know what you want to refine.", null);
+        var draft = await _discovery.RefineAsync(draftId, userMessage, token);
+        return DescribeDraft(command, draft);
+    }
+
+    private SpotifyConversationResponse CompareDraftAsync(
+        SpotifyValidatedCommand command, string? draftId)
+    {
+        var draft = !string.IsNullOrWhiteSpace(draftId) ? _discovery?.Get(draftId) : null;
+        if (draft == null)
+            return Respond(command, "Start a music-discovery draft first so I have candidates to compare.", null);
+        var unfamiliar = draft.Candidates.Count(candidate => candidate.ProbablyUnfamiliar);
+        return Respond(command,
+            $"{unfamiliar} of {draft.Candidates.Count} candidates were not found in the Spotify data I can access. "
+            + draft.KnownMusicCoverage,
+            draft);
+    }
+
+    private static SpotifyConversationResponse DescribeDraft(
+        SpotifyValidatedCommand command, SpotifyDiscoveryDraft draft)
+    {
+        if (draft.State == SpotifyDiscoveryDraftState.AwaitingClarification)
+            return Respond(command, draft.ClarifyingQuestion ?? "Tell me a little more about the direction you want.", draft);
+        var resolved = draft.Candidates.Count(candidate => candidate.Resolution == SpotifyCandidateResolution.Resolved);
+        var unfamiliar = draft.Candidates.Count(candidate => candidate.ProbablyUnfamiliar);
+        var unresolved = draft.Candidates.Count - resolved;
+        var message = $"I built “{draft.Name}”: {resolved} Spotify matches and {unfamiliar} candidates not found in accessible known-music evidence.";
+        if (unresolved > 0)
+            message += $" {unresolved} candidate(s) need review because Spotify had no unique exact match.";
+        message += " This is an editable draft; I have not created or changed a Spotify playlist.";
+        return Respond(command, message, draft);
     }
 
     private static SpotifyConversationResponse Unknown(SpotifyValidatedCommand command) =>

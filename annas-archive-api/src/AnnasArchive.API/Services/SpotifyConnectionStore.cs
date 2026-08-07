@@ -7,6 +7,7 @@ using AnnasArchive.API.Data;
 using AnnasArchive.API.Models;
 using Microsoft.AspNetCore.DataProtection;
 using Serilog;
+using AnnasArchive.API.Helpers;
 
 namespace AnnasArchive.API.Services;
 
@@ -61,11 +62,8 @@ public sealed class SpotifyConnectionStore : ISpotifyConnectionStore
 
     public void Delete(string ownerKey) => _database.DeleteState(StorageKey(ownerKey));
 
-    private static string StorageKey(string ownerKey)
-    {
-        var digest = SHA256.HashData(Encoding.UTF8.GetBytes(ownerKey));
-        return StatePrefix + Convert.ToHexString(digest);
-    }
+    private static string StorageKey(string ownerKey) =>
+        StatePrefix + HouseholdIdentity.OwnerHash(ownerKey);
 }
 
 public interface ISpotifyCurrentUser

@@ -1,28 +1,10 @@
 <aside class="video-sidebar">
   <div class="sidebar-header">
     <h2>Videos</h2>
-    <p>{{ viewMode === 'library' ? 'Browse your downloaded videos.' : 'Download videos from YouTube.' }}</p>
+    <p>Browse your downloaded videos.</p>
   </div>
 
-  <!-- View Mode Toggle -->
-  <mat-button-toggle-group
-    *ngIf="isAdmin"
-    [value]="viewMode"
-    (change)="onViewModeChange($event.value)"
-    class="view-mode-toggle"
-  >
-    <mat-button-toggle value="library">
-      <mat-icon>video_library</mat-icon>
-      Library
-    </mat-button-toggle>
-    <mat-button-toggle value="download">
-      <mat-icon>download</mat-icon>
-      Download
-    </mat-button-toggle>
-  </mat-button-toggle-group>
 
-  <!-- Library Mode Controls -->
-  <ng-container *ngIf="viewMode === 'library'">
     <button type="button" class="reset-view-btn" (click)="onResetView()">Reset View!</button>
 
     <mat-form-field appearance="outline" class="w-100">
@@ -90,13 +72,4 @@
         </div>
       </div>
     </div>
-  </ng-container>
-
-  <!-- Download Mode - minimal sidebar content -->
-  <ng-container *ngIf="viewMode === 'download'">
-    <div class="download-mode-info">
-      <p>Enter a YouTube URL in the main panel to download videos.</p>
-      <p class="download-hint">Downloaded videos will appear in your library.</p>
-    </div>
-  </ng-container>
 </aside>

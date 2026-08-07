@@ -16,10 +16,9 @@ import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MatDialog } from '@angular/material/dialog';
 import { VideoLibraryApiService, VideoDto } from '../services/video-library-api.service';
 import { VideoCardComponent } from '../components/video-card/video-card.component';
-import { VideoSidebarComponent, VideoViewMode } from '../components/video-sidebar/video-sidebar.component';
+import { VideoSidebarComponent } from '../components/video-sidebar/video-sidebar.component';
 import { VideoEditDialogComponent, VideoEditDialogData, VideoEditDialogResult } from '../components/video-edit-dialog/video-edit-dialog.component';
 import { VideoPlayerDialogComponent, VideoPlayerDialogData } from '../components/video-player-dialog/video-player-dialog.component';
-import { YouTubeDownloaderComponent } from '../youtube-downloader/youtube-downloader.component';
 import { AuthService } from '../services/auth.service';
 import { LoggerService } from '../services/logger.service';
 import { TileSizeControlsComponent } from '../components/shared/tile-size-controls/tile-size-controls.component';
@@ -41,7 +40,6 @@ import { TileSizeControlsComponent } from '../components/shared/tile-size-contro
     MatCheckboxModule,
     VideoCardComponent,
     VideoSidebarComponent,
-    YouTubeDownloaderComponent,
     TileSizeControlsComponent,
   ],
   templateUrl: './video-library.component.html',
@@ -67,7 +65,6 @@ export class VideoLibraryComponent implements OnInit, OnDestroy {
   sidebarCollapsed = false;
   bulkEditMode = false;
   selectedVideosForBulk = new Set<string>();
-  viewMode: VideoViewMode = 'library';
 
   private _cachedFilteredVideos: VideoDto[] | null = null;
   private _cachedSortedVideos: VideoDto[] | null = null;
@@ -557,9 +554,5 @@ export class VideoLibraryComponent implements OnInit, OnDestroy {
     for (const video of this.filteredVideos) {
       this.selectedVideosForBulk.add(video.fileName);
     }
-  }
-
-  setViewMode(mode: VideoViewMode): void {
-    this.viewMode = mode;
   }
 }

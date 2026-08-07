@@ -28,10 +28,10 @@ public static class StoragePaths
 
     public static string VideoRoot()
     {
-        // docker-compose sets the .NET-config-style YouTube__DownloadRoot (the same key
-        // YouTubeDownloadService reads via IConfiguration), not YOUTUBE_DOWNLOAD_ROOT —
-        // both spellings accepted so the browse/metadata side and the download side
-        // always agree on the root.
+        // docker-compose sets the .NET-config-style YouTube__DownloadRoot, not
+        // YOUTUBE_DOWNLOAD_ROOT; both spellings stay accepted. The name is now
+        // historical — the downloader that wrote here was deleted, and this is
+        // simply where the existing video files live for the browse/metadata side.
         var envRoot = Environment.GetEnvironmentVariable("YOUTUBE_DOWNLOAD_ROOT")
             ?? Environment.GetEnvironmentVariable("YouTube__DownloadRoot");
         if (!string.IsNullOrWhiteSpace(envRoot))

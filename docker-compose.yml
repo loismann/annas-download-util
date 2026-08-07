@@ -183,12 +183,13 @@ services:
       - Listenarr__ApiKey=${LISTENARR_API_KEY:-}
       - Listenarr__QualityProfile=AAC M4B
       - Listenarr__DefaultRegion=us
-      # Off until live release-matching accuracy has been measured. When on,
-      # an ordinary request lets Listenarr pick the release itself, the way
-      # Sonarr/Radarr requests already do. A stated narrator or language, or
-      # an abridged edition, still falls back to manual review, and bulk
-      # series requests are never automatic.
-      - Listenarr__AutoSearch=false
+      # On: an ordinary request lets Listenarr pick the release itself, the way
+      # Sonarr/Radarr requests already do — enabled once the release ladder was
+      # finding them reliably. A stated narrator or language, or an abridged
+      # edition, still falls back to manual review, and bulk series requests are
+      # never automatic. Note the probe still can't catch "one release, wrong
+      # book", so a wrong grab is the failure mode to watch for.
+      - Listenarr__AutoSearch=true
       # Ownership backfill — adopts library items nobody owns and drops records
       # whose item is gone. Tagging only ever happened inside this app's own add
       # handlers, so anything added in Radarr/Sonarr's UI or by a script had no
@@ -515,10 +516,10 @@ services:
   # Tailscale would mean joining every client device (Apple TV included) to
   # the tailnet for no real benefit.
   #
-  # PLEX_CLAIM is a one-time claim token (https://plex.tv/claim, valid 4
-  # minutes) that associates a fresh container with your Plex account on
-  # first boot — set it in .env, start this container, then it can be removed
-  # from .env again since it's single-use.
+  # This container is already claimed. PLEX_CLAIM was a one-time token
+  # (https://plex.tv/claim, valid 4 minutes) consumed on first boot; re-adding
+  # it is only needed if the config volume is ever wiped and Plex comes up
+  # unclaimed again.
   plex:
     image: plexinc/pms-docker:latest
     container_name: plex
@@ -528,7 +529,6 @@ services:
       - PUID=1000
       - PGID=1000
       - TZ=Etc/UTC
-      - PLEX_CLAIM=${PLEX_CLAIM:-}
     volumes:
       - ../data/plex/config:/config
       - /home/pferrer/Media:/data

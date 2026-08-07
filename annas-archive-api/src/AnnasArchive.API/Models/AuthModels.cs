@@ -21,4 +21,16 @@ public record AccessCode(string Code, string Name, bool IsAdmin)
     /// makes adding a third person a config edit rather than a code change.
     /// </summary>
     public string? Initial { get; init; }
+
+    /// <summary>
+    /// Stable owner key for everything this person owns — Spotify connection and
+    /// plans, audiobook requests, photo print runs, AI spend. Optional, and the
+    /// only reason to set it is code rotation: with it unset the id is derived
+    /// from <see cref="Code"/>, so changing the code moves the person's data out
+    /// from under them. See <see cref="Helpers.HouseholdIdentity"/>.
+    ///
+    /// Any short opaque string works (<c>"paul"</c>, <c>"member-2"</c>); it is
+    /// never shown to anyone and never leaves the server except hashed.
+    /// </summary>
+    public string? Id { get; init; }
 }

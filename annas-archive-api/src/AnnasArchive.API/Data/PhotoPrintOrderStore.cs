@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Data.Sqlite;
+using AnnasArchive.API.Helpers;
 
 namespace AnnasArchive.API.Data;
 
@@ -414,5 +415,5 @@ public sealed class PhotoPrintOrderStore : IPhotoPrintOrderStore
     private static string Now() => DateTime.UtcNow.ToString("o");
 
     private static string OwnerHash(string ownerKey) =>
-        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(ownerKey)));
+        HouseholdIdentity.OwnerHash(ownerKey);
 }

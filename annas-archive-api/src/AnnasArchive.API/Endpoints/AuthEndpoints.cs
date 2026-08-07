@@ -74,7 +74,9 @@ public static class AuthEndpoints
         var claims = new List<Claim>
         {
             new Claim(ClaimTypes.Name, validCode.Name),
-            new Claim(ClaimTypes.NameIdentifier, validCode.Code),
+            // Never validCode.Code: the token body is readable by anything in the
+            // browser, and this claim is also the owner key for stored data.
+            new Claim(ClaimTypes.NameIdentifier, HouseholdIdentity.ResolveId(validCode)),
             new Claim(ClaimTypes.Role, validCode.IsAdmin ? "Admin" : "User")
         };
 

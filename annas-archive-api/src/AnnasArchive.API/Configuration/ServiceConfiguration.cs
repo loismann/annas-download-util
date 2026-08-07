@@ -105,6 +105,17 @@ public static class ServiceConfiguration
             // Everything else still requires the header.
             options.Events = new JwtBearerEvents
             {
+                // Tokens live 30 days, so tokens issued while NameIdentifier still
+                // carried the access code are in circulation after this deploy.
+                // Their claim is rewritten to the current owner id here — one place,
+                // before any handler reads it — so a session neither breaks nor
+                // points at data the startup migration has already moved.
+                OnTokenValidated = context =>
+                {
+                    HouseholdIdentity.NormalizeIdentity(context.Principal, configuration);
+                    return Task.CompletedTask;
+                },
+
                 OnMessageReceived = context =>
                 {
                     var path = context.HttpContext.Request.Path.Value ?? "";
@@ -499,6 +510,11 @@ public static class ServiceConfiguration
             .SetApplicationName("AnnasArchive")
             .PersistKeysToFileSystem(new DirectoryInfo(dataProtectionPath));
 
+        // First hosted service on purpose: it rewrites the owner key that every
+        // other owner-scoped read depends on, and IHostedService.StartAsync runs
+        // in registration order, before the server accepts a request.
+        services.AddHostedService<HouseholdIdentityMigration>();
+
         // Background services
         var watcherEnabled = configuration.GetValue<bool>("LibraryWatcher:Enabled", false);
         if (watcherEnabled)
@@ -660,8 +676,6 @@ public static class ServiceConfiguration
         services.AddSingleton<IQuizValidationService, QuizValidationService>();
         services.AddSingleton<IQuizStorageService, QuizStorageService>();
 
-        // YouTube download service
-        services.AddSingleton<IYouTubeDownloadService, YouTubeDownloadService>();
 
         // Photo print pipeline (Immich → CVS pickup prints). See
         // DOCS/features/google-photos-cvs-print-automation-spec.md. Registered

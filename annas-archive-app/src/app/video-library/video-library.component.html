@@ -22,19 +22,16 @@
         [selectedVideosCount]="selectedVideosForBulk.size"
         [visibleVideosCount]="filteredVideos.length"
         [isAdmin]="authService.isAdmin()"
-        [viewMode]="viewMode"
         (resetView)="resetView()"
         (searchTermChange)="searchTerm = $event; invalidateFilterCache()"
         (selectedGenreChange)="selectedGenre = $event; invalidateFilterCache()"
         (minPersonalRatingChange)="minPersonalRating = $event; invalidateFilterCache()"
         (bulkEditToggle)="toggleBulkEditMode()"
         (selectAllVisible)="selectAllVisible()"
-        (viewModeChange)="setViewMode($event)"
       ></app-video-sidebar>
     </div>
 
-    <!-- Library View -->
-    <section class="video-library-panel" *ngIf="viewMode === 'library'">
+    <section class="video-library-panel">
       <div class="video-library-controls">
         <app-tile-size-controls
           [tileSize]="tileSize"
@@ -109,9 +106,5 @@
       </cdk-virtual-scroll-viewport>
     </section>
 
-    <!-- Download View -->
-    <section class="video-download-panel" *ngIf="viewMode === 'download'">
-      <app-youtube-downloader></app-youtube-downloader>
-    </section>
   </div>
 </div>

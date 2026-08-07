@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using AnnasArchive.API.Data;
 using AnnasArchive.API.Models;
+using AnnasArchive.API.Helpers;
 
 namespace AnnasArchive.API.Services.Spotify;
 
@@ -90,7 +91,7 @@ public sealed class SpotifyDiscoveryStore(AppDatabase database) : ISpotifyDiscov
     }
 
     private static string OwnerHash(string ownerKey) =>
-        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(ownerKey)));
+        HouseholdIdentity.OwnerHash(ownerKey);
 
     private static SpotifyDiscoveryDraft? Deserialize(string json)
     {

@@ -85,14 +85,6 @@ if (app.Configuration.GetValue<bool>("Gaming:Enabled", false))
     app.MapGamingEndpoints();
 }
 app.MapMediaEndpoints();
-// Parked, not deleted. The UI route was removed but the feature is intact and
-// wanted later; gating it keeps the endpoints off the public surface without
-// letting the code rot out of the build. Same pattern as Gaming above.
-// Re-enable with "YouTube": { "Enabled": true } — no code change needed.
-if (app.Configuration.GetValue<bool>("YouTube:Enabled", false))
-{
-    app.MapYouTubeDownloadEndpoints();
-}
 app.MapSpotifyEndpoints();
 // Immich -> CVS pickup prints. Gated the same way as Gaming above: the feature
 // needs Immich configured, so the routes stay off the surface until it is.

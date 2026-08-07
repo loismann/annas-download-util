@@ -17,12 +17,16 @@ public static class UserHelpers
     }
 
     /// <summary>
-    /// Gets a dictionary mapping user codes to display names from configuration.
+    /// Maps owner id to display name, for the panels that report per-person
+    /// figures (AI spend). Keyed by <see cref="HouseholdIdentity.ResolveId"/>
+    /// because that is what <see cref="GetUserIdFromContext"/> returns and what
+    /// the usage store files are named after — keying it by the access code, as
+    /// it once was, is what let the two drift apart.
     /// </summary>
     public static Dictionary<string, string> GetUserDisplayNames(IConfiguration cfg)
     {
-        var codes = cfg.GetSection("Auth:AccessCodes").Get<List<AccessCode>>();
-        return codes?.ToDictionary(c => c.Code, c => c.Name) ?? new Dictionary<string, string>();
+        return HouseholdIdentity.Members(cfg)
+            .ToDictionary(HouseholdIdentity.ResolveId, member => member.Name);
     }
 
     /// <summary>

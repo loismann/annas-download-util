@@ -6,9 +6,6 @@ import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
-import { MatButtonToggleModule } from '@angular/material/button-toggle';
-
-export type VideoViewMode = 'library' | 'download';
 
 @Component({
   selector: 'app-video-sidebar',
@@ -20,8 +17,7 @@ export type VideoViewMode = 'library' | 'download';
     MatInputModule,
     MatSelectModule,
     MatButtonModule,
-    MatIconModule,
-    MatButtonToggleModule
+    MatIconModule
   ],
   templateUrl: './video-sidebar.component.html',
   styleUrls: ['./video-sidebar.component.css']
@@ -36,7 +32,6 @@ export class VideoSidebarComponent {
   @Input() selectedVideosCount = 0;
   @Input() visibleVideosCount = 0;
   @Input() isAdmin = false;
-  @Input() viewMode: VideoViewMode = 'library';
 
   @Output() resetView = new EventEmitter<void>();
   @Output() searchTermChange = new EventEmitter<string>();
@@ -44,7 +39,6 @@ export class VideoSidebarComponent {
   @Output() minPersonalRatingChange = new EventEmitter<number>();
   @Output() bulkEditToggle = new EventEmitter<void>();
   @Output() selectAllVisible = new EventEmitter<void>();
-  @Output() viewModeChange = new EventEmitter<VideoViewMode>();
 
   onResetView(): void {
     this.resetView.emit();
@@ -68,9 +62,5 @@ export class VideoSidebarComponent {
 
   onSelectAllVisible(): void {
     this.selectAllVisible.emit();
-  }
-
-  onViewModeChange(mode: VideoViewMode): void {
-    this.viewModeChange.emit(mode);
   }
 }

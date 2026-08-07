@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
+using AnnasArchive.API.Helpers;
 
 namespace AnnasArchive.API.Services;
 
@@ -131,7 +132,7 @@ public sealed class AudiobookRequestTokenStore(TimeProvider timeProvider)
     private static string NewToken() => Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
 
     private static string HashOwner(string ownerKey) =>
-        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(ownerKey)));
+        HouseholdIdentity.OwnerHash(ownerKey);
 
     private static bool OwnerMatches(string ownerKey, string expectedHash)
     {

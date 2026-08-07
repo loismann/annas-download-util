@@ -20,13 +20,15 @@ public static class AudiobookEnrichmentEndpoints
 
     public static WebApplication MapAudiobookEnrichmentEndpoints(this WebApplication app)
     {
-        app.MapPost("/api/admin/audiobook-enrichment/run", HandleRunScan)
+        // The guard pair lives on the group, so a route added below inherits it
+        // instead of needing it repeated — which is how one silently ships without.
+        var group = app.MapGroup("/api/admin/audiobook-enrichment")
             .RequireAuthorization("AdminOnly")
             .RequireRateLimiting("api");
 
-        app.MapGet("/api/admin/audiobook-enrichment/status", HandleGetStatus)
-            .RequireAuthorization("AdminOnly")
-            .RequireRateLimiting("api");
+        group.MapPost("/run", HandleRunScan);
+
+        group.MapGet("/status", HandleGetStatus);
 
         return app;
     }

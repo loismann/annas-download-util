@@ -17,36 +17,37 @@ public static class LibraryBrowserEndpoints
     /// </summary>
     public static WebApplication MapLibraryBrowserEndpoints(this WebApplication app)
     {
-        // GET /api/library/books - List library books
-        app.MapGet("/api/library/books", HandleListBooks)
+        // The guard pair lives on the group, so a route added below inherits it
+        // instead of needing it repeated — which is how one silently ships without.
+        //
+        // Two groups off the same prefix. The "media" bucket is the looser limiter
+        // for per-tile requests — a library grid renders hundreds at once and would
+        // otherwise exhaust the whole "api" window on covers alone.
+        var group = app.MapGroup("/api/library")
             .RequireAuthorization()
             .RequireRateLimiting("api");
-
-        // GET /api/library/books/search - Search and filter library books (optimized for large libraries)
-        app.MapGet("/api/library/books/search", HandleSearchBooks)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
-
-        // GET /api/library/reader/books - List reader-enabled books
-        app.MapGet("/api/library/reader/books", HandleListReaderBooks)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
-
-        // DELETE /api/library/book/{fileName} - Delete book
-        app.MapDelete("/api/library/book/{fileName}", HandleDeleteBook)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
-
-        // GET /api/library/book/{fileName}/file - Stream a book's raw file bytes (PDF viewer only, for now)
-        app.MapGet("/api/library/book/{fileName}/file", HandleGetBookFile)
+        var mediaGroup = app.MapGroup("/api/library")
             .RequireAuthorization()
             .RequireRateLimiting("media");
 
+        // GET /api/library/books - List library books
+        group.MapGet("/books", HandleListBooks);
+
+        // GET /api/library/books/search - Search and filter library books (optimized for large libraries)
+        group.MapGet("/books/search", HandleSearchBooks);
+
+        // GET /api/library/reader/books - List reader-enabled books
+        group.MapGet("/reader/books", HandleListReaderBooks);
+
+        // DELETE /api/library/book/{fileName} - Delete book
+        group.MapDelete("/book/{fileName}", HandleDeleteBook);
+
+        // GET /api/library/book/{fileName}/file - Stream a book's raw file bytes (PDF viewer only, for now)
+        mediaGroup.MapGet("/book/{fileName}/file", HandleGetBookFile);
+
         // GET /api/library/download-progress/{jobId} - Poll a "send to library" background download
         // (jobId comes back from either the Anna's Archive or LibGen send-to-library endpoints)
-        app.MapGet("/api/library/download-progress/{jobId}", HandleGetDownloadProgress)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapGet("/download-progress/{jobId}", HandleGetDownloadProgress);
 
         return app;
     }

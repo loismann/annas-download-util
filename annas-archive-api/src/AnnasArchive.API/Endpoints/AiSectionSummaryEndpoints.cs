@@ -21,20 +21,20 @@ public static class AiSectionSummaryEndpoints
     /// </summary>
     public static WebApplication MapAiSectionSummaryEndpoints(this WebApplication app)
     {
-        // GET /api/ai/chunk-boundaries - Detect chunk boundaries with SSE progress
-        app.MapGet("/api/ai/chunk-boundaries", HandleChunkBoundaries)
+        // The guard pair lives on the group, so a route added below inherits it
+        // instead of needing it repeated — which is how one silently ships without.
+        var group = app.MapGroup("/api/ai")
             .RequireAuthorization()
             .RequireRateLimiting("api");
+
+        // GET /api/ai/chunk-boundaries - Detect chunk boundaries with SSE progress
+        group.MapGet("/chunk-boundaries", HandleChunkBoundaries);
 
         // GET /api/ai/section-summary - Get cached section summary
-        app.MapGet("/api/ai/section-summary", HandleGetSectionSummary)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapGet("/section-summary", HandleGetSectionSummary);
 
         // POST /api/ai/section-summary - Generate section summary
-        app.MapPost("/api/ai/section-summary", HandleGenerateSectionSummary)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapPost("/section-summary", HandleGenerateSectionSummary);
 
         return app;
     }

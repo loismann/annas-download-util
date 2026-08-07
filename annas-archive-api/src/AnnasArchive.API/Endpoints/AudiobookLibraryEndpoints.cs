@@ -43,39 +43,41 @@ public static class AudiobookLibraryEndpoints
 
     public static WebApplication MapAudiobookLibraryEndpoints(this WebApplication app)
     {
-        app.MapGet("/api/audiobooks", HandleGetCatalog)
+        // The guard pair lives on the group, so a route added below inherits it
+        // instead of needing it repeated — which is how one silently ships without.
+        //
+        // Two groups off the same prefix. The "media" bucket is the looser limiter
+        // for per-tile requests — a library grid renders hundreds at once and would
+        // otherwise exhaust the whole "api" window on covers alone.
+        // Grouped at /api rather than the family prefix because a route here IS the
+        // family prefix (e.g. GET /api/audiobooks), and a group whose child route
+        // has an empty remainder resolves to "<prefix>/" — a different, 404ing URL.
+        var group = app.MapGroup("/api")
             .RequireAuthorization()
             .RequireRateLimiting("api");
+        var mediaGroup = app.MapGroup("/api")
+            .RequireAuthorization()
+            .RequireRateLimiting("media");
 
-        app.MapGet("/api/audiobooks/{id}", HandleGetItem)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapGet("/audiobooks", HandleGetCatalog);
+
+        group.MapGet("/audiobooks/{id}", HandleGetItem);
 
         // Cascades to Audiobookshelf (hard delete — removes the audio files from
         // disk too, not just the catalog entry) and then cleans up everything we
         // track for it (owners/genres/favorites/progress, any cover override).
-        app.MapDelete("/api/audiobooks/{id}", HandleDelete)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapDelete("/audiobooks/{id}", HandleDelete);
 
-        app.MapPatch("/api/audiobooks/{id}/metadata", HandleSetMetadata)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapPatch("/audiobooks/{id}/metadata", HandleSetMetadata);
 
-        app.MapPost("/api/audiobooks/{id}/favorite", HandleSetFavorite)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapPost("/audiobooks/{id}/favorite", HandleSetFavorite);
 
-        app.MapPost("/api/audiobooks/{id}/progress", HandleSetProgress)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapPost("/audiobooks/{id}/progress", HandleSetProgress);
 
         // Cover override — downloads and stores a user-picked cover locally (see
         // StoragePaths.AudiobookCoverOverrideRoot); never writes to Audiobookshelf's
         // own storage. HandleGetCover below serves it in place of the ABS proxy once set.
-        app.MapPost("/api/audiobooks/{id}/cover", HandleSetCover)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapPost("/audiobooks/{id}/cover", HandleSetCover);
 
         // Stream/cover are also RequireAuthorization() — auth for these two
         // routes specifically comes via the ?access_token= query-string JWT
@@ -86,13 +88,9 @@ public static class AudiobookLibraryEndpoints
         // filtered item's cover <img> at once with no pagination, so a single page load can
         // fire hundreds of these — sharing the 60/min "api" budget meant those covers alone
         // exhausted it, causing legitimate calls (like opening the player) to get rejected.
-        app.MapGet("/api/audiobooks/{id}/cover", HandleGetCover)
-            .RequireAuthorization()
-            .RequireRateLimiting("media");
+        mediaGroup.MapGet("/audiobooks/{id}/cover", HandleGetCover);
 
-        app.MapGet("/api/audiobooks/{id}/stream/{ino}", HandleStream)
-            .RequireAuthorization()
-            .RequireRateLimiting("media");
+        mediaGroup.MapGet("/audiobooks/{id}/stream/{ino}", HandleStream);
 
         return app;
     }

@@ -21,66 +21,48 @@ public static class AudiobookRequestEndpoints
 
     public static WebApplication MapAudiobookRequestEndpoints(this WebApplication app)
     {
-        app.MapGet("/api/audiobook-requests/status", HandleStatus)
+        // The guard pair lives on the group, so a route added below inherits it
+        // instead of needing it repeated — which is how one silently ships without.
+        //
+        // Grouped at /api rather than the family prefix because a route here IS the
+        // family prefix (e.g. GET /api/audiobooks), and a group whose child route
+        // has an empty remainder resolves to "<prefix>/" — a different, 404ing URL.
+        var group = app.MapGroup("/api")
             .RequireAuthorization()
             .RequireRateLimiting("api");
 
-        app.MapGet("/api/audiobook-requests/search", HandleSearch)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapGet("/audiobook-requests/status", HandleStatus);
 
-        app.MapPost("/api/audiobook-requests/preview", HandlePreview)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapGet("/audiobook-requests/search", HandleSearch);
+
+        group.MapPost("/audiobook-requests/preview", HandlePreview);
 
         // Declared before the {listenarrId:int} routes for readability only —
         // the integer constraint already keeps "series" from matching them.
-        app.MapPost("/api/audiobook-requests/series/preview", HandleSeriesPreview)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapPost("/audiobook-requests/series/preview", HandleSeriesPreview);
 
-        app.MapPost("/api/audiobook-requests/series/confirm", HandleSeriesConfirm)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapPost("/audiobook-requests/series/confirm", HandleSeriesConfirm);
 
-        app.MapPost("/api/audiobook-requests", HandleConfirm)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapPost("/audiobook-requests", HandleConfirm);
 
         // The caller's own in-flight requests. Declared before the
         // {listenarrId:int} routes for readability only — the integer constraint
         // already keeps "mine" from matching them.
-        app.MapGet("/api/audiobook-requests/mine", HandleListMine)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapGet("/audiobook-requests/mine", HandleListMine);
 
-        app.MapGet("/api/audiobook-requests/{listenarrId:int}", HandleRequestStatus)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapGet("/audiobook-requests/{listenarrId:int}", HandleRequestStatus);
 
-        app.MapPost("/api/audiobook-requests/{listenarrId:int}/dismiss", HandleDismiss)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapPost("/audiobook-requests/{listenarrId:int}/dismiss", HandleDismiss);
 
-        app.MapGet("/api/audiobook-requests/{listenarrId:int}/releases", HandleReleaseSearch)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapGet("/audiobook-requests/{listenarrId:int}/releases", HandleReleaseSearch);
 
-        app.MapPost("/api/audiobook-requests/{listenarrId:int}/releases/{selectionToken}/grab", HandleReleaseGrab)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapPost("/audiobook-requests/{listenarrId:int}/releases/{selectionToken}/grab", HandleReleaseGrab);
 
-        app.MapPost("/api/audiobook-requests/{listenarrId:int}/cancel", HandleCancel)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapPost("/audiobook-requests/{listenarrId:int}/cancel", HandleCancel);
 
-        app.MapPost("/api/audiobook-requests/{listenarrId:int}/retry-import", HandleRetryImport)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapPost("/audiobook-requests/{listenarrId:int}/retry-import", HandleRetryImport);
 
-        app.MapDelete("/api/audiobook-requests/{listenarrId:int}", HandleRemove)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapDelete("/audiobook-requests/{listenarrId:int}", HandleRemove);
 
         return app;
     }

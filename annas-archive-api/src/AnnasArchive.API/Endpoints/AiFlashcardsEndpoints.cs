@@ -20,25 +20,23 @@ public static class AiFlashcardsEndpoints
     /// </summary>
     public static WebApplication MapAiFlashcardsEndpoints(this WebApplication app)
     {
-        // GET /api/ai/flashcards - Get flashcards for a book
-        app.MapGet("/api/ai/flashcards", HandleGetFlashcards)
+        // The guard pair lives on the group, so a route added below inherits it
+        // instead of needing it repeated — which is how one silently ships without.
+        var group = app.MapGroup("/api/ai")
             .RequireAuthorization()
             .RequireRateLimiting("api");
+
+        // GET /api/ai/flashcards - Get flashcards for a book
+        group.MapGet("/flashcards", HandleGetFlashcards);
 
         // POST /api/ai/flashcards - Generate flashcards from text
-        app.MapPost("/api/ai/flashcards", HandleCreateFlashcards)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapPost("/flashcards", HandleCreateFlashcards);
 
         // DELETE /api/ai/flashcards - Clear all flashcards for a book
-        app.MapDelete("/api/ai/flashcards", HandleClearFlashcards)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapDelete("/flashcards", HandleClearFlashcards);
 
         // DELETE /api/ai/flashcard - Delete a single flashcard
-        app.MapDelete("/api/ai/flashcard", HandleDeleteFlashcard)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapDelete("/flashcard", HandleDeleteFlashcard);
 
         return app;
     }

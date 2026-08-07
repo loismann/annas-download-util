@@ -20,35 +20,29 @@ public static class AnnaDownloadEndpoints
     /// </summary>
     public static WebApplication MapAnnaDownloadEndpoints(this WebApplication app)
     {
-        // GPT-4 book description
-        app.MapGet("/api/anna/book/description/gpt", HandleGptDescription)
+        // The guard pair lives on the group, so a route added below inherits it
+        // instead of needing it repeated — which is how one silently ships without.
+        var group = app.MapGroup("/api/anna/book")
             .RequireAuthorization()
             .RequireRateLimiting("api");
+
+        // GPT-4 book description
+        group.MapGet("/description/gpt", HandleGptDescription);
 
         // Non-member download links
-        app.MapGet("/api/anna/book/{md5}/download", HandleDownloadLinks)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapGet("/{md5}/download", HandleDownloadLinks);
 
         // Member download (stream file to client)
-        app.MapPost("/api/anna/book/{md5}/download/member", HandleMemberDownload)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapPost("/{md5}/download/member", HandleMemberDownload);
 
         // Send to library (save to Synology disk)
-        app.MapPost("/api/anna/book/{md5}/send-to-library", HandleSendToLibrary)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapPost("/{md5}/send-to-library", HandleSendToLibrary);
 
         // Send to Boox (upload to Dropbox)
-        app.MapPost("/api/anna/book/{md5}/send-to-boox", HandleSendToBoox)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapPost("/{md5}/send-to-boox", HandleSendToBoox);
 
         // Send to Kindle (email)
-        app.MapPost("/api/anna/book/{md5}/send-to-kindle", HandleSendToKindle)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapPost("/{md5}/send-to-kindle", HandleSendToKindle);
 
         return app;
     }
@@ -64,29 +58,31 @@ public static class AnnaDownloadEndpoints
         IModelSelectionService modelSelection,
         IAiChatCompletion chat)
     {
+        // Checked here as well as inside FetchAsync, and deliberately before the
+        // token gate: a blank title is a malformed request, and answering it with
+        // "you are out of tokens" would blame the user's quota for the caller's bug.
         if (string.IsNullOrWhiteSpace(title))
             return Results.BadRequest(new { error = "title is required." });
 
+        // The only source with a spend gate, so it stays here rather than moving
+        // into the shared helper — the other three are free.
         var tokenLimitResult = TokenLimitHelpers.CheckTokenLimit(cfg, tokenUsage, context);
         if (tokenLimitResult is not null) return tokenLimitResult;
-
-        Log.Information("📖 GPT-4 description lookup: title='{Title}', author='{Author}'", title, author);
 
         // The helper records what the call actually cost. This used to add a
         // flat AddUsage(userId, 150, 50) here, charged identically whether the
         // model returned three words or the request failed outright.
-        var description = await AiDescriptionHelpers.GenerateNoSpoilerDescriptionAsync(
-            title,
-            author ?? "",
-            modelSelection.GetModelFast(),
-            chat,
-            UserHelpers.GetUserIdFromContext(context));
-
-        Log.Information(string.IsNullOrEmpty(description)
-            ? $"⚠️ GPT-4 description not generated for '{title}'"
-            : $"✅ GPT-4 description generated for '{title}'");
-
-        return Results.Ok(new { description });
+        //
+        // async, not a bare expression: this source returns a non-null Task<string>
+        // and signals "nothing" with an empty string, so it needs adapting to the
+        // shared "null means the source has none" contract rather than casting.
+        return await DescriptionEndpoint.FetchAsync("GPT-4", title, author,
+            async (t, a) => await AiDescriptionHelpers.GenerateNoSpoilerDescriptionAsync(
+                t,
+                a ?? "",
+                modelSelection.GetModelFast(),
+                chat,
+                UserHelpers.GetUserIdFromContext(context)));
     }
 
     // ─── Non-Member Download Links Endpoint ────────────────────────────────────

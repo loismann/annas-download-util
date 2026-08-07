@@ -18,6 +18,19 @@ public static class LibraryCoverEndpoints
     /// </summary>
     public static WebApplication MapLibraryCoverEndpoints(this WebApplication app)
     {
+        // The guard pair lives on the group, so a route added below inherits it
+        // instead of needing it repeated — which is how one silently ships without.
+        //
+        // Two groups off the same prefix. The "media" bucket is the looser limiter
+        // for per-tile requests — a library grid renders hundreds at once and would
+        // otherwise exhaust the whole "api" window on covers alone.
+        var group = app.MapGroup("/api/library")
+            .RequireAuthorization()
+            .RequireRateLimiting("api");
+        var mediaGroup = app.MapGroup("/api/library")
+            .RequireAuthorization()
+            .RequireRateLimiting("media");
+
         // GET /api/library/cover/{*path} - Get library cover file
         //
         // "media", not "api": this is one request per tile, and the library grid
@@ -29,24 +42,16 @@ public static class LibraryCoverEndpoints
         // cookie rather than the Authorization header, because these URLs are
         // rendered by <img src> — see the OnMessageReceived comment in
         // ServiceConfiguration for why a cookie and not ?access_token=.
-        app.MapGet("/api/library/cover/{*path}", HandleGetCover)
-            .RequireAuthorization()
-            .RequireRateLimiting("media");
+        mediaGroup.MapGet("/cover/{*path}", HandleGetCover);
 
         // GET /api/library/book/cover-candidates - Get cover candidates
-        app.MapGet("/api/library/book/cover-candidates", HandleGetCoverCandidates)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapGet("/book/cover-candidates", HandleGetCoverCandidates);
 
         // POST /api/library/book/{fileName}/cover - Update book cover from URL
-        app.MapPost("/api/library/book/{fileName}/cover", HandleUpdateCover)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapPost("/book/{fileName}/cover", HandleUpdateCover);
 
         // POST /api/library/book/{fileName}/cover-bytes - Update book cover from image bytes
-        app.MapPost("/api/library/book/{fileName}/cover-bytes", HandleUpdateCoverBytes)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapPost("/book/{fileName}/cover-bytes", HandleUpdateCoverBytes);
 
         return app;
     }

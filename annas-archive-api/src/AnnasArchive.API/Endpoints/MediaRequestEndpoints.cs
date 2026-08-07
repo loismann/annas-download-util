@@ -40,40 +40,38 @@ public static class MediaRequestEndpoints
 {
     public static WebApplication MapMediaRequestEndpoints(this WebApplication app)
     {
-        app.MapGet("/api/media/tv/search", HandleTvSearch)
+        // The guard pair lives on the group, so a route added below inherits it
+        // instead of needing it repeated — which is how one silently ships without.
+        //
+        // Two groups off the same prefix rather than one group plus per-route
+        // overrides: an AdminOnly route must not be able to end up inheriting plain
+        // authorization, and a route joining the wrong group is a visible mistake
+        // where a missing override is an invisible one.
+        var adminGroup = app.MapGroup("/api/media")
+            .RequireAuthorization("AdminOnly")
+            .RequireRateLimiting("api");
+        var group = app.MapGroup("/api/media")
             .RequireAuthorization()
             .RequireRateLimiting("api");
 
-        app.MapPost("/api/media/tv/add", HandleTvAdd)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapGet("/tv/search", HandleTvSearch);
 
-        app.MapGet("/api/media/tv/library", HandleGetTvLibrary)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapPost("/tv/add", HandleTvAdd);
 
-        app.MapPost("/api/media/tv/update-seasons", HandleUpdateTvSeasons)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapGet("/tv/library", HandleGetTvLibrary);
 
-        app.MapGet("/api/media/movies/search", HandleMovieSearch)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapPost("/tv/update-seasons", HandleUpdateTvSeasons);
 
-        app.MapPost("/api/media/movies/add", HandleMovieAdd)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapGet("/movies/search", HandleMovieSearch);
+
+        group.MapPost("/movies/add", HandleMovieAdd);
 
         // AdminOnly: this is a library-administration tool that can add hundreds of
         // movies in one call, and its DateNightPool flag would reveal a feature that
         // isn't meant to be visible yet.
-        app.MapPost("/api/media/movies/bulk-import", HandleMovieBulkImport)
-            .RequireAuthorization("AdminOnly")
-            .RequireRateLimiting("api");
+        adminGroup.MapPost("/movies/bulk-import", HandleMovieBulkImport);
 
-        app.MapGet("/api/media/queue", HandleGetQueue)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapGet("/queue", HandleGetQueue);
 
         return app;
     }

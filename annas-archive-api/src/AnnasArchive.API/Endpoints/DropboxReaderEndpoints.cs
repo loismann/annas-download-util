@@ -19,40 +19,32 @@ public static class DropboxReaderEndpoints
     /// </summary>
     public static WebApplication MapDropboxReaderEndpoints(this WebApplication app)
     {
-        // GET /api/anna/dropbox/epubs - List EPUBs in Dropbox
-        app.MapGet("/api/anna/dropbox/epubs", HandleListEpubs)
+        // The guard pair lives on the group, so a route added below inherits it
+        // instead of needing it repeated — which is how one silently ships without.
+        var group = app.MapGroup("/api/anna/dropbox")
             .RequireAuthorization()
             .RequireRateLimiting("api");
+
+        // GET /api/anna/dropbox/epubs - List EPUBs in Dropbox
+        group.MapGet("/epubs", HandleListEpubs);
 
         // GET /api/anna/dropbox/epub/chapters - Get chapter index for an EPUB
-        app.MapGet("/api/anna/dropbox/epub/chapters", HandleGetChapters)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapGet("/epub/chapters", HandleGetChapters);
 
         // GET /api/anna/dropbox/epub/chapter - Get single chapter content
-        app.MapGet("/api/anna/dropbox/epub/chapter", HandleGetChapter)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapGet("/epub/chapter", HandleGetChapter);
 
         // GET /api/anna/dropbox/epub/status - Get cache status for an EPUB
-        app.MapGet("/api/anna/dropbox/epub/status", HandleGetStatus)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapGet("/epub/status", HandleGetStatus);
 
         // POST /api/anna/dropbox/epub/index - Start indexing an EPUB
-        app.MapPost("/api/anna/dropbox/epub/index", HandleStartIndexing)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapPost("/epub/index", HandleStartIndexing);
 
         // DELETE /api/anna/dropbox/epub/index - Delete cache for an EPUB
-        app.MapDelete("/api/anna/dropbox/epub/index", HandleDeleteIndex)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapDelete("/epub/index", HandleDeleteIndex);
 
         // GET /api/anna/dropbox/epub/search - Search within an EPUB
-        app.MapGet("/api/anna/dropbox/epub/search", HandleSearch)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapGet("/epub/search", HandleSearch);
 
         return app;
     }

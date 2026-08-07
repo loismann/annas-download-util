@@ -29,7 +29,13 @@ public static class DevEndpoints
                 hashed = hash,
                 instructions = "Copy the 'hashed' value to appsettings.json Auth:AccessCodes:Code field"
             });
-        });
+        })
+        // Anonymous by necessity — it exists to mint the hash you need before you
+        // have a credential to authenticate with. So it gets the strict "login"
+        // limiter rather than "api": BCrypt at work factor 12 is deliberately
+        // expensive, which makes an unauthenticated, unlimited caller a way to
+        // burn the CPU. DEBUG-only, but the limiter costs nothing to add.
+        .RequireRateLimiting("login");
 #endif
 
         // ─── Cache Management Endpoints ────────────────────────────────────────────

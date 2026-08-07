@@ -14,13 +14,15 @@ public static class GamingEndpoints
     /// </summary>
     public static WebApplication MapGamingEndpoints(this WebApplication app)
     {
-        app.MapGet("/api/gaming/status", HandleGamingStatus)
+        // The guard pair lives on the group, so a route added below inherits it
+        // instead of needing it repeated — which is how one silently ships without.
+        var group = app.MapGroup("/api/gaming")
             .RequireAuthorization()
             .RequireRateLimiting("api");
 
-        app.MapPost("/api/gaming/toggle", HandleGamingToggle)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapGet("/status", HandleGamingStatus);
+
+        group.MapPost("/toggle", HandleGamingToggle);
 
         return app;
     }

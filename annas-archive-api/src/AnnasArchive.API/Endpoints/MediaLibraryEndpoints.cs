@@ -38,135 +38,94 @@ public static class MediaLibraryEndpoints
 {
     public static WebApplication MapMediaLibraryEndpoints(this WebApplication app)
     {
-        app.MapGet("/api/media/tv/downloaded", HandleGetDownloadedTv)
+        // The guard pair lives on the group, so a route added below inherits it
+        // instead of needing it repeated — which is how one silently ships without.
+        //
+        // Two groups off the same prefix. The "media" bucket is the looser limiter
+        // for per-tile requests — a library grid renders hundreds at once and would
+        // otherwise exhaust the whole "api" window on covers alone.
+        var group = app.MapGroup("/api/media")
             .RequireAuthorization()
             .RequireRateLimiting("api");
+        var mediaGroup = app.MapGroup("/api/media")
+            .RequireAuthorization()
+            .RequireRateLimiting("media");
 
-        app.MapGet("/api/media/tv/{seriesId:int}/episodes", HandleGetSeriesEpisodes)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapGet("/tv/downloaded", HandleGetDownloadedTv);
 
-        app.MapGet("/api/media/tv/watch", HandleWatchTv)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapGet("/tv/{seriesId:int}/episodes", HandleGetSeriesEpisodes);
+
+        group.MapGet("/tv/watch", HandleWatchTv);
 
         // Native <video> stream for household members with personal Jellyfin
         // credentials configured (see JellyfinService.HasPersonalCredentials) —
         // only reachable after HandleWatchTv/HandleWatchMovie returns mode:"native"
         // for that person. Auth via ?access_token=, same reasoning as the
         // download routes below (a <video src> can't carry an Authorization header).
-        app.MapGet("/api/media/tv/stream", HandleStreamTv)
-            .RequireAuthorization()
-            .RequireRateLimiting("media");
+        mediaGroup.MapGet("/tv/stream", HandleStreamTv);
 
         // HLS fallback for files a plain <video src> can't decode natively (AVI
         // containers, AC3/DTS audio, etc — see JellyfinService.IsBrowserCompatible).
         // Only reachable after HandleWatchTv/HandleWatchMovie returns
         // playbackMode:"transcode" for that item.
-        app.MapGet("/api/media/tv/hls/master.m3u8", HandleTvHlsMaster)
-            .RequireAuthorization()
-            .RequireRateLimiting("media");
+        mediaGroup.MapGet("/tv/hls/master.m3u8", HandleTvHlsMaster);
 
-        app.MapPost("/api/media/tv/progress", HandleSaveTvProgress)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapPost("/tv/progress", HandleSaveTvProgress);
 
         // Converts one embedded subtitle stream to WebVTT for a <track> element —
         // a browser can't parse embedded SRT/ASS/PGS out of a container itself.
         // Auth via ?access_token=, same reasoning as the stream routes (a <track
         // src> is a plain browser-issued GET, no custom headers possible).
-        app.MapGet("/api/media/tv/subtitles", HandleTvSubtitles)
-            .RequireAuthorization()
-            .RequireRateLimiting("media");
+        mediaGroup.MapGet("/tv/subtitles", HandleTvSubtitles);
 
         // Proxies the actual file down from Jellyfin (see JellyfinService.DownloadEpisodeAsync).
         // Rate-limited under "media" (large-file proxy), same convention as audiobook
         // stream/cover. Auth arrives via ?access_token= — see the OnMessageReceived
         // allowlist in ServiceConfiguration.cs — since this is a plain browser
         // navigation, not an XHR that could carry an Authorization header.
-        app.MapGet("/api/media/tv/download", HandleDownloadTv)
-            .RequireAuthorization()
-            .RequireRateLimiting("media");
+        mediaGroup.MapGet("/tv/download", HandleDownloadTv);
 
-        app.MapGet("/api/media/movies/downloaded", HandleGetDownloadedMovies)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapGet("/movies/downloaded", HandleGetDownloadedMovies);
 
-        app.MapGet("/api/media/movies/watch", HandleWatchMovie)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapGet("/movies/watch", HandleWatchMovie);
 
-        app.MapGet("/api/media/movies/stream", HandleStreamMovie)
-            .RequireAuthorization()
-            .RequireRateLimiting("media");
+        mediaGroup.MapGet("/movies/stream", HandleStreamMovie);
 
-        app.MapGet("/api/media/movies/hls/master.m3u8", HandleMovieHlsMaster)
-            .RequireAuthorization()
-            .RequireRateLimiting("media");
+        mediaGroup.MapGet("/movies/hls/master.m3u8", HandleMovieHlsMaster);
 
         // Shared HLS sub-resource proxy (the second-level playlist + each .ts
         // segment) for both movies and episodes alike — by this point the
         // caller only needs Jellyfin's own opaque itemId (already resolved once
         // by the master-playlist request above), not tmdbId/tvdbId again.
-        app.MapGet("/api/media/hls/{itemId}/{*subPath}", HandleHlsResource)
-            .RequireAuthorization()
-            .RequireRateLimiting("media");
+        mediaGroup.MapGet("/hls/{itemId}/{*subPath}", HandleHlsResource);
 
-        app.MapPost("/api/media/movies/progress", HandleSaveMovieProgress)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapPost("/movies/progress", HandleSaveMovieProgress);
 
-        app.MapGet("/api/media/movies/subtitles", HandleMovieSubtitles)
-            .RequireAuthorization()
-            .RequireRateLimiting("media");
+        mediaGroup.MapGet("/movies/subtitles", HandleMovieSubtitles);
 
-        app.MapGet("/api/media/movies/download", HandleDownloadMovie)
-            .RequireAuthorization()
-            .RequireRateLimiting("media");
+        mediaGroup.MapGet("/movies/download", HandleDownloadMovie);
 
-        app.MapDelete("/api/media/tv/{seriesId:int}", HandleDeleteSeries)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapDelete("/tv/{seriesId:int}", HandleDeleteSeries);
 
-        app.MapDelete("/api/media/tv/{seriesId:int}/season/{seasonNumber:int}", HandleDeleteSeason)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapDelete("/tv/{seriesId:int}/season/{seasonNumber:int}", HandleDeleteSeason);
 
-        app.MapDelete("/api/media/movies/{movieId:int}", HandleDeleteMovie)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapDelete("/movies/{movieId:int}", HandleDeleteMovie);
 
-        app.MapPatch("/api/media/tv/{seriesId:int}/metadata", HandleSetTvMetadata)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapPatch("/tv/{seriesId:int}/metadata", HandleSetTvMetadata);
 
-        app.MapPatch("/api/media/movies/{movieId:int}/metadata", HandleSetMovieMetadata)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapPatch("/movies/{movieId:int}/metadata", HandleSetMovieMetadata);
 
-        app.MapPost("/api/media/tv/{seriesId:int}/favorite", HandleSetTvFavorite)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapPost("/tv/{seriesId:int}/favorite", HandleSetTvFavorite);
 
-        app.MapPost("/api/media/movies/{movieId:int}/favorite", HandleSetMovieFavorite)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapPost("/movies/{movieId:int}/favorite", HandleSetMovieFavorite);
 
-        app.MapGet("/api/media/movies/{movieId:int}/releases", HandleSearchMovieReleases)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapGet("/movies/{movieId:int}/releases", HandleSearchMovieReleases);
 
-        app.MapPost("/api/media/movies/{movieId:int}/releases/grab", HandleGrabMovieRelease)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapPost("/movies/{movieId:int}/releases/grab", HandleGrabMovieRelease);
 
-        app.MapGet("/api/media/tv/{seriesId:int}/season/{seasonNumber:int}/releases", HandleSearchSeasonReleases)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapGet("/tv/{seriesId:int}/season/{seasonNumber:int}/releases", HandleSearchSeasonReleases);
 
-        app.MapPost("/api/media/tv/{seriesId:int}/season/{seasonNumber:int}/releases/grab", HandleGrabSeasonRelease)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapPost("/tv/{seriesId:int}/season/{seasonNumber:int}/releases/grab", HandleGrabSeasonRelease);
 
         return app;
     }

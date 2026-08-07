@@ -38,6 +38,35 @@ public class ErrorContractConventionTests
     private static IEnumerable<(string Name, string Text)> EndpointSources() =>
         SourceRoot().GetFiles("*.cs").Select(f => (f.Name, File.ReadAllText(f.FullName)));
 
+    /// <summary>Every source file in the API project. Used by the checks whose
+    /// rule is not specific to endpoints.</summary>
+    private static IEnumerable<(string Name, string Text)> ApiSources()
+    {
+        var api = SourceRoot().Parent!;
+        return api.GetFiles("*.cs", SearchOption.AllDirectories)
+            .Where(f => !f.FullName.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}")
+                     && !f.FullName.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}"))
+            .Select(f => (Name: Path.GetRelativePath(api.FullName, f.FullName), Text: File.ReadAllText(f.FullName)));
+    }
+
+    /// <summary>
+    /// Blanks out comment lines, keeping line numbering intact.
+    ///
+    /// <para>Needed because a rule worth guarding is also worth documenting, and
+    /// the clearest documentation quotes the pattern being banned. Without this,
+    /// the doc comment on <c>DescriptionEndpoint.FetchAsync</c> — which shows the
+    /// interpolated template it exists to prevent — is itself reported as a
+    /// violation.</para>
+    /// </summary>
+    private static string WithoutComments(string text) =>
+        string.Join('\n', text.Split('\n').Select(line =>
+        {
+            var trimmed = line.TrimStart();
+            return trimmed.StartsWith("//") || trimmed.StartsWith("*") || trimmed.StartsWith("/*")
+                ? ""
+                : line;
+        }));
+
     /// <summary>
     /// The exact shape that was deleted from 29 handlers. It answered 400 with
     /// <c>{ error = "Invalid parameter: &lt;name&gt;" }</c> — a second error
@@ -183,6 +212,76 @@ public class ErrorContractConventionTests
         offenders.Should().BeEmpty(
             "a failed operation must carry a non-2xx status; success=false inside a 200 " +
             "is invisible to Serilog, Seq and any status-based monitoring");
+    }
+
+    /// <summary>
+    /// A Serilog message template must be a literal, never an interpolated string.
+    ///
+    /// <para>Four description endpoints independently arrived at
+    /// <c>Log.Information(found ? $"… for '{title}'" : $"…")</c>. That hands
+    /// Serilog a template built from the book's own title, so a title containing
+    /// a brace is parsed as a placeholder and the line is mangled or dropped —
+    /// and scraped titles do contain braces. It also destroys the structured
+    /// property, so the value cannot be searched on in Seq.</para>
+    ///
+    /// <para>The interpolation is frequently not on the same line as the
+    /// <c>Log.</c> call — in all four cases it sat inside a ternary on the
+    /// following line — so this parses the first argument of each call rather
+    /// than grepping. A line-based check finds none of them.</para>
+    /// </summary>
+    [Fact]
+    public void NoLogCallBuildsItsTemplateByInterpolation()
+    {
+        var offenders = new List<string>();
+        var scanned = 0;
+
+        foreach (var (name, raw) in ApiSources())
+        {
+            var text = WithoutComments(raw);
+
+            // Fully qualified: the test project also references Moq, which has its own Match.
+            foreach (System.Text.RegularExpressions.Match call in
+                     Regex.Matches(text, @"\bLog\.(Information|Warning|Error|Debug|Fatal|Verbose)\s*\("))
+            {
+                scanned++;
+                var open = call.Index + call.Length - 1;
+                if (FirstArgument(text, open).Contains("$\""))
+                    offenders.Add($"{name}:{text[..call.Index].Count(c => c == '\n') + 1}");
+            }
+        }
+
+        // A guard that quietly stops finding anything is worse than no guard.
+        scanned.Should().BeGreaterThan(500, "the scan should be reaching the whole API project");
+
+        offenders.Should().BeEmpty(
+            "the template must be a literal and the values passed as arguments; " +
+            "an interpolated template mangles any value containing a brace and " +
+            "leaves nothing structured to search on");
+    }
+
+    /// <summary>
+    /// The source text of a call's first argument, given the index of its opening
+    /// parenthesis. Stops at the first top-level comma, so a template that is
+    /// correctly literal is not blamed for an interpolated <em>argument</em> after
+    /// it — passing <c>$"…"</c> as a value is ugly but harmless.
+    /// </summary>
+    private static string FirstArgument(string text, int openParen)
+    {
+        var depth = 0;
+        for (var i = openParen; i < text.Length; i++)
+        {
+            switch (text[i])
+            {
+                case '(': depth++; break;
+                case ')':
+                    depth--;
+                    if (depth == 0) return text[(openParen + 1)..i];
+                    break;
+                case ',' when depth == 1:
+                    return text[(openParen + 1)..i];
+            }
+        }
+        return "";
     }
 
     private static int CountOccurrences(string haystack, string needle)

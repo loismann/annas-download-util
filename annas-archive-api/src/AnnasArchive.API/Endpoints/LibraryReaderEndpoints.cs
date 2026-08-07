@@ -18,35 +18,29 @@ public static class LibraryReaderEndpoints
     /// </summary>
     public static WebApplication MapLibraryReaderEndpoints(this WebApplication app)
     {
-        // GET /api/library/reader/epub/chapters - Get EPUB chapters
-        app.MapGet("/api/library/reader/epub/chapters", HandleGetReaderChapters)
+        // The guard pair lives on the group, so a route added below inherits it
+        // instead of needing it repeated — which is how one silently ships without.
+        var group = app.MapGroup("/api/library/reader/epub")
             .RequireAuthorization()
             .RequireRateLimiting("api");
+
+        // GET /api/library/reader/epub/chapters - Get EPUB chapters
+        group.MapGet("/chapters", HandleGetReaderChapters);
 
         // GET /api/library/reader/epub/chapter - Get single chapter content
-        app.MapGet("/api/library/reader/epub/chapter", HandleGetReaderChapter)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapGet("/chapter", HandleGetReaderChapter);
 
         // GET /api/library/reader/epub/status - Get cache status
-        app.MapGet("/api/library/reader/epub/status", HandleGetReaderStatus)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapGet("/status", HandleGetReaderStatus);
 
         // POST /api/library/reader/epub/index - Start indexing
-        app.MapPost("/api/library/reader/epub/index", HandleStartReaderIndexing)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapPost("/index", HandleStartReaderIndexing);
 
         // DELETE /api/library/reader/epub/index - Delete cache
-        app.MapDelete("/api/library/reader/epub/index", HandleDeleteReaderIndex)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapDelete("/index", HandleDeleteReaderIndex);
 
         // GET /api/library/reader/epub/search - Search within EPUB
-        app.MapGet("/api/library/reader/epub/search", HandleReaderSearch)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapGet("/search", HandleReaderSearch);
 
         return app;
     }

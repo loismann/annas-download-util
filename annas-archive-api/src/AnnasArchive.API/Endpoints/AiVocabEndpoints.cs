@@ -18,15 +18,17 @@ public static class AiVocabEndpoints
     /// </summary>
     public static WebApplication MapAiVocabEndpoints(this WebApplication app)
     {
-        // POST /api/ai/vocab/learn-more - Get detailed info about a vocab term
-        app.MapPost("/api/ai/vocab/learn-more", HandleLearnMore)
+        // The guard pair lives on the group, so a route added below inherits it
+        // instead of needing it repeated — which is how one silently ships without.
+        var group = app.MapGroup("/api/ai")
             .RequireAuthorization()
             .RequireRateLimiting("api");
 
+        // POST /api/ai/vocab/learn-more - Get detailed info about a vocab term
+        group.MapPost("/vocab/learn-more", HandleLearnMore);
+
         // POST /api/ai/section-vocab - Save section vocabulary to cache
-        app.MapPost("/api/ai/section-vocab", HandleSaveSectionVocab)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapPost("/section-vocab", HandleSaveSectionVocab);
 
         return app;
     }

@@ -15,40 +15,32 @@ public static class VocabEndpoints
     /// </summary>
     public static WebApplication MapVocabEndpoints(this WebApplication app)
     {
-        // GET /api/vocab/known - Get known vocabulary words with book associations
-        app.MapGet("/api/vocab/known", HandleGetKnownWords)
+        // The guard pair lives on the group, so a route added below inherits it
+        // instead of needing it repeated — which is how one silently ships without.
+        var group = app.MapGroup("/api/vocab")
             .RequireAuthorization()
             .RequireRateLimiting("api");
+
+        // GET /api/vocab/known - Get known vocabulary words with book associations
+        group.MapGet("/known", HandleGetKnownWords);
 
         // POST /api/vocab/known - Add word to known list with book association
-        app.MapPost("/api/vocab/known", HandleAddKnownWord)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapPost("/known", HandleAddKnownWord);
 
         // DELETE /api/vocab/known/{term} - Remove word from known list
-        app.MapDelete("/api/vocab/known/{term}", HandleRemoveKnownWord)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapDelete("/known/{term}", HandleRemoveKnownWord);
 
         // GET /api/vocab/study - Get study vocabulary words with book associations
-        app.MapGet("/api/vocab/study", HandleGetStudyWords)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapGet("/study", HandleGetStudyWords);
 
         // POST /api/vocab/study - Add word to study list with book association
-        app.MapPost("/api/vocab/study", HandleAddStudyWord)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapPost("/study", HandleAddStudyWord);
 
         // DELETE /api/vocab/study/{term} - Remove word from study list
-        app.MapDelete("/api/vocab/study/{term}", HandleRemoveStudyWord)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapDelete("/study/{term}", HandleRemoveStudyWord);
 
         // DELETE /api/vocab/book/{bookId} - Delete all vocabulary words for a specific book
-        app.MapDelete("/api/vocab/book/{bookId}", HandleDeleteBookVocab)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapDelete("/book/{bookId}", HandleDeleteBookVocab);
 
         return app;
     }

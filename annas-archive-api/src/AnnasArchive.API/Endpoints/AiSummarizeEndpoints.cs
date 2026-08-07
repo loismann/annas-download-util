@@ -19,40 +19,32 @@ public static class AiSummarizeEndpoints
     /// </summary>
     public static WebApplication MapAiSummarizeEndpoints(this WebApplication app)
     {
-        // POST /api/ai/summarize - Generate summary for text passage
-        app.MapPost("/api/ai/summarize", HandleSummarize)
+        // The guard pair lives on the group, so a route added below inherits it
+        // instead of needing it repeated — which is how one silently ships without.
+        var group = app.MapGroup("/api/ai")
             .RequireAuthorization()
             .RequireRateLimiting("api");
+
+        // POST /api/ai/summarize - Generate summary for text passage
+        group.MapPost("/summarize", HandleSummarize);
 
         // POST /api/ai/summarize/chapter/stream - Generate full chapter summary with SSE progress
-        app.MapPost("/api/ai/summarize/chapter/stream", HandleChapterSummaryStream)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapPost("/summarize/chapter/stream", HandleChapterSummaryStream);
 
         // GET /api/ai/summarize/chapter - Get cached chapter summary
-        app.MapGet("/api/ai/summarize/chapter", HandleGetChapterSummary)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapGet("/summarize/chapter", HandleGetChapterSummary);
 
         // DELETE /api/ai/summarize/chapter - Delete cached chapter summary
-        app.MapDelete("/api/ai/summarize/chapter", HandleDeleteChapterSummary)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapDelete("/summarize/chapter", HandleDeleteChapterSummary);
 
         // POST /api/ai/summarize/chapter/dummy - Generate "I'm a Dummy" chapter summary
-        app.MapPost("/api/ai/summarize/chapter/dummy", HandleDummySummary)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapPost("/summarize/chapter/dummy", HandleDummySummary);
 
         // GET /api/ai/summarize/chapter/dummy - Get cached "I'm a Dummy" summary
-        app.MapGet("/api/ai/summarize/chapter/dummy", HandleGetDummySummary)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapGet("/summarize/chapter/dummy", HandleGetDummySummary);
 
         // GET /api/ai/summarize/book - Get all cached summaries for a book
-        app.MapGet("/api/ai/summarize/book", HandleGetBookSummaries)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapGet("/summarize/book", HandleGetBookSummaries);
 
         return app;
     }

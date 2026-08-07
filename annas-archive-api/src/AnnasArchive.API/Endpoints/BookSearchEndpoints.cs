@@ -23,38 +23,32 @@ public static class BookSearchEndpoints
     /// </summary>
     public static WebApplication MapBookSearchEndpoints(this WebApplication app)
     {
-        // Main book search endpoint
-        app.MapGet("/api/anna/book", HandleBookSearch)
+        // The guard pair lives on the group, so a route added below inherits it
+        // instead of needing it repeated — which is how one silently ships without.
+        var group = app.MapGroup("/api/anna")
             .RequireAuthorization()
             .RequireRateLimiting("api");
+
+        // Main book search endpoint
+        group.MapGet("/book", HandleBookSearch);
 
         // Download status endpoint
-        app.MapGet("/api/anna/download-status", HandleGetDownloadStatus)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapGet("/download-status", HandleGetDownloadStatus);
 
         // Cover lookup endpoint (title/author search via OpenLibrary/Google Books)
-        app.MapGet("/api/anna/book/cover", HandleCoverLookup)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapGet("/book/cover", HandleCoverLookup);
 
         // Cover lookup by MD5 — extracts ISBN from Anna's Archive's detail
         // page, resolves via OpenLibrary's cover CDN. Independent of both the
         // OpenLibrary search API and Google Books' quota, so it works even
         // when those are down/exhausted. Meant to be called lazily per-book
         // after search results render, not during search itself.
-        app.MapGet("/api/anna/book/{md5}/cover-by-isbn", HandleCoverByIsbn)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapGet("/book/{md5}/cover-by-isbn", HandleCoverByIsbn);
 
         // Description endpoints
-        app.MapGet("/api/anna/book/description/google-books", HandleGoogleBooksDescription)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapGet("/book/description/google-books", HandleGoogleBooksDescription);
 
-        app.MapGet("/api/anna/book/description/openlibrary", HandleOpenLibraryDescription)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapGet("/book/description/openlibrary", HandleOpenLibraryDescription);
 
         // Real, non-AI description source that's actually still working —
         // Google Books' quota has been exhausted and OpenLibrary's search
@@ -62,22 +56,16 @@ public static class BookSearchEndpoints
         // almost always fall straight through to GPT today. This gives the
         // same real-data fallback already used by the AI Related Books flow
         // to the normal search results' "Retrieve Summary" button too.
-        app.MapGet("/api/anna/book/description/wikipedia", HandleWikipediaDescription)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapGet("/book/description/wikipedia", HandleWikipediaDescription);
 
         // Health checks for the search page's status badges. Authorized and
         // rate-limited like everything else: both reach out to third-party
         // services on call (slum-health makes two live requests per hit), so
         // leaving them anonymous and ungated made them a free amplification
         // and probe surface. Every caller is already an authenticated page.
-        app.MapGet("/api/anna/slum-health", HandleSlumHealth)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapGet("/slum-health", HandleSlumHealth);
 
-        app.MapGet("/api/anna/mirror-health", HandleMirrorHealth)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapGet("/mirror-health", HandleMirrorHealth);
 
         return app;
     }
@@ -130,59 +118,32 @@ public static class BookSearchEndpoints
         }
     }
 
-    private static async Task<IResult> HandleGoogleBooksDescription(
+    // The three differ only in which source they ask, and each adapts its own
+    // service because the three signatures genuinely disagree: Google Books and
+    // OpenLibrary take a non-null author plus an optional ISBN, Wikipedia takes a
+    // nullable author and no ISBN. A shared interface would mean changing three
+    // Core services to suit an endpoint; a delegate leaves those contracts alone.
+
+    private static Task<IResult> HandleGoogleBooksDescription(
         [FromQuery] string? title,
         [FromQuery] string? author,
-        IGoogleBooksService googleBooks)
-    {
-        if (string.IsNullOrWhiteSpace(title))
-            return Results.BadRequest(new { error = "title is required." });
+        IGoogleBooksService googleBooks) =>
+        DescriptionEndpoint.FetchAsync("Google Books", title, author,
+            (t, a) => googleBooks.GetBookDescriptionAsync(t, a ?? ""));
 
-        Log.Information("Google Books description lookup: title='{Title}', author='{Author}'", title, author);
-        var description = await googleBooks.GetBookDescriptionAsync(title, author ?? "");
-
-        Log.Information(description is null
-            ? $"Google Books description not found for '{title}'"
-            : $"Google Books description found for '{title}'");
-
-        return Results.Ok(new { description });
-    }
-
-    private static async Task<IResult> HandleOpenLibraryDescription(
+    private static Task<IResult> HandleOpenLibraryDescription(
         [FromQuery] string? title,
         [FromQuery] string? author,
-        IOpenLibraryService openLibrary)
-    {
-        if (string.IsNullOrWhiteSpace(title))
-            return Results.BadRequest(new { error = "title is required." });
+        IOpenLibraryService openLibrary) =>
+        DescriptionEndpoint.FetchAsync("OpenLibrary", title, author,
+            (t, a) => openLibrary.GetBookDescriptionAsync(t, a ?? ""));
 
-        Log.Information("OpenLibrary description lookup: title='{Title}', author='{Author}'", title, author);
-        var description = await openLibrary.GetBookDescriptionAsync(title, author ?? "");
-
-        Log.Information(description is null
-            ? $"OpenLibrary description not found for '{title}'"
-            : $"OpenLibrary description found for '{title}'");
-
-        return Results.Ok(new { description });
-    }
-
-    private static async Task<IResult> HandleWikipediaDescription(
+    private static Task<IResult> HandleWikipediaDescription(
         [FromQuery] string? title,
         [FromQuery] string? author,
-        IWikipediaService wikipedia)
-    {
-        if (string.IsNullOrWhiteSpace(title))
-            return Results.BadRequest(new { error = "title is required." });
-
-        Log.Information("Wikipedia description lookup: title='{Title}', author='{Author}'", title, author);
-        var description = await wikipedia.GetBookDescriptionAsync(title, author);
-
-        Log.Information(description is null
-            ? $"Wikipedia description not found for '{title}'"
-            : $"Wikipedia description found for '{title}'");
-
-        return Results.Ok(new { description });
-    }
+        IWikipediaService wikipedia) =>
+        DescriptionEndpoint.FetchAsync("Wikipedia", title, author,
+            (t, a) => wikipedia.GetBookDescriptionAsync(t, a));
 
     private static async Task<IResult> HandleCoverLookup(
         [FromQuery] string? title,

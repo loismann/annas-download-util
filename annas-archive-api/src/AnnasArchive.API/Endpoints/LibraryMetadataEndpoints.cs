@@ -24,40 +24,32 @@ public static class LibraryMetadataEndpoints
     /// </summary>
     public static WebApplication MapLibraryMetadataEndpoints(this WebApplication app)
     {
-        // PATCH /api/library/book/{fileName}/metadata - Update book metadata
-        app.MapPatch("/api/library/book/{fileName}/metadata", HandleUpdateMetadata)
+        // The guard pair lives on the group, so a route added below inherits it
+        // instead of needing it repeated — which is how one silently ships without.
+        var group = app.MapGroup("/api/library")
             .RequireAuthorization()
             .RequireRateLimiting("api");
+
+        // PATCH /api/library/book/{fileName}/metadata - Update book metadata
+        group.MapPatch("/book/{fileName}/metadata", HandleUpdateMetadata);
 
         // PATCH /api/library/book/{fileName}/ratings - Update book ratings
-        app.MapPatch("/api/library/book/{fileName}/ratings", HandleUpdateRatings)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapPatch("/book/{fileName}/ratings", HandleUpdateRatings);
 
         // POST /api/library/book/{fileName}/reader - Toggle reader inclusion (route param)
-        app.MapPost("/api/library/book/{fileName}/reader", HandleToggleReaderByRoute)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapPost("/book/{fileName}/reader", HandleToggleReaderByRoute);
 
         // POST /api/library/book/reader - Toggle reader inclusion (query param)
-        app.MapPost("/api/library/book/reader", HandleToggleReaderByQuery)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapPost("/book/reader", HandleToggleReaderByQuery);
 
         // POST /api/library/books/genres/wipe - Wipe all genres
-        app.MapPost("/api/library/books/genres/wipe", HandleWipeGenres)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapPost("/books/genres/wipe", HandleWipeGenres);
 
         // GET /api/library/book/{fileName}/summary - Get/generate book summary
-        app.MapGet("/api/library/book/{fileName}/summary", HandleGetSummary)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapGet("/book/{fileName}/summary", HandleGetSummary);
 
         // POST /api/library/book/{fileName}/favorite - Toggle favorite for the logged-in user
-        app.MapPost("/api/library/book/{fileName}/favorite", HandleSetFavorite)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapPost("/book/{fileName}/favorite", HandleSetFavorite);
 
         return app;
     }

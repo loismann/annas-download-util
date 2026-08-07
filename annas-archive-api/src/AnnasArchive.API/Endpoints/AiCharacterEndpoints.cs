@@ -18,20 +18,20 @@ public static class AiCharacterEndpoints
     /// </summary>
     public static WebApplication MapAiCharacterEndpoints(this WebApplication app)
     {
-        // POST /api/ai/characters/graph - Generate character graph from summaries
-        app.MapPost("/api/ai/characters/graph", HandleGenerateGraph)
+        // The guard pair lives on the group, so a route added below inherits it
+        // instead of needing it repeated — which is how one silently ships without.
+        var group = app.MapGroup("/api/ai/characters")
             .RequireAuthorization()
             .RequireRateLimiting("api");
+
+        // POST /api/ai/characters/graph - Generate character graph from summaries
+        group.MapPost("/graph", HandleGenerateGraph);
 
         // GET /api/ai/characters/graph - Get cached character graph
-        app.MapGet("/api/ai/characters/graph", HandleGetGraph)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapGet("/graph", HandleGetGraph);
 
         // POST /api/ai/characters/update - Update character graph with new content
-        app.MapPost("/api/ai/characters/update", HandleUpdateGraph)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapPost("/update", HandleUpdateGraph);
 
         return app;
     }

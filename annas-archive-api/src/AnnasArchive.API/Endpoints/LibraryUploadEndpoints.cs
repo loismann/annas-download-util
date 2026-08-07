@@ -27,18 +27,20 @@ public static class LibraryUploadEndpoints
     /// </summary>
     public static WebApplication MapLibraryUploadEndpoints(this WebApplication app)
     {
-        // POST /api/library/book/upload - Upload a book file
-        app.MapPost("/api/library/book/upload", HandleUploadBook)
+        // The guard pair lives on the group, so a route added below inherits it
+        // instead of needing it repeated — which is how one silently ships without.
+        var group = app.MapGroup("/api/library")
             .RequireAuthorization()
-            .RequireRateLimiting("api")
+            .RequireRateLimiting("api");
+
+        // POST /api/library/book/upload - Upload a book file
+        group.MapPost("/book/upload", HandleUploadBook)
             .DisableAntiforgery()
             .WithMetadata(new RequestSizeLimitAttribute(MaxFileSizeBytes))
             .WithMetadata(new RequestFormLimitsAttribute { MultipartBodyLengthLimit = MaxFileSizeBytes });
 
         // GET /api/library/upload/supported-formats - Get list of supported formats
-        app.MapGet("/api/library/upload/supported-formats", HandleGetSupportedFormats)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapGet("/upload/supported-formats", HandleGetSupportedFormats);
 
         return app;
     }

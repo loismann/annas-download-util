@@ -11,13 +11,15 @@ public static class VpnSettingsEndpoints
 {
     public static WebApplication MapVpnSettingsEndpoints(this WebApplication app)
     {
-        app.MapGet("/api/vpn/settings", HandleGetSettings)
+        // The guard pair lives on the group, so a route added below inherits it
+        // instead of needing it repeated — which is how one silently ships without.
+        var group = app.MapGroup("/api/vpn")
             .RequireAuthorization()
             .RequireRateLimiting("api");
 
-        app.MapPost("/api/vpn/settings", HandleUpdateSettings)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapGet("/settings", HandleGetSettings);
+
+        group.MapPost("/settings", HandleUpdateSettings);
 
         return app;
     }

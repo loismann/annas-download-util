@@ -112,129 +112,93 @@ public static class DateNightEndpoints
 {
     public static WebApplication MapDateNightEndpoints(this WebApplication app)
     {
+        // The guard pair lives on the group, so a route added below inherits it
+        // instead of needing it repeated — which is how one silently ships without.
+        //
+        // Two groups off the same prefix rather than one group plus per-route
+        // overrides: an AdminOnly route must not be able to end up inheriting plain
+        // authorization, and a route joining the wrong group is a visible mistake
+        // where a missing override is an invisible one.
+        var adminGroup = app.MapGroup("/api/date-night")
+            .RequireAuthorization("AdminOnly")
+            .RequireRateLimiting("api");
+        var group = app.MapGroup("/api/date-night")
+            .RequireAuthorization()
+            .RequireRateLimiting("api");
+
         // AdminOnly, not merely authenticated: until the feature is deliberately
         // switched on, Mom and Dad must not be able to learn it exists — including
         // by hitting these URLs directly. Pool administration stays admin-only
         // permanently; the eventual flyer/voting endpoints are the ones that will
         // be exposed to them, and only then.
-        app.MapGet("/api/date-night/pool", HandleGetPool)
-            .RequireAuthorization("AdminOnly")
-            .RequireRateLimiting("api");
+        adminGroup.MapGet("/pool", HandleGetPool);
 
-        app.MapPost("/api/date-night/availability/scan", HandleStartScan)
-            .RequireAuthorization("AdminOnly")
-            .RequireRateLimiting("api");
+        adminGroup.MapPost("/availability/scan", HandleStartScan);
 
         // Announcement routes are for Mom and Dad, so plain authorization — these
         // are the only Date Night endpoints they may reach. They expose nothing
         // but a few poster URLs and a boolean.
-        app.MapGet("/api/date-night/announcement", HandleGetAnnouncement)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapGet("/announcement", HandleGetAnnouncement);
 
-        app.MapPost("/api/date-night/announcement/dismiss", HandleDismissAnnouncement)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapPost("/announcement/dismiss", HandleDismissAnnouncement);
 
         // Admin recovery path for a showing burned by testing on Mom/Dad's own
         // account — resets their announcement state as if they'd never seen it.
-        app.MapPost("/api/date-night/announcement/admin/reset", HandleAdminResetAnnouncement)
-            .RequireAuthorization("AdminOnly")
-            .RequireRateLimiting("api");
+        adminGroup.MapPost("/announcement/admin/reset", HandleAdminResetAnnouncement);
 
         // Weekly cycle routes for Mom and Dad — built now for phase 4 (the flyer) to
         // consume; nothing in this app calls them yet.
-        app.MapGet("/api/date-night/cycle", HandleGetCycle)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapGet("/cycle", HandleGetCycle);
 
-        app.MapPost("/api/date-night/cycle/vote", HandleCastVote)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapPost("/cycle/vote", HandleCastVote);
 
-        app.MapPost("/api/date-night/skip", HandleSetSkip)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapPost("/skip", HandleSetSkip);
 
-        app.MapPost("/api/date-night/cycle/flyer-shown", HandleFlyerShown)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapPost("/cycle/flyer-shown", HandleFlyerShown);
 
-        app.MapPost("/api/date-night/cycle/schedule/propose", HandleProposeSchedule)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapPost("/cycle/schedule/propose", HandleProposeSchedule);
 
-        app.MapPost("/api/date-night/cycle/schedule/approve", HandleApproveSchedule)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapPost("/cycle/schedule/approve", HandleApproveSchedule);
 
-        app.MapPost("/api/date-night/cycle/schedule/cancel", HandleCancelSchedule)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapPost("/cycle/schedule/cancel", HandleCancelSchedule);
 
         // Marks that this person has seen the schedule's current state (a proposal
         // waiting on them, or a cancellation) — stops the "your turn"/"cancelled"
         // popup from reappearing on their next load until the state changes again.
-        app.MapPost("/api/date-night/cycle/schedule/acknowledge", HandleAcknowledgeSchedule)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapPost("/cycle/schedule/acknowledge", HandleAcknowledgeSchedule);
 
-        app.MapPost("/api/date-night/cycle/download/retry", HandleRetryDownload)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapPost("/cycle/download/retry", HandleRetryDownload);
 
         // Polled every 30-60s from AppComponent (any page, not just /date-night) —
         // this app has no push notifications, so this is how the countdown surfaces.
-        app.MapGet("/api/date-night/showtime-check", HandleShowtimeCheck)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapGet("/showtime-check", HandleShowtimeCheck);
 
-        app.MapPost("/api/date-night/cycle/showtime/start", HandleStartShowtime)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapPost("/cycle/showtime/start", HandleStartShowtime);
 
-        app.MapPost("/api/date-night/cycle/mark-watched", HandleMarkWatched)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapPost("/cycle/mark-watched", HandleMarkWatched);
 
         // Admin-only cycle controls — how phase 3 (and now 4-7) is exercised end to
         // end before the real flyer/scheduling UI is live for Mom and Dad. See
         // DOCS/features/DATE_NIGHT.md.
-        app.MapPost("/api/date-night/cycle/admin/force-issue", HandleAdminForceIssue)
-            .RequireAuthorization("AdminOnly")
-            .RequireRateLimiting("api");
+        adminGroup.MapPost("/cycle/admin/force-issue", HandleAdminForceIssue);
 
-        app.MapPost("/api/date-night/cycle/admin/resolve-now", HandleAdminResolveNow)
-            .RequireAuthorization("AdminOnly")
-            .RequireRateLimiting("api");
+        adminGroup.MapPost("/cycle/admin/resolve-now", HandleAdminResolveNow);
 
-        app.MapPost("/api/date-night/cycle/admin/discard", HandleAdminDiscard)
-            .RequireAuthorization("AdminOnly")
-            .RequireRateLimiting("api");
+        adminGroup.MapPost("/cycle/admin/discard", HandleAdminDiscard);
 
-        app.MapPost("/api/date-night/cycle/admin/restore/{movieId:int}", HandleAdminRestore)
-            .RequireAuthorization("AdminOnly")
-            .RequireRateLimiting("api");
+        adminGroup.MapPost("/cycle/admin/restore/{movieId:int}", HandleAdminRestore);
 
-        app.MapPost("/api/date-night/cycle/admin/skip/clear", HandleAdminClearSkip)
-            .RequireAuthorization("AdminOnly")
-            .RequireRateLimiting("api");
+        adminGroup.MapPost("/cycle/admin/skip/clear", HandleAdminClearSkip);
 
         // The leak-prevention gate — see DateNightCycleService.IsLive.
-        app.MapPost("/api/date-night/cycle/admin/go-live", HandleAdminGoLive)
-            .RequireAuthorization("AdminOnly")
-            .RequireRateLimiting("api");
+        adminGroup.MapPost("/cycle/admin/go-live", HandleAdminGoLive);
 
-        app.MapPost("/api/date-night/cycle/admin/go-dark", HandleAdminGoDark)
-            .RequireAuthorization("AdminOnly")
-            .RequireRateLimiting("api");
+        adminGroup.MapPost("/cycle/admin/go-dark", HandleAdminGoDark);
 
         // The dry run has one reset control only. There is deliberately no
         // resolve-now bypass: both complete Mom/Dad ballots are required, exactly
         // as they are in the real person-facing flow.
-        app.MapPost("/api/date-night/cycle/admin/test/reset", HandleAdminResetDryRun)
-            .RequireAuthorization("AdminOnly")
-            .RequireRateLimiting("api");
+        adminGroup.MapPost("/cycle/admin/test/reset", HandleAdminResetDryRun);
 
         return app;
     }

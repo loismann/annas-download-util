@@ -20,17 +20,17 @@ public static class LibGenEndpoints
     /// </summary>
     public static WebApplication MapLibGenEndpoints(this WebApplication app)
     {
-        app.MapGet("/api/libgen/book", HandleLibGenSearch)
+        // The guard pair lives on the group, so a route added below inherits it
+        // instead of needing it repeated — which is how one silently ships without.
+        var group = app.MapGroup("/api/libgen")
             .RequireAuthorization()
             .RequireRateLimiting("api");
 
-        app.MapPost("/api/libgen/book/{md5}/download/member", HandleLibGenDownload)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapGet("/book", HandleLibGenSearch);
 
-        app.MapPost("/api/libgen/book/{md5}/send-to-library", HandleLibGenSendToLibrary)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapPost("/book/{md5}/download/member", HandleLibGenDownload);
+
+        group.MapPost("/book/{md5}/send-to-library", HandleLibGenSendToLibrary);
 
         return app;
     }

@@ -51,45 +51,12 @@ public class AudiobookEnrichmentService : BackgroundService
 {
     private static readonly string[] AudioExtensions = { ".mp3", ".m4a", ".m4b", ".flac", ".ogg", ".wav", ".aac", ".wma" };
     private static readonly char[] InvalidPathChars = { '/', '\\', ':', '*', '?', '"', '<', '>', '|' };
-    private const double ConfidenceThreshold = 0.75;
-
-    // AI-sourced matches get no independent real-catalog corroboration the
-    // way OpenLibrary/GoogleBooks results do (those are scored against an
-    // actual search hit via TitleMatchScorer) — GPT is just trusting its own
-    // self-reported confidence. Live testing surfaced this failing exactly as
-    // you'd expect: franchise tie-in fiction with a generic title (e.g. a
-    // Warhammer 40k "Ciaphas Cain" novel called "Dead in the Water") getting
-    // confidently substituted with an unrelated, more famous same-titled book
-    // (Stuart Woods' "Dead in the Water"). Text-similarity can't distinguish
-    // "same title, different book" on its own — adding franchise/series
-    // context (BuildFranchiseContext) to the prompt fixed the substitutions
-    // themselves (confirmed via live re-test: 0 wrong matches across a full
-    // batch that previously had several). What's left is calibrating this
-    // threshold: GPT-4o's self-reported confidence only ever comes back as
-    // 0.8 or 0.9 in practice, no finer granularity, and empirically the wrong
-    // pre-fix matches clustered at 0.8 while the post-fix correct ones
-    // clustered at 0.9 — so 0.9 is the evidence-based cutoff, not a guess.
-    private const double AiConfidenceThreshold = 0.9;
-    private const int MaxAiAttempts = 3;
     private const string SidecarFileName = ".audiobook-enrichment.json";
     private const string DuplicateReviewFolderName = "_DuplicatesReview";
 
-    // The scan itself runs daily (AiThrottlingConfiguration.AudiobookScanInterval) so
-    // newly-added audiobooks get picked up quickly, but a stubbornly-unmatched item would
-    // otherwise get re-queried against OpenLibrary/GoogleBooks/AI every single day forever —
-    // this decouples "how often do we look for new work" from "how often do we retry the same
-    // failure," so a persistent backlog costs roughly the same as the old weekly cadence while
-    // new content is still daily-fresh.
-    private static readonly TimeSpan UnmatchedRetryCooldown = TimeSpan.FromDays(7);
-
-    // Roughly 5 weekly retry cycles (given UnmatchedRetryCooldown = 7 days) before giving up
-    // permanently and flagging for human review — bounds how long a truly-unmatchable item
-    // keeps consuming free-source queries (and, rarer, capped separately by MaxAiAttempts,
-    // paid AI calls) instead of retrying forever with no path to a terminal state.
-    private const int MaxMatchAttempts = 5;
-
-    private static double RequiredConfidence(string source) =>
-        source == "AI" ? AiConfidenceThreshold : ConfidenceThreshold;
+    // Every "is this good enough / should we retry / should we pay for a lookup"
+    // decision below lives in AudiobookMatchPolicy, which is pure and tested.
+    // What stays here is the I/O those answers drive.
 
     private readonly IHttpClientFactory _httpFactory;
     private readonly IConfiguration _configuration;
@@ -206,6 +173,20 @@ public class AudiobookEnrichmentService : BackgroundService
 
     private enum ProcessResult { Renamed, Skipped, Quarantined, Unmatched, Failed }
 
+    /// <summary>What identifying a folder produced. <see cref="Candidate"/> is null
+    /// when a cached match meant the folder name never had to be parsed, and
+    /// <see cref="AiAttempts"/> is the running per-folder total including any call
+    /// this pass just made.</summary>
+    private sealed record Identification(AudiobookMatch? Match, AudiobookCandidate? Candidate, int AiAttempts);
+
+    /// <summary>
+    /// One folder, start to finish: decide whether to bother, work out which book
+    /// it is, then either record the miss or act on the match.
+    ///
+    /// <para>Each step below is one of those sentences. They are separate methods
+    /// because they fail differently — the first spends nothing, the second spends
+    /// network calls and money, and only the third touches the filesystem.</para>
+    /// </summary>
     private async Task<ProcessResult> ProcessBookFolderAsync(
         string folderPath, ScanRateLimitState rateLimits, AudiobookScanOptions options, CancellationToken token)
     {
@@ -214,25 +195,8 @@ public class AudiobookEnrichmentService : BackgroundService
 
         Log.Information("[AudiobookEnrichment] ── {Folder}", folderPath);
 
-        if (sidecar?.RenameStatus is "renamed" or "quarantined")
-        {
-            Log.Information("[AudiobookEnrichment]   Already processed previously — skipping.");
-            return ProcessResult.Skipped;
-        }
-
-        if (sidecar?.MatchStatus == "failed")
-        {
-            Log.Information("[AudiobookEnrichment]   Permanently failed after {Attempts} attempts — needs human review, not retrying.", sidecar.MatchAttempts);
-            return ProcessResult.Failed;
-        }
-
-        if (sidecar?.MatchStatus == "unmatched" && sidecar.LastAttemptedUtc is { } lastAttempt
-            && DateTime.UtcNow - lastAttempt < UnmatchedRetryCooldown)
-        {
-            Log.Information("[AudiobookEnrichment]   Unmatched, last tried {Ago:g} ago (< {Cooldown:g} cooldown) — skipping until next retry window.",
-                DateTime.UtcNow - lastAttempt, UnmatchedRetryCooldown);
-            return ProcessResult.Skipped;
-        }
+        if (AlreadyDecided(sidecar) is { } decided)
+            return decided;
 
         if (!await IsFolderStableAsync(folderPath, token))
         {
@@ -240,168 +204,238 @@ public class AudiobookEnrichmentService : BackgroundService
             return ProcessResult.Skipped;
         }
 
-        // Cached match from a prior dry run or a kill between matching and
-        // renaming — skip straight to renaming, no re-querying.
-        AudiobookMatch? match = sidecar?.MatchStatus == "found"
-            ? new AudiobookMatch(sidecar.MatchedTitle!, sidecar.MatchedAuthor, sidecar.MatchedYear, sidecar.MatchSource ?? "cached", sidecar.MatchConfidence)
-            : null;
+        var identified = await IdentifyAsync(folderPath, sidecar, rateLimits, token);
 
-        // A cached match must still clear today's bar — a threshold/prompt change since it was
-        // written shouldn't be able to grandfather in a stale, no-longer-trusted result purely
-        // because it's already on disk.
-        if (match is not null && match.Confidence < RequiredConfidence(match.Source))
+        return AudiobookMatchPolicy.IsTrusted(identified.Match)
+            ? await ApplyMatchAsync(folderPath, sidecarPath, identified, options, token)
+            : await RecordNoMatchAsync(folderPath, sidecarPath, sidecar, identified, token);
+    }
+
+    // ── Step 1: is there anything to do? ─────────────────────────────────
+
+    /// <summary>Null when the folder still needs work; otherwise the result to
+    /// report without spending a single call on it.</summary>
+    private static ProcessResult? AlreadyDecided(AudiobookSidecar? sidecar)
+    {
+        switch (AudiobookMatchPolicy.Classify(
+                    sidecar?.RenameStatus, sidecar?.MatchStatus, sidecar?.LastAttemptedUtc, DateTime.UtcNow))
+        {
+            case ScanDisposition.AlreadyProcessed:
+                Log.Information("[AudiobookEnrichment]   Already processed previously — skipping.");
+                return ProcessResult.Skipped;
+
+            case ScanDisposition.NeedsHuman:
+                Log.Information("[AudiobookEnrichment]   Permanently failed after {Attempts} attempts — needs human review, not retrying.",
+                    sidecar!.MatchAttempts);
+                return ProcessResult.Failed;
+
+            case ScanDisposition.InRetryCooldown:
+                Log.Information("[AudiobookEnrichment]   Unmatched, last tried {Ago:g} ago (< {Cooldown:g} cooldown) — skipping until next retry window.",
+                    DateTime.UtcNow - sidecar!.LastAttemptedUtc!.Value, AudiobookMatchPolicy.UnmatchedRetryCooldown);
+                return ProcessResult.Skipped;
+
+            default:
+                return null;
+        }
+    }
+
+    // ── Step 2: which book is this? ──────────────────────────────────────
+
+    /// <summary>
+    /// The cached match, or a fresh lookup: free sources first, then the model
+    /// only if nothing free cleared the bar. This is the only step that costs
+    /// anything.
+    /// </summary>
+    private async Task<Identification> IdentifyAsync(
+        string folderPath, AudiobookSidecar? sidecar, ScanRateLimitState rateLimits, CancellationToken token)
+    {
+        var aiAttempts = sidecar?.AiAttempts ?? 0;
+
+        if (ReusableCachedMatch(sidecar) is { } cached)
+            return new Identification(cached, Candidate: null, aiAttempts);
+
+        var folderName = Path.GetFileName(folderPath.TrimEnd(Path.DirectorySeparatorChar));
+        var candidate = AudiobookNameParser.ParseCandidate(folderName);
+        Log.Information("[AudiobookEnrichment]   Candidate: title=\"{Title}\" author=\"{Author}\" narrator=\"{Narrator}\" year={Year}",
+            candidate.Title ?? "(none)", candidate.Author ?? "(none)", candidate.Narrator ?? "(none)", candidate.Year?.ToString() ?? "(none)");
+
+        var match = await TryMatchAsync(candidate, rateLimits, token);
+
+        if (AudiobookMatchPolicy.ShouldTryAi(match, aiAttempts, candidate.Title))
+        {
+            aiAttempts++;
+            var franchiseContext = BuildFranchiseContext(folderPath, ResolveAudiobooksRoot());
+            Log.Information("[AudiobookEnrichment]   No free-source match cleared the bar — trying AI fallback (attempt {Attempt}/{Max}, franchiseContext=\"{Context}\")",
+                aiAttempts, AudiobookMatchPolicy.MaxAiAttempts, franchiseContext ?? "(none)");
+            match = await TryAiFallbackAsync(candidate, franchiseContext, rateLimits, token);
+        }
+
+        return new Identification(match, candidate, aiAttempts);
+    }
+
+    /// <summary>
+    /// A match from a prior dry run, or from a kill between matching and renaming
+    /// — reusable only if it still clears today's bar, so raising a threshold
+    /// cannot grandfather in a result purely because it is already on disk.
+    ///
+    /// <para>A sidecar with no <c>matchSource</c> is one this code cannot vouch
+    /// for, so it gets the strict bar (see
+    /// <see cref="AudiobookMatchPolicy.RequiredConfidence"/>) and will usually be
+    /// recomputed. That costs a lookup; trusting it could wave through an old 0.8
+    /// model guess, which is the exact thing the AI threshold exists to stop.</para>
+    /// </summary>
+    private static AudiobookMatch? ReusableCachedMatch(AudiobookSidecar? sidecar)
+    {
+        if (sidecar?.MatchStatus != AudiobookSidecarStatus.Found)
+            return null;
+
+        var cached = new AudiobookMatch(
+            sidecar.MatchedTitle!, sidecar.MatchedAuthor, sidecar.MatchedYear,
+            sidecar.MatchSource ?? "cached", sidecar.MatchConfidence);
+
+        if (!AudiobookMatchPolicy.CanReuseCachedMatch(cached))
         {
             Log.Information("[AudiobookEnrichment]   Cached match ({Source}, confidence {Confidence}) no longer clears today's bar — recomputing.",
-                match.Source, match.Confidence);
-            match = null;
+                cached.Source, cached.Confidence);
+            return null;
         }
-        else if (match is not null)
+
+        Log.Information("[AudiobookEnrichment]   Using cached match: \"{Title}\" by {Author} (source {Source}, confidence {Confidence})",
+            cached.Title, cached.Author ?? "?", cached.Source, cached.Confidence);
+        return cached;
+    }
+
+    // ── Step 3a: nothing cleared the bar ─────────────────────────────────
+
+    private async Task<ProcessResult> RecordNoMatchAsync(
+        string folderPath, string sidecarPath, AudiobookSidecar? sidecar, Identification identified, CancellationToken token)
+    {
+        var match = identified.Match;
+        var attempts = (sidecar?.MatchAttempts ?? 0) + 1;
+        var permanentlyFailed = AudiobookMatchPolicy.IsPermanentFailure(attempts);
+
+        Log.Information("[AudiobookEnrichment]   → {Outcome} (best: {Best}, attempt {Attempts}/{Max})",
+            permanentlyFailed ? "FAILED (permanent, needs human)" : "UNMATCHED",
+            match is null ? "nothing cleared any threshold" : $"\"{match.Title}\" by {match.Author ?? "?"} (source {match.Source}, confidence {match.Confidence}, required {AudiobookMatchPolicy.RequiredConfidence(match.Source)})",
+            attempts, AudiobookMatchPolicy.MaxMatchAttempts);
+
+        await SaveSidecarAsync(sidecarPath, new AudiobookSidecar
         {
-            Log.Information("[AudiobookEnrichment]   Using cached match: \"{Title}\" by {Author} (source {Source}, confidence {Confidence})",
-                match.Title, match.Author ?? "?", match.Source, match.Confidence);
-        }
+            OriginalPath = sidecar?.OriginalPath ?? folderPath,
+            CandidateTitle = identified.Candidate?.Title ?? sidecar?.CandidateTitle,
+            CandidateAuthor = identified.Candidate?.Author ?? sidecar?.CandidateAuthor,
+            MatchStatus = permanentlyFailed ? AudiobookSidecarStatus.Failed : AudiobookSidecarStatus.Unmatched,
+            AiAttempts = identified.AiAttempts,
+            MatchAttempts = attempts,
+            RenameStatus = permanentlyFailed ? AudiobookSidecarStatus.NeedsHumanReview : AudiobookSidecarStatus.SkippedNoMatch,
+            LastAttemptedUtc = DateTime.UtcNow
+        }, token);
 
-        var aiAttempts = sidecar?.AiAttempts ?? 0;
-        AudiobookCandidate? candidate = null;
+        return permanentlyFailed ? ProcessResult.Failed : ProcessResult.Unmatched;
+    }
 
-        if (match is null)
-        {
-            var folderName = Path.GetFileName(folderPath.TrimEnd(Path.DirectorySeparatorChar));
-            candidate = AudiobookNameParser.ParseCandidate(folderName);
-            Log.Information("[AudiobookEnrichment]   Candidate: title=\"{Title}\" author=\"{Author}\" narrator=\"{Narrator}\" year={Year}",
-                candidate.Title ?? "(none)", candidate.Author ?? "(none)", candidate.Narrator ?? "(none)", candidate.Year?.ToString() ?? "(none)");
+    // ── Step 3b: act on the match ────────────────────────────────────────
 
-            match = await TryMatchAsync(candidate, rateLimits, token);
-
-            if (match is null && aiAttempts < MaxAiAttempts && candidate.Title is not null)
-            {
-                aiAttempts++;
-                var franchiseContext = BuildFranchiseContext(folderPath, ResolveAudiobooksRoot());
-                Log.Information("[AudiobookEnrichment]   No free-source match cleared the bar — trying AI fallback (attempt {Attempt}/{Max}, franchiseContext=\"{Context}\")",
-                    aiAttempts, MaxAiAttempts, franchiseContext ?? "(none)");
-                match = await TryAiFallbackAsync(candidate, franchiseContext, rateLimits, token);
-            }
-        }
-
-        if (match is null || match.Confidence < RequiredConfidence(match.Source))
-        {
-            var attempts = (sidecar?.MatchAttempts ?? 0) + 1;
-            var permanentlyFailed = attempts >= MaxMatchAttempts;
-
-            Log.Information("[AudiobookEnrichment]   → {Outcome} (best: {Best}, attempt {Attempts}/{Max})",
-                permanentlyFailed ? "FAILED (permanent, needs human)" : "UNMATCHED",
-                match is null ? "nothing cleared any threshold" : $"\"{match.Title}\" by {match.Author ?? "?"} (source {match.Source}, confidence {match.Confidence}, required {RequiredConfidence(match.Source)})",
-                attempts, MaxMatchAttempts);
-
-            await SaveSidecarAsync(sidecarPath, new AudiobookSidecar
-            {
-                OriginalPath = sidecar?.OriginalPath ?? folderPath,
-                CandidateTitle = candidate?.Title ?? sidecar?.CandidateTitle,
-                CandidateAuthor = candidate?.Author ?? sidecar?.CandidateAuthor,
-                MatchStatus = permanentlyFailed ? "failed" : "unmatched",
-                AiAttempts = aiAttempts,
-                MatchAttempts = attempts,
-                RenameStatus = permanentlyFailed ? "needsHumanReview" : "skippedNoMatch",
-                LastAttemptedUtc = DateTime.UtcNow
-            }, token);
-            return permanentlyFailed ? ProcessResult.Failed : ProcessResult.Unmatched;
-        }
+    /// <summary>The only step that moves anything, and it moves nothing on a dry run.</summary>
+    private async Task<ProcessResult> ApplyMatchAsync(
+        string folderPath, string sidecarPath, Identification identified, AudiobookScanOptions options, CancellationToken token)
+    {
+        var match = identified.Match!;
+        var root = ResolveAudiobooksRoot();
 
         Log.Information("[AudiobookEnrichment]   → MATCHED: \"{Title}\" by {Author} (source {Source}, confidence {Confidence})",
             match.Title, match.Author ?? "?", match.Source, match.Confidence);
 
-        var targetPath = ComputeTargetPath(match, ResolveAudiobooksRoot());
+        var targetPath = ComputeTargetPath(match, root);
+
+        // A folder already sitting at its own computed target is not a duplicate
+        // of itself — without this, a second scan would quarantine everything the
+        // first one renamed.
         var isSelfCollision = string.Equals(targetPath, folderPath, StringComparison.Ordinal);
-        var targetAlreadyExists = Directory.Exists(targetPath) && !isSelfCollision;
 
-        if (targetAlreadyExists)
-        {
-            var quarantinePath = ComputeQuarantinePath(folderPath, ResolveAudiobooksRoot());
-            Log.Warning("[AudiobookEnrichment]   → DUPLICATE: would resolve to {Target}, which already exists. {Action} to {Quarantine}.",
-                targetPath, options.DryRun ? "Would quarantine" : "Quarantining", quarantinePath);
-
-            var quarantineSidecarPath = sidecarPath;
-            if (!options.DryRun)
-            {
-                Directory.CreateDirectory(Path.GetDirectoryName(quarantinePath)!);
-                Directory.Move(folderPath, quarantinePath);
-                quarantineSidecarPath = Path.Combine(quarantinePath, SidecarFileName);
-            }
-
-            await SaveSidecarAsync(quarantineSidecarPath, new AudiobookSidecar
-            {
-                OriginalPath = folderPath,
-                MatchStatus = "found",
-                MatchedTitle = match.Title,
-                MatchedAuthor = match.Author,
-                MatchedYear = match.Year,
-                MatchSource = match.Source,
-                MatchConfidence = match.Confidence,
-                AiAttempts = aiAttempts,
-                RenameStatus = options.DryRun ? "dryRunProposedQuarantine" : "quarantined",
-                CollisionTarget = targetPath
-            }, token);
-            return ProcessResult.Quarantined;
-        }
+        if (Directory.Exists(targetPath) && !isSelfCollision)
+            return await QuarantineDuplicateAsync(folderPath, sidecarPath, identified, targetPath, root, options, token);
 
         if (options.DryRun)
         {
-            await SaveSidecarAsync(sidecarPath, new AudiobookSidecar
-            {
-                OriginalPath = folderPath,
-                MatchStatus = "found",
-                MatchedTitle = match.Title,
-                MatchedAuthor = match.Author,
-                MatchedYear = match.Year,
-                MatchSource = match.Source,
-                MatchConfidence = match.Confidence,
-                AiAttempts = aiAttempts,
-                RenameStatus = "dryRunProposed",
-                RenamedTo = Path.GetRelativePath(ResolveAudiobooksRoot(), targetPath)
-            }, token);
+            await SaveSidecarAsync(sidecarPath, FoundSidecar(folderPath, identified,
+                AudiobookSidecarStatus.DryRunProposed, renamedTo: Path.GetRelativePath(root, targetPath)), token);
+
             Log.Information("[AudiobookEnrichment] DRY RUN: would rename '{Old}' -> '{New}' (confidence {Confidence}, source {Source})",
                 folderPath, targetPath, match.Confidence, match.Source);
             return ProcessResult.Renamed;
         }
 
-        // Step 1: write the "intent" sidecar at the OLD location first — if the process dies
-        // right here, the next scan sees this cached match and just proceeds to the move
-        // again, no re-querying.
-        await SaveSidecarAsync(sidecarPath, new AudiobookSidecar
-        {
-            OriginalPath = folderPath,
-            MatchStatus = "found",
-            MatchedTitle = match.Title,
-            MatchedAuthor = match.Author,
-            MatchedYear = match.Year,
-            MatchSource = match.Source,
-            MatchConfidence = match.Confidence,
-            AiAttempts = aiAttempts,
-            RenameStatus = "pending"
-        }, token);
+        // Write the intent at the OLD location first. If the process dies between
+        // here and the move, the next scan finds this cached match and goes
+        // straight to moving — no re-querying, nothing paid for twice.
+        await SaveSidecarAsync(sidecarPath, FoundSidecar(folderPath, identified, AudiobookSidecarStatus.Pending), token);
 
         Directory.CreateDirectory(Path.GetDirectoryName(targetPath)!);
         Directory.Move(folderPath, targetPath);
 
-        var movedSidecarPath = Path.Combine(targetPath, SidecarFileName);
-        await SaveSidecarAsync(movedSidecarPath, new AudiobookSidecar
-        {
-            OriginalPath = folderPath,
-            MatchStatus = "found",
-            MatchedTitle = match.Title,
-            MatchedAuthor = match.Author,
-            MatchedYear = match.Year,
-            MatchSource = match.Source,
-            MatchConfidence = match.Confidence,
-            AiAttempts = aiAttempts,
-            RenameStatus = "renamed",
-            RenamedTo = Path.GetRelativePath(ResolveAudiobooksRoot(), targetPath)
-        }, token);
+        await SaveSidecarAsync(Path.Combine(targetPath, SidecarFileName), FoundSidecar(folderPath, identified,
+            AudiobookSidecarStatus.Renamed, renamedTo: Path.GetRelativePath(root, targetPath)), token);
 
         Log.Information("[AudiobookEnrichment] Renamed '{Old}' -> '{New}' (confidence {Confidence}, source {Source})",
             folderPath, targetPath, match.Confidence, match.Source);
 
         return ProcessResult.Renamed;
+    }
+
+    /// <summary>
+    /// Two copies of the same book. Quarantined, never deleted and never merged —
+    /// the folder keeps its messy name under <c>_DuplicatesReview</c> so a person
+    /// can see what it was and where it came from.
+    /// </summary>
+    private async Task<ProcessResult> QuarantineDuplicateAsync(
+        string folderPath, string sidecarPath, Identification identified,
+        string targetPath, string root, AudiobookScanOptions options, CancellationToken token)
+    {
+        var quarantinePath = ComputeQuarantinePath(folderPath, root);
+        Log.Warning("[AudiobookEnrichment]   → DUPLICATE: would resolve to {Target}, which already exists. {Action} to {Quarantine}.",
+            targetPath, options.DryRun ? "Would quarantine" : "Quarantining", quarantinePath);
+
+        // On a dry run the folder has not moved, so its sidecar stays where it is.
+        var writeTo = sidecarPath;
+        if (!options.DryRun)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(quarantinePath)!);
+            Directory.Move(folderPath, quarantinePath);
+            writeTo = Path.Combine(quarantinePath, SidecarFileName);
+        }
+
+        var sidecar = FoundSidecar(folderPath, identified,
+            options.DryRun ? AudiobookSidecarStatus.DryRunProposedQuarantine : AudiobookSidecarStatus.Quarantined);
+        sidecar.CollisionTarget = targetPath;
+
+        await SaveSidecarAsync(writeTo, sidecar, token);
+        return ProcessResult.Quarantined;
+    }
+
+    /// <summary>
+    /// The match fields every "we know what this is" sidecar carries. Written out
+    /// by hand at four call sites before this, which is four chances for one of
+    /// them to omit <c>MatchSource</c> — and a sidecar with no source is one the
+    /// next scan cannot vouch for, so it gets re-queried from scratch.
+    /// </summary>
+    private static AudiobookSidecar FoundSidecar(
+        string folderPath, Identification identified, string renameStatus, string? renamedTo = null)
+    {
+        var match = identified.Match!;
+        return new AudiobookSidecar
+        {
+            OriginalPath = folderPath,
+            MatchStatus = AudiobookSidecarStatus.Found,
+            MatchedTitle = match.Title,
+            MatchedAuthor = match.Author,
+            MatchedYear = match.Year,
+            MatchSource = match.Source,
+            MatchConfidence = match.Confidence,
+            AiAttempts = identified.AiAttempts,
+            RenameStatus = renameStatus,
+            RenamedTo = renamedTo
+        };
     }
 
     // ── Rate-limit-aware backoff ────────────────────────────────────────────
@@ -442,8 +476,6 @@ public class AudiobookEnrichmentService : BackgroundService
 
     // ── Matching ─────────────────────────────────────────────────────────
 
-    private sealed record AudiobookMatch(string Title, string? Author, int? Year, string Source, double Confidence);
-
     private async Task<AudiobookMatch?> TryMatchAsync(AudiobookCandidate candidate, ScanRateLimitState rateLimits, CancellationToken token)
     {
         if (string.IsNullOrWhiteSpace(candidate.Title))
@@ -461,12 +493,7 @@ public class AudiobookEnrichmentService : BackgroundService
         _statsService.RecordCall("AudiobookGoogleBooks", googleBooks is not null, googleBooks?.Confidence);
         await AiThrottlingConfiguration.ThrottleAsync(token);
 
-        var best = new[] { openLibrary, googleBooks }
-            .Where(m => m is not null)
-            .OrderByDescending(m => m!.Confidence)
-            .FirstOrDefault();
-
-        return best?.Confidence >= ConfidenceThreshold ? best : null;
+        return AudiobookMatchPolicy.BestOf(openLibrary, googleBooks);
     }
 
     private static string DescribeMatch(AudiobookMatch? match) =>
@@ -500,7 +527,7 @@ public class AudiobookEnrichmentService : BackgroundService
             candidateTitle ?? title,
             candidateAuthors.FirstOrDefault(),
             OpenLibrarySearch.ExtractInt(doc, "first_publish_year"),
-            "OpenLibrary",
+            AudiobookMatchPolicy.OpenLibrarySource,
             result.Confidence);
     }
 
@@ -543,7 +570,7 @@ public class AudiobookEnrichmentService : BackgroundService
                     volume.Title ?? title,
                     volume.Authors.FirstOrDefault(),
                     volume.Year,
-                    "GoogleBooks",
+                    AudiobookMatchPolicy.GoogleBooksSource,
                     confidence);
             }
         }
@@ -655,7 +682,7 @@ Confidence rubric — use the actual scale, don't default to round numbers:
             Log.Information("[AudiobookEnrichment]   AI response: title=\"{Title}\" author=\"{Author}\" year={Year} selfReportedConfidence={Confidence}",
                 title, author ?? "(none)", year?.ToString() ?? "(none)", confidence);
 
-            return new AudiobookMatch(title, author, year, "AI", confidence);
+            return new AudiobookMatch(title, author, year, AudiobookMatchPolicy.AiSource, confidence);
         }
         catch (Exception ex)
         {

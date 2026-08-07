@@ -30,32 +30,28 @@ public static class AiBookSearchEndpoints
 
     public static WebApplication MapAiBookSearchEndpoints(this WebApplication app)
     {
-        // POST /api/ai/suggest-authors - Suggest authors for a book title
-        app.MapPost("/api/ai/suggest-authors", HandleSuggestAuthors)
+        // The guard pair lives on the group, so a route added below inherits it
+        // instead of needing it repeated — which is how one silently ships without.
+        var group = app.MapGroup("/api/ai")
             .RequireAuthorization()
             .RequireRateLimiting("api");
+
+        // POST /api/ai/suggest-authors - Suggest authors for a book title
+        group.MapPost("/suggest-authors", HandleSuggestAuthors);
 
         // POST /api/ai/related-books - Find related books (series + other series by author)
-        app.MapPost("/api/ai/related-books", HandleRelatedBooks)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapPost("/related-books", HandleRelatedBooks);
 
         // POST /api/ai/book-search - AI book search (freeform query)
-        app.MapPost("/api/ai/book-search", HandleBookSearch)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapPost("/book-search", HandleBookSearch);
 
         // POST /api/ai/match-series-books - Match series books intelligently using GPT
-        app.MapPost("/api/ai/match-series-books", HandleMatchSeriesBooks)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapPost("/match-series-books", HandleMatchSeriesBooks);
 
         // POST /api/ai/group-search-results - Detect which search results are
         // the same book (different format/duplicate upload) vs genuinely
         // different books, so the frontend can collapse duplicates into one card.
-        app.MapPost("/api/ai/group-search-results", HandleGroupSearchResults)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapPost("/group-search-results", HandleGroupSearchResults);
 
         return app;
     }

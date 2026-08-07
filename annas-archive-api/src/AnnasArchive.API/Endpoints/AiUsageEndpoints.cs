@@ -16,20 +16,20 @@ public static class AiUsageEndpoints
     /// </summary>
     public static WebApplication MapAiUsageEndpoints(this WebApplication app)
     {
-        // GET /api/ai/usage - Get current user's token usage
-        app.MapGet("/api/ai/usage", HandleGetUsage)
+        // The guard pair lives on the group, so a route added below inherits it
+        // instead of needing it repeated — which is how one silently ships without.
+        var group = app.MapGroup("/api/ai")
             .RequireAuthorization()
             .RequireRateLimiting("api");
+
+        // GET /api/ai/usage - Get current user's token usage
+        group.MapGet("/usage", HandleGetUsage);
 
         // GET /api/ai/usage/all-users - Get all users' usage
-        app.MapGet("/api/ai/usage/all-users", HandleGetAllUsersUsage)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapGet("/usage/all-users", HandleGetAllUsersUsage);
 
         // POST /api/ai/usage/reset - Reset usage counter
-        app.MapPost("/api/ai/usage/reset", HandleResetUsage)
-            .RequireAuthorization()
-            .RequireRateLimiting("api");
+        group.MapPost("/usage/reset", HandleResetUsage);
 
         return app;
     }

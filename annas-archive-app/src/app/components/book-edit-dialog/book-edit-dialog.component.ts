@@ -16,6 +16,7 @@ import { COMMA, ENTER } from '@angular/cdk/keycodes';
 import { MatChipInputEvent } from '@angular/material/chips';
 import { Router } from '@angular/router';
 import { STANDARD_GENRES } from '../../constants/book-genres';
+import { CoverCandidate, CoverCandidates } from '../shared/cover-picker/cover-candidates';
 import { LibraryApiService } from '../../services/library-api.service';
 import { LoggerService } from '../../services/logger.service';
 import { AuthService } from '../../services/auth.service';
@@ -49,13 +50,6 @@ export interface BookEditDialogResult {
   authors?: string[];
   coverUrl?: string | null;
   deleted?: boolean;
-}
-
-interface CoverCandidate {
-  url: string;
-  width: number;
-  height: number;
-  ratio: number;
 }
 
 @Component({
@@ -554,7 +548,7 @@ export class BookEditDialogComponent implements OnInit, OnDestroy {
 
     this.libraryApi.fetchLibraryCoverCandidates(title, author).pipe(takeUntil(this.destroy$)).subscribe({
       next: (resp) => {
-        const urls = Array.from(new Set(resp.covers || []));
+        const urls = CoverCandidates.unique(resp.covers);
         this.applyCoverCandidates(urls)
           .catch(() => {
             this.coverCandidatesError = 'Failed to load cover images.';
@@ -574,29 +568,7 @@ export class BookEditDialogComponent implements OnInit, OnDestroy {
   }
 
   private async applyCoverCandidates(urls: string[]): Promise<void> {
-    const validations = await Promise.all(urls.map((url) => this.validateCoverCandidate(url)));
-    const candidates = validations.filter((candidate): candidate is CoverCandidate => candidate !== null);
-    // Sort by size (larger images first)
-    this.coverCandidates = candidates.sort((a, b) => (b.width * b.height) - (a.width * a.height));
-  }
-
-  private validateCoverCandidate(url: string): Promise<CoverCandidate | null> {
-    return new Promise((resolve) => {
-      const img = new Image();
-      img.onload = () => {
-        const width = img.naturalWidth || img.width;
-        const height = img.naturalHeight || img.height;
-        if (!width || !height) {
-          resolve(null);
-          return;
-        }
-        const ratio = height / width;
-        // Accept all images that successfully load, no size or ratio restrictions
-        resolve({ url, width, height, ratio });
-      };
-      img.onerror = () => resolve(null);
-      img.src = url;
-    });
+    this.coverCandidates = await CoverCandidates.resolve(urls);
   }
 
   private addTagValue(value: string): void {

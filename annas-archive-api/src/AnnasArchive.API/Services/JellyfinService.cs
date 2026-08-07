@@ -171,7 +171,10 @@ public class JellyfinService : IJellyfinService
     // concurrently. Static (not an instance field) because JellyfinService is a
     // typed HttpClient, and DI may hand out more than one instance across
     // requests — this has to be shared process-wide to actually serialize anything.
-    private static readonly ConcurrentDictionary<string, SemaphoreSlim> _hlsItemLocks = new();
+    // Refcounted: an entry disappears once the last request for that item is
+    // done. The ConcurrentDictionary this replaces kept a SemaphoreSlim per
+    // item id for the life of the process.
+    private static readonly Helpers.KeyedLocks _hlsItemLocks = new();
 
     public JellyfinService(HttpClient http, IHttpClientFactory httpClientFactory, IConfiguration configuration)
     {
@@ -276,10 +279,11 @@ public class JellyfinService : IJellyfinService
         // See _hlsItemLocks — only the request/header-exchange phase needs
         // serializing against Jellyfin, not the (potentially slow, client-bound)
         // body transfer, so the lock is released as soon as we have a response.
-        var itemLock = _hlsItemLocks.GetOrAdd(itemId, _ => new SemaphoreSlim(1, 1));
         HttpResponseMessage response;
-        await itemLock.WaitAsync(ct);
-        try
+
+        // Scoped block, not a method-level `using`: the lock must be gone before
+        // the body transfer below, which is client-bound and slow.
+        using (await _hlsItemLocks.AcquireAsync(itemId, ct))
         {
             try
             {
@@ -302,10 +306,6 @@ public class JellyfinService : IJellyfinService
                 await Task.Delay(500, ct);
                 response = await SendHlsResourceRequestAsync(url, rangeHeader, ct);
             }
-        }
-        finally
-        {
-            itemLock.Release();
         }
 
         var body = await response.Content.ReadAsStreamAsync(ct);

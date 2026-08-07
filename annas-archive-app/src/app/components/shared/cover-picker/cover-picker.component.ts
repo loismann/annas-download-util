@@ -8,12 +8,8 @@ import { MatIconModule } from '@angular/material/icon';
 import { Subject } from 'rxjs';
 import { takeUntil } from 'rxjs/operators';
 import { LibraryApiService } from '../../../services/library-api.service';
+import { CoverCandidate, CoverCandidates } from './cover-candidates';
 
-interface CoverCandidate {
-  url: string;
-  width: number;
-  height: number;
-}
 
 /**
  * Cover search (title/author → OpenLibrary + Google Books candidates, sorted
@@ -303,26 +299,6 @@ export class CoverPickerComponent implements OnInit, OnDestroy {
   }
 
   private async applyCandidates(urls: string[]): Promise<void> {
-    const validations = await Promise.all(urls.map((url) => this.validateCandidate(url)));
-    const candidates = validations.filter((c): c is CoverCandidate => c !== null);
-    // Sort by size (larger images first)
-    this.candidates = candidates.sort((a, b) => (b.width * b.height) - (a.width * a.height));
-  }
-
-  private validateCandidate(url: string): Promise<CoverCandidate | null> {
-    return new Promise((resolve) => {
-      const img = new Image();
-      img.onload = () => {
-        const width = img.naturalWidth || img.width;
-        const height = img.naturalHeight || img.height;
-        if (!width || !height) {
-          resolve(null);
-          return;
-        }
-        resolve({ url, width, height });
-      };
-      img.onerror = () => resolve(null);
-      img.src = url;
-    });
+    this.candidates = await CoverCandidates.resolve(urls);
   }
 }

@@ -1,6 +1,7 @@
 import { Injectable } from '@angular/core';
 import { BehaviorSubject, Observable } from 'rxjs';
 import { AiApiService } from './ai-api.service';
+import { VocabularyTerms } from './vocabulary-terms';
 import { LoggerService } from './logger.service';
 
 export interface VocabularyWord {
@@ -45,22 +46,7 @@ export class VocabularyService {
    * strip simple plurals/possessives, and normalize curly quotes.
    */
   private normalizeTerm(term: string): string {
-    if (!term) return '';
-    let normalized = term
-      .toLowerCase()
-      .replace(/[\u2018\u2019]/g, "'") // curly to straight apostrophe
-      .replace(/-/g, ' ') // replace hyphens with spaces (so "root-book" becomes "root book")
-      .replace(/[^a-z0-9'\s]/g, ' ') // remove other punctuation
-      .replace(/\s+/g, ' ')
-      .trim();
-
-    if (normalized.endsWith("'s")) {
-      normalized = normalized.slice(0, -2);
-    } else if (normalized.endsWith('s') && normalized.length > 3) {
-      normalized = normalized.slice(0, -1);
-    }
-
-    return normalized;
+    return VocabularyTerms.normalize(term);
   }
 
   normalizeForMatch(term: string): string {
@@ -217,11 +203,10 @@ export class VocabularyService {
 
     // Update book association maps immediately for filtering
     if (bookId) {
-      const existingBooks = this.knownWordsWithBooks.get(normalizedTerm) || [];
-      if (!existingBooks.includes(bookId)) {
-        this.knownWordsWithBooks.set(normalizedTerm, [...existingBooks, bookId]);
-        this.logger.log(`📚 [markAsKnown] Added book association: '${normalizedTerm}' -> book '${bookId}'`);
-      }
+      this.knownWordsWithBooks.set(
+        normalizedTerm,
+        VocabularyTerms.withBook(this.knownWordsWithBooks.get(normalizedTerm), bookId)
+      );
     }
 
     // Create new Map instance to trigger BehaviorSubject emission
@@ -251,10 +236,9 @@ export class VocabularyService {
 
         // Rollback book association
         if (bookId) {
-          const books = this.knownWordsWithBooks.get(normalizedTerm) || [];
-          const filtered = books.filter(id => id !== bookId);
-          if (filtered.length > 0) {
-            this.knownWordsWithBooks.set(normalizedTerm, filtered);
+          const remaining = VocabularyTerms.withoutBook(this.knownWordsWithBooks.get(normalizedTerm), bookId);
+          if (remaining) {
+            this.knownWordsWithBooks.set(normalizedTerm, remaining);
           } else {
             this.knownWordsWithBooks.delete(normalizedTerm);
           }
@@ -360,26 +344,12 @@ export class VocabularyService {
    * to re-define already-known terms (includes simple variants).
    */
   getKnownWordsForPrompt(): string[] {
-    const variants = new Set<string>();
-    this.knownWordsSubject.value.forEach(term => {
-      if (!term) return;
-      variants.add(term);
-      // common simple variants
-      variants.add(term.replace(/-/g, ' '));
-      variants.add(term.replace(/-/g, ''));
-      if (!term.endsWith('s') && term.length > 2) {
-        variants.add(`${term}s`);
-      }
-      if (!term.endsWith('es') && term.length > 2) {
-        variants.add(`${term}es`);
-      }
-    });
-    return Array.from(variants).filter(Boolean);
+    return VocabularyTerms.promptVariants(this.knownWordsSubject.value);
   }
 
   getKnownWords(filterBookId?: string): string[] {
-    // If no filter or filter is 'all', return all known words
-    if (!filterBookId || filterBookId === 'all') {
+    const bookId = VocabularyTerms.bookFilter(filterBookId);
+    if (!bookId) {
       const allWords = Array.from(this.knownWordsSubject.value);
       this.logger.log(`📚 [getKnownWords] No filter - returning all ${allWords.length} known words`);
       return allWords;
@@ -388,7 +358,7 @@ export class VocabularyService {
     // Filter by book ID
     const filtered: string[] = [];
     this.knownWordsWithBooks.forEach((bookIds, term) => {
-      if (bookIds.includes(filterBookId)) {
+      if (bookIds.includes(bookId)) {
         filtered.push(term);
       }
     });
@@ -398,8 +368,8 @@ export class VocabularyService {
   }
 
   getUnknownWords(filterBookId?: string): Map<string, string> {
-    // If no filter or filter is 'all', return all study words
-    if (!filterBookId || filterBookId === 'all') {
+    const bookId = VocabularyTerms.bookFilter(filterBookId);
+    if (!bookId) {
       const allWords = new Map(this.studyWordsSubject.value);
       this.logger.log(`📚 [getUnknownWords] No filter - returning all ${allWords.size} study words`);
       return allWords;
@@ -408,7 +378,7 @@ export class VocabularyService {
     // Filter by book ID
     const filtered = new Map<string, string>();
     this.studyWordsWithBooks.forEach((data, term) => {
-      if (data.books.includes(filterBookId)) {
+      if (data.books.includes(bookId)) {
         filtered.set(term, data.definition);
       }
     });

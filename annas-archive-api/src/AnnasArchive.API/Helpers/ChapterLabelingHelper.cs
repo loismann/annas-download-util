@@ -15,7 +15,10 @@ namespace AnnasArchive.API.Helpers;
 /// </summary>
 public static class ChapterLabelingHelper
 {
-    private static readonly ConcurrentDictionary<string, SemaphoreSlim> LabelLocks = new();
+    // Refcounted, so a cache directory stops costing a SemaphoreSlim the moment
+    // nothing is labelling it. The plain ConcurrentDictionary this replaces kept
+    // one per book, forever.
+    private static readonly KeyedLocks LabelLocks = new();
     private static readonly JsonSerializerOptions CacheJsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -41,9 +44,7 @@ public static class ChapterLabelingHelper
             return index;
         }
 
-        var gate = LabelLocks.GetOrAdd(cacheDir, _ => new SemaphoreSlim(1, 1));
-        await gate.WaitAsync(cancellationToken);
-        try
+        using var gate = await LabelLocks.AcquireAsync(cacheDir, cancellationToken);
         {
             var metaPath = Path.Combine(cacheDir, "metadata.json");
             if (File.Exists(metaPath))
@@ -86,10 +87,6 @@ public static class ChapterLabelingHelper
             var metaJson = JsonSerializer.Serialize(updatedIndex, CacheJsonOptions);
             await File.WriteAllTextAsync(metaPath, metaJson, cancellationToken);
             return updatedIndex;
-        }
-        finally
-        {
-            gate.Release();
         }
     }
 

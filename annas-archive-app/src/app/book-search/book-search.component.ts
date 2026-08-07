@@ -37,6 +37,7 @@ import { debounceTime, distinctUntilChanged, takeUntil } from 'rxjs/operators';
 import { RelatedBooksModalComponent } from '../related-books-modal/related-books-modal.component';
 import { SearchFormComponent, DomainHealth, SearchFormSubmitEvent } from '../components/search-form/search-form.component';
 import { applyMirrorHealth, applySlumHealth } from './domain-health';
+import { BookSearchGrouping } from './book-search-grouping';
 import { BookCoverLookupService } from './book-cover-lookup.service';
 import { BookDescriptionLookupService } from './book-description-lookup.service';
 import {
@@ -170,14 +171,14 @@ export class BookSearchComponent implements OnInit, OnDestroy {
 
   /* ───────── domain health management ───────── */
   private fetchDomainHealth(): void {
-    this.bookSearchApi.getSlumHealth().subscribe({
+    this.bookSearchApi.getSlumHealth().pipe(takeUntil(this.destroy$)).subscribe({
       next: data => applySlumHealth(this.annaDomains, data),
       error: err => this.logger.error('[domain-health] Failed to fetch SLUM data', err)
     });
   }
 
   private fetchMirrorHealth(): void {
-    this.bookSearchApi.getMirrorHealth().subscribe({
+    this.bookSearchApi.getMirrorHealth().pipe(takeUntil(this.destroy$)).subscribe({
       next: data => applyMirrorHealth(this.annaDomains, data),
       error: err => this.logger.error('[domain-health] Failed to fetch mirror health data', err)
     });
@@ -185,7 +186,7 @@ export class BookSearchComponent implements OnInit, OnDestroy {
 
   /* ───────── download counter management ───────── */
   private fetchDownloadStatus(): void {
-    this.bookSearchApi.getDownloadStatus().subscribe({
+    this.bookSearchApi.getDownloadStatus().pipe(takeUntil(this.destroy$)).subscribe({
       next: (resp) => {
         if (resp.accountFastInfo) {
           this.updateFromServer(resp.accountFastInfo.downloadsLeft, resp.accountFastInfo.downloadsPerDay);
@@ -245,23 +246,11 @@ export class BookSearchComponent implements OnInit, OnDestroy {
    *  whole group (see activeBookFor for how the "displayed" book is picked
    *  when a group still has more than one match). */
   get filteredGroups(): BookGroup[] {
-    return this.bookGroups
-      .map(group => {
-        let books = group.books;
-
-        if (this.selectedAuthor) {
-          books = books.filter(b =>
-            b.authors.some(author => this.authorMatches(author, this.selectedAuthor))
-          );
-        }
-
-        if (this.selectedFormat) {
-          books = books.filter(b => b.format === this.selectedFormat);
-        }
-
-        return books.length > 0 ? { key: group.key, books } : null;
-      })
-      .filter((g): g is BookGroup => g !== null);
+    return BookSearchGrouping.filter(
+      this.bookGroups,
+      { author: this.selectedAuthor, format: this.selectedFormat },
+      (author, selected) => this.authorMatches(author, selected)
+    );
   }
 
   /** Which book within a (possibly filtered) group is currently shown on its
@@ -272,15 +261,7 @@ export class BookSearchComponent implements OnInit, OnDestroy {
    *  a standard one is sitting right there in the same group; failing even
    *  that (no standard-format copy exists at all), just the first book. */
   activeBookFor(group: BookGroup): BookDto {
-    const selectedMd5 = this.groupSelection.get(group.key);
-    const selected = selectedMd5 ? group.books.find(b => b.md5 === selectedMd5) : undefined;
-    if (selected) return selected;
-
-    for (const format of DISPLAYABLE_BOOK_FORMATS) {
-      const preferred = group.books.find(b => b.format === format);
-      if (preferred) return preferred;
-    }
-    return group.books[0];
+    return BookSearchGrouping.activeBookIn(group, this.groupSelection.get(group.key));
   }
 
   selectVariant(group: BookGroup, book: BookDto): void {
@@ -290,7 +271,7 @@ export class BookSearchComponent implements OnInit, OnDestroy {
   /** What the results grid actually renders — each filtered group paired
    *  with whichever book is currently "active" for it (see activeBookFor). */
   get displayGroups(): DisplayGroup[] {
-    return this.filteredGroups.map(group => ({ group, active: this.activeBookFor(group) }));
+    return BookSearchGrouping.toDisplayGroups(this.filteredGroups, this.groupSelection);
   }
 
   onVariantSelected(event: VariantSelectedEvent): void {
@@ -328,22 +309,16 @@ export class BookSearchComponent implements OnInit, OnDestroy {
       year: b.year
     }));
 
-    this.aiApi.groupSearchResults(payload).subscribe({
+    this.aiApi.groupSearchResults(payload).pipe(takeUntil(this.destroy$)).subscribe({
       next: (resp) => {
-        const byMd5 = new Map(this.books.map(b => [b.md5, b]));
-        this.bookGroups = resp.groups
-          .map(md5s => {
-            const groupBooks = md5s.map(md5 => byMd5.get(md5)).filter((b): b is BookDto => !!b);
-            return groupBooks.length > 0 ? { key: groupBooks[0].md5, books: groupBooks } : null;
-          })
-          .filter((g): g is BookGroup => g !== null);
+        this.bookGroups = BookSearchGrouping.fromMd5Groups(this.books, resp.groups);
         this.groupingInProgress = false;
       },
       error: (err) => {
         this.logger.error('[book-search] Grouping failed, showing ungrouped results', err);
         // Degrade to "every book is its own group" rather than showing
         // nothing — duplicates stay uncollapsed, but nothing disappears.
-        this.bookGroups = this.books.map(b => ({ key: b.md5, books: [b] }));
+        this.bookGroups = BookSearchGrouping.ungrouped(this.books);
         this.groupingInProgress = false;
       }
     });
@@ -442,7 +417,7 @@ export class BookSearchComponent implements OnInit, OnDestroy {
     if (this.useLibGen) {
       // LibGen's search doesn't paginate the same way (general vs. fiction
       // search, not simple page accumulation) — single-shot for now.
-      this.bookSearchApi.searchBooksLibGen(searchQuery, false).subscribe({
+      this.bookSearchApi.searchBooksLibGen(searchQuery, false).pipe(takeUntil(this.destroy$)).subscribe({
         next: books => {
           this.books = books;
           this.books.forEach(initIdleState);
@@ -460,7 +435,7 @@ export class BookSearchComponent implements OnInit, OnDestroy {
     // ~50-result budget — page 2 is fetched in the background afterward and
     // appended when it lands, so the user sees results immediately instead
     // of staring at a spinner for two sequential Anna's Archive page fetches.
-    this.bookSearchApi.searchBooks(searchQuery, false, 1).subscribe({
+    this.bookSearchApi.searchBooks(searchQuery, false, 1).pipe(takeUntil(this.destroy$)).subscribe({
       next: books => {
         this.books = books;
         this.books.forEach(initIdleState);
@@ -469,7 +444,7 @@ export class BookSearchComponent implements OnInit, OnDestroy {
         this.descriptionLookup.queueForBooks(this.books);
         this.regroupBooks();
 
-        this.bookSearchApi.searchBooks(searchQuery, false, 2).subscribe({
+        this.bookSearchApi.searchBooks(searchQuery, false, 2).pipe(takeUntil(this.destroy$)).subscribe({
           next: more => {
             more.forEach(initIdleState);
             this.books = [...this.books, ...more];
@@ -541,6 +516,11 @@ export class BookSearchComponent implements OnInit, OnDestroy {
    *  library" and the copy every send-to-device button makes on the way past:
    *  the explicit action reports a failure, the incidental one stays quiet. */
   private saveToLibrary(book: BookDto, coverUrl: string | undefined, surfaceError: boolean): void {
+    // Deliberately NOT takeUntil(destroy$), unlike every read in this file:
+    // unsubscribing aborts the in-flight request, and this one is a write the
+    // user asked for. Navigating away from the search page must not cancel a
+    // save that is already on its way to the server. The callbacks only touch
+    // the BookDto and a string field, so running them after destroy is inert.
     this.libraryRequest(book, coverUrl).subscribe({
       next: () => {
         book.libraryState = 'success';
@@ -594,6 +574,8 @@ export class BookSearchComponent implements OnInit, OnDestroy {
     const coverUrl = this.coverUrlFor(book);
     this.saveToLibrary(book, coverUrl, false);
 
+    // Same reasoning as saveToLibrary: a send already accepted by the server
+    // must not be cancelled because the user navigated away.
     send(book.md5, book.title, coverUrl).subscribe({
       next: (resp: SendToTargetResponse) => {
         if (resp.accountFastInfo) {
@@ -688,7 +670,7 @@ export class BookSearchComponent implements OnInit, OnDestroy {
 
     this.latestAuthorQuery = bookTitle;
     this.loadingAuthors = true;
-    this.aiApi.suggestAuthors(bookTitle).subscribe({
+    this.aiApi.suggestAuthors(bookTitle).pipe(takeUntil(this.destroy$)).subscribe({
       next: (resp) => {
         if (bookTitle !== this.latestAuthorQuery) {
           return;
@@ -760,7 +742,7 @@ export class BookSearchComponent implements OnInit, OnDestroy {
     dialogRef.componentInstance.addStatus('Requesting related books...');
 
     // Fetch related books
-    this.aiApi.getRelatedBooks(this.searchTerm.trim(), this.selectedAuthor).subscribe({
+    this.aiApi.getRelatedBooks(this.searchTerm.trim(), this.selectedAuthor).pipe(takeUntil(this.destroy$)).subscribe({
       next: (resp) => {
         dialogRef.componentInstance.data.sameSeries = resp.sameSeries;
         dialogRef.componentInstance.data.otherSeries = resp.otherSeries;
@@ -781,7 +763,7 @@ export class BookSearchComponent implements OnInit, OnDestroy {
     });
 
     // Handle modal close
-    dialogRef.afterClosed().subscribe(result => {
+    dialogRef.afterClosed().pipe(takeUntil(this.destroy$)).subscribe(result => {
       // Unlock format dropdown when modal closes
       this.relatedBooksModalOpen = false;
 
@@ -835,7 +817,7 @@ export class BookSearchComponent implements OnInit, OnDestroy {
     dialogRef.componentInstance.clearStatus();
     dialogRef.componentInstance.addStatus('Thinking…');
 
-    this.aiApi.aiBookSearch(query).subscribe({
+    this.aiApi.aiBookSearch(query).pipe(takeUntil(this.destroy$)).subscribe({
       next: (resp: AiBookSearchResult) => {
         const results = (resp.books ?? []).map((book, index) => ({
           title: book.title,
@@ -870,7 +852,7 @@ export class BookSearchComponent implements OnInit, OnDestroy {
       }
     });
 
-    dialogRef.afterClosed().subscribe(result => {
+    dialogRef.afterClosed().pipe(takeUntil(this.destroy$)).subscribe(result => {
       if (result && result.searchBook) {
         this.searchTerm = result.searchBook;
         this.onSearch();

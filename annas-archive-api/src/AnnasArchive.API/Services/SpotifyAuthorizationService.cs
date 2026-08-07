@@ -86,7 +86,9 @@ public sealed class SpotifyAuthorizationService : ISpotifyAuthorizationService, 
     private readonly TimeProvider _timeProvider;
     private readonly ISpotifyInventoryStore? _inventoryStore;
     private readonly ISpotifyInventoryJobService? _inventoryJobs;
-    private readonly ConcurrentDictionary<string, SemaphoreSlim> _refreshLocks = new(StringComparer.Ordinal);
+    // Refcounted — an owner's entry disappears once no refresh or update for
+    // them is in flight, rather than persisting for the process lifetime.
+    private readonly Helpers.KeyedLocks _refreshLocks = new();
 
     public SpotifyAuthorizationService(
         IHttpClientFactory httpClientFactory,
@@ -370,9 +372,7 @@ public sealed class SpotifyAuthorizationService : ISpotifyAuthorizationService, 
         bool forceRefresh,
         CancellationToken token)
     {
-        var refreshLock = _refreshLocks.GetOrAdd(ownerKey, static _ => new SemaphoreSlim(1, 1));
-        await refreshLock.WaitAsync(token);
-        try
+        using var refreshLock = await _refreshLocks.AcquireAsync(ownerKey, token);
         {
             var connection = _connections.Get(ownerKey)
                 ?? throw new SpotifyConnectionException("Spotify is not connected.", "Disconnected");
@@ -445,10 +445,6 @@ public sealed class SpotifyAuthorizationService : ISpotifyAuthorizationService, 
             _connections.Save(updated);
             return updated.AccessToken;
         }
-        finally
-        {
-            refreshLock.Release();
-        }
     }
 
     private async Task<SpotifyTokenResponse> RequestTokenAsync(
@@ -520,27 +516,19 @@ public sealed class SpotifyAuthorizationService : ISpotifyAuthorizationService, 
         CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
-        var refreshLock = _refreshLocks.GetOrAdd(ownerKey, static _ => new SemaphoreSlim(1, 1));
-        return UpdateUnderLockAsync(ownerKey, refreshLock, update, token);
+        return UpdateUnderLockAsync(ownerKey, update, token);
     }
 
     private async Task UpdateUnderLockAsync(
         string ownerKey,
-        SemaphoreSlim refreshLock,
         Func<SpotifyConnectionRecord, SpotifyConnectionRecord> update,
         CancellationToken token)
     {
-        await refreshLock.WaitAsync(token);
-        try
-        {
-            var connection = _connections.Get(ownerKey);
-            if (connection != null)
-                _connections.Save(update(connection));
-        }
-        finally
-        {
-            refreshLock.Release();
-        }
+        using var refreshLock = await _refreshLocks.AcquireAsync(ownerKey, token);
+
+        var connection = _connections.Get(ownerKey);
+        if (connection != null)
+            _connections.Save(update(connection));
     }
 
     private SpotifyConnectionRecord NormalizeState(SpotifyConnectionRecord connection)

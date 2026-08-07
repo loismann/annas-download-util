@@ -15,7 +15,9 @@ public sealed class AudiobookRequestService(
     IConfiguration configuration,
     TimeProvider timeProvider)
 {
-    private static readonly ConcurrentDictionary<string, SemaphoreSlim> AsinLocks = new();
+    // Refcounted — one entry per ASIN ever requested, released when the last
+    // confirmation for it finishes.
+    private static readonly Helpers.KeyedLocks AsinLocks = new();
 
     /// <summary>
     /// Whether an ordinary request may let Listenarr pick the release itself,
@@ -113,16 +115,8 @@ public sealed class AudiobookRequestService(
         bool autoSearch,
         CancellationToken ct)
     {
-        var gate = AsinLocks.GetOrAdd(asin, _ => new SemaphoreSlim(1, 1));
-        await gate.WaitAsync(ct);
-        try
-        {
-            return await ConfirmLockedAsync(ownerKey, ownerLabel, asin, region, autoSearch, ct);
-        }
-        finally
-        {
-            gate.Release();
-        }
+        using var gate = await AsinLocks.AcquireAsync(asin, ct);
+        return await ConfirmLockedAsync(ownerKey, ownerLabel, asin, region, autoSearch, ct);
     }
 
     /// <summary>

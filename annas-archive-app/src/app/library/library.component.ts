@@ -18,6 +18,8 @@ import { BookEditDialogComponent, BookEditDialogData, BookEditDialogResult } fro
 import { BulkEditDialogComponent, BookBulkEditDialogData, BookBulkEditDialogResult } from '../components/bulk-edit-dialog/bulk-edit-dialog.component';
 import { FileUploadDialogComponent } from '../components/file-upload-dialog/file-upload-dialog.component';
 import { BookCardComponent, LibraryBook } from '../components/book-card/book-card.component';
+import { LibraryGridLayout } from './library-grid-layout';
+import { LibraryBulkEdit } from './library-bulk-edit';
 import type { PdfViewerDialogData } from '../components/pdf-viewer-dialog/pdf-viewer-dialog.component';
 import { LibrarySidebarComponent } from '../components/library-sidebar/library-sidebar.component';
 import { AuthService } from '../services/auth.service';
@@ -116,26 +118,12 @@ export class LibraryComponent implements OnInit, OnDestroy {
 
   /** Row height for virtual scrolling - varies by tile size */
   get rowHeight(): number {
-    switch (this.tileSize) {
-      case 'small': return 320;
-      case 'large': return 480;
-      default: return 400;
-    }
-  }
-
-  /** Get items per row based on tile size - used for virtual scroll row grouping */
-  private getItemsPerRow(): number {
-    // Fixed items per row based on tile size - CSS handles the actual layout
-    switch (this.tileSize) {
-      case 'small': return 8;
-      case 'large': return 4;
-      default: return 6;
-    }
+    return LibraryGridLayout.rowHeight(this.tileSize);
   }
 
   /** Recalculate items per row (called on resize and tile size change) */
   recalculateLayout(): void {
-    this.cachedItemsPerRow = this.getItemsPerRow();
+    this.cachedItemsPerRow = LibraryGridLayout.itemsPerRow(this.tileSize);
     // Check method exists for test compatibility
     if (this.virtualScroll && typeof this.virtualScroll.checkViewportSize === 'function') {
       this.virtualScroll.checkViewportSize();
@@ -149,13 +137,7 @@ export class LibraryComponent implements OnInit, OnDestroy {
 
   /** Group filtered books into rows for virtual scrolling */
   get bookRows(): LibraryBook[][] {
-    const books = this.filteredBooks;
-    const perRow = this.cachedItemsPerRow;
-    const rows: LibraryBook[][] = [];
-    for (let i = 0; i < books.length; i += perRow) {
-      rows.push(books.slice(i, i + perRow));
-    }
-    return rows;
+    return LibraryGridLayout.toRows(this.filteredBooks, this.cachedItemsPerRow);
   }
 
   /** Track rows by first book's filename for efficient rendering */
@@ -322,16 +304,15 @@ export class LibraryComponent implements OnInit, OnDestroy {
   }
 
   get availableLetters(): string[] {
-    const letters = new Set(this.filteredBooks.map(book => this.getBookLetter(book)));
-    return Array.from(letters).sort();
+    return LibraryGridLayout.availableLetters(this.filteredBooks, this.sortOrder);
   }
 
   get alphabetIndex(): string[] {
-    return ['#', ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('')];
+    return LibraryGridLayout.alphabet();
   }
 
   get showAlphabetIndex(): boolean {
-    return this.sortOrder === 'title' || this.sortOrder === 'author' || this.sortOrder === 'series';
+    return LibraryGridLayout.showsAlphabetIndex(this.sortOrder);
   }
 
   onGridScroll(): void {
@@ -349,19 +330,15 @@ export class LibraryComponent implements OnInit, OnDestroy {
       // Get the current row index from virtual scroll (check method exists for tests)
       if (!this.virtualScroll || typeof this.virtualScroll.getRenderedRange !== 'function') return;
       const rowIndex = this.virtualScroll.getRenderedRange().start ?? 0;
-      // Calculate book index from row index
-      const bookIndex = rowIndex * this.cachedItemsPerRow;
-      const book = this.filteredBooks[bookIndex];
-      if (!book) return;
-      const nextLetter = this.getBookLetter(book);
+      const nextLetter = LibraryGridLayout.letterAtRow(
+        this.filteredBooks, rowIndex, this.sortOrder, this.cachedItemsPerRow);
+      if (!nextLetter) return;
       if (nextLetter !== this.activeLetter) {
         this.zone.run(() => {
           this.logger.debug('[library-alpha] active letter changed', {
             from: this.activeLetter,
             to: nextLetter,
-            rowIndex,
-            bookIndex,
-            title: book.title
+            rowIndex
           });
           this.activeLetter = nextLetter;
           this.cdr.markForCheck();
@@ -373,11 +350,9 @@ export class LibraryComponent implements OnInit, OnDestroy {
   scrollToLetter(letter: string): void {
     if (this.availableLetters.indexOf(letter) === -1) return;
     if (!this.virtualScroll) return;
-    const books = this.filteredBooks;
-    const bookIndex = books.findIndex(book => this.getBookLetter(book) === letter);
-    if (bookIndex === -1) return;
-    // Calculate row index from book index
-    const rowIndex = Math.floor(bookIndex / this.cachedItemsPerRow);
+    const rowIndex = LibraryGridLayout.rowIndexOfLetter(
+      this.filteredBooks, letter, this.sortOrder, this.cachedItemsPerRow);
+    if (rowIndex === -1) return;
     this.virtualScroll.scrollToIndex(rowIndex, 'smooth');
     this.zone.run(() => {
       this.activeLetter = letter;
@@ -408,7 +383,7 @@ export class LibraryComponent implements OnInit, OnDestroy {
         this.activeLetter = '#';
         return;
       }
-      this.activeLetter = this.getBookLetter(books[0]);
+      this.activeLetter = LibraryGridLayout.letterOf(books[0], this.sortOrder);
     }, 100);
   }
 
@@ -469,27 +444,6 @@ export class LibraryComponent implements OnInit, OnDestroy {
 
   private getDefaultSortDirection(order: typeof this.sortOrder): 'down' | 'up' {
     return 'down';
-  }
-
-  private getBookLetter(book: LibraryBook): string {
-    let value = '';
-    switch (this.sortOrder) {
-      case 'author':
-        value = book.authors?.[0] || '';
-        break;
-      case 'series':
-        value = book.series?.trim() || book.title || '';
-        break;
-      case 'recent':
-      case 'stars':
-      case 'goodreads':
-      case 'title':
-      default:
-        value = book.title || '';
-        break;
-    }
-    const letter = value.trim().charAt(0).toUpperCase();
-    return letter >= 'A' && letter <= 'Z' ? letter : '#';
   }
 
   onCoverClick(book: LibraryBook): void {
@@ -941,48 +895,22 @@ export class LibraryComponent implements OnInit, OnDestroy {
         return;
       }
 
-      // Update all selected books with the new metadata
+      // Update all selected books with the new metadata. The rules for what
+      // each change does to a book — append vs replace, and the owner tags
+      // that always replace — live in LibraryBulkEdit.
       for (const book of selectedBooks) {
-        if (result.authors) {
-          book.authors = result.authors;
-        }
-        if (result.primaryGenre !== undefined) {
-          book.primaryGenre = result.primaryGenre;
-        }
-        if (result.tags) {
-          // Handle append vs replace mode for tags
-          if (result.tagsMode === 'append') {
-            // Merge existing tags with new tags, avoiding duplicates
-            const existingTags = book.tags ?? [];
-            const newTags = result.tags;
-            book.tags = [...new Set([...existingTags, ...newTags])];
-          } else {
-            // Replace mode: overwrite all tags
-            book.tags = result.tags;
-          }
-        }
-        if (result.series !== undefined) {
-          book.series = result.series;
-        }
-        if (result.owners && result.owners.length > 0) {
-          // Owners live inside the same tags array as genres — always a
-          // replace (unlike genre tags' append/replace toggle): "set owner
-          // to Mom" across a batch means these books are Mom's now, not
-          // "add Mom alongside whoever's already on each one." Same fix as
-          // the Kindle-send bug: this must actually remove prior owners,
-          // not stack a new one on top.
-          const nonOwnerTags = (book.tags ?? []).filter(tag => !this.ownerTags.includes(tag));
-          book.tags = [...nonOwnerTags, ...result.owners];
-        }
+        const applied = LibraryBulkEdit.applyTo(book, result, this.ownerTags);
+
+        book.authors = applied.authors ?? book.authors;
+        book.primaryGenre = applied.primaryGenre;
+        book.tags = applied.tags;
+        book.series = applied.series;
 
         // Update on backend
-        this.libraryApi.updateLibraryBookMetadata(book.fileName, {
-          primaryGenre: result.primaryGenre ?? book.primaryGenre ?? 'Uncategorized',
-          tags: book.tags ?? [],
-          series: result.series ?? book.series ?? null,
-          title: book.title,
-          authors: result.authors ?? book.authors
-        }).pipe(takeUntil(this.destroy$)).subscribe({
+        this.libraryApi.updateLibraryBookMetadata(
+          book.fileName,
+          LibraryBulkEdit.metadataPayload(applied, book.title)
+        ).pipe(takeUntil(this.destroy$)).subscribe({
           next: () => {
             this.logger.log('[library] Updated book metadata:', book.fileName);
           },

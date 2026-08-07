@@ -19,8 +19,19 @@ public static class LibraryCoverEndpoints
     public static WebApplication MapLibraryCoverEndpoints(this WebApplication app)
     {
         // GET /api/library/cover/{*path} - Get library cover file
+        //
+        // "media", not "api": this is one request per tile, and the library grid
+        // renders hundreds of them. Sharing the 60/min "api" budget meant a fast
+        // scroll through the ebook library exhausted the whole window on covers —
+        // the same failure already fixed for audiobook covers and for
+        // /api/library/books (LibraryBrowserEndpoints).
+        // Authorized like everything else. The token arrives in a path-scoped
+        // cookie rather than the Authorization header, because these URLs are
+        // rendered by <img src> — see the OnMessageReceived comment in
+        // ServiceConfiguration for why a cookie and not ?access_token=.
         app.MapGet("/api/library/cover/{*path}", HandleGetCover)
-            .RequireRateLimiting("api");
+            .RequireAuthorization()
+            .RequireRateLimiting("media");
 
         // GET /api/library/book/cover-candidates - Get cover candidates
         app.MapGet("/api/library/book/cover-candidates", HandleGetCoverCandidates)
@@ -40,6 +51,39 @@ public static class LibraryCoverEndpoints
         return app;
     }
 
+    /// <summary>
+    /// The only extensions this route will serve, and the content type each maps
+    /// to. It is an allowlist rather than a switch with a default arm: the old
+    /// default was <c>application/octet-stream</c>, which meant any file under the
+    /// library root — every <c>.epub</c> in it — was retrievable by exact path
+    /// from a route whose whole job is thumbnails.
+    /// </summary>
+    public static readonly IReadOnlyDictionary<string, string> CoverContentTypes =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            [".jpg"] = "image/jpeg",
+            [".jpeg"] = "image/jpeg",
+            [".png"] = "image/png",
+            [".gif"] = "image/gif",
+            [".webp"] = "image/webp",
+        };
+
+    /// <summary>
+    /// True when <paramref name="candidate"/> resolves to something inside
+    /// <paramref name="root"/>.
+    ///
+    /// The separator matters. A bare <c>StartsWith(root)</c> also accepts a
+    /// sibling whose name merely begins with the root's — with a root of
+    /// <c>/volume1/books/Library</c>, the path <c>/volume1/books/Library-backup/x</c>
+    /// passes a prefix test while living entirely outside the library.
+    /// </summary>
+    public static bool IsInsideRoot(string root, string candidate)
+    {
+        var normalizedRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root))
+                             + Path.DirectorySeparatorChar;
+        return candidate.StartsWith(normalizedRoot, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static IResult HandleGetCover(HttpContext context, string path)
     {
         if (string.IsNullOrWhiteSpace(path))
@@ -47,21 +91,17 @@ public static class LibraryCoverEndpoints
 
         var libraryRoot = LibraryHelpers.ResolveLibraryRoot();
         var fullPath = Path.GetFullPath(Path.Combine(libraryRoot, path));
-        if (!fullPath.StartsWith(libraryRoot, StringComparison.OrdinalIgnoreCase))
+        if (!IsInsideRoot(libraryRoot, fullPath))
             return Results.BadRequest(new { error = "Invalid path." });
+
+        // Checked before File.Exists so a non-image under the root and a path that
+        // is not there at all answer identically — the response must not tell an
+        // unauthenticated caller which books the library holds.
+        if (!CoverContentTypes.TryGetValue(Path.GetExtension(fullPath), out var contentType))
+            return Results.NotFound();
 
         if (!File.Exists(fullPath))
             return Results.NotFound();
-
-        var ext = Path.GetExtension(fullPath).ToLowerInvariant();
-        var contentType = ext switch
-        {
-            ".jpg" or ".jpeg" => "image/jpeg",
-            ".png" => "image/png",
-            ".gif" => "image/gif",
-            ".webp" => "image/webp",
-            _ => "application/octet-stream"
-        };
 
         // Prevent browser from caching covers so updates appear immediately
         // no-cache means browser must revalidate; it can still use conditional requests (304)

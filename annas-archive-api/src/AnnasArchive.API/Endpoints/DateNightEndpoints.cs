@@ -579,10 +579,9 @@ public static class DateNightEndpoints
             await cycles.CastVoteAsync(person!, request.MovieId, request.Vote, isTest);
             return Results.Ok(new { voted = true });
         }
-        catch (ArgumentException ex)
-        {
-            return Results.BadRequest(new { error = ex.Message });
-        }
+        // ArgumentException is deliberately not caught: InvalidOperationException is
+        // a sibling type, not a base, so it falls through to
+        // UseGlobalExceptionHandler — same 400, plus errorCode and details.
         catch (InvalidOperationException ex)
         {
             return Results.Conflict(new { error = ex.Message });
@@ -624,10 +623,9 @@ public static class DateNightEndpoints
             await cycles.ProposeScheduleAsync(person!, request.Slots, isTest);
             return Results.Ok(new { proposed = true });
         }
-        catch (ArgumentException ex)
-        {
-            return Results.BadRequest(new { error = ex.Message });
-        }
+        // ArgumentException is deliberately not caught: InvalidOperationException is
+        // a sibling type, not a base, so it falls through to
+        // UseGlobalExceptionHandler — same 400, plus errorCode and details.
         catch (InvalidOperationException ex)
         {
             return Results.Conflict(new { error = ex.Message });

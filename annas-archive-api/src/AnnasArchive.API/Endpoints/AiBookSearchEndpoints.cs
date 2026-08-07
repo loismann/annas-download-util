@@ -101,12 +101,7 @@ public static class AiBookSearchEndpoints
                 request.BookTitle, authors.Count);
             return Results.Ok(new SuggestAuthorsResponse(authors));
         }
-        catch (ArgumentException ex)
-        {
-            Log.Information("❌ Invalid argument for suggest-authors: {Message}", ex.Message);
-            return Results.BadRequest(new { error = $"Invalid parameter: {ex.ParamName ?? "unknown"}" });
-        }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not ArgumentException)
         {
             Log.Information("❌ OpenAI suggest-authors failed: {ErrorMessage}", ex.Message);
             return ApiResponse.InternalError("Failed to suggest authors.");
@@ -149,12 +144,7 @@ public static class AiBookSearchEndpoints
 
             return Results.Ok(new RelatedBooksResponse(filledSameSeries, filledOtherSeries, payload.SeriesSummary));
         }
-        catch (ArgumentException ex)
-        {
-            Log.Information("❌ Invalid argument for related-books: {Message}", ex.Message);
-            return Results.BadRequest(new { error = $"Invalid parameter: {ex.ParamName ?? "unknown"}" });
-        }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not ArgumentException)
         {
             Log.Information("❌ OpenAI related-books failed: {ExMessage}", ex.Message);
             return ApiResponse.InternalError("Failed to get related books.");
@@ -214,12 +204,7 @@ public static class AiBookSearchEndpoints
 
             return Results.Ok(new AiBookSearchResponse(payload.Summary, payload.Books));
         }
-        catch (ArgumentException ex)
-        {
-            Log.Information("❌ Invalid argument for book-search: {Message}", ex.Message);
-            return Results.BadRequest(new { error = $"Invalid parameter: {ex.ParamName ?? "unknown"}" });
-        }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not ArgumentException)
         {
             Log.Information("❌ OpenAI book-search failed: {ExMessage}", ex.Message);
             return ApiResponse.InternalError("Failed to run AI book search.");
@@ -279,12 +264,7 @@ public static class AiBookSearchEndpoints
                 matches.Count(m => m.Status == "matched"), request.Books.Count);
             return Results.Ok(new MatchSeriesBooksResponse(matches));
         }
-        catch (ArgumentException ex)
-        {
-            Log.Information("❌ Invalid argument for match-series-books: {Message}", ex.Message);
-            return Results.BadRequest(new { error = $"Invalid parameter: {ex.ParamName ?? "unknown"}" });
-        }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not ArgumentException)
         {
             Log.Warning("OpenAI match-series-books failed: {ErrorMessage}", ex.Message);
             return ApiResponse.InternalError("Failed to match series books.");
@@ -321,12 +301,7 @@ public static class AiBookSearchEndpoints
 
             return Results.Ok(new GroupSearchResultsResponse(md5Groups));
         }
-        catch (ArgumentException ex)
-        {
-            Log.Information("❌ Invalid argument for group-search-results: {Message}", ex.Message);
-            return Results.BadRequest(new { error = $"Invalid parameter: {ex.ParamName ?? "unknown"}" });
-        }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not ArgumentException)
         {
             Log.Warning("OpenAI group-search-results failed: {ErrorMessage}", ex.Message);
             return ApiResponse.InternalError("Failed to group search results.");

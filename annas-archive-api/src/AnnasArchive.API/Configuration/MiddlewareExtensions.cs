@@ -173,6 +173,26 @@ public static class MiddlewareExtensions
     /// <summary>
     /// Adds global exception handling middleware.
     /// Converts exceptions to consistent JSON error responses.
+    ///
+    /// <para><b>This is the only place an <see cref="ArgumentException"/> becomes a
+    /// 400.</b> Twenty-nine endpoint handlers used to catch it themselves and return
+    /// <c>{ error = "Invalid parameter: &lt;name&gt;" }</c> — a second, poorer error
+    /// contract that dropped <c>errorCode</c> and <c>details</c>, and replaced the
+    /// exception's actual message with just the parameter name. Those are gone.</para>
+    ///
+    /// <para>Because each of them sat directly above a <c>catch (Exception)</c> that
+    /// returns a 500, deleting them alone would have turned every one of those 400s
+    /// into a 500. So the catch-alls carry
+    /// <c>when (ex is not ArgumentException)</c> — the endpoint keeps its own
+    /// wording for genuine failures, and argument validation falls through to here.
+    /// Note that filter also covers <see cref="ArgumentNullException"/> and
+    /// <see cref="ArgumentOutOfRangeException"/>, which derive from it and get
+    /// better-worded arms below.</para>
+    ///
+    /// <para>The one deliberate exception is the SSE chunk-boundary handler in
+    /// <c>AiSectionSummaryEndpoints</c>: its response has already started, so the
+    /// <c>HasStarted</c> guard below means this middleware could only log. It keeps
+    /// its own catch so the browser still receives an <c>error</c> event.</para>
     /// </summary>
     public static WebApplication UseGlobalExceptionHandler(this WebApplication app)
     {

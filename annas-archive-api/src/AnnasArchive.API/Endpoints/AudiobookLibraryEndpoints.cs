@@ -358,9 +358,12 @@ public static class AudiobookLibraryEndpoints
         var relative = metadata.Get("audiobook", safeId)?.CoverUrl;
         if (string.IsNullOrWhiteSpace(relative)) return null;
 
+        // Shares LibraryCoverEndpoints.IsInsideRoot so the two containment checks
+        // cannot drift; a bare StartsWith also accepts a sibling directory whose
+        // name merely begins with the root's.
         var root = Path.GetFullPath(StoragePaths.AudiobookCoverOverrideRoot());
         var fullPath = Path.GetFullPath(Path.Combine(root, relative));
-        if (!fullPath.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+        if (!LibraryCoverEndpoints.IsInsideRoot(root, fullPath))
             return null;
 
         return File.Exists(fullPath) ? fullPath : null;

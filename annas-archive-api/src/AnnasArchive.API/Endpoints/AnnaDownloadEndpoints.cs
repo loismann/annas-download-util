@@ -425,12 +425,7 @@ public static class AnnaDownloadEndpoints
                     accountFastInfo = acctInfo
                 });
             }
-            catch (ArgumentException ex)
-            {
-                Log.Information("❌ Invalid argument for send-to-boox: {Message}", ex.Message);
-                return Results.BadRequest(new { error = $"Invalid parameter: {ex.ParamName ?? "unknown"}" });
-            }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not ArgumentException)
             {
                 Log.Warning(" Dropbox upload failed: {ExMessage}", ex.Message);
 
@@ -556,10 +551,11 @@ public static class AnnaDownloadEndpoints
                 {
                     Log.Information("⚠️ Dropbox backup failed (non-critical): {ErrorMessage}", ex.Message);
                 }
-                catch (ArgumentException ex)
-                {
-                    Log.Information("⚠️ Dropbox backup failed (non-critical, ArgumentException): {ErrorMessage}", ex.Message);
-                }
+                // Deliberately swallows everything, including ArgumentException:
+                // this is a best-effort backup, and its failure must not fail the
+                // download that already succeeded. Unlike the endpoint-level
+                // catches, there is nothing here for the global handler to
+                // improve — no response is being produced.
                 catch (Exception ex)
                 {
                     Log.Information("⚠️ Dropbox backup failed (non-critical): {ErrorMessage}", ex.Message);
@@ -588,12 +584,7 @@ public static class AnnaDownloadEndpoints
                     accountFastInfo = counterInfo
                 });
             }
-            catch (ArgumentException ex)
-            {
-                Log.Information("❌ Invalid argument for send-to-kindle: {Message}", ex.Message);
-                return Results.BadRequest(new { error = $"Invalid parameter: {ex.ParamName ?? "unknown"}" });
-            }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not ArgumentException)
             {
                 Log.Warning(" Send to Kindle failed: {ExMessage}", ex.Message);
                 return Results.Ok(new

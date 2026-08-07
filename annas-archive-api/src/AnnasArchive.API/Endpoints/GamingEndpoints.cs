@@ -65,12 +65,7 @@ public static class GamingEndpoints
                 lastChecked = DateTime.UtcNow
             });
         }
-        catch (ArgumentException ex)
-        {
-            Log.Warning(ex, "Invalid argument for gaming status");
-            return Results.BadRequest(new { error = $"Invalid parameter: {ex.ParamName ?? "unknown"}" });
-        }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not ArgumentException)
         {
             Log.Error(ex, "Gaming PC status check failed");
             return Results.Ok(new
@@ -151,12 +146,7 @@ public static class GamingEndpoints
                 });
             }
         }
-        catch (ArgumentException ex)
-        {
-            Log.Warning(ex, "Invalid argument for gaming toggle");
-            return Results.BadRequest(new { error = $"Invalid parameter: {ex.ParamName ?? "unknown"}" });
-        }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not ArgumentException)
         {
             Log.Error(ex, "Gaming PC control failed");
             return Results.Problem("An error occurred while controlling the gaming PC.");

@@ -22,13 +22,15 @@ import { LoggerService } from '../services/logger.service';
 import { AuthService } from '../services/auth.service';
 import { TileSizeControlsComponent } from '../components/shared/tile-size-controls/tile-size-controls.component';
 import { ActivatedRoute } from '@angular/router';
+import { matchesOwnerAndFavorites, toggleInSet } from '../shared/owner-filters';
+import { HOUSEHOLD_OWNERS } from '../constants/owners';
 
 type SortOrder = 'title' | 'author' | 'recent';
 type TileSize = 'small' | 'medium' | 'large';
 
 const PLACEHOLDER_COVER = '/assets/placeholder.jpg';
-/** The only three household members — same fixed set as the ebook/media libraries. */
-const OWNERS = ['Paul', 'Mom', 'Dad'];
+/** The household roster, from the one place that declares it. */
+const OWNERS = [...HOUSEHOLD_OWNERS];
 
 /** Request states still moving. Anything else has settled and needs no polling. */
 const ACTIVE_REQUEST_STATES = new Set([
@@ -374,25 +376,7 @@ export class AudiobooksComponent implements OnInit, OnDestroy {
 
     if (this.selectedGenre && !genresOf(item).includes(this.selectedGenre)) return false;
 
-    // An owner filter answers "whose book is this". An untagged item has no
-    // answer, so there is nothing to exclude it on — and excluding it anyway
-    // means anything that reaches Audiobookshelf before someone tags it is
-    // invisible here while the search page happily offers to play it.
-    if (this.selectedOwners.size > 0) {
-      const itemOwners = item.owners ?? [];
-      if (itemOwners.length > 0 && !itemOwners.some(o => this.selectedOwners.has(o))) return false;
-    }
-
-    // Favorites filter — cross-referenced against whichever owner filter buttons
-    // are currently active, same convention as the ebook/media libraries; with no
-    // owner filter active, anything favorited by any household member counts.
-    if (this.filterFavoritesOnly) {
-      const favorites = item.favorites ?? [];
-      if (favorites.length === 0) return false;
-      if (this.selectedOwners.size > 0 && !favorites.some(o => this.selectedOwners.has(o))) return false;
-    }
-
-    return true;
+    return matchesOwnerAndFavorites(item, this.selectedOwners, this.filterFavoritesOnly);
   }
 
   private compare(a: AudiobookItem, b: AudiobookItem): number {
@@ -408,11 +392,7 @@ export class AudiobooksComponent implements OnInit, OnDestroy {
   }
 
   toggleOwnerFilter(owner: string): void {
-    if (this.selectedOwners.has(owner)) {
-      this.selectedOwners.delete(owner);
-    } else {
-      this.selectedOwners.add(owner);
-    }
+    toggleInSet(this.selectedOwners, owner);
   }
 
   toggleFavoritesFilter(): void {

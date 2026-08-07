@@ -70,12 +70,7 @@ public static class DropboxReaderEndpoints
             var epubs = await DropboxEpubCache.ListDropboxEpubsAsync(dropbox, folderPath);
             return Results.Ok(epubs);
         }
-        catch (ArgumentException ex)
-        {
-            Log.Information("❌ Invalid argument for listing EPUBs: {Message}", ex.Message);
-            return Results.BadRequest(new { error = $"Invalid parameter: {ex.ParamName ?? "unknown"}" });
-        }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not ArgumentException)
         {
             Log.Information("❌ Failed to list Dropbox EPUBs: {ExMessage}", ex.Message);
             return ApiResponse.InternalError("Unable to list Dropbox files right now.");
@@ -133,12 +128,7 @@ public static class DropboxReaderEndpoints
             Log.Information("❌ Dropbox download failed: {ExErrorResponse}", ex.ErrorResponse);
             return ApiResponse.InternalError("Unable to download EPUB from Dropbox.");
         }
-        catch (ArgumentException ex)
-        {
-            Log.Information("❌ Invalid argument for EPUB loading: {Message}", ex.Message);
-            return Results.BadRequest(new { error = $"Invalid parameter: {ex.ParamName ?? "unknown"}" });
-        }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not ArgumentException)
         {
             Log.Information("❌ Failed to load EPUB: {ExMessage}", ex.Message);
             return ApiResponse.InternalError("Unable to read the EPUB file.");
@@ -192,12 +182,7 @@ public static class DropboxReaderEndpoints
             Log.Information("❌ Dropbox download failed: {ExErrorResponse}", ex.ErrorResponse);
             return ApiResponse.InternalError("Unable to download EPUB from Dropbox.");
         }
-        catch (ArgumentException ex)
-        {
-            Log.Information("❌ Invalid argument for chapter loading: {Message}", ex.Message);
-            return Results.BadRequest(new { error = $"Invalid parameter: {ex.ParamName ?? "unknown"}" });
-        }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not ArgumentException)
         {
             Log.Information("❌ Failed to load EPUB: {ExMessage}", ex.Message);
             return ApiResponse.InternalError("Unable to read the EPUB file.");
@@ -222,12 +207,7 @@ public static class DropboxReaderEndpoints
             var status = await DropboxEpubCache.GetCacheStatusAsync(dropbox, path);
             return Results.Ok(status);
         }
-        catch (ArgumentException ex)
-        {
-            Log.Information("❌ Invalid argument for cache status: {Message}", ex.Message);
-            return Results.BadRequest(new { error = $"Invalid parameter: {ex.ParamName ?? "unknown"}" });
-        }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not ArgumentException)
         {
             Log.Information("❌ Failed to read cache status: {ExMessage}", ex.Message);
             return ApiResponse.InternalError("Unable to fetch cache status.");
@@ -254,12 +234,7 @@ public static class DropboxReaderEndpoints
             await DropboxEpubCache.EnsureCacheBuildAsync(dropbox, path, cacheDir);
             return Results.Ok(new { started = true });
         }
-        catch (ArgumentException ex)
-        {
-            Log.Information("❌ Invalid argument for indexing: {Message}", ex.Message);
-            return Results.BadRequest(new { error = $"Invalid parameter: {ex.ParamName ?? "unknown"}" });
-        }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not ArgumentException)
         {
             Log.Information("❌ Failed to start indexing: {ExMessage}", ex.Message);
             return ApiResponse.InternalError("Unable to start indexing for this book.");
@@ -285,12 +260,7 @@ public static class DropboxReaderEndpoints
             Log.Information("🗑️ Cache deletion: EPUB={EpubRemoved}, AI={AiRemoved}", epubRemoved, aiRemoved);
             return Results.Ok(new { epubCacheRemoved = epubRemoved, aiCacheRemoved = aiRemoved });
         }
-        catch (ArgumentException ex)
-        {
-            Log.Information("❌ Invalid argument for cache deletion: {Message}", ex.Message);
-            return Results.BadRequest(new { error = $"Invalid parameter: {ex.ParamName ?? "unknown"}" });
-        }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not ArgumentException)
         {
             Log.Information("❌ Failed to delete cache: {ExMessage}", ex.Message);
             return ApiResponse.InternalError("Unable to delete cache for this book.");
@@ -324,12 +294,7 @@ public static class DropboxReaderEndpoints
             var matches = await DropboxEpubCache.SearchAsync(dropbox, path, query);
             return Results.Ok(matches);
         }
-        catch (ArgumentException ex)
-        {
-            Log.Information("❌ Invalid argument for search: {Message}", ex.Message);
-            return Results.BadRequest(new { error = $"Invalid parameter: {ex.ParamName ?? "unknown"}" });
-        }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not ArgumentException)
         {
             Log.Information("❌ Failed to search EPUB cache: {ExMessage}", ex.Message);
             return ApiResponse.InternalError("Unable to search this book right now.");

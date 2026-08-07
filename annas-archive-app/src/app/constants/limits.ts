@@ -1,14 +1,16 @@
 /**
  * Limit constants for pagination, data fetching, and UI constraints.
- * Centralized to ensure consistency across the application.
+ *
+ * Every value here is read by something. Seven others used to sit alongside
+ * them, unreferenced — a constant nothing reads still looks authoritative, and
+ * the number that actually governs the behaviour ends up hardcoded somewhere
+ * else and drifts. If a value belongs here, wire it up; if nothing wants it,
+ * it does not belong here.
  */
 
 // ============================================================================
 // Search & Pagination
 // ============================================================================
-
-/** Default number of search results to fetch */
-export const DEFAULT_SEARCH_LIMIT = 50;
 
 /** Maximum books to fetch descriptions for automatically (0 = disabled, users click to fetch) */
 export const AUTO_DESCRIPTION_FETCH_LIMIT = 0;
@@ -20,33 +22,15 @@ export const AUTO_COVER_FETCH_LIMIT = 0;
 // Reader & Content
 // ============================================================================
 
-/** Maximum words to analyze for vocabulary highlighting */
-export const VOCAB_ANALYSIS_WORD_LIMIT = 1000;
-
-/** Number of recent known words to use for highlighting */
-export const KNOWN_WORDS_CONTEXT_LIMIT = 100;
-
-/** Number of known words for chapter-level analysis */
-export const CHAPTER_KNOWN_WORDS_LIMIT = 200;
-
-/** Maximum page size in words for reader */
+/** Upper bound on the reader's binary-searched page size — a cap for measurement cost, not a layout rule. */
 export const MAX_PAGE_SIZE_WORDS = 800;
 
-/** Minimum page size in words for reader */
+/** Floor on the reader's page size, and the low bracket the binary search falls back to. */
 export const MIN_PAGE_SIZE_WORDS = 10;
 
 // ============================================================================
 // UI Display Limits
 // ============================================================================
-
-/** Maximum cover candidates to show in picker */
-export const MAX_COVER_CANDIDATES = 12;
-
-/** Maximum tags to extract from subjects */
-export const MAX_EXTRACTED_TAGS = 5;
-
-/** Maximum quick suggestions to show */
-export const MAX_QUICK_SUGGESTIONS = 8;
 
 /** Sample size for logging/debugging */
 export const LOG_SAMPLE_SIZE = 3;
@@ -55,8 +39,8 @@ export const LOG_SAMPLE_SIZE = 3;
 // Font Constraints
 // ============================================================================
 
-/** Minimum font size in pixels */
+/** Minimum reader font size in pixels. */
 export const MIN_FONT_SIZE = 12;
 
-/** Maximum font size in pixels */
+/** Maximum reader font size in pixels. */
 export const MAX_FONT_SIZE = 28;

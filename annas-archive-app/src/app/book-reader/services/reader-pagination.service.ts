@@ -1,5 +1,6 @@
 import { Injectable, OnDestroy } from '@angular/core';
 import { ReaderTextUtilsService } from './reader-text-utils.service';
+import { MAX_PAGE_SIZE_WORDS, MIN_PAGE_SIZE_WORDS } from '../../constants/limits';
 
 /**
  * Configuration for page size calculation.
@@ -207,9 +208,9 @@ export class ReaderPaginationService implements OnDestroy {
 
     const totalWords = this.textUtils.countWords(text);
     const testOffset = 0; // Use fixed offset for consistent page sizes
-    const maxPossible = Math.min(totalWords, 800); // Cap for performance
+    const maxPossible = Math.min(totalWords, MAX_PAGE_SIZE_WORDS); // Cap for performance
 
-    if (maxPossible <= 10) return maxPossible;
+    if (maxPossible <= MIN_PAGE_SIZE_WORDS) return maxPossible;
 
     return this.findLargestNonOverflowing(
       wordCount => this.doesTextOverflow(text, wordCount, testOffset),
@@ -235,14 +236,14 @@ export class ReaderPaginationService implements OnDestroy {
   ): number {
     // Bracket wide: the estimate assumes uniform character widths and is
     // routinely off by more than a factor of two on real prose.
-    let low = Math.max(10, Math.floor(estimate * 0.3));
+    let low = Math.max(MIN_PAGE_SIZE_WORDS, Math.floor(estimate * 0.3));
     let high = Math.min(maxPossible, Math.ceil(estimate * 2.5));
 
     // A short chapter can leave the whole bracket above maxPossible. Drop the
     // floor so the search stays inside the cap instead of skipping the loop and
     // returning a page size larger than the text.
     if (high < low) {
-      low = 10;
+      low = MIN_PAGE_SIZE_WORDS;
     }
 
     let result = low;
@@ -250,7 +251,7 @@ export class ReaderPaginationService implements OnDestroy {
     // Check if low value overflows - if so, go lower
     if (doesOverflow(low)) {
       high = low;
-      low = 10;
+      low = MIN_PAGE_SIZE_WORDS;
       // The old bound overflowed, so it is not a valid answer. Without this the
       // search returns it unchanged when nothing in the new range fits either.
       result = low;
@@ -267,6 +268,6 @@ export class ReaderPaginationService implements OnDestroy {
       }
     }
 
-    return Math.max(10, result);
+    return Math.max(MIN_PAGE_SIZE_WORDS, result);
   }
 }

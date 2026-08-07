@@ -40,40 +40,15 @@ public static class HttpTimeouts
     // ========================================================================
 
     /// <summary>
-    /// Timeout for quick HTTP operations like cover downloads (5 seconds).
-    /// </summary>
-    public static readonly TimeSpan QuickOperationTimeout = TimeSpan.FromSeconds(5);
-
-    /// <summary>
-    /// Timeout for metadata lookups (10 seconds).
-    /// </summary>
-    public static readonly TimeSpan MetadataLookupTimeout = TimeSpan.FromSeconds(10);
-
-    /// <summary>
     /// Timeout for Sonarr/Radarr operations (60 seconds). Interactive release
     /// searches fan out to indexers and routinely take longer than a metadata
     /// lookup even though the *arr API itself is on the local Docker network.
     /// </summary>
     public static readonly TimeSpan ArrOperationTimeout = TimeSpan.FromSeconds(60);
 
-    /// <summary>
-    /// Timeout for title extraction from URLs (12 seconds).
-    /// </summary>
-    public static readonly TimeSpan TitleExtractionTimeout = TimeSpan.FromSeconds(12);
-
     // ========================================================================
     // Cache Timeouts
     // ========================================================================
-
-    /// <summary>
-    /// Sliding expiration for cached content (30 minutes).
-    /// </summary>
-    public static readonly TimeSpan CacheSlidingExpiration = TimeSpan.FromMinutes(30);
-
-    /// <summary>
-    /// Cache TTL for detail fetches like ISBN lookups (12 hours).
-    /// </summary>
-    public static readonly TimeSpan DetailCacheTtl = TimeSpan.FromHours(12);
 
     /// <summary>
     /// Timeout for OpenLibrary cache lookups (3 seconds).

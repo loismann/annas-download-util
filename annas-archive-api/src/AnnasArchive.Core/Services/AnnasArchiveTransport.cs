@@ -8,6 +8,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using System.Threading.Tasks;
 using AnnasArchive.Core.Telemetry;
+using Serilog;
 
 namespace AnnasArchive.Core.Services;
 
@@ -65,7 +66,7 @@ public class AnnasArchiveTransport
                     var html = await _playwrightFetcher(url);
                     if (!string.IsNullOrEmpty(html) && !html.Contains("challenge-running"))
                     {
-                        Console.WriteLine($"[AnnasArchive] Playwright successfully fetched from {domain}");
+                        Log.Information("[AnnasArchive] Playwright successfully fetched from {Domain}", domain);
                         PerfLog.Record("AnnasArchive.DomainFetch", domainSw.Elapsed.TotalMilliseconds, true, ("Domain", domain));
                         PerfLog.Record("AnnasArchive.DomainFallback", fallbackSw.Elapsed.TotalMilliseconds, true, ("WinningDomain", domain));
                         return html;
@@ -74,12 +75,12 @@ public class AnnasArchiveTransport
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"[AnnasArchive] Playwright failed for {domain}: {ex.Message}");
+                    Log.Warning("[AnnasArchive] Playwright failed for {Domain}: {Message}", domain, ex.Message);
                     PerfLog.Record("AnnasArchive.DomainFetch", domainSw.Elapsed.TotalMilliseconds, false, ("Domain", domain), ("Error", ex.Message));
                 }
             }
             // Fall through to HttpClient if Playwright fails for all domains
-            Console.WriteLine("[AnnasArchive] Playwright failed for all domains, falling back to HttpClient");
+            Log.Warning("[AnnasArchive] Playwright failed for all domains, falling back to HttpClient");
             PerfLog.Record("AnnasArchive.DomainFallback", fallbackSw.Elapsed.TotalMilliseconds, false, ("Reason", "all domains failed via Playwright"));
         }
 
@@ -173,7 +174,7 @@ public class AnnasArchiveTransport
                     if (i > 0)
                     {
                         // Log successful fallback
-                        Console.WriteLine($"[AnnasArchive] Successfully connected via fallback domain: {domain}");
+                        Log.Information("[AnnasArchive] Successfully connected via fallback domain: {Domain}", domain);
                     }
                     PerfLog.Record("AnnasArchive.DomainFetch", domainSw.Elapsed.TotalMilliseconds, true, ("Domain", domain), ("Via", "HttpClient"));
                     PerfLog.Record("AnnasArchive.DomainFallback", fallbackSw.Elapsed.TotalMilliseconds, true, ("WinningDomain", domain), ("Via", "HttpClient"));
@@ -183,13 +184,13 @@ public class AnnasArchiveTransport
                 lastResponse?.Dispose();
                 lastResponse = resp;
                 PerfLog.Record("AnnasArchive.DomainFetch", domainSw.Elapsed.TotalMilliseconds, false, ("Domain", domain), ("Via", "HttpClient"), ("StatusCode", (int)resp.StatusCode));
-                Console.WriteLine($"[AnnasArchive] Domain {domain} returned {(int)resp.StatusCode}, trying next...");
+                Log.Warning("[AnnasArchive] Domain {Domain} returned {StatusCode}, trying next", domain, (int)resp.StatusCode);
             }
             catch (Exception ex)
             {
                 lastException = ex;
                 PerfLog.Record("AnnasArchive.DomainFetch", domainSw.Elapsed.TotalMilliseconds, false, ("Domain", domain), ("Via", "HttpClient"), ("Error", ex.Message));
-                Console.WriteLine($"[AnnasArchive] Domain {domain} failed: {ex.Message}, trying next...");
+                Log.Warning("[AnnasArchive] Domain {Domain} failed: {Message}, trying next", domain, ex.Message);
                 // continue to next domain
             }
         }

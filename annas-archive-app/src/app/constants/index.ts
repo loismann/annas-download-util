@@ -5,4 +5,3 @@
 
 export * from './timeouts';
 export * from './limits';
-export * from './api-paths';

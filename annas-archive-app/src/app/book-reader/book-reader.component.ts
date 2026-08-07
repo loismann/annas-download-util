@@ -49,6 +49,7 @@ import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { marked } from 'marked';
 import { Subject } from 'rxjs';
 import { PROGRESS_MESSAGE_DURATION_MS, SUCCESS_MESSAGE_DURATION_MS } from '../constants/timeouts';
+import { MAX_FONT_SIZE, MIN_FONT_SIZE } from '../constants/limits';
 import { takeUntil } from 'rxjs/operators';
 import { apiBase as resolveApiBase } from '../services/api-base';
 import {
@@ -1775,7 +1776,7 @@ export class BookReaderComponent implements OnInit, OnDestroy {
   }
 
   changeFontSize(delta: number): void {
-    const next = Math.min(28, Math.max(12, this.fontSize + delta));
+    const next = Math.min(MAX_FONT_SIZE, Math.max(MIN_FONT_SIZE, this.fontSize + delta));
     if (next !== this.fontSize) {
       this.fontSize = next;
       // Wait for DOM to update with new font size before recalculating

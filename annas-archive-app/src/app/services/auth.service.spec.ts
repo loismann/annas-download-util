@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { HttpClientTestingModule, HttpTestingController } from '@angular/common/http/testing';
-import { AuthService } from './auth.service';
+import { AuthService, buildCoverCookie, COVER_COOKIE_NAME, COVER_COOKIE_PATH } from './auth.service';
 import { PLATFORM_ID } from '@angular/core';
 
 /**
@@ -235,6 +235,60 @@ describe('AuthService', () => {
     it('should return null userId when no token exists', () => {
       expect(service.getToken()).toBeNull();
       expect(service.getUserId()).toBeNull();
+    });
+  });
+
+  /**
+   * The cookie that lets `<img src>` fetch an ebook cover. Its name and path are
+   * a wire contract with `ServiceConfiguration.LibraryCoverCookieName` /
+   * `.LibraryCoverCookiePath`; a mismatch does not throw anywhere, it just turns
+   * every cover into the placeholder, so it is pinned on both sides.
+   *
+   * These assert the cookie *string*, not a write-then-read round trip. The
+   * cookie is scoped to `/api/library/cover` and the Karma page is served at
+   * `/`, so `document.cookie` cannot see it — which is the path scoping working
+   * as intended, not a bug to work around.
+   */
+  describe('Ebook cover cookie', () => {
+    it('carries the token under the name the backend reads', () => {
+      expect(buildCoverCookie('abc.def.ghi', false))
+        .toContain(`${COVER_COOKIE_NAME}=abc.def.ghi`);
+    });
+
+    it('url-encodes a token containing cookie-delimiter characters', () => {
+      expect(buildCoverCookie('a;b c', false)).toContain('a%3Bb%20c');
+    });
+
+    // The scope is what stops this being a second ambient credential: without it
+    // the browser would attach the token to every request in the app.
+    it('scopes the cookie to the cover route', () => {
+      expect(buildCoverCookie('t', false)).toContain(`path=${COVER_COOKIE_PATH}`);
+      expect(COVER_COOKIE_PATH).toBe('/api/library/cover');
+    });
+
+    it('is SameSite=Strict', () => {
+      expect(buildCoverCookie('t', false)).toContain('SameSite=Strict');
+    });
+
+    // Local dev runs over plain http, where a Secure cookie would be dropped
+    // silently and every cover would 404 to the placeholder.
+    it('sets Secure only over https', () => {
+      expect(buildCoverCookie('t', true)).toContain('Secure');
+      expect(buildCoverCookie('t', false)).not.toContain('Secure');
+    });
+
+    // An expiry has to repeat path and name exactly or the browser treats it as
+    // a different cookie and leaves the original in place.
+    it('expires with the same name and path it was written under', () => {
+      const expired = buildCoverCookie('', false, true);
+
+      expect(expired).toContain('Max-Age=0');
+      expect(expired).toContain(`${COVER_COOKIE_NAME}=`);
+      expect(expired).toContain(`path=${COVER_COOKIE_PATH}`);
+    });
+
+    it('does not set Max-Age on a normal write', () => {
+      expect(buildCoverCookie('t', false)).not.toContain('Max-Age');
     });
   });
 

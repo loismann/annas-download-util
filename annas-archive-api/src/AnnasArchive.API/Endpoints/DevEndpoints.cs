@@ -45,7 +45,8 @@ public static class DevEndpoints
             return Results.Ok(stats);
         })
         .WithName("GetCacheStats")
-        .WithTags("Dev");
+        .WithTags("Dev")
+        .RequireRateLimiting("api");
 
         app.MapDelete("/api/dev/cache", [Authorize(Roles = "Admin")] (string? name) =>
         {
@@ -64,7 +65,8 @@ public static class DevEndpoints
             };
         })
         .WithName("ClearCache")
-        .WithTags("Dev");
+        .WithTags("Dev")
+        .RequireRateLimiting("api");
 
         return app;
     }

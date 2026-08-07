@@ -76,12 +76,7 @@ public static class VideoLibraryMetadataEndpoints
 
             return Results.Ok(new { success = true, message = "Metadata updated successfully." });
         }
-        catch (ArgumentException ex)
-        {
-            Log.Information("[video-library] Invalid argument for metadata update: {Message}", ex.Message);
-            return Results.BadRequest(new { error = $"Invalid parameter: {ex.ParamName ?? "unknown"}" });
-        }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not ArgumentException)
         {
             Log.Warning(ex, "[video-library] Failed to update metadata for {FileName}", safeFileName);
             return Results.Problem("Failed to update metadata.");
@@ -134,12 +129,7 @@ public static class VideoLibraryMetadataEndpoints
 
             return Results.Ok(new { success = true, message = "Ratings updated successfully." });
         }
-        catch (ArgumentException ex)
-        {
-            Log.Information("[video-library] Invalid argument for ratings update: {Message}", ex.Message);
-            return Results.BadRequest(new { error = $"Invalid parameter: {ex.ParamName ?? "unknown"}" });
-        }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not ArgumentException)
         {
             Log.Warning(ex, "[video-library] Failed to update ratings for {FileName}", safeFileName);
             return Results.Problem("Failed to update ratings.");

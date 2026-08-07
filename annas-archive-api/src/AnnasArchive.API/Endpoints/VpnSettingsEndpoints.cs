@@ -51,11 +51,7 @@ public static class VpnSettingsEndpoints
                 availableRegions = vpnSettings.AvailableRegions
             });
         }
-        catch (ArgumentException ex)
-        {
-            return Results.BadRequest(new { error = ex.Message });
-        }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not ArgumentException)
         {
             Log.Warning("[VpnSettings] Failed to update VPN settings: {Message}", ex.Message);
             return Results.Problem("Failed to update VPN settings — Gluetun's control API may be unreachable.");

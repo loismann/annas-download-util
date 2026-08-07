@@ -7,10 +7,7 @@
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
     "test": "ng test",
-    "serve:ssr:annas-archive-app": "node dist/annas-archive-app/server/server.mjs",
-    "test:e2e": "../scripts/test-e2e.sh",
-    "deploy:full": "../scripts/deploy-full.sh",
-    "deploy:unit-only": "../scripts/deploy-unit-only.sh"
+    "test:e2e": "../scripts/test-e2e.sh"
   },
   "private": true,
   "dependencies": {
@@ -23,11 +20,8 @@
     "@angular/material": "^19.2.17",
     "@angular/platform-browser": "^19.2.0",
     "@angular/platform-browser-dynamic": "^19.2.0",
-    "@angular/platform-server": "^19.2.0",
     "@angular/router": "^19.2.0",
-    "@angular/ssr": "^19.2.13",
     "anychart": "^8.14.0",
-    "express": "^4.18.2",
     "hls.js": "^1.6.16",
     "marked": "^17.0.1",
     "ngx-extended-pdf-viewer": "^28.1.0",
@@ -40,7 +34,6 @@
     "@angular/cli": "^19.2.13",
     "@angular/compiler-cli": "^19.2.0",
     "@playwright/test": "^1.57.0",
-    "@types/express": "^4.17.17",
     "@types/jasmine": "~5.1.0",
     "@types/node": "^18.18.0",
     "jasmine-core": "~5.6.0",

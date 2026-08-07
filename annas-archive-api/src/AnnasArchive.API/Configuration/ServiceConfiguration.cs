@@ -30,6 +30,18 @@ namespace AnnasArchive.API.Configuration;
 public static class ServiceConfiguration
 {
     /// <summary>
+    /// Cookie carrying the bearer token for ebook cover requests, and the path the
+    /// browser scopes it to. Both halves are duplicated in the frontend's
+    /// <c>AuthService</c> — they are a wire contract, so a change here needs the
+    /// matching change there or covers silently fall back to the placeholder.
+    /// </summary>
+    public const string LibraryCoverCookieName = "annas_cover_token";
+
+    /// <summary>Path prefix the cover cookie is scoped to. Nothing else receives it.</summary>
+    public const string LibraryCoverCookiePath = "/api/library/cover";
+
+
+    /// <summary>
     /// Registers all application services with the DI container.
     /// </summary>
     public static IServiceCollection AddApplicationServices(this IServiceCollection services, IConfiguration configuration)
@@ -150,6 +162,27 @@ public static class ServiceConfiguration
                             context.Token = token;
                     }
 
+                    // Ebook covers take the token from a cookie rather than the
+                    // query string, unlike every route above. The difference is
+                    // where the URL is built: those are assembled in TypeScript,
+                    // so a token can be appended at the call site, while a library
+                    // cover URL is minted server-side by LibraryHelpers and handed
+                    // out inside a *cached* DTO (LibraryIndexCache). Baking a
+                    // per-user token into a shared cache is not an option, and
+                    // rewriting it in eight places on the way out is one missed
+                    // method away from a screen of broken covers.
+                    //
+                    // The cookie is scoped to this path by the browser (see
+                    // AuthService.setToken), so it is never sent anywhere else and
+                    // widens nothing. It carries the same JWT the Authorization
+                    // header would; it is not a second credential.
+                    if (path.StartsWith(LibraryCoverCookiePath, StringComparison.OrdinalIgnoreCase))
+                    {
+                        var cookieToken = context.Request.Cookies[LibraryCoverCookieName];
+                        if (!string.IsNullOrEmpty(cookieToken))
+                            context.Token = cookieToken;
+                    }
+
                     return Task.CompletedTask;
                 }
             };
@@ -181,7 +214,7 @@ public static class ServiceConfiguration
             // Global API rate limit: 60 requests per minute per IP (configurable)
             var apiRateLimit = int.TryParse(
                 configuration["API_RATE_LIMIT"] ?? configuration["E2E_API_RATE_LIMIT"],
-                out var apiLimit) ? apiLimit : 60;
+                out var apiLimit) ? apiLimit : Limits.DefaultApiRateLimit;
             options.AddFixedWindowLimiter("api", opt =>
             {
                 opt.PermitLimit = apiRateLimit;
@@ -199,7 +232,7 @@ public static class ServiceConfiguration
             // guard on a Tailscale-only app, not an abuse defense.
             options.AddFixedWindowLimiter("media", opt =>
             {
-                opt.PermitLimit = 2000;
+                opt.PermitLimit = Limits.MediaRateLimit;
                 opt.Window = TimeSpan.FromMinutes(1);
                 opt.QueueProcessingOrder = System.Threading.RateLimiting.QueueProcessingOrder.OldestFirst;
                 opt.QueueLimit = 0;
@@ -208,7 +241,7 @@ public static class ServiceConfiguration
             // Stricter rate limit for login: 5 attempts per minute per IP (configurable)
             var loginRateLimit = int.TryParse(
                 configuration["LOGIN_RATE_LIMIT"] ?? configuration["E2E_LOGIN_RATE_LIMIT"],
-                out var loginLimit) ? loginLimit : 5;
+                out var loginLimit) ? loginLimit : Limits.LoginRateLimit;
             options.AddFixedWindowLimiter("login", opt =>
             {
                 opt.PermitLimit = loginRateLimit;
@@ -618,8 +651,8 @@ public static class ServiceConfiguration
         services.AddSingleton<IDownloadTrackingService>(provider =>
         {
             var cfg = provider.GetRequiredService<IConfiguration>();
-            var downloadLimit = cfg.GetValue<int>("DownloadTracking:DownloadLimit", 50);
-            var rollingHours = cfg.GetValue<double>("DownloadTracking:RollingWindowHours", 18);
+            var downloadLimit = cfg.GetValue<int>("DownloadTracking:DownloadLimit", Limits.DefaultDownloadLimit);
+            var rollingHours = cfg.GetValue<double>("DownloadTracking:RollingWindowHours", Limits.DefaultDownloadWindowHours);
             var configuredPath = cfg.GetValue<string>("DownloadTracking:StoragePath");
             var storagePath = string.IsNullOrWhiteSpace(configuredPath)
                 ? Path.Combine(Directory.GetCurrentDirectory(), "download-tracking.json")

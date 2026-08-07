@@ -101,12 +101,7 @@ Relevant passage/context: {request.Context ?? "(none)"}";
 
             return Results.Ok(new LearnMoreResponse(outcome.Text ?? "No details returned."));
         }
-        catch (ArgumentException ex)
-        {
-            Log.Information("❌ Invalid argument for learn-more: {Message}", ex.Message);
-            return Results.BadRequest(new { error = $"Invalid parameter: {ex.ParamName ?? "unknown"}" });
-        }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not ArgumentException)
         {
             Log.Information("❌ OpenAI learn-more failed: {ExMessage}", ex.Message);
             return ApiResponse.InternalError("Failed to fetch details.");

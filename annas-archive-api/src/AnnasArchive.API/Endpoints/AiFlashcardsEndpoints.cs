@@ -215,12 +215,7 @@ Return JSON array of flashcards for individual terms found in the passage.";
             }
             return Results.Ok(new FlashcardResult(cardsParsed));
         }
-        catch (ArgumentException ex)
-        {
-            Log.Information("❌ Invalid argument for flashcard creation: {Message}", ex.Message);
-            return Results.BadRequest(new { error = $"Invalid parameter: {ex.ParamName ?? "unknown"}" });
-        }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not ArgumentException)
         {
             Log.Information("❌ Flashcard create failed: {ExMessage}", ex.Message);
             return ApiResponse.InternalError("Failed to create flashcard.");
@@ -239,12 +234,7 @@ Return JSON array of flashcards for individual terms found in the passage.";
                 System.IO.File.Delete(filePath);
             return Results.Ok(new { cleared = true });
         }
-        catch (ArgumentException ex)
-        {
-            Log.Information("❌ Invalid argument for clearing flashcards: {Message}", ex.Message);
-            return Results.BadRequest(new { error = $"Invalid parameter: {ex.ParamName ?? "unknown"}" });
-        }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not ArgumentException)
         {
             Log.Information("❌ Failed to clear flashcards: {Message}", ex.Message);
             return ApiResponse.InternalError("Failed to clear flashcards.");
@@ -265,12 +255,7 @@ Return JSON array of flashcards for individual terms found in the passage.";
                 return Results.Ok(new { deleted = true });
             return Results.NotFound(new { error = "Flashcard not found." });
         }
-        catch (ArgumentException ex)
-        {
-            Log.Information("❌ Invalid argument for deleting flashcard: {Message}", ex.Message);
-            return Results.BadRequest(new { error = $"Invalid parameter: {ex.ParamName ?? "unknown"}" });
-        }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not ArgumentException)
         {
             Log.Information("❌ Failed to delete flashcard: {Message}", ex.Message);
             return ApiResponse.InternalError("Failed to delete flashcard.");

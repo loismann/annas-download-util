@@ -89,12 +89,7 @@ Return ONLY valid JSON with no markdown or extra text.";
                 return Results.Ok(new AiMediaSearchResponse(summary, results));
             }
         }
-        catch (ArgumentException ex)
-        {
-            Log.Information("❌ Invalid argument for media-search: {Message}", ex.Message);
-            return Results.BadRequest(new { error = $"Invalid parameter: {ex.ParamName ?? "unknown"}" });
-        }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not ArgumentException)
         {
             Log.Information("❌ OpenAI media-search failed: {Message}", ex.Message);
             return ApiResponse.InternalError("Failed to run AI media search.");

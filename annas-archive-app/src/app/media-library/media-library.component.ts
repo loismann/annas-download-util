@@ -27,6 +27,8 @@ import { ReleasePickerDialogComponent, ReleasePickerDialogData } from '../compon
 import { LoggerService } from '../services/logger.service';
 import { AuthService } from '../services/auth.service';
 import { TileSizeControlsComponent } from '../components/shared/tile-size-controls/tile-size-controls.component';
+import { matchesOwnerAndFavorites, toggleInSet } from '../shared/owner-filters';
+import { HOUSEHOLD_OWNERS } from '../constants/owners';
 
 interface LibraryTile {
   result: MediaLookupResult;
@@ -51,10 +53,10 @@ type TileSize = 'small' | 'medium' | 'large';
 
 const PLACEHOLDER_POSTER = '/assets/placeholder.jpg';
 const QUEUE_POLL_MS = 10000;
-/** The only three household members — mirrors the ebook library's fixed
- * "Dad's Books"/"Mom's Books"/"Paul's Books" owner set, minus the book-specific
- * wording since this filters both TV shows and movies. */
-const OWNERS = ['Paul', 'Mom', 'Dad'];
+/** The household roster, from the one place that declares it. The ebook library
+ * stores the same three people as "Paul's Books" tags; TV/movies store the bare
+ * names, so this uses HOUSEHOLD_OWNERS directly rather than the book-tag form. */
+const OWNERS = [...HOUSEHOLD_OWNERS];
 const UNASSIGNED = 'Unassigned';
 
 /** Sonarr/Radarr's images array isn't guaranteed poster-first — it can lead
@@ -332,23 +334,7 @@ export class MediaLibraryComponent implements OnInit, OnDestroy {
 
     if (this.selectedGenre && !genresOf(result).includes(this.selectedGenre)) return false;
 
-    // Untagged items stay visible under an owner filter — see the audiobook
-    // library's matchesFilters() for why hiding them is the wrong default.
-    if (this.selectedOwners.size > 0) {
-      const itemOwners = result.owners ?? [];
-      if (itemOwners.length > 0 && !itemOwners.some(o => this.selectedOwners.has(o))) return false;
-    }
-
-    // Favorites filter — cross-referenced against whichever owner filter buttons are
-    // currently active, same convention as the ebook library; with no owner filter
-    // active, anything favorited by any of the three household members counts.
-    if (this.filterFavoritesOnly) {
-      const favorites = result.favorites ?? [];
-      if (favorites.length === 0) return false;
-      if (this.selectedOwners.size > 0 && !favorites.some(o => this.selectedOwners.has(o))) return false;
-    }
-
-    return true;
+    return matchesOwnerAndFavorites(result, this.selectedOwners, this.filterFavoritesOnly);
   }
 
   private compare(a: MediaLookupResult, b: MediaLookupResult): number {
@@ -364,11 +350,7 @@ export class MediaLibraryComponent implements OnInit, OnDestroy {
   }
 
   toggleOwnerFilter(owner: string): void {
-    if (this.selectedOwners.has(owner)) {
-      this.selectedOwners.delete(owner);
-    } else {
-      this.selectedOwners.add(owner);
-    }
+    toggleInSet(this.selectedOwners, owner);
   }
 
   toggleFavoritesFilter(): void {

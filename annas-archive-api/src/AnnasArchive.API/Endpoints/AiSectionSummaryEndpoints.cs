@@ -474,6 +474,13 @@ Return format (JSON only, no explanation):
 
             Log.Information("✅ Detected {ChunksCount} sections for chapter {ChapterId}", chunks.Count, chapterId);
         }
+        // The one ArgumentException catch that deliberately stays. Everywhere else
+        // these were deleted so the exception reaches the global handler, which
+        // maps it to a 400 — but this is an SSE stream, so the response has
+        // already started and the global handler can do nothing except log
+        // (see MiddlewareExtensions.HandleExceptionAsync's HasStarted guard).
+        // Letting it through would leave the browser holding an open stream that
+        // simply stops, with no `error` event to render.
         catch (ArgumentException ex)
         {
             Log.Information("❌ Invalid argument for chunk boundary detection: {Message}", ex.Message);
@@ -752,12 +759,7 @@ Text to summarize:
 
             return Results.Ok(result);
         }
-        catch (ArgumentException ex)
-        {
-            Log.Information("❌ Invalid argument for section summary: {Message}", ex.Message);
-            return Results.BadRequest(new { error = $"Invalid parameter: {ex.ParamName ?? "unknown"}" });
-        }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not ArgumentException)
         {
             Log.Information("❌ Section summary generation failed: {ExMessage}", ex.Message);
             Log.Information("   Stack trace: {ExStackTrace}", ex.StackTrace);

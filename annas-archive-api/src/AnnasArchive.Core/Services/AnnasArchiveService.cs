@@ -15,6 +15,7 @@ using AnnasArchive.Core.Helpers;
 using AnnasArchive.Core.Models;
 using AnnasArchive.Core.Telemetry;
 using Microsoft.Extensions.Caching.Memory;
+using Serilog;
 
 namespace AnnasArchive.Core.Services;
 
@@ -100,9 +101,10 @@ public class AnnasArchiveService
                 var looksLikeChallenge = html.Contains("challenge-running", StringComparison.OrdinalIgnoreCase)
                     || html.Contains("cf-spinner", StringComparison.OrdinalIgnoreCase)
                     || html.Contains("Checking your browser", StringComparison.OrdinalIgnoreCase);
-                Console.WriteLine(
-                    $"[AnnasArchiveService] 0 book containers found for query='{effectiveQuery}' page={page - 1} " +
-                    $"htmlLength={html.Length} looksLikeCloudflareChallenge={looksLikeChallenge}");
+                Log.Warning(
+                    "[AnnasArchiveService] 0 book containers found for query={Query} page={Page} " +
+                    "htmlLength={HtmlLength} looksLikeCloudflareChallenge={LooksLikeChallenge}",
+                    effectiveQuery, page - 1, html.Length, looksLikeChallenge);
 
                 // Dump the raw HTML so it can be inspected directly — this is a
                 // temporary diagnostic for tracking down selector drift, safe to
@@ -113,11 +115,11 @@ public class AnnasArchiveService
                     Directory.CreateDirectory(debugDir);
                     var debugPath = Path.Combine(debugDir, $"debug-search-empty-{DateTime.UtcNow:yyyyMMdd-HHmmss}.html");
                     File.WriteAllText(debugPath, html);
-                    Console.WriteLine($"[AnnasArchiveService] Dumped raw HTML to {debugPath}");
+                    Log.Information("[AnnasArchiveService] Dumped raw HTML to {DebugPath}", debugPath);
                 }
                 catch (Exception dumpEx)
                 {
-                    Console.WriteLine($"[AnnasArchiveService] Failed to dump debug HTML: {dumpEx.Message}");
+                    Log.Warning("[AnnasArchiveService] Failed to dump debug HTML: {Message}", dumpEx.Message);
                 }
 
                 if (!fallbackAttempted && !string.Equals(effectiveQuery, trimmedQuery, StringComparison.Ordinal) && page == 2)
@@ -182,7 +184,7 @@ public class AnnasArchiveService
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[AnnasArchiveService] Failed to build DTO for container index={index}: {ex}");
+                Log.Warning(ex, "[AnnasArchiveService] Failed to build DTO for container index={Index}", index);
                 return null;
             }
         });
@@ -245,16 +247,16 @@ public class AnnasArchiveService
             {
                 var isbn = match.Groups[1].Value.Replace("-", "");
                 coverUrl = $"https://covers.openlibrary.org/b/isbn/{isbn}-L.jpg?default=false";
-                Console.WriteLine($"[AnnasArchiveService] GetCoverByMd5Async md5={key} found ISBN={isbn} coverUrl={coverUrl}");
+                Log.Information("[AnnasArchiveService] GetCoverByMd5Async md5={Md5} found ISBN={Isbn} coverUrl={CoverUrl}", key, isbn, coverUrl);
             }
             else
             {
-                Console.WriteLine($"[AnnasArchiveService] GetCoverByMd5Async md5={key} no ISBN found on detail page (htmlLength={html.Length})");
+                Log.Information("[AnnasArchiveService] GetCoverByMd5Async md5={Md5} no ISBN found on detail page (htmlLength={HtmlLength})", key, html.Length);
             }
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[AnnasArchiveService] GetCoverByMd5Async md5={key} failed: {ex.GetType().Name}: {ex.Message}");
+            Log.Warning(ex, "[AnnasArchiveService] GetCoverByMd5Async md5={Md5} failed", key);
         }
 
         // Negative results are cached too: a book with no ISBN on its detail

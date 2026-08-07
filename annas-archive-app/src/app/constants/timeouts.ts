@@ -1,6 +1,9 @@
 /**
  * Timeout constants for HTTP requests and UI operations.
- * Centralized to ensure consistency across the application.
+ *
+ * Every value here is read by something. Nine others sat alongside them unused —
+ * an unreferenced constant still reads as authoritative, while the number that
+ * actually governs the behaviour lives hardcoded somewhere else and drifts.
  */
 
 // ============================================================================
@@ -9,25 +12,6 @@
 
 /** Default timeout for search operations (60 seconds) */
 export const SEARCH_TIMEOUT_MS = 60000;
-
-/** Timeout for AI operations which can take longer (5 minutes) */
-export const AI_OPERATION_TIMEOUT_MS = 300000;
-
-/** Timeout for quick lookups like covers and descriptions (10 seconds) */
-export const QUICK_LOOKUP_TIMEOUT_MS = 10000;
-
-// ============================================================================
-// UI Debounce Delays
-// ============================================================================
-
-/** Debounce delay for search input (300ms) */
-export const SEARCH_DEBOUNCE_MS = 300;
-
-/** Debounce delay for resize events (150ms) */
-export const RESIZE_DEBOUNCE_MS = 150;
-
-/** Debounce delay for scroll events (100ms) */
-export const SCROLL_DEBOUNCE_MS = 100;
 
 // ============================================================================
 // Staggered Loading Delays
@@ -55,20 +39,8 @@ export const PROGRESS_MESSAGE_DURATION_MS = 5000;
 /** How long to show success messages (3 seconds) */
 export const SUCCESS_MESSAGE_DURATION_MS = 3000;
 
-/** Animation delay for transitions (100ms) */
-export const ANIMATION_DELAY_MS = 100;
-
-/** Delay after API response before updating UI (500ms) */
-export const POST_API_DELAY_MS = 500;
-
 /** Render delay for DOM updates to settle (100ms) */
 export const RENDER_DELAY_MS = 100;
 
 /** Delay between batch operations to avoid overwhelming the server (2 seconds) */
 export const BATCH_DELAY_MS = 2000;
-
-/** Modal transition animation duration (300ms) */
-export const MODAL_TRANSITION_MS = 300;
-
-/** General debounce delay for input fields (300ms) */
-export const DEBOUNCE_MS = 300;

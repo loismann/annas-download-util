@@ -215,23 +215,19 @@ public static class BookSearchEndpoints
         return Results.Ok(new { coverUrl });
     }
 
+    /// <summary>
+    /// No local try/catch. It previously answered a failure with 200 and an
+    /// <c>error</c> string in the body, so a broken download counter was
+    /// indistinguishable from a working one to anything above the browser — not
+    /// in the status code, not in Serilog's request log, not in Seq. Both callers
+    /// already have an <c>error</c> handler that logs and leaves the badge alone,
+    /// so surfacing the real status costs nothing in the UI.
+    /// The global handler maps ArgumentException to 400 and the rest to 500.
+    /// </summary>
     private static IResult HandleGetDownloadStatus(IDownloadTrackingService downloadTracking)
     {
-        try
-        {
-            var (downloadsLeft, downloadsPerDay) = downloadTracking.GetDownloadStatus();
-            var acctInfo = new AccountFastDownloadInfoDto(downloadsLeft, downloadsPerDay);
-
-            return Results.Ok(new { accountFastInfo = acctInfo });
-        }
-        catch (ArgumentException ex)
-        {
-            return Results.BadRequest(new { error = $"Invalid parameter: {ex.ParamName ?? "unknown"}" });
-        }
-        catch (Exception ex)
-        {
-            return Results.Ok(new { accountFastInfo = (AccountFastDownloadInfoDto?)null, error = ex.Message });
-        }
+        var (downloadsLeft, downloadsPerDay) = downloadTracking.GetDownloadStatus();
+        return Results.Ok(new { accountFastInfo = new AccountFastDownloadInfoDto(downloadsLeft, downloadsPerDay) });
     }
 
     private static async Task<IResult> HandleSlumHealth(IHttpClientFactory httpFactory)
@@ -315,12 +311,7 @@ public static class BookSearchEndpoints
             Log.Information("[slum-health] Returning {MonitorCount} monitors", result.Count);
             return Results.Json(result);
         }
-        catch (ArgumentException ex)
-        {
-            Log.Information("[slum-health] Invalid argument: {Message}", ex.Message);
-            return Results.BadRequest(new { error = $"Invalid parameter: {ex.ParamName ?? "unknown"}" });
-        }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not ArgumentException)
         {
             Log.Information("[slum-health] Error: {ErrorMessage}", ex.Message);
             return Results.Json(new { success = false, error = ex.Message });
@@ -332,10 +323,11 @@ public static class BookSearchEndpoints
 
     private static async Task<IResult> HandleMirrorHealth(IHttpClientFactory httpFactory, IMemoryCache cache)
     {
-        // Mirror reachability doesn't change on a per-request basis — this
-        // endpoint has no auth/rate-limit gate (it's polled by the search
-        // page's status badges), so without a cache it was doing 3 live,
-        // sequential, up-to-2-attempt HTTP round trips on every single call.
+        // Mirror reachability doesn't change on a per-request basis, and this is
+        // polled by the search page's status badges — without a cache it did 3
+        // live, sequential, up-to-2-attempt HTTP round trips on every single
+        // call. The route is authorized and rate-limited (see the mapping above);
+        // the cache is about the cost of the upstream fan-out, not about access.
         if (cache.TryGetValue(MirrorHealthCacheKey, out List<object>? cachedResults))
             return Results.Json(cachedResults);
 
@@ -381,18 +373,10 @@ public static class BookSearchEndpoints
                         responseMs = sw.ElapsedMilliseconds
                     };
                 }
-                catch (ArgumentException ex) when (attempt == maxAttempts)
-                {
-                    result = new
-                    {
-                        name = $"Anna's Archive {extension.ToUpperInvariant()}",
-                        extension,
-                        health = (int?)null,
-                        statusCode = (int?)null,
-                        responseMs = sw.ElapsedMilliseconds,
-                        error = $"ArgumentException: {ex.ParamName ?? "unknown"}"
-                    };
-                }
+                // No ArgumentException arm. This loop produces a per-mirror health
+                // record rather than an HTTP response, so nothing here belongs to
+                // the error contract — and the general arm below already reports
+                // the same thing, since ex.GetType().Name reads "ArgumentException".
                 catch (Exception ex) when (attempt == maxAttempts)
                 {
                     result = new

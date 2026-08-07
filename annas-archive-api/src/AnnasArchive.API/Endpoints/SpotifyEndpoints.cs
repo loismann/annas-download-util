@@ -248,10 +248,9 @@ public static class SpotifyEndpoints
         {
             return Results.NotFound(new { error = "That discovery draft was not found." });
         }
-        catch (ArgumentException ex)
-        {
-            return Results.BadRequest(new { error = ex.Message });
-        }
+        // No ArgumentException arm: nothing follows this catch, so it reaches
+        // UseGlobalExceptionHandler, which answers 400 with the same message plus
+        // the errorCode/details a hand-written BadRequest drops.
     }
 
     /// <summary>

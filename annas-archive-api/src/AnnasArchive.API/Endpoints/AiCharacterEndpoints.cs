@@ -1,6 +1,7 @@
 using System.Text.Json;
 using AnnasArchive.API.Helpers;
 using AnnasArchive.API.Models;
+using AnnasArchive.API.Services.Ai;
 using AnnasArchive.Core.Services;
 using Microsoft.AspNetCore.Mvc;
 using Serilog;
@@ -38,11 +39,10 @@ public static class AiCharacterEndpoints
     private static async Task<IResult> HandleGenerateGraph(
         HttpContext context,
         [FromBody] CharacterGraphRequest request,
-        IHttpClientFactory httpFactory,
         IConfiguration cfg,
         ITokenUsageService tokenUsage,
-        IOpenAiModelHelper modelHelper,
-        IAiResponseParser aiResponseParser)
+        IAiResponseParser aiResponseParser,
+        IAiChatCompletion chat)
     {
         if (string.IsNullOrWhiteSpace(request.DropboxPath))
             return Results.BadRequest(new { error = "DropboxPath is required." });
@@ -73,8 +73,6 @@ public static class AiCharacterEndpoints
 
         try
         {
-            using var http = httpFactory.CreateClient("OpenAI");
-
             // Build consolidated summary text
             var summaryText = string.Join("\n\n---\n\n", allSummaries.Select((s, i) =>
                 $"Summary {i + 1}:\n{s}"));
@@ -135,46 +133,25 @@ Story Summaries:
 
 Create a character relationship network graph based ONLY on information in these summaries.";
 
-            var model = "gpt-4o"; // Use GPT-4o for cost-effective character graph generation
-            Log.Information("🤖 Using model for character graph: {Model}", model);
+            var outcome = await chat.CompleteAsync(
+                new AiChatCall(
+                    Endpoint: "character-graph",
+                    // gpt-4o rather than the configured deep model: this reads
+                    // summaries that already exist, it does not write prose.
+                    Model: "gpt-4o",
+                    SystemPrompt: systemPrompt,
+                    UserPrompt: userPrompt,
+                    MaxCompletionTokens: cfg.GetValue<int>("AI:MaxCompletionTokens:CharacterGraph"),
+                    Temperature: cfg.GetValue<double>("AI:Temperature:CharacterGraph")),
+                context);
 
-            var payload = modelHelper.BuildChatCompletionPayload(
-                model,
-                new[]
-                {
-                    new { role = "system", content = systemPrompt },
-                    new { role = "user", content = userPrompt }
-                },
-                maxCompletionTokens: cfg.GetValue<int>("AI:MaxCompletionTokens:CharacterGraph"),
-                temperature: cfg.GetValue<double>("AI:Temperature:CharacterGraph")
-            );
+            if (!outcome.Succeeded) return outcome.Failure!;
 
-            var response = await http.PostAsJsonAsync("https://api.openai.com/v1/chat/completions", payload);
-            if (!response.IsSuccessStatusCode)
-            {
-                var body = await response.Content.ReadAsStringAsync();
-                Log.Information("❌ Character graph failed: {ResponseStatusCode}", response.StatusCode);
-                return Results.Problem($"Character graph generation failed: {(int)response.StatusCode}");
-            }
-
-            using var stream = await response.Content.ReadAsStreamAsync();
-            using var doc = await JsonDocument.ParseAsync(stream);
-            var content = aiResponseParser.ExtractText(doc.RootElement);
-
+            var content = outcome.Text;
             if (string.IsNullOrWhiteSpace(content))
             {
                 Log.Information("❌ No content returned from GPT");
                 return Results.Problem("No character graph data returned.");
-            }
-
-            // Track token usage
-            if (doc.RootElement.TryGetProperty("usage", out var usage))
-            {
-                var promptTokens = usage.GetProperty("prompt_tokens").GetInt32();
-                var completionTokens = usage.GetProperty("completion_tokens").GetInt32();
-                var userId = UserHelpers.GetUserIdFromContext(context);
-                if (userId != null)
-                    tokenUsage.AddUsage(userId, promptTokens, completionTokens);
             }
 
             // Parse the character graph JSON
@@ -253,11 +230,10 @@ Create a character relationship network graph based ONLY on information in these
     private static async Task<IResult> HandleUpdateGraph(
         HttpContext context,
         [FromBody] CharacterGraphUpdateRequest request,
-        IHttpClientFactory httpFactory,
         IConfiguration cfg,
         ITokenUsageService tokenUsage,
-        IOpenAiModelHelper modelHelper,
-        IAiResponseParser aiResponseParser)
+        IAiResponseParser aiResponseParser,
+        IAiChatCompletion chat)
     {
         if (string.IsNullOrWhiteSpace(request.DropboxPath) || string.IsNullOrWhiteSpace(request.NewContent))
             return Results.BadRequest(new { error = "DropboxPath and NewContent are required." });
@@ -274,8 +250,6 @@ Create a character relationship network graph based ONLY on information in these
 
         try
         {
-            using var http = httpFactory.CreateClient("OpenAI");
-
             var existingJson = JsonSerializer.Serialize(existingGraph);
 
             var systemPrompt = @"You are a character relationship analyzer. Update an existing character network graph based on new story content.
@@ -297,43 +271,21 @@ New story content:
 
 Update the character graph with any new information. Return the complete updated graph.";
 
-            var model = "gpt-4o"; // Use GPT-4o for cost-effective character graph updates
-            Log.Information("🤖 Using model for character graph update: {Model}", model);
+            var outcome = await chat.CompleteAsync(
+                new AiChatCall(
+                    Endpoint: "character-graph-update",
+                    Model: "gpt-4o",
+                    SystemPrompt: systemPrompt,
+                    UserPrompt: userPrompt,
+                    MaxCompletionTokens: cfg.GetValue<int>("AI:MaxCompletionTokens:ChapterInsight"),
+                    Temperature: cfg.GetValue<double>("AI:Temperature:ChapterInsight")),
+                context);
 
-            var payload = modelHelper.BuildChatCompletionPayload(
-                model,
-                new[]
-                {
-                    new { role = "system", content = systemPrompt },
-                    new { role = "user", content = userPrompt }
-                },
-                maxCompletionTokens: cfg.GetValue<int>("AI:MaxCompletionTokens:ChapterInsight"),
-                temperature: cfg.GetValue<double>("AI:Temperature:ChapterInsight")
-            );
+            if (!outcome.Succeeded) return outcome.Failure!;
 
-            var response = await http.PostAsJsonAsync("https://api.openai.com/v1/chat/completions", payload);
-            if (!response.IsSuccessStatusCode)
-            {
-                Log.Information("❌ Character graph update failed: {ResponseStatusCode}", response.StatusCode);
-                return Results.Problem("Failed to update character graph.");
-            }
-
-            using var stream = await response.Content.ReadAsStreamAsync();
-            using var doc = await JsonDocument.ParseAsync(stream);
-            var content = aiResponseParser.ExtractText(doc.RootElement);
-
+            var content = outcome.Text;
             if (string.IsNullOrWhiteSpace(content))
                 return Results.Problem("No updated graph data returned.");
-
-            // Track token usage
-            if (doc.RootElement.TryGetProperty("usage", out var usage))
-            {
-                var promptTokens = usage.GetProperty("prompt_tokens").GetInt32();
-                var completionTokens = usage.GetProperty("completion_tokens").GetInt32();
-                var userId = UserHelpers.GetUserIdFromContext(context);
-                if (userId != null)
-                    tokenUsage.AddUsage(userId, promptTokens, completionTokens);
-            }
 
             // Parse updated graph
             var updatedGraph = JsonSerializer.Deserialize<CharacterGraphResponse>(content, new JsonSerializerOptions

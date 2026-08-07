@@ -96,9 +96,17 @@ public sealed class AiChatCompletion(
         if (!response.IsSuccessStatusCode)
         {
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
-            Log.Error("❌ OpenAI {Endpoint} failed with HTTP {StatusCode}: {Body}",
-                call.Endpoint, (int)response.StatusCode, body);
-            return new AiChatOutcome(null, Results.Problem(AiFailureMessage.ForResponse(response.StatusCode, body)));
+
+            // The derived message, not the raw body. The call sites disagreed
+            // about this and each had half of it: most logged the whole body,
+            // which on a 400 can echo the user's own prompt back into the log;
+            // the audiobook one logged status only for exactly that reason, and
+            // so dropped the one sentence worth having. What
+            // AiFailureMessage extracts *is* the body's actionable content.
+            var message = AiFailureMessage.ForResponse(response.StatusCode, body);
+            Log.Error("❌ OpenAI {Endpoint} failed with HTTP {StatusCode}: {Reason}",
+                call.Endpoint, (int)response.StatusCode, message);
+            return new AiChatOutcome(null, Results.Problem(message));
         }
 
         using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);

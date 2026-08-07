@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using AnnasArchive.API.Helpers;
 using AnnasArchive.API.Models;
+using AnnasArchive.API.Services.Ai;
 using AnnasArchive.Core.Helpers;
 using AnnasArchive.Core.Services;
 using Microsoft.AspNetCore.Mvc;
@@ -54,10 +55,9 @@ public static class AiFlashcardsEndpoints
     private static async Task<IResult> HandleCreateFlashcards(
         HttpContext context,
         [FromBody] FlashcardRequest request,
-        IHttpClientFactory httpFactory,
+        IAiChatCompletion chat,
         IConfiguration cfg,
         ITokenUsageService tokenUsage,
-        IOpenAiModelHelper modelHelper,
         IAiResponseParser aiResponseParser,
         IFlashcardService flashcardService)
     {
@@ -73,8 +73,6 @@ public static class AiFlashcardsEndpoints
 
         try
         {
-            using var http = httpFactory.CreateClient("OpenAI");
-
             // Truncate very long passages to avoid overwhelming the model
             var maxInputLength = cfg.GetValue<int>("AI:MaxInputLength");
             var inputText = request.Term.Length > maxInputLength
@@ -135,39 +133,21 @@ Context: {request.BookTitle ?? "Unknown book"}{knownWordsContext}{customInstruct
 
 Return JSON array of flashcards for individual terms found in the passage.";
 
-            var model = "gpt-4o"; // Use GPT-4o for cost-effective vocab extraction
-            var payload = modelHelper.BuildChatCompletionPayload(
-                model,
-                new[]
-                {
-                    new { role = "system", content = systemPrompt },
-                    new { role = "user", content = userPrompt }
-                },
-                maxCompletionTokens: cfg.GetValue<int>("AI:MaxCompletionTokens:LearnMore"),
-                temperature: cfg.GetValue<double>("AI:Temperature:LearnMore")
-            );
+            var outcome = await chat.CompleteAsync(
+                new AiChatCall(
+                    Endpoint: "flashcards",
+                    // gpt-4o rather than the configured deep model: vocabulary
+                    // extraction is a recognition task, and this runs per passage.
+                    Model: "gpt-4o",
+                    SystemPrompt: systemPrompt,
+                    UserPrompt: userPrompt,
+                    MaxCompletionTokens: cfg.GetValue<int>("AI:MaxCompletionTokens:LearnMore"),
+                    Temperature: cfg.GetValue<double>("AI:Temperature:LearnMore")),
+                context);
 
-            var response = await http.PostAsJsonAsync("https://api.openai.com/v1/chat/completions", payload);
-            if (!response.IsSuccessStatusCode)
-            {
-                var body = await response.Content.ReadAsStringAsync();
-                Log.Error("❌ OpenAI flashcard failed with HTTP {StatusCode}: {Body}", (int)response.StatusCode, body);
-                return Results.Problem(AiFailureMessage.ForResponse(response.StatusCode, body));
-            }
+            if (!outcome.Succeeded) return outcome.Failure!;
 
-            using var stream = await response.Content.ReadAsStreamAsync();
-            using var doc = await JsonDocument.ParseAsync(stream);
-            var content = aiResponseParser.ExtractText(doc.RootElement) ?? "{}";
-
-            // Track token usage
-            if (doc.RootElement.TryGetProperty("usage", out var usage))
-            {
-                var promptTokens = usage.GetProperty("prompt_tokens").GetInt32();
-                var completionTokens = usage.GetProperty("completion_tokens").GetInt32();
-                var userId = UserHelpers.GetUserIdFromContext(context);
-                if (userId != null)
-                    tokenUsage.AddUsage(userId, promptTokens, completionTokens);
-            }
+            var content = outcome.Text ?? "{}";
 
             List<FlashcardItem> cardsParsed;
             try

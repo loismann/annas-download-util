@@ -3,6 +3,7 @@ using System.Text.Json;
 using AnnasArchive.API.Helpers;
 using AnnasArchive.API.Models;
 using AnnasArchive.API.Services;
+using AnnasArchive.API.Services.Ai;
 using AnnasArchive.Core.Helpers;
 using AnnasArchive.Core.Services;
 using AnnasArchive.Core.Telemetry;
@@ -40,12 +41,11 @@ public static class AiAudiobookSearchEndpoints
         [FromBody] AiAudiobookSearchRequest request,
         IListenarrService listenarr,
         AudiobookDiscoveryService discovery,
-        IHttpClientFactory httpFactory,
         IConfiguration cfg,
         ITokenUsageService tokenUsage,
-        IOpenAiModelHelper modelHelper,
         IAiResponseParser aiResponseParser,
         IModelSelectionService modelSelection,
+        IAiChatCompletion chat,
         CancellationToken cancellationToken)
     {
         if (!listenarr.IsEnabled)
@@ -67,13 +67,10 @@ public static class AiAudiobookSearchEndpoints
 
         try
         {
-            using var http = httpFactory.CreateClient("OpenAI");
-            var model = modelSelection.GetModelDeep();
-
             var completion = await CompleteAsync(
-                http, modelHelper, aiResponseParser, tokenUsage, context, model,
+                chat, aiResponseParser, context, modelSelection.GetModelDeep(),
                 AudiobookDiscoveryPrompt.BuildUserPrompt(query, count),
-                maxCompletionTokens: 2500, temperature: 0.3, isRetry: false, cancellationToken);
+                temperature: 0.3, isRetry: false, cancellationToken);
 
             if (completion.Error is not null) return completion.Error;
 
@@ -93,9 +90,9 @@ public static class AiAudiobookSearchEndpoints
             if (candidates.Count == 0)
             {
                 var retry = await CompleteAsync(
-                    http, modelHelper, aiResponseParser, tokenUsage, context, "gpt-4o",
+                    chat, aiResponseParser, context, "gpt-4o",
                     AudiobookDiscoveryPrompt.BuildRetryPrompt(query, count),
-                    maxCompletionTokens: 2500, temperature: 0.4, isRetry: true, cancellationToken);
+                    temperature: 0.4, isRetry: true, cancellationToken);
 
                 if (retry.Error is null && retry.Candidates.Count > 0)
                 {
@@ -144,56 +141,30 @@ public static class AiAudiobookSearchEndpoints
     }
 
     private static async Task<AiCompletion> CompleteAsync(
-        HttpClient http,
-        IOpenAiModelHelper modelHelper,
+        IAiChatCompletion chat,
         IAiResponseParser aiResponseParser,
-        ITokenUsageService tokenUsage,
         HttpContext context,
         string model,
         string userPrompt,
-        int maxCompletionTokens,
         double temperature,
         bool isRetry,
         CancellationToken ct)
     {
-        var payload = modelHelper.BuildChatCompletionPayload(
-            model,
-            new[]
-            {
-                new { role = "system", content = AudiobookDiscoveryPrompt.SystemPrompt },
-                new { role = "user", content = userPrompt }
-            },
-            maxCompletionTokens,
-            temperature);
+        var outcome = await chat.CompleteAsync(
+            new AiChatCall(
+                Endpoint: "audiobook-search",
+                Model: model,
+                SystemPrompt: AudiobookDiscoveryPrompt.SystemPrompt,
+                UserPrompt: userPrompt,
+                MaxCompletionTokens: 2500,
+                Temperature: temperature,
+                IsRetry: isRetry),
+            context,
+            ct);
 
-        var sw = Stopwatch.StartNew();
-        var response = await http.PostAsJsonAsync("https://api.openai.com/v1/chat/completions", payload, ct);
-        PerfLog.Record("OpenAI.ChatCompletion", sw.Elapsed.TotalMilliseconds, response.IsSuccessStatusCode,
-            ("Endpoint", "audiobook-search"), ("Model", model), ("Retry", isRetry));
+        if (!outcome.Succeeded) return AiCompletion.Failed(outcome.Failure!);
 
-        if (!response.IsSuccessStatusCode)
-        {
-            // Status only: the response body can echo the prompt back.
-            Log.Information("❌ OpenAI audiobook-search failed status={StatusCode}", (int)response.StatusCode);
-            return AiCompletion.Failed(Results.Problem($"OpenAI request failed: {(int)response.StatusCode}"));
-        }
-
-        using var stream = await response.Content.ReadAsStreamAsync(ct);
-        using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
-        var rawText = aiResponseParser.ExtractText(doc.RootElement);
-
-        if (doc.RootElement.TryGetProperty("usage", out var usage))
-        {
-            var userId = UserHelpers.GetUserIdFromContext(context);
-            if (userId is not null)
-            {
-                tokenUsage.AddUsage(
-                    userId,
-                    usage.GetProperty("prompt_tokens").GetInt32(),
-                    usage.GetProperty("completion_tokens").GetInt32());
-            }
-        }
-
+        var rawText = outcome.Text;
         if (string.IsNullOrWhiteSpace(rawText))
             return AiCompletion.Failed(Results.Problem("AI audiobook search returned an empty response."));
 

@@ -1,3 +1,4 @@
+using AnnasArchive.Core.Services;
 using System.Net;
 using System.Text;
 using System.Text.Json;
@@ -175,7 +176,7 @@ public sealed class SpotifyDiscoveryServiceTests : IDisposable
             .Build();
         return new SpotifyDiscoveryService(
             new StubFactory(new HttpClient(handler)), configuration, spotify, knownMusic,
-            _store, new CurrentUser(), TimeProvider.System);
+            _store, new CurrentUser(), Mock.Of<ITokenUsageService>(), TimeProvider.System);
     }
 
     private static Mock<ISpotifyService> StrictSpotify(List<SpotifyTrackDto> tracks)

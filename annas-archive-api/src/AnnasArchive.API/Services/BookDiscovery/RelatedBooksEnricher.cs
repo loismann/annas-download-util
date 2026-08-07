@@ -2,6 +2,7 @@ using System.Text.RegularExpressions;
 using AnnasArchive.API.Configuration;
 using AnnasArchive.API.Helpers;
 using AnnasArchive.API.Models;
+using AnnasArchive.API.Services.Ai;
 using AnnasArchive.Core.Services;
 using AnnasArchive.Core.Telemetry;
 using Serilog;
@@ -23,11 +24,15 @@ public interface IRelatedBooksEnricher
     /// Fills in missing book descriptions from Wikipedia, falling back to the
     /// model. Both lists share one budget.
     /// </summary>
+    /// <param name="billTo">Owner key charged for the description calls. This
+    /// pass makes up to eight of them, and every one used to be free as far as
+    /// the usage totals were concerned.</param>
     Task<(List<SeriesBook> SameSeries, List<AuthorSeries> OtherSeries)> FillDescriptionsAsync(
         List<SeriesBook> sameSeries,
         List<AuthorSeries> otherSeries,
         string author,
-        string model);
+        string model,
+        string? billTo);
 }
 
 /// <summary>
@@ -40,9 +45,7 @@ public interface IRelatedBooksEnricher
 public sealed class RelatedBooksEnricher(
     AnnasArchiveService annaArchive,
     IWikipediaService wikipedia,
-    IHttpClientFactory httpFactory,
-    IOpenAiModelHelper modelHelper,
-    IAiResponseParser responseParser) : IRelatedBooksEnricher
+    IAiChatCompletion chat) : IRelatedBooksEnricher
 {
     /// <summary>Below this many titles the model's list is treated as probably
     /// incomplete and worth cross-checking against the catalogue.</summary>
@@ -102,7 +105,8 @@ public sealed class RelatedBooksEnricher(
         List<SeriesBook> sameSeries,
         List<AuthorSeries> otherSeries,
         string author,
-        string model)
+        string model,
+        string? billTo)
     {
         // Wikipedia first, then the model. Google Books (quota exhausted) and
         // OpenLibrary (down) used to sit in front of both; every call to either
@@ -112,7 +116,6 @@ public sealed class RelatedBooksEnricher(
             budget, sameSeries.Count);
 
         var sw = System.Diagnostics.Stopwatch.StartNew();
-        using var http = httpFactory.CreateClient("OpenAI");
 
         var spent = 0;
         var filledSameSeries = new List<SeriesBook>(sameSeries);
@@ -122,7 +125,7 @@ public sealed class RelatedBooksEnricher(
             if (!NeedsDescription(book.Description)) continue;
 
             if (spent > 0) await AiThrottlingConfiguration.ThrottleAsync();
-            filledSameSeries[i] = await DescribeAsync(book, author, model, http);
+            filledSameSeries[i] = await DescribeAsync(book, author, model, billTo);
             spent++;
         }
 
@@ -154,7 +157,7 @@ public sealed class RelatedBooksEnricher(
                 }
 
                 if (spent > 0) await AiThrottlingConfiguration.ThrottleAsync();
-                books.Add(await DescribeAsync(book, author, model, http));
+                books.Add(await DescribeAsync(book, author, model, billTo));
                 spent++;
             }
 
@@ -179,7 +182,7 @@ public sealed class RelatedBooksEnricher(
         SeriesBook book,
         string author,
         string model,
-        HttpClient http)
+        string? billTo)
     {
         var wikiDescription = await wikipedia.GetBookDescriptionAsync(book.Title, author);
         if (!string.IsNullOrWhiteSpace(wikiDescription))
@@ -189,7 +192,7 @@ public sealed class RelatedBooksEnricher(
         }
 
         var generated = await AiDescriptionHelpers.GenerateNoSpoilerDescriptionAsync(
-            book.Title, author, http, model, modelHelper, responseParser);
+            book.Title, author, model, chat, billTo);
         Log.Information("[GPT-4] ✓ Generated description for '{BookTitle}'", book.Title);
         return book with { Description = generated, DescriptionSource = "gpt" };
     }

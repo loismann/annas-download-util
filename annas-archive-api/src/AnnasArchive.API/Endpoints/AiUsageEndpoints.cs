@@ -1,4 +1,5 @@
 using AnnasArchive.API.Helpers;
+using AnnasArchive.API.Services.Ai;
 using AnnasArchive.API.Models;
 using AnnasArchive.Core.Services;
 using Serilog;
@@ -70,8 +71,15 @@ public static class AiUsageEndpoints
         var now = DateTime.UtcNow;
         var nextReset = new DateTime(now.Year, now.Month, 1).AddMonths(1);
 
-        // Return usage for ALL configured users (from appsettings.json), even if they have $0.00 usage
-        var result = userDisplayNames.Select(kvp =>
+        // Every configured person, even at $0.00 — plus the background account.
+        // Enrichment scans, chapter labelling and audiobook matching are real
+        // spend on the household's behalf; billing them to whoever happened to
+        // be signed in would eat one person's allowance for a scan they never
+        // started, so they get their own row instead of being hidden.
+        var accounts = userDisplayNames
+            .Append(new KeyValuePair<string, string>(AiSpend.BackgroundAccount, AiSpend.BackgroundDisplayName));
+
+        var result = accounts.Select(kvp =>
         {
             var userId = kvp.Key;
             var displayName = kvp.Value;

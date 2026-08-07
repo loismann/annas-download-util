@@ -15,6 +15,7 @@ using System.Threading.Tasks;
 using System.Xml.Linq;
 using AnnasArchive.Core.Helpers;
 using AnnasArchive.API.Configuration;
+using AnnasArchive.API.Services.Ai;
 using AnnasArchive.API.Services.Library;
 using AnnasArchive.Core.Services;
 using Microsoft.Extensions.Configuration;
@@ -37,6 +38,7 @@ public class LibraryWatcherService : BackgroundService
     private readonly IMetadataExtractionService _metadataExtraction;
     private readonly IEnrichmentStatsService _statsService;
     private readonly IGoogleBooksService _googleBooks;
+    private readonly ITokenUsageService _tokenUsage;
     private readonly string? _autoTagNewBooks;
     private readonly BookEnrichmentPipeline _pipeline;
     private FileSystemWatcher? _watcher;
@@ -49,7 +51,8 @@ public class LibraryWatcherService : BackgroundService
         IDuplicateDetectionService duplicateDetection,
         IMetadataExtractionService metadataExtraction,
         IEnrichmentStatsService statsService,
-        IGoogleBooksService googleBooks)
+        IGoogleBooksService googleBooks,
+        ITokenUsageService tokenUsage)
     {
         _httpFactory = httpFactory;
         _configuration = configuration;
@@ -58,6 +61,7 @@ public class LibraryWatcherService : BackgroundService
         _metadataExtraction = metadataExtraction;
         _statsService = statsService;
         _googleBooks = googleBooks;
+        _tokenUsage = tokenUsage;
         _autoTagNewBooks = configuration["LibraryWatcher:AutoTagNewBooks"];
         _pipeline = new BookEnrichmentPipeline(new Lookups(this), statsService);
     }
@@ -562,6 +566,14 @@ Return JSON with:
 
             using var stream = await response.Content.ReadAsStreamAsync(token);
             using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: token);
+
+            // Nobody asked for this call, so it is billed to the household
+            // rather than to whoever happens to be signed in. It used to be
+            // billed to nobody: a full library scan makes one of these per
+            // low-confidence book and none of it reached the usage totals the
+            // monthly allowance is checked against.
+            AiSpend.Record(_tokenUsage, AiSpend.BackgroundAccount, doc.RootElement);
+
             var text = LibraryMetadataRules.ExtractResponseText(doc.RootElement);
             if (string.IsNullOrWhiteSpace(text))
                 return null;

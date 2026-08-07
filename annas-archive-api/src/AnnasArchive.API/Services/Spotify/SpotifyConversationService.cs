@@ -97,7 +97,8 @@ public sealed class SpotifyConversationService : ISpotifyConversationService
         var parserContext = string.IsNullOrWhiteSpace(request.DraftId)
             ? null
             : "An editable music-discovery draft is active. The user's new words may refine that draft. No Spotify content is included here.";
-        var command = await _parser.ParseAsync(request.Message, parserContext, token);
+        var command = await _parser.ParseAsync(
+            request.Message, parserContext, _currentUser?.GetRequiredOwnerKey(), token);
 
         // A playlist the user picked from a disambiguation card wins over anything
         // re-derived from their words — they already answered that question.

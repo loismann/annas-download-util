@@ -447,7 +447,8 @@ public class SpotifyConversationServiceTests
         public string? SeenContext { get; private set; }
 
         public Task<SpotifyValidatedCommand> ParseAsync(
-            string message, string? conversationContext = null, CancellationToken token = default)
+            string message, string? conversationContext = null, string? billTo = null,
+            CancellationToken token = default)
         {
             SeenMessage = message;
             SeenContext = conversationContext;
@@ -499,7 +500,8 @@ public class SpotifyConversationServiceTests
         : ISpotifyCommandParser
     {
         public Task<SpotifyValidatedCommand> ParseAsync(
-            string message, string? conversationContext = null, CancellationToken token = default) =>
+            string message, string? conversationContext = null, string? billTo = null,
+            CancellationToken token = default) =>
             Task.FromResult(new SpotifyValidatedCommand(action, arguments, 1.0, clarification));
     }
 

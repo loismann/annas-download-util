@@ -1,4 +1,5 @@
 using AnnasArchive.API.Helpers;
+using AnnasArchive.API.Services.Ai;
 using AnnasArchive.Core.Services;
 using Serilog;
 
@@ -16,6 +17,7 @@ public class DescriptionFetcherService : IDescriptionFetcherService
     private readonly IOpenAiModelHelper _modelHelper;
     private readonly IAiResponseParser _aiResponseParser;
     private readonly IModelSelectionService _modelSelection;
+    private readonly IAiChatCompletion _chat;
 
     public DescriptionFetcherService(
         IGoogleBooksService googleBooksService,
@@ -23,7 +25,8 @@ public class DescriptionFetcherService : IDescriptionFetcherService
         IHttpClientFactory httpFactory,
         IOpenAiModelHelper modelHelper,
         IAiResponseParser aiResponseParser,
-        IModelSelectionService modelSelection)
+        IModelSelectionService modelSelection,
+        IAiChatCompletion chat)
     {
         _googleBooksService = googleBooksService;
         _openLibraryService = openLibraryService;
@@ -31,6 +34,7 @@ public class DescriptionFetcherService : IDescriptionFetcherService
         _modelHelper = modelHelper;
         _aiResponseParser = aiResponseParser;
         _modelSelection = modelSelection;
+        _chat = chat;
     }
 
     public async Task<DescriptionFetchResult> FetchDescriptionAsync(
@@ -38,7 +42,8 @@ public class DescriptionFetcherService : IDescriptionFetcherService
         string? author = null,
         string? isbn = null,
         bool includeAiFallback = true,
-        bool useDeepModel = false)
+        bool useDeepModel = false,
+        string? billTo = null)
     {
         if (string.IsNullOrWhiteSpace(title))
             return new DescriptionFetchResult(null, null);
@@ -64,7 +69,7 @@ public class DescriptionFetcherService : IDescriptionFetcherService
         // 3. Fall back to AI if enabled
         if (includeAiFallback)
         {
-            result = await FetchFromAiAsync(title, author, useDeepModel);
+            result = await FetchFromAiAsync(title, author, useDeepModel, billTo);
             if (!string.IsNullOrWhiteSpace(result.Description))
             {
                 Log.Information("[DescriptionFetcher] Generated description from AI ({Model})", useDeepModel ? "deep" : "fast");
@@ -110,20 +115,19 @@ public class DescriptionFetcherService : IDescriptionFetcherService
         }
     }
 
-    public async Task<DescriptionFetchResult> FetchFromAiAsync(string title, string? author = null, bool useDeepModel = false)
+    public async Task<DescriptionFetchResult> FetchFromAiAsync(
+        string title, string? author = null, bool useDeepModel = false, string? billTo = null)
     {
         try
         {
-            using var http = _httpFactory.CreateClient("OpenAI");
             var model = useDeepModel ? _modelSelection.GetModelDeep() : _modelSelection.GetModelFast();
 
             var description = await AiDescriptionHelpers.GenerateNoSpoilerDescriptionAsync(
                 title,
                 author ?? "Unknown",
-                http,
                 model,
-                _modelHelper,
-                _aiResponseParser);
+                _chat,
+                billTo);
 
             return new DescriptionFetchResult(
                 string.IsNullOrWhiteSpace(description) ? null : description,

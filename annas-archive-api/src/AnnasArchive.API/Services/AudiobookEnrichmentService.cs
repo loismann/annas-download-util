@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using AnnasArchive.Core.Helpers;
 using AnnasArchive.API.Configuration;
+using AnnasArchive.API.Services.Ai;
 using AnnasArchive.API.Services.Library;
 using Serilog;
 
@@ -94,17 +95,20 @@ public class AudiobookEnrichmentService : BackgroundService
     private readonly IConfiguration _configuration;
     private readonly IEnrichmentStatsService _statsService;
     private readonly IGoogleBooksService _googleBooks;
+    private readonly ITokenUsageService _tokenUsage;
 
     public AudiobookEnrichmentService(
         IHttpClientFactory httpFactory,
         IConfiguration configuration,
         IEnrichmentStatsService statsService,
-        IGoogleBooksService googleBooks)
+        IGoogleBooksService googleBooks,
+        ITokenUsageService tokenUsage)
     {
         _httpFactory = httpFactory;
         _configuration = configuration;
         _statsService = statsService;
         _googleBooks = googleBooks;
+        _tokenUsage = tokenUsage;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -615,6 +619,11 @@ Confidence rubric — use the actual scale, don't default to round numbers:
 
             using var stream = await response.Content.ReadAsStreamAsync(token);
             using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: token);
+
+            // Background enrichment: billed to the household, not to a person
+            // who did not ask for it. Previously billed to nobody at all.
+            AiSpend.Record(_tokenUsage, AiSpend.BackgroundAccount, doc.RootElement);
+
             var text = ExtractResponseText(doc.RootElement);
             if (string.IsNullOrWhiteSpace(text))
             {

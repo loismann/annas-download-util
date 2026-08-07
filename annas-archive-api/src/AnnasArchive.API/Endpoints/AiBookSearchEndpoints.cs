@@ -141,7 +141,8 @@ public static class AiBookSearchEndpoints
 
             var sameSeries = await enricher.ExpandSameSeriesAsync(payload.SameSeries, request, payload);
             var (filledSameSeries, filledOtherSeries) = await enricher.FillDescriptionsAsync(
-                sameSeries, payload.OtherSeries, request.Author, model);
+                sameSeries, payload.OtherSeries, request.Author, model,
+                UserHelpers.GetUserIdFromContext(context));
 
             Log.Information("✅ Related books for '{RequestBookTitle}': {SameSeriesCount} series books, {OtherSeriesCount} other series",
                 request.BookTitle, filledSameSeries.Count, filledOtherSeries.Count);

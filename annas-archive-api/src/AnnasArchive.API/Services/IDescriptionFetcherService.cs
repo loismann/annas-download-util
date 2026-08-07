@@ -30,7 +30,8 @@ public interface IDescriptionFetcherService
         string? author = null,
         string? isbn = null,
         bool includeAiFallback = true,
-        bool useDeepModel = false);
+        bool useDeepModel = false,
+        string? billTo = null);
 
     /// <summary>
     /// Fetches a book description from Google Books only.
@@ -45,5 +46,9 @@ public interface IDescriptionFetcherService
     /// <summary>
     /// Generates a book description using AI (the "fast" model by default, or the "deep" model when requested).
     /// </summary>
-    Task<DescriptionFetchResult> FetchFromAiAsync(string title, string? author = null, bool useDeepModel = false);
+    /// <param name="billTo">Owner key to charge for the AI call, or
+    /// <c>AiSpend.BackgroundAccount</c>. Null records nothing — this path used to
+    /// have no way to say who was spending, so it recorded nothing at all.</param>
+    Task<DescriptionFetchResult> FetchFromAiAsync(
+        string title, string? author = null, bool useDeepModel = false, string? billTo = null);
 }

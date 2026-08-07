@@ -43,12 +43,25 @@ public sealed record AiChatOutcome(string? Text, IResult? Failure)
 public interface IAiChatCompletion
 {
     /// <summary>
-    /// Sends one chat completion and bills the caller for it. Returns the
-    /// extracted text, or the failure result to return as-is.
+    /// Sends one chat completion and bills the signed-in user for it. Returns
+    /// the extracted text, or the failure result to return as-is.
     /// </summary>
     Task<AiChatOutcome> CompleteAsync(
         AiChatCall call,
         HttpContext context,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// The same call for work that has no request behind it — background
+    /// enrichment, a helper reached from several places, a scan nobody is
+    /// waiting on. <paramref name="billTo"/> is an owner key, or
+    /// <see cref="AiSpend.BackgroundAccount"/> when the spend belongs to the
+    /// household rather than a person. Passing null records nothing, and should
+    /// be a deliberate choice rather than an omission.
+    /// </summary>
+    Task<AiChatOutcome> CompleteAsync(
+        AiChatCall call,
+        string? billTo,
         CancellationToken cancellationToken = default);
 }
 
@@ -73,9 +86,15 @@ public sealed class AiChatCompletion(
 {
     private const string CompletionsUrl = "https://api.openai.com/v1/chat/completions";
 
-    public async Task<AiChatOutcome> CompleteAsync(
+    public Task<AiChatOutcome> CompleteAsync(
         AiChatCall call,
         HttpContext context,
+        CancellationToken cancellationToken = default) =>
+        CompleteAsync(call, UserHelpers.GetUserIdFromContext(context), cancellationToken);
+
+    public async Task<AiChatOutcome> CompleteAsync(
+        AiChatCall call,
+        string? billTo,
         CancellationToken cancellationToken = default)
     {
         using var http = httpFactory.CreateClient("OpenAI");
@@ -112,7 +131,7 @@ public sealed class AiChatCompletion(
         using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
         using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
 
-        RecordUsage(doc.RootElement, context);
+        AiSpend.Record(tokenUsage, billTo, doc.RootElement);
 
         return new AiChatOutcome(responseParser.ExtractText(doc.RootElement), null);
     }
@@ -121,32 +140,5 @@ public sealed class AiChatCompletion(
         call.IsRetry is { } retry
             ? [("Endpoint", call.Endpoint), ("Model", call.Model), ("Retry", retry)]
             : [("Endpoint", call.Endpoint), ("Model", call.Model)];
-
-    /// <summary>
-    /// Charges the tokens to the signed-in user. Every field is probed rather
-    /// than demanded: an unbilled call is a wrong number in a usage report,
-    /// while a throw here would discard an answer the account was already
-    /// charged for.
-    /// </summary>
-    private void RecordUsage(JsonElement root, HttpContext context)
-    {
-        if (!root.TryGetProperty("usage", out var usage) || usage.ValueKind != JsonValueKind.Object)
-            return;
-
-        var userId = UserHelpers.GetUserIdFromContext(context);
-        if (userId is null)
-            return;
-
-        var promptTokens = TokenCount(usage, "prompt_tokens");
-        var completionTokens = TokenCount(usage, "completion_tokens");
-        if (promptTokens == 0 && completionTokens == 0)
-            return;
-
-        tokenUsage.AddUsage(userId, promptTokens, completionTokens);
-    }
-
-    private static int TokenCount(JsonElement usage, string property) =>
-        usage.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.Number
-            ? value.GetInt32()
-            : 0;
 }
+

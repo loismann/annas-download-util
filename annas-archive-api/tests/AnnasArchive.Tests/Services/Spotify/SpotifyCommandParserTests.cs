@@ -1,3 +1,4 @@
+using AnnasArchive.Core.Services;
 using System.Net;
 using System.Text;
 using System.Text.Json;
@@ -219,7 +220,7 @@ public class SpotifyCommandParserTests
             .AddInMemoryCollection(new Dictionary<string, string?> { ["OpenAI:ApiKey"] = apiKey })
             .Build();
 
-        return new SpotifyCommandParser(factory, configuration);
+        return new SpotifyCommandParser(factory, configuration, Mock.Of<ITokenUsageService>());
     }
 
     private sealed class StubFactory(HttpClient client) : IHttpClientFactory

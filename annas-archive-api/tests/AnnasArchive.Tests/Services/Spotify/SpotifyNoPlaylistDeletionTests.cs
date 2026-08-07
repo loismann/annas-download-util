@@ -299,7 +299,8 @@ public class SpotifyNoPlaylistDeletionTests
         : ISpotifyCommandParser
     {
         public Task<SpotifyValidatedCommand> ParseAsync(
-            string message, string? conversationContext = null, CancellationToken token = default) =>
+            string message, string? conversationContext = null, string? billTo = null,
+            CancellationToken token = default) =>
             Task.FromResult(new SpotifyValidatedCommand(action, arguments, 1.0));
     }
 

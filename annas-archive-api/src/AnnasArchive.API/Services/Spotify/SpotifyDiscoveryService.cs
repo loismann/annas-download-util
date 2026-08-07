@@ -4,6 +4,8 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using AnnasArchive.API.Models;
 using AnnasArchive.Core.Helpers;
+using AnnasArchive.API.Services.Ai;
+using AnnasArchive.Core.Services;
 using Serilog;
 
 namespace AnnasArchive.API.Services.Spotify;
@@ -37,6 +39,7 @@ public sealed class SpotifyDiscoveryService(
     ISpotifyKnownMusicService knownMusic,
     ISpotifyDiscoveryStore store,
     ISpotifyCurrentUser currentUser,
+    ITokenUsageService tokenUsage,
     TimeProvider timeProvider) : ISpotifyDiscoveryService
 {
     private static readonly JsonSerializerOptions AiOptions = new()
@@ -305,6 +308,12 @@ public sealed class SpotifyDiscoveryService(
             throw new InvalidOperationException("The music discovery service could not generate candidates.");
 
         using var document = JsonDocument.Parse(content);
+
+        // Discovery is the most expensive call Spotifinator makes (3,500
+        // tokens), and it was recorded nowhere. Billed to the owner whose
+        // library it is generating for.
+        AiSpend.Record(tokenUsage, currentUser.GetRequiredOwnerKey(), document.RootElement);
+
         var json = document.RootElement.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString();
         var parsed = string.IsNullOrWhiteSpace(json)
             ? null

@@ -1,4 +1,5 @@
 using AnnasArchive.API.Helpers;
+using AnnasArchive.API.Services.Ai;
 using AnnasArchive.API.Models;
 using AnnasArchive.Core.Services;
 using Dropbox.Api;
@@ -85,10 +86,10 @@ public static class DropboxReaderEndpoints
         [FromQuery] string? path,
         IValidationService validation,
         DropboxClient dropbox,
-        IHttpClientFactory httpFactory,
         IConfiguration cfg,
-        IOpenAiModelHelper modelHelper,
         IAiResponseParser aiResponseParser,
+        IAiChatCompletion chat,
+        HttpContext context,
         CancellationToken cancellationToken)
     {
         if (dropbox == null)
@@ -105,10 +106,10 @@ public static class DropboxReaderEndpoints
             index = await ChapterLabelingHelper.EnsureGptChapterLabelsAsync(
                 index,
                 cacheDir,
-                httpFactory,
                 cfg,
-                modelHelper,
                 aiResponseParser,
+                chat,
+                UserHelpers.GetUserIdFromContext(context),
                 cancellationToken);
 
             var response = new DropboxEpubChaptersResponse(

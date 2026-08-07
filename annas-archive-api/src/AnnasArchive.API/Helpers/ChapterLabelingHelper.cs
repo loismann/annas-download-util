@@ -3,9 +3,12 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using AnnasArchive.API.Models;
 using AnnasArchive.Core.Services;
+using AnnasArchive.API.Services.Ai;
 using Serilog;
 
 namespace AnnasArchive.API.Helpers;
+
+
 
 /// <summary>
 /// Helper class for GPT-powered chapter labeling in EPUB books.
@@ -25,10 +28,10 @@ public static class ChapterLabelingHelper
     public static async Task<CachedChapterIndex> EnsureGptChapterLabelsAsync(
         CachedChapterIndex index,
         string cacheDir,
-        IHttpClientFactory httpFactory,
         IConfiguration cfg,
-        IOpenAiModelHelper modelHelper,
         IAiResponseParser aiResponseParser,
+        IAiChatCompletion chat,
+        string? billTo,
         CancellationToken cancellationToken)
     {
         var model = cfg["OpenAI:ChapterLabelModel"] ?? "gpt-4o";
@@ -55,7 +58,8 @@ public static class ChapterLabelingHelper
                 }
             }
 
-            var labeled = await RequestGptLabelsAsync(index.Chapters, model, httpFactory, cfg, modelHelper, aiResponseParser, cancellationToken);
+            var labeled = await RequestGptLabelsAsync(
+                index.Chapters, model, cfg, aiResponseParser, chat, billTo, cancellationToken);
             if (labeled == null || labeled.Count == 0)
             {
                 // Fallback to heuristic labeling when GPT fails
@@ -89,13 +93,17 @@ public static class ChapterLabelingHelper
         }
     }
 
+    /// <param name="billTo">Owner key charged for the labelling call. It runs
+    /// once per book at 2,000 completion tokens and used to record nothing, so
+    /// opening a new book in the reader was free as far as the allowance
+    /// could see.</param>
     private static async Task<Dictionary<int, ChapterLabelResult>?> RequestGptLabelsAsync(
         IReadOnlyList<CachedChapterMeta> chapters,
         string model,
-        IHttpClientFactory httpFactory,
         IConfiguration cfg,
-        IOpenAiModelHelper modelHelper,
         IAiResponseParser aiResponseParser,
+        IAiChatCompletion chat,
+        string? billTo,
         CancellationToken cancellationToken)
     {
         var apiKey = cfg["OpenAI:ApiKey"] ?? Environment.GetEnvironmentVariable("OPENAI_API_KEY");
@@ -104,8 +112,6 @@ public static class ChapterLabelingHelper
             Log.Information("OpenAI API key not configured for chapter labeling.");
             return null;
         }
-
-        using var http = httpFactory.CreateClient("OpenAI");
 
         var chapterPayload = chapters.Select(ch => new
         {
@@ -137,31 +143,24 @@ Return ONLY this JSON array:
   }}
 ]";
 
-        var payload = modelHelper.BuildChatCompletionPayload(
-            model,
-            new object[]
-            {
-                new { role = "system", content = systemPrompt },
-                new { role = "user", content = userPrompt }
-            },
-            maxCompletionTokens: 2000,
-            temperature: 0.2
-        );
+        var outcome = await chat.CompleteAsync(
+            new AiChatCall(
+                Endpoint: "chapter-labeling",
+                Model: model,
+                SystemPrompt: systemPrompt,
+                UserPrompt: userPrompt,
+                MaxCompletionTokens: 2000,
+                Temperature: 0.2),
+            billTo,
+            cancellationToken);
 
-        var response = await http.PostAsJsonAsync("https://api.openai.com/v1/chat/completions", payload, cancellationToken);
-        if (!response.IsSuccessStatusCode)
-        {
-            var body = await response.Content.ReadAsStringAsync(cancellationToken);
-            Log.Information("OpenAI chapter-labeling failed status={StatusCode} body={Body}", (int)response.StatusCode, body);
+        // A failure here is not fatal: the caller falls back to heuristic
+        // labelling, which is why this returns null rather than the outcome's
+        // IResult.
+        if (!outcome.Succeeded || string.IsNullOrWhiteSpace(outcome.Text))
             return null;
-        }
 
-        using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-        using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
-        var rawText = aiResponseParser.ExtractText(doc.RootElement);
-
-        if (string.IsNullOrWhiteSpace(rawText))
-            return null;
+        var rawText = outcome.Text;
 
         try
         {

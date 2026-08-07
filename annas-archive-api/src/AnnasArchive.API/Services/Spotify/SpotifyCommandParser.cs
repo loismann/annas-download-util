@@ -4,14 +4,20 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using AnnasArchive.API.Models;
 using AnnasArchive.Core.Helpers;
+using AnnasArchive.API.Services.Ai;
+using AnnasArchive.Core.Services;
 using Serilog;
 
 namespace AnnasArchive.API.Services.Spotify;
 
 public interface ISpotifyCommandParser
 {
+    /// <param name="billTo">Owner key charged for the classification call.
+    /// Every Spotifinator message costs one of these and none of them used to be
+    /// recorded, so the feature's whole running cost was invisible.</param>
     Task<SpotifyValidatedCommand> ParseAsync(
-        string message, string? conversationContext = null, CancellationToken token = default);
+        string message, string? conversationContext = null, string? billTo = null,
+        CancellationToken token = default);
 }
 
 /// <summary>
@@ -35,16 +41,22 @@ public sealed class SpotifyCommandParser : ISpotifyCommandParser
 
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IConfiguration _configuration;
+    private readonly ITokenUsageService _tokenUsage;
 
-    public SpotifyCommandParser(IHttpClientFactory httpClientFactory, IConfiguration configuration)
+    public SpotifyCommandParser(
+        IHttpClientFactory httpClientFactory,
+        IConfiguration configuration,
+        ITokenUsageService tokenUsage)
     {
         _httpClientFactory = httpClientFactory;
         _configuration = configuration;
+        _tokenUsage = tokenUsage;
     }
 
     public async Task<SpotifyValidatedCommand> ParseAsync(
         string message,
         string? conversationContext = null,
+        string? billTo = null,
         CancellationToken token = default)
     {
         if (string.IsNullOrWhiteSpace(message))
@@ -64,7 +76,7 @@ public sealed class SpotifyCommandParser : ISpotifyCommandParser
 
         try
         {
-            var envelope = await RequestEnvelopeAsync(message, conversationContext, apiKey, token);
+            var envelope = await RequestEnvelopeAsync(message, conversationContext, apiKey, billTo, token);
             var validated = SpotifyActionCatalog.Validate(envelope);
 
             Log.Information(
@@ -85,6 +97,7 @@ public sealed class SpotifyCommandParser : ISpotifyCommandParser
         string message,
         string? conversationContext,
         string apiKey,
+        string? billTo,
         CancellationToken token)
     {
         // $$ raw string: {{ }} interpolates, single braces are literal JSON.
@@ -163,6 +176,8 @@ public sealed class SpotifyCommandParser : ISpotifyCommandParser
         }
 
         using var document = JsonDocument.Parse(content);
+        AiSpend.Record(_tokenUsage, billTo, document.RootElement);
+
         var messageContent = document.RootElement
             .GetProperty("choices")[0]
             .GetProperty("message")

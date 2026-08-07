@@ -1,6 +1,7 @@
 using System.Net.Http;
 using System.Threading;
 using AnnasArchive.API.Models;
+using AnnasArchive.API.Services.Ai;
 using AnnasArchive.API.Services.BookDiscovery;
 using AnnasArchive.Core.Services;
 using Microsoft.Extensions.Caching.Memory;
@@ -22,13 +23,20 @@ public class RelatedBooksEnricherTests
     /// matters rather than silently doubling the request's API spend.</summary>
     private const int Budget = 8;
 
+    private const string BillTo = "acct-paul";
+
     private readonly Mock<IWikipediaService> _wikipedia = new();
+    private readonly Mock<IAiChatCompletion> _chat = new();
 
     public RelatedBooksEnricherTests()
     {
         _wikipedia
             .Setup(w => w.GetBookDescriptionAsync(It.IsAny<string>(), It.IsAny<string?>()))
             .ReturnsAsync("A description long enough to count.");
+
+        _chat
+            .Setup(c => c.CompleteAsync(It.IsAny<AiChatCall>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AiChatOutcome("A model-written description.", null));
     }
 
     // ─── Description budget ──────────────────────────────────────────────
@@ -37,7 +45,7 @@ public class RelatedBooksEnricherTests
     public async Task FillsTheDescriptionsThatAreMissing()
     {
         var (same, _) = await Enricher().FillDescriptionsAsync(
-            [Book("Pandora's Star"), Book("Judas Unchained")], [], "Peter F. Hamilton", "gpt-4o");
+            [Book("Pandora's Star"), Book("Judas Unchained")], [], "Peter F. Hamilton", "gpt-4o", BillTo);
 
         same.Should().OnlyContain(b => b.DescriptionSource == "wikipedia");
         same.Should().OnlyContain(b => b.Description == "A description long enough to count.");
@@ -48,7 +56,7 @@ public class RelatedBooksEnricherTests
     {
         var described = Book("Already Described") with { Description = "A real description already." };
 
-        var (same, _) = await Enricher().FillDescriptionsAsync([described], [], "Author", "gpt-4o");
+        var (same, _) = await Enricher().FillDescriptionsAsync([described], [], "Author", "gpt-4o", BillTo);
 
         same.Should().ContainSingle().Which.Should().Be(described);
         _wikipedia.Verify(w => w.GetBookDescriptionAsync(It.IsAny<string>(), It.IsAny<string?>()), Times.Never);
@@ -61,7 +69,7 @@ public class RelatedBooksEnricherTests
         // characters is the line between a placeholder and an answer.
         var stub = Book("Stubbed") with { Description = "TBD" };
 
-        var (same, _) = await Enricher().FillDescriptionsAsync([stub], [], "Author", "gpt-4o");
+        var (same, _) = await Enricher().FillDescriptionsAsync([stub], [], "Author", "gpt-4o", BillTo);
 
         same.Should().ContainSingle().Which.DescriptionSource.Should().Be("wikipedia");
     }
@@ -71,7 +79,7 @@ public class RelatedBooksEnricherTests
     {
         var books = Enumerable.Range(1, Budget + 4).Select(i => Book($"Book {i}")).ToList();
 
-        var (same, _) = await Enricher().FillDescriptionsAsync(books, [], "Author", "gpt-4o");
+        var (same, _) = await Enricher().FillDescriptionsAsync(books, [], "Author", "gpt-4o", BillTo);
 
         same.Should().HaveCount(Budget + 4, "every book is still returned, described or not");
         same.Count(b => b.DescriptionSource is not null).Should().Be(Budget);
@@ -88,7 +96,7 @@ public class RelatedBooksEnricherTests
             Series("Other Two", 4)
         };
 
-        var (filledSame, filledOther) = await Enricher().FillDescriptionsAsync(same, other, "Author", "gpt-4o");
+        var (filledSame, filledOther) = await Enricher().FillDescriptionsAsync(same, other, "Author", "gpt-4o", BillTo);
 
         filledSame.Count(b => b.DescriptionSource is not null).Should().Be(5);
         filledOther.SelectMany(s => s.Books).Count(b => b.DescriptionSource is not null).Should()
@@ -102,7 +110,7 @@ public class RelatedBooksEnricherTests
         var same = Enumerable.Range(1, Budget).Select(i => Book($"Same {i}")).ToList();
         var other = new List<AuthorSeries> { Series("Untouched", 3) };
 
-        var (_, filledOther) = await Enricher().FillDescriptionsAsync(same, other, "Author", "gpt-4o");
+        var (_, filledOther) = await Enricher().FillDescriptionsAsync(same, other, "Author", "gpt-4o", BillTo);
 
         filledOther.Should().BeEquivalentTo(other, "nothing was left to spend on them");
     }
@@ -114,16 +122,35 @@ public class RelatedBooksEnricherTests
             .Setup(w => w.GetBookDescriptionAsync(It.IsAny<string>(), It.IsAny<string?>()))
             .ReturnsAsync((string?)null);
 
-        var (same, _) = await Enricher().FillDescriptionsAsync([Book("Obscure")], [], "Author", "gpt-4o");
+        var (same, _) = await Enricher().FillDescriptionsAsync([Book("Obscure")], [], "Author", "gpt-4o", BillTo);
 
         same.Should().ContainSingle().Which.DescriptionSource.Should().Be("gpt");
+    }
+
+    [Fact]
+    public async Task ChargesTheRequesterForEveryDescriptionItGenerates()
+    {
+        // This pass makes up to eight model calls on top of the one the endpoint
+        // already billed for. All eight used to be invisible to the monthly
+        // allowance that is supposed to cap them.
+        _wikipedia
+            .Setup(w => w.GetBookDescriptionAsync(It.IsAny<string>(), It.IsAny<string?>()))
+            .ReturnsAsync((string?)null);
+
+        var books = Enumerable.Range(1, 3).Select(i => Book($"Book {i}")).ToList();
+
+        await Enricher().FillDescriptionsAsync(books, [], "Author", "gpt-4o", BillTo);
+
+        _chat.Verify(
+            c => c.CompleteAsync(It.IsAny<AiChatCall>(), BillTo, It.IsAny<CancellationToken>()),
+            Times.Exactly(3));
     }
 
     [Fact]
     public async Task KeepsEveryOtherFieldOfABookItDescribes()
     {
         var (same, _) = await Enricher().FillDescriptionsAsync(
-            [new SeriesBook("Titled", 7, "", "http://cover")], [], "Author", "gpt-4o");
+            [new SeriesBook("Titled", 7, "", "http://cover")], [], "Author", "gpt-4o", BillTo);
 
         var book = same.Should().ContainSingle().Subject;
         book.Title.Should().Be("Titled");
@@ -134,7 +161,7 @@ public class RelatedBooksEnricherTests
     [Fact]
     public async Task DoesNothingWithNothingToDo()
     {
-        var (same, other) = await Enricher().FillDescriptionsAsync([], [], "Author", "gpt-4o");
+        var (same, other) = await Enricher().FillDescriptionsAsync([], [], "Author", "gpt-4o", BillTo);
 
         same.Should().BeEmpty();
         other.Should().BeEmpty();
@@ -218,24 +245,6 @@ public class RelatedBooksEnricherTests
         var searchClient = new HttpClient(handler.Object) { BaseAddress = new Uri("https://annas-archive.org") };
         var annaArchive = new AnnasArchiveService(searchClient, new MemoryCache(new MemoryCacheOptions()));
 
-        // The OpenAI leg only runs when Wikipedia comes back empty, and
-        // AiDescriptionHelpers swallows its own failures — so a handler that
-        // refuses every request still exercises the "fell back to the model"
-        // branch, with an empty description as the result.
-        var openAiHandler = new Mock<HttpMessageHandler>();
-        openAiHandler.Protected()
-            .Setup<Task<HttpResponseMessage>>("SendAsync", ItExpr.IsAny<HttpRequestMessage>(), ItExpr.IsAny<CancellationToken>())
-            .ReturnsAsync(() => new HttpResponseMessage { StatusCode = HttpStatusCode.ServiceUnavailable });
-
-        var factory = new Mock<IHttpClientFactory>();
-        factory.Setup(f => f.CreateClient(It.IsAny<string>()))
-            .Returns(() => new HttpClient(openAiHandler.Object));
-
-        return new RelatedBooksEnricher(
-            annaArchive,
-            _wikipedia.Object,
-            factory.Object,
-            new OpenAiModelHelper(),
-            new AiResponseParser());
+        return new RelatedBooksEnricher(annaArchive, _wikipedia.Object, _chat.Object);
     }
 }

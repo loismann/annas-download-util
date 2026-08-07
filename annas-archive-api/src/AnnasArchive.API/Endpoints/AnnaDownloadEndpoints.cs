@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using AnnasArchive.API.Helpers;
+using AnnasArchive.API.Services.Ai;
 using AnnasArchive.Core.Models;
 using AnnasArchive.Core.Services;
 using Dropbox.Api;
@@ -58,12 +59,10 @@ public static class AnnaDownloadEndpoints
         HttpContext context,
         [FromQuery] string? title,
         [FromQuery] string? author,
-        IHttpClientFactory httpFactory,
         IConfiguration cfg,
         ITokenUsageService tokenUsage,
-        IOpenAiModelHelper modelHelper,
-        IAiResponseParser aiResponseParser,
-        IModelSelectionService modelSelection)
+        IModelSelectionService modelSelection,
+        IAiChatCompletion chat)
     {
         if (string.IsNullOrWhiteSpace(title))
             return Results.BadRequest(new { error = "title is required." });
@@ -73,20 +72,15 @@ public static class AnnaDownloadEndpoints
 
         Log.Information("📖 GPT-4 description lookup: title='{Title}', author='{Author}'", title, author);
 
-        using var http = httpFactory.CreateClient("OpenAI");
-        var model = modelSelection.GetModelFast();
+        // The helper records what the call actually cost. This used to add a
+        // flat AddUsage(userId, 150, 50) here, charged identically whether the
+        // model returned three words or the request failed outright.
         var description = await AiDescriptionHelpers.GenerateNoSpoilerDescriptionAsync(
             title,
             author ?? "",
-            http,
-            model,
-            modelHelper,
-            aiResponseParser);
-
-        // Track token usage (estimate ~50 completion tokens for description)
-        var userId = UserHelpers.GetUserIdFromContext(context);
-        if (userId != null)
-            tokenUsage.AddUsage(userId, 150, 50);
+            modelSelection.GetModelFast(),
+            chat,
+            UserHelpers.GetUserIdFromContext(context));
 
         Log.Information(string.IsNullOrEmpty(description)
             ? $"⚠️ GPT-4 description not generated for '{title}'"

@@ -242,7 +242,9 @@ public static class BookSearchEndpoints
             if (!statusResponse.IsSuccessStatusCode)
             {
                 Log.Information("[slum-health] Failed to fetch status page: {StatusResponseStatusCode}", statusResponse.StatusCode);
-                return Results.Json(new { success = false, error = "Failed to fetch status page data" });
+                return Results.Json(
+                    new { success = false, error = "Failed to fetch status page data" },
+                    statusCode: StatusCodes.Status502BadGateway);
             }
 
             Log.Information("[slum-health] Fetching heartbeat data...");
@@ -250,7 +252,9 @@ public static class BookSearchEndpoints
             if (!heartbeatResponse.IsSuccessStatusCode)
             {
                 Log.Information("[slum-health] Failed to fetch heartbeat: {HeartbeatResponseStatusCode}", heartbeatResponse.StatusCode);
-                return Results.Json(new { success = false, error = "Failed to fetch heartbeat data" });
+                return Results.Json(
+                    new { success = false, error = "Failed to fetch heartbeat data" },
+                    statusCode: StatusCodes.Status502BadGateway);
             }
 
             var statusJson = await statusResponse.Content.ReadAsStringAsync();
@@ -314,7 +318,9 @@ public static class BookSearchEndpoints
         catch (Exception ex) when (ex is not ArgumentException)
         {
             Log.Information("[slum-health] Error: {ErrorMessage}", ex.Message);
-            return Results.Json(new { success = false, error = ex.Message });
+            return Results.Json(
+                new { success = false, error = "Could not reach the status service." },
+                statusCode: StatusCodes.Status502BadGateway);
         }
     }
 

@@ -9,6 +9,7 @@ import { of, throwError, NEVER, Subject } from 'rxjs';
 import { BookDto } from '../models/book-dto.model';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { HttpClientTestingModule } from '@angular/common/http/testing';
+import { HttpErrorResponse } from '@angular/common/http';
 
 describe('BookSearchComponent', () => {
   let component: BookSearchComponent;
@@ -360,6 +361,50 @@ describe('BookSearchComponent', () => {
       // Assert
       expect(newComponent.downloadsLeft).toBe(25);
       expect(newComponent.downloadsPerDay).toBe(100);
+    });
+
+    /**
+     * A failed send answers 429 or 502 now, not 200-with-success:false — but the
+     * quota counter still has to update, because a failed attempt can still have
+     * burned a slot.
+     *
+     * This is the regression that would otherwise be silent: the tile turns red
+     * either way, so a counter that quietly stopped moving would go unnoticed
+     * until someone hit their limit unexpectedly.
+     */
+    it('updates the counter from a FAILED send, not just a successful one', () => {
+      component.downloadsLeft = 50;
+      component.downloadsPerDay = 100;
+
+      mockBookSearchApiService.sendToKindle.and.returnValue(throwError(() => new HttpErrorResponse({
+        status: 502,
+        error: {
+          success: false,
+          message: 'Failed to download book.',
+          accountFastInfo: { downloadsLeft: 41, downloadsPerDay: 100 }
+        }
+      })));
+      mockBookSearchApiService.sendToLibrary.and.returnValue(of({ success: true, accountFastInfo: null }));
+
+      const book: any = { md5: 'a'.repeat(32), title: 'Test Book' };
+      component.sendToDadsKindle(book);
+
+      expect(component.downloadsLeft).toBe(41);
+      expect(book.dadsKindleState).toBe('error');
+    });
+
+    it('leaves the counter alone when a failure carries no quota', () => {
+      component.downloadsLeft = 50;
+
+      mockBookSearchApiService.sendToKindle.and.returnValue(
+        throwError(() => new HttpErrorResponse({ status: 500 })));
+      mockBookSearchApiService.sendToLibrary.and.returnValue(of({ success: true, accountFastInfo: null }));
+
+      const book: any = { md5: 'b'.repeat(32), title: 'Test Book' };
+      component.sendToDadsKindle(book);
+
+      expect(component.downloadsLeft).toBe(50);
+      expect(book.dadsKindleState).toBe('error');
     });
 
     it('should calculate warning level as red when downloads left <= 10', () => {

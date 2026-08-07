@@ -137,13 +137,18 @@ public static class GamingEndpoints
             else
             {
                 Log.Warning("❌ Gaming PC {ActionName} failed: {Error}", actionName, error);
-                return Results.Ok(new
-                {
-                    success = false,
-                    action = actionName,
-                    message = "Failed to control gaming PC.",
-                    error = error
-                });
+                // 502: the wake/shutdown script reached the gaming PC and it refused,
+                // or the script itself failed. Either way this request did not do what
+                // it was asked, and a 200 said otherwise.
+                return Results.Json(
+                    new
+                    {
+                        success = false,
+                        action = actionName,
+                        message = "Failed to control gaming PC.",
+                        error = error
+                    },
+                    statusCode: StatusCodes.Status502BadGateway);
             }
         }
         catch (Exception ex) when (ex is not ArgumentException)

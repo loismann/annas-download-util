@@ -140,6 +140,51 @@ public class ErrorContractConventionTests
             "a catch-all that loses its filter turns that endpoint's 400s back into 500s");
     }
 
+    /// <summary>
+    /// A failure must not be reported as HTTP 200.
+    ///
+    /// Fifteen sites used to answer <c>Results.Ok(new { success = false, … })</c>.
+    /// The browser read the flag and showed the error correctly, so nothing was
+    /// visibly broken — but Serilog, Seq and every status-code-based dashboard saw
+    /// an unbroken wall of 200s, including through an hour where every download
+    /// failed. A failure the tooling cannot see is a failure nobody can count.
+    ///
+    /// <para>Scans backwards from each <c>success = false</c> to the return that
+    /// produced it, so a multi-line object literal is caught too — the fifteenth
+    /// site was found only because it was written across several lines and a
+    /// single-line grep had missed it.</para>
+    /// </summary>
+    [Fact]
+    public void NoEndpointReportsAFailureAsHttp200()
+    {
+        var offenders = new List<string>();
+
+        foreach (var (name, text) in EndpointSources())
+        {
+            var lines = text.Split('\n');
+            for (var i = 0; i < lines.Length; i++)
+            {
+                if (!lines[i].Contains("success = false")) continue;
+                if (lines[i].TrimStart().StartsWith("//")) continue;   // a comment about the rule
+
+                // Walk back to the return that owns this literal.
+                for (var j = i; j >= 0 && j > i - 12; j--)
+                {
+                    if (lines[j].Contains("Results.Json") || lines[j].Contains("statusCode:")) break;
+                    if (lines[j].Contains("Results.Ok("))
+                    {
+                        offenders.Add($"{name}:{i + 1}");
+                        break;
+                    }
+                }
+            }
+        }
+
+        offenders.Should().BeEmpty(
+            "a failed operation must carry a non-2xx status; success=false inside a 200 " +
+            "is invisible to Serilog, Seq and any status-based monitoring");
+    }
+
     private static int CountOccurrences(string haystack, string needle)
     {
         var count = 0;

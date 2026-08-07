@@ -126,10 +126,16 @@ public static class VocabEndpoints
         {
             AiContentCache.SaveKnownWordsWithBooks(knownWords);
             Log.Information("🗑️ Removed '{Normalized}' from known words entirely", normalized);
-            return Results.Ok(new { success = true, word = normalized, totalKnown = knownWords.Count });
+            return Results.Ok(new { success = true, removed = true, word = normalized, totalKnown = knownWords.Count });
         }
 
-        return Results.Ok(new { success = false, word = normalized, message = "Word was not in known list" });
+        // DELETE is idempotent: the word is not in the list, which is exactly the
+        // state the caller asked for. That is a success, so it no longer reports
+        // `success = false` — the flag was the only thing claiming a failure, and
+        // nothing reads it (the client types this call as returning nothing).
+        // `removed` distinguishes "we took it out" from "it was already gone" for
+        // anyone who ever wants to know.
+        return Results.Ok(new { success = true, removed = false, word = normalized, totalKnown = knownWords.Count });
     }
 
     private static IResult HandleGetStudyWords()
@@ -222,10 +228,11 @@ public static class VocabEndpoints
         {
             AiContentCache.SaveStudyWordsWithBooks(studyWords);
             Log.Information("🗑️ Removed '{Normalized}' from study list entirely", normalized);
-            return Results.Ok(new { success = true, word = normalized, totalStudy = studyWords.Count });
+            return Results.Ok(new { success = true, removed = true, word = normalized, totalStudy = studyWords.Count });
         }
 
-        return Results.Ok(new { success = false, word = normalized, message = "Word was not in study list" });
+        // Idempotent, same as the known-words delete above.
+        return Results.Ok(new { success = true, removed = false, word = normalized, totalStudy = studyWords.Count });
     }
 
     private static IResult HandleDeleteBookVocab(string bookId)

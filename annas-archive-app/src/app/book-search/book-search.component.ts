@@ -40,6 +40,7 @@ import { applyMirrorHealth, applySlumHealth } from './domain-health';
 import { BookSearchGrouping } from './book-search-grouping';
 import { BookCoverLookupService } from './book-cover-lookup.service';
 import { BookDescriptionLookupService } from './book-description-lookup.service';
+import { readDownloadQuota } from '../shared/download-quota';
 import {
   SearchResultsComponent,
   DisplayGroup,
@@ -187,11 +188,7 @@ export class BookSearchComponent implements OnInit, OnDestroy {
   /* ───────── download counter management ───────── */
   private fetchDownloadStatus(): void {
     this.bookSearchApi.getDownloadStatus().pipe(takeUntil(this.destroy$)).subscribe({
-      next: (resp) => {
-        if (resp.accountFastInfo) {
-          this.updateFromServer(resp.accountFastInfo.downloadsLeft, resp.accountFastInfo.downloadsPerDay);
-        }
-      },
+      next: (resp) => this.applyDownloadQuota(resp),
       error: (err) => {
         this.logger.error('[download-counter] Failed to fetch status', err);
       }
@@ -578,16 +575,25 @@ export class BookSearchComponent implements OnInit, OnDestroy {
     // must not be cancelled because the user navigated away.
     send(book.md5, book.title, coverUrl).subscribe({
       next: (resp: SendToTargetResponse) => {
-        if (resp.accountFastInfo) {
-          this.updateFromServer(resp.accountFastInfo.downloadsLeft, resp.accountFastInfo.downloadsPerDay);
-        }
+        this.applyDownloadQuota(resp);
         book[stateKey] = resp.success ? 'success' : 'error';
       },
+      // A failed send is a real error status now (429 rate-limited, 502 when
+      // Anna's Archive could not produce the file) rather than a 200 carrying
+      // success:false — so the counter has to be folded in from here too. A
+      // failed attempt can still have burned a quota slot.
       error: err => {
         this.logger.error(`${label} failed`, err);
+        this.applyDownloadQuota(err);
         book[stateKey] = 'error';
       }
     });
+  }
+
+  /** Folds a response's or a failure's download counter back into the badge. */
+  private applyDownloadQuota(source: unknown): void {
+    const quota = readDownloadQuota(source);
+    if (quota) this.updateFromServer(quota.downloadsLeft, quota.downloadsPerDay);
   }
 
   private coverUrlFor(book: BookDto): string | undefined {

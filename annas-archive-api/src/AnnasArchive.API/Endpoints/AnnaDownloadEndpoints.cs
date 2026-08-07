@@ -137,21 +137,28 @@ public static class AnnaDownloadEndpoints
             ?? "unknown";
 
         // Use shared helper to download book from Anna's Archive
-        var (resp, fileName, acctInfo, errorMessage) = await AnnaDownloadHelpers.DownloadBookFromAnnasArchiveAsync(md5, title, anna, memberKey);
+        var (resp, fileName, acctInfo, errorMessage, failure) = await AnnaDownloadHelpers.DownloadBookFromAnnasArchiveAsync(md5, title, anna, memberKey);
 
         if (errorMessage != null)
         {
             // Get current download status even on failure
             var (downloadsLeft, downloadsPerDay) = downloadTracking.GetDownloadStatus();
             var trackingInfo = new AccountFastDownloadInfoDto(downloadsLeft, downloadsPerDay);
-            return Results.Ok(new { success = false, message = errorMessage, accountFastInfo = trackingInfo });
+            // Non-2xx, but the body is unchanged: accountFastInfo still rides along
+            // because a failed attempt can still have consumed a quota slot, and the
+            // counter has to stay truthful. The browser reads it from the error.
+            return Results.Json(
+                new { success = false, message = errorMessage, accountFastInfo = trackingInfo },
+                statusCode: AnnaDownloadHelpers.StatusCodeFor(failure));
         }
 
         if (resp == null || fileName == null)
         {
             var (downloadsLeft, downloadsPerDay) = downloadTracking.GetDownloadStatus();
             var trackingInfo = new AccountFastDownloadInfoDto(downloadsLeft, downloadsPerDay);
-            return Results.Ok(new { success = false, message = "Failed to download book.", accountFastInfo = trackingInfo });
+            return Results.Json(
+                new { success = false, message = "Failed to download book.", accountFastInfo = trackingInfo },
+                statusCode: StatusCodes.Status502BadGateway);
         }
 
         // Record successful download in our tracking system
@@ -233,7 +240,7 @@ public static class AnnaDownloadEndpoints
 
             try
             {
-                var (resp, fileName, _, errorMessage) =
+                var (resp, fileName, _, errorMessage, _) =
                     await AnnaDownloadHelpers.DownloadBookFromAnnasArchiveAsync(md5, title, anna, memberKey);
 
                 if (errorMessage != null || resp == null || fileName == null)
@@ -318,21 +325,28 @@ public static class AnnaDownloadEndpoints
             ?? throw new InvalidOperationException("Missing Anna:MemberKey.");
 
         // Use shared helper to download book from Anna's Archive
-        var (resp, fileName, acctInfo, errorMessage) = await AnnaDownloadHelpers.DownloadBookFromAnnasArchiveAsync(md5, title, anna, memberKey);
+        var (resp, fileName, acctInfo, errorMessage, failure) = await AnnaDownloadHelpers.DownloadBookFromAnnasArchiveAsync(md5, title, anna, memberKey);
 
         if (errorMessage != null)
         {
             // Return current tracking status on error
             var (downloadsLeft, downloadsPerDay) = downloadTracking.GetDownloadStatus();
             var trackingInfo = new AccountFastDownloadInfoDto(downloadsLeft, downloadsPerDay);
-            return Results.Ok(new { success = false, message = errorMessage, accountFastInfo = trackingInfo });
+            // Non-2xx, but the body is unchanged: accountFastInfo still rides along
+            // because a failed attempt can still have consumed a quota slot, and the
+            // counter has to stay truthful. The browser reads it from the error.
+            return Results.Json(
+                new { success = false, message = errorMessage, accountFastInfo = trackingInfo },
+                statusCode: AnnaDownloadHelpers.StatusCodeFor(failure));
         }
 
         if (resp == null || fileName == null)
         {
             var (downloadsLeft, downloadsPerDay) = downloadTracking.GetDownloadStatus();
             var trackingInfo = new AccountFastDownloadInfoDto(downloadsLeft, downloadsPerDay);
-            return Results.Ok(new { success = false, message = "Failed to download book.", accountFastInfo = trackingInfo });
+            return Results.Json(
+                new { success = false, message = "Failed to download book.", accountFastInfo = trackingInfo },
+                statusCode: StatusCodes.Status502BadGateway);
         }
 
         using (resp)
@@ -469,20 +483,27 @@ public static class AnnaDownloadEndpoints
             ?? throw new InvalidOperationException("Missing Anna:MemberKey.");
 
         // Use shared helper to download book from Anna's Archive
-        var (resp, fileName, acctInfo, errorMessage) = await AnnaDownloadHelpers.DownloadBookFromAnnasArchiveAsync(md5, title, anna, memberKey);
+        var (resp, fileName, acctInfo, errorMessage, failure) = await AnnaDownloadHelpers.DownloadBookFromAnnasArchiveAsync(md5, title, anna, memberKey);
 
         if (errorMessage != null)
         {
             var (downloadsLeft, downloadsPerDay) = downloadTracking.GetDownloadStatus();
             var trackingInfo = new AccountFastDownloadInfoDto(downloadsLeft, downloadsPerDay);
-            return Results.Ok(new { success = false, message = errorMessage, accountFastInfo = trackingInfo });
+            // Non-2xx, but the body is unchanged: accountFastInfo still rides along
+            // because a failed attempt can still have consumed a quota slot, and the
+            // counter has to stay truthful. The browser reads it from the error.
+            return Results.Json(
+                new { success = false, message = errorMessage, accountFastInfo = trackingInfo },
+                statusCode: AnnaDownloadHelpers.StatusCodeFor(failure));
         }
 
         if (resp == null || fileName == null)
         {
             var (downloadsLeft, downloadsPerDay) = downloadTracking.GetDownloadStatus();
             var trackingInfo = new AccountFastDownloadInfoDto(downloadsLeft, downloadsPerDay);
-            return Results.Ok(new { success = false, message = "Failed to download book.", accountFastInfo = trackingInfo });
+            return Results.Json(
+                new { success = false, message = "Failed to download book.", accountFastInfo = trackingInfo },
+                statusCode: StatusCodes.Status502BadGateway);
         }
 
         var tempFilePath = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid()}_{fileName}");

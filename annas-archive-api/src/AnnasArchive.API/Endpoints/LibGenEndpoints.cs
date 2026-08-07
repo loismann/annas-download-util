@@ -152,7 +152,12 @@ public static class LibGenEndpoints
         {
             var (downloadsLeft, downloadsPerDay) = downloadTracking.GetDownloadStatus();
             Log.Warning("[LibGen] Failed to download book {Md5}", md5);
-            return Results.Ok(new { success = false, message = "Failed to download book from LibGen.", accountFastInfo = new AccountFastDownloadInfoDto(downloadsLeft, downloadsPerDay) });
+            // 502: LibGen refused or returned nothing. accountFastInfo still rides
+            // along for the same reason as the Anna's Archive download path — the
+            // quota counter must stay truthful whether or not the file arrived.
+            return Results.Json(
+                new { success = false, message = "Failed to download book from LibGen.", accountFastInfo = new AccountFastDownloadInfoDto(downloadsLeft, downloadsPerDay) },
+                statusCode: StatusCodes.Status502BadGateway);
         }
 
         var downloadUrl = await libgen.GetDownloadUrlAsync(md5);

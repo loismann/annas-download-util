@@ -7,10 +7,44 @@ using AnnasArchive.Core.Services;
 namespace AnnasArchive.API.Helpers;
 
 /// <summary>
+/// Why a download did not produce a file.
+///
+/// The reason travels with the failure because the caller has to turn it into an
+/// HTTP status, and the three cases are not the same answer: a rate limit is the
+/// user's own quota and will clear on its own, while a missing URL or a refused
+/// transfer is Anna's Archive failing us. Returning one status for both would put
+/// "wait a minute and retry" and "the mirror is down" in the same bucket — which
+/// is what a bare <c>success = false</c> did.
+/// </summary>
+public enum AnnaDownloadFailure
+{
+    /// <summary>No failure — a file was produced.</summary>
+    None = 0,
+
+    /// <summary>Anna's Archive refused on rate-limit grounds. Maps to 429.</summary>
+    RateLimited,
+
+    /// <summary>Upstream gave no download URL, or the transfer failed. Maps to 502.</summary>
+    Unavailable
+}
+
+/// <summary>
 /// Helper methods for Anna's Archive download operations.
 /// </summary>
 public static class AnnaDownloadHelpers
 {
+    /// <summary>
+    /// The HTTP status a <see cref="AnnaDownloadFailure"/> should be reported as.
+    /// One mapping, used by all three download endpoints, so they cannot disagree
+    /// about what a rate limit looks like from the outside.
+    /// </summary>
+    public static int StatusCodeFor(AnnaDownloadFailure failure) => failure switch
+    {
+        AnnaDownloadFailure.RateLimited => StatusCodes.Status429TooManyRequests,
+        AnnaDownloadFailure.Unavailable => StatusCodes.Status502BadGateway,
+        _ => StatusCodes.Status200OK
+    };
+
     /// <summary>
     /// Downloads a book from Anna's Archive using member credentials.
     /// </summary>
@@ -23,8 +57,9 @@ public static class AnnaDownloadHelpers
     /// - fileName: Sanitized file name with appropriate extension
     /// - accountInfo: Account download info if available (null - tracking happens at endpoint level)
     /// - errorMessage: Error message if something went wrong (null on success)
+    /// - failure: Why it failed, so the caller can pick an honest status code
     /// </returns>
-    public static async Task<(HttpResponseMessage? response, string? fileName, AccountFastDownloadInfoDto? accountInfo, string? errorMessage)>
+    public static async Task<(HttpResponseMessage? response, string? fileName, AccountFastDownloadInfoDto? accountInfo, string? errorMessage, AnnaDownloadFailure failure)>
         DownloadBookFromAnnasArchiveAsync(
             string md5,
             string? title,
@@ -39,11 +74,11 @@ public static class AnnaDownloadHelpers
         }
         catch (InvalidOperationException ex) when (ex.Message.Contains("Rate limit"))
         {
-            return (null, null, null, "⏱️ Rate limit exceeded. Please wait 30-60 seconds before trying again.");
+            return (null, null, null, "⏱️ Rate limit exceeded. Please wait 30-60 seconds before trying again.", AnnaDownloadFailure.RateLimited);
         }
         catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
         {
-            return (null, null, null, "⏱️ Rate limit exceeded. Please wait 30-60 seconds before trying again.");
+            return (null, null, null, "⏱️ Rate limit exceeded. Please wait 30-60 seconds before trying again.", AnnaDownloadFailure.RateLimited);
         }
 
         // Extract download URL
@@ -54,7 +89,7 @@ public static class AnnaDownloadHelpers
                         : du.EnumerateArray().FirstOrDefault().GetString();
 
         if (string.IsNullOrEmpty(downloadUrl))
-            return (null, null, null, "No download URL found.");
+            return (null, null, null, "No download URL found.", AnnaDownloadFailure.Unavailable);
 
         // Extract account info
         AccountFastDownloadInfoDto? acctInfo = null;
@@ -69,7 +104,7 @@ public static class AnnaDownloadHelpers
             downloadUrl,
             HttpCompletionOption.ResponseHeadersRead);
         if (resp == null || !resp.IsSuccessStatusCode)
-            return (null, null, acctInfo, "Download failed.");
+            return (null, null, acctInfo, "Download failed.", AnnaDownloadFailure.Unavailable);
 
         // Sanitize title — untrusted, it comes from the Anna's Archive listing.
         var rawTitle  = !string.IsNullOrWhiteSpace(title) ? title : md5;
@@ -88,6 +123,6 @@ public static class AnnaDownloadHelpers
 
         var fileName = $"{safeTitle}{ext}";
 
-        return (resp, fileName, acctInfo, null);
+        return (resp, fileName, acctInfo, null, AnnaDownloadFailure.None);
     }
 }

@@ -1,6 +1,7 @@
 using System.Text.Json;
 using AnnasArchive.API.Data;
 using AnnasArchive.Core.Services;
+using AnnasArchive.API.Services.Ai;
 using Serilog;
 
 namespace AnnasArchive.API.Services;
@@ -31,25 +32,19 @@ public class DateNightSummaryService
         "campy. Given a title, year, and real plot description, write ONE sentence (25 " +
         "words max) that sells it that way. No quotation marks, no preamble, just the line.";
 
-    private readonly IHttpClientFactory _httpFactory;
-    private readonly IAiResponseParser _responseParser;
-    private readonly ITokenUsageService _tokenUsage;
+    private readonly IAiResponsesCompletion _ai;
     private readonly IModelSelectionService _modelSelection;
     private readonly IConfiguration _config;
     private readonly AppDatabase _db;
     private readonly SemaphoreSlim _generationLock = new(1, 1);
 
     public DateNightSummaryService(
-        IHttpClientFactory httpFactory,
-        IAiResponseParser responseParser,
-        ITokenUsageService tokenUsage,
+        IAiResponsesCompletion ai,
         IModelSelectionService modelSelection,
         IConfiguration config,
         AppDatabase db)
     {
-        _httpFactory = httpFactory;
-        _responseParser = responseParser;
-        _tokenUsage = tokenUsage;
+        _ai = ai;
         _modelSelection = modelSelection;
         _config = config;
         _db = db;
@@ -125,39 +120,29 @@ public class DateNightSummaryService
 
     private async Task<string?> GenerateAsync(string title, int? year, string? overview, string? attributedTo, CancellationToken ct)
     {
-        using var http = _httpFactory.CreateClient("OpenAI");
-
         var userPrompt = $"Title: {title}\nYear: {year?.ToString() ?? "unknown"}\n" +
                           $"Plot: {(string.IsNullOrWhiteSpace(overview) ? "(no description available)" : overview)}";
 
-        var payload = new
-        {
-            model = _modelSelection.GetModelFast(),
-            input = $"{SystemPrompt}\n\n{userPrompt}",
-            max_output_tokens = _config.GetValue<int>("AI:MaxCompletionTokens:DateNightSummary"),
-            temperature = _config.GetValue<double>("AI:Temperature:DateNightSummary")
-        };
+        // attributedTo is null for the background pre-generation pass, which
+        // walks the whole catalogue — that spend belongs to the household, not
+        // to whoever last opened the page.
+        var outcome = await _ai.CompleteAsync(
+            new AiResponsesCall(
+                Endpoint: "date-night-summary",
+                Model: _modelSelection.GetModelFast(),
+                Input: $"{SystemPrompt}\n\n{userPrompt}",
+                MaxOutputTokens: _config.GetValue<int>("AI:MaxCompletionTokens:DateNightSummary"),
+                Temperature: _config.GetValue<double>("AI:Temperature:DateNightSummary")),
+            attributedTo ?? AiSpend.BackgroundAccount,
+            ct);
 
-        var response = await http.PostAsJsonAsync("https://api.openai.com/v1/responses", payload, ct);
-        if (!response.IsSuccessStatusCode)
+        if (!outcome.Succeeded)
         {
-            var errorBody = await response.Content.ReadAsStringAsync(ct);
-            Log.Warning("[DateNight] OpenAI summary request failed ({StatusCode}): {Body}", response.StatusCode, errorBody);
+            Log.Warning("[DateNight] OpenAI summary request failed: {Reason}", outcome.FailureMessage);
             return null;
         }
 
-        using var stream = await response.Content.ReadAsStreamAsync(ct);
-        using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
-        var text = _responseParser.ExtractText(doc.RootElement)?.Trim().Trim('"');
-
-        if (doc.RootElement.TryGetProperty("usage", out var usage) && !string.IsNullOrWhiteSpace(attributedTo))
-        {
-            var promptTokens = usage.GetProperty("input_tokens").GetInt32();
-            var completionTokens = usage.GetProperty("output_tokens").GetInt32();
-            _tokenUsage.AddUsage(attributedTo, promptTokens, completionTokens);
-        }
-
-        return text;
+        return outcome.Text?.Trim().Trim('"');
     }
 
     private Dictionary<int, string> LoadCache()

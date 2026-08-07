@@ -1,5 +1,6 @@
 using System.Text.Json;
 using AnnasArchive.API.Helpers;
+using AnnasArchive.API.Services.Ai;
 using AnnasArchive.API.Models;
 using AnnasArchive.Core.Services;
 using Dropbox.Api;
@@ -59,13 +60,12 @@ public static class AiSummarizeEndpoints
     private static async Task<IResult> HandleSummarize(
         HttpContext context,
         [FromBody] SummarizeRequest request,
-        IHttpClientFactory httpFactory,
         IConfiguration cfg,
         ITokenUsageService tokenUsage,
-        IAiResponseParser aiResponseParser,
         IModelSelectionService modelSelection,
         IValidationService validation,
-        ITextProcessingService textProcessing)
+        ITextProcessingService textProcessing,
+        IAiResponsesCompletion ai)
     {
         if (request is null || string.IsNullOrWhiteSpace(request.Text))
             return Results.BadRequest(new { error = "Text is required." });
@@ -78,7 +78,6 @@ public static class AiSummarizeEndpoints
 
         try
         {
-            using var http = httpFactory.CreateClient("OpenAI");
             var model = modelSelection.GetModelFast();
 
             string? previousAnalyses = null;
@@ -160,37 +159,19 @@ Then add a 'Definitions:' section. BE EXTREMELY THOROUGH with definitions - incl
             var userPrompt = textProcessing.BuildAnalysisPrompt(contextBlock, previousAnalyses, request.Text);
             var fullInput = $"{systemPrompt}\n\n{userPrompt}";
 
-            var payload = new
-            {
-                model = model,
-                input = fullInput,
-                reasoning = new { effort = cfg.GetValue<string>("AI:ReasoningEffort:Vocabulary") },
-                max_output_tokens = cfg.GetValue<int>("AI:MaxCompletionTokens:Vocabulary"),
-                temperature = cfg.GetValue<double>("AI:Temperature:Vocabulary")
-            };
+            var outcome = await ai.CompleteAsync(
+                new AiResponsesCall(
+                    Endpoint: "summarize",
+                    Model: model,
+                    Input: fullInput,
+                    MaxOutputTokens: cfg.GetValue<int>("AI:MaxCompletionTokens:Vocabulary"),
+                    ReasoningEffort: cfg.GetValue<string>("AI:ReasoningEffort:Vocabulary"),
+                    Temperature: cfg.GetValue<double>("AI:Temperature:Vocabulary")),
+                context);
 
-            var response = await http.PostAsJsonAsync("https://api.openai.com/v1/responses", payload);
-            if (!response.IsSuccessStatusCode)
-            {
-                var body = await response.Content.ReadAsStringAsync();
-                Log.Error("❌ OpenAI summarize failed with HTTP {StatusCode}: {Body}", (int)response.StatusCode, body);
-                return Results.Problem(AiFailureMessage.ForResponse(response.StatusCode, body));
-            }
+            if (!outcome.Succeeded) return outcome.Failure!;
 
-            using var stream = await response.Content.ReadAsStreamAsync();
-            using var doc = await JsonDocument.ParseAsync(stream);
-
-            var summary = aiResponseParser.ExtractText(doc.RootElement);
-
-            // Track token usage
-            if (doc.RootElement.TryGetProperty("usage", out var usage))
-            {
-                var promptTokens = usage.GetProperty("input_tokens").GetInt32();
-                var completionTokens = usage.GetProperty("output_tokens").GetInt32();
-                var userId = UserHelpers.GetUserIdFromContext(context);
-                if (userId != null)
-                    tokenUsage.AddUsage(userId, promptTokens, completionTokens);
-            }
+            var summary = outcome.Text;
 
             if (cacheDirForSummary != null && request.ChapterId.HasValue)
             {
@@ -222,14 +203,12 @@ Then add a 'Definitions:' section. BE EXTREMELY THOROUGH with definitions - incl
         HttpContext context,
         [FromBody] FullChapterSummaryRequest request,
         DropboxClient dropbox,
-        IHttpClientFactory httpFactory,
         IConfiguration cfg,
         ITokenUsageService tokenUsage,
-        IOpenAiModelHelper modelHelper,
-        IAiResponseParser aiResponseParser,
         IModelSelectionService modelSelection,
         ITextProcessingService textProcessing,
-        IAiJobLockService jobLock)
+        IAiJobLockService jobLock,
+        IAiResponsesCompletion ai)
     {
         if (request is null || string.IsNullOrWhiteSpace(request.DropboxPath))
         {
@@ -354,28 +333,27 @@ Then add a 'Definitions:' section. BE EXTREMELY THOROUGH with definitions - incl
             var chunkSize = cfg.GetValue<int>("AI:ChunkSize");
             var chunks = textProcessing.SplitIntoChunks(content, chunkSize);
 
-            using var http = httpFactory.CreateClient("OpenAI");
             var model = modelSelection.GetModelDeep();
+            var userId = UserHelpers.GetUserIdFromContext(context);
 
             // TIER 1: Summarize chunks using helper
             var (chunkSummaries, tier1PromptTokens, tier1CompletionTokens) =
-                await AiSummaryHelpers.SummarizeChunksAsync(http, model, chunks, contextLine, context.Response, cfg, aiResponseParser, tokenUsage);
+                await AiSummaryHelpers.SummarizeChunksAsync(ai, model, chunks, contextLine, context.Response, cfg, userId);
 
             // TIER 2: Synthesize sections using helper
             var (sectionSummaries, tier2PromptTokens, tier2CompletionTokens) =
-                await AiSummaryHelpers.SynthesizeSectionsAsync(http, model, chunkSummaries, contextLine, context.Response, cfg, aiResponseParser, tokenUsage);
+                await AiSummaryHelpers.SynthesizeSectionsAsync(ai, model, chunkSummaries, contextLine, context.Response, cfg, userId);
 
             // TIER 3: Create final summary using helper
             var (finalSummary, tier3PromptTokens, tier3CompletionTokens) =
-                await AiSummaryHelpers.CreateFinalSummaryAsync(http, model, sectionSummaries, contextParts, context.Response, cfg, aiResponseParser);
+                await AiSummaryHelpers.CreateFinalSummaryAsync(ai, model, sectionSummaries, contextParts, context.Response, cfg, userId);
 
-            // Calculate total tokens
+            // Each tier bills as it goes, so these totals are for the progress
+            // report only — adding them again here would double-charge a summary
+            // that can run to twenty-odd calls.
             var promptTokensTotal = tier1PromptTokens + tier2PromptTokens + tier3PromptTokens;
             var completionTokensTotal = tier1CompletionTokens + tier2CompletionTokens + tier3CompletionTokens;
 
-            var userId = UserHelpers.GetUserIdFromContext(context);
-            if (userId != null)
-                tokenUsage.AddUsage(userId, (int)promptTokensTotal, (int)completionTokensTotal);
             var totals = tokenUsage.GetTotals(userId ?? "");
             var monthlyAllowance = cfg.GetValue<long?>("OpenAI:MonthlyTokenAllowance");
             double? percent = null;

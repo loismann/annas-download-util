@@ -622,6 +622,12 @@ Confidence rubric — use the actual scale, don't default to round numbers:
 
             // Background enrichment: billed to the household, not to a person
             // who did not ask for it. Previously billed to nobody at all.
+            //
+            // Still a hand-rolled call rather than IAiResponsesCompletion: this
+            // one reports its outcome to `rateLimits` and `_statsService`
+            // *before* reading the body, and those two are what pace the
+            // audiobook scanner. Moving it needs the shared client to surface
+            // the status code, which no other caller wants.
             AiSpend.Record(_tokenUsage, AiSpend.BackgroundAccount, doc.RootElement);
 
             var text = ExtractResponseText(doc.RootElement);

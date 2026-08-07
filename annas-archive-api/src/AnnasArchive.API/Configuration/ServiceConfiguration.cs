@@ -673,6 +673,11 @@ public static class ServiceConfiguration
         // because all four of its dependencies are.
         services.AddSingleton<Services.Ai.IAiChatCompletion, Services.Ai.AiChatCompletion>();
 
+        // Its Responses-API counterpart. Two clients rather than one because the
+        // two OpenAI APIs disagree about payload shape, token-budget field and
+        // usage field names — a single client would be a switch statement.
+        services.AddSingleton<Services.Ai.IAiResponsesCompletion, Services.Ai.AiResponsesCompletion>();
+
         // Scoped, not singleton: it holds the scoped AnnasArchiveService, which
         // owns a per-request Playwright transport.
         services.AddScoped<Services.BookDiscovery.IRelatedBooksEnricher, Services.BookDiscovery.RelatedBooksEnricher>();

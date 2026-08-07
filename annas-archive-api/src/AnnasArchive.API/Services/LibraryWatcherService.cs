@@ -38,7 +38,7 @@ public class LibraryWatcherService : BackgroundService
     private readonly IMetadataExtractionService _metadataExtraction;
     private readonly IEnrichmentStatsService _statsService;
     private readonly IGoogleBooksService _googleBooks;
-    private readonly ITokenUsageService _tokenUsage;
+    private readonly IAiResponsesCompletion _ai;
     private readonly string? _autoTagNewBooks;
     private readonly BookEnrichmentPipeline _pipeline;
     private FileSystemWatcher? _watcher;
@@ -52,7 +52,7 @@ public class LibraryWatcherService : BackgroundService
         IMetadataExtractionService metadataExtraction,
         IEnrichmentStatsService statsService,
         IGoogleBooksService googleBooks,
-        ITokenUsageService tokenUsage)
+        IAiResponsesCompletion ai)
     {
         _httpFactory = httpFactory;
         _configuration = configuration;
@@ -61,7 +61,7 @@ public class LibraryWatcherService : BackgroundService
         _metadataExtraction = metadataExtraction;
         _statsService = statsService;
         _googleBooks = googleBooks;
-        _tokenUsage = tokenUsage;
+        _ai = ai;
         _autoTagNewBooks = configuration["LibraryWatcher:AutoTagNewBooks"];
         _pipeline = new BookEnrichmentPipeline(new Lookups(this), statsService);
     }
@@ -516,9 +516,6 @@ public class LibraryWatcherService : BackgroundService
     {
         try
         {
-            using var http = _httpFactory.CreateClient("OpenAI");
-            var model = "gpt-4o";
-
             var systemPrompt = @"You are a book metadata librarian. Given a file name and current metadata, do two things:
 1. If OpenLibrary data is provided, decide if it matches the book
 2. Normalize/clean up the metadata
@@ -544,37 +541,30 @@ Return JSON with:
   ""coverUrl"": string|null (only if you know a valid cover URL)
 }}";
 
-            var payload = new
-            {
-                model,
-                input = new[]
-                {
-                    new { role = "system", content = systemPrompt },
-                    new { role = "user", content = userPrompt }
-                },
-                temperature = 0.2,
-                max_output_tokens = 400
-            };
-
             Log.Debug("[LibraryWatcher] Calling OpenAI for combined validation+enrichment: {FileName}", fileName);
-            var response = await http.PostAsJsonAsync("https://api.openai.com/v1/responses", payload, token);
-            if (!response.IsSuccessStatusCode)
+
+            // Nobody asked for this call, so it is billed to the household
+            // rather than to whoever happens to be signed in. A full library
+            // scan makes one of these per low-confidence book.
+            var outcome = await _ai.CompleteAsync(
+                new AiResponsesCall(
+                    Endpoint: "library-enrichment",
+                    Model: "gpt-4o",
+                    Input: userPrompt,
+                    MaxOutputTokens: 400,
+                    SystemPrompt: systemPrompt,
+                    Temperature: 0.2),
+                AiSpend.BackgroundAccount,
+                token);
+
+            if (!outcome.Succeeded)
             {
-                Log.Warning("[LibraryWatcher] OpenAI API returned {StatusCode} for {FileName}", response.StatusCode, fileName);
+                Log.Warning("[LibraryWatcher] OpenAI enrichment failed for {FileName}: {Reason}",
+                    fileName, outcome.FailureMessage);
                 return null;
             }
 
-            using var stream = await response.Content.ReadAsStreamAsync(token);
-            using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: token);
-
-            // Nobody asked for this call, so it is billed to the household
-            // rather than to whoever happens to be signed in. It used to be
-            // billed to nobody: a full library scan makes one of these per
-            // low-confidence book and none of it reached the usage totals the
-            // monthly allowance is checked against.
-            AiSpend.Record(_tokenUsage, AiSpend.BackgroundAccount, doc.RootElement);
-
-            var text = LibraryMetadataRules.ExtractResponseText(doc.RootElement);
+            var text = outcome.Text;
             if (string.IsNullOrWhiteSpace(text))
                 return null;
 

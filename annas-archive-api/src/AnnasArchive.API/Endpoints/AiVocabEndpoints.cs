@@ -1,5 +1,6 @@
 using System.Text.Json;
 using AnnasArchive.API.Helpers;
+using AnnasArchive.API.Services.Ai;
 using AnnasArchive.API.Models;
 using AnnasArchive.Core.Services;
 using Microsoft.AspNetCore.Mvc;
@@ -33,11 +34,10 @@ public static class AiVocabEndpoints
     private static async Task<IResult> HandleLearnMore(
         HttpContext context,
         [FromBody] LearnMoreRequest request,
-        IHttpClientFactory httpFactory,
         IConfiguration cfg,
         ITokenUsageService tokenUsage,
-        IAiResponseParser aiResponseParser,
-        IModelSelectionService modelSelection)
+        IModelSelectionService modelSelection,
+        IAiResponsesCompletion ai)
     {
         if (request is null || string.IsNullOrWhiteSpace(request.Term))
             return Results.BadRequest(new { error = "Term is required." });
@@ -47,7 +47,6 @@ public static class AiVocabEndpoints
 
         try
         {
-            using var http = httpFactory.CreateClient("OpenAI");
             var model = modelSelection.GetModelDeep();
 
             var contextParts = new List<string>();
@@ -88,38 +87,19 @@ Relevant passage/context: {request.Context ?? "(none)"}";
             var systemInstructions = "You are a scholarly explainer with expertise in philosophy, critical theory, literature, history, and cultural studies. Provide nuanced, intellectually rich analysis that bridges academic and accessible discourse.";
             var fullInput = $"{systemInstructions}\n\n{prompt}";
 
-            var payload = new
-            {
-                model,
-                input = fullInput,
-                reasoning = new { effort = cfg.GetValue<string>("AI:ReasoningEffort:WikiImages") },
-                max_output_tokens = cfg.GetValue<int>("AI:MaxCompletionTokens:WikiImages"),
-                temperature = cfg.GetValue<double>("AI:Temperature:WikiImages")
-            };
+            var outcome = await ai.CompleteAsync(
+                new AiResponsesCall(
+                    Endpoint: "learn-more",
+                    Model: model,
+                    Input: fullInput,
+                    MaxOutputTokens: cfg.GetValue<int>("AI:MaxCompletionTokens:WikiImages"),
+                    ReasoningEffort: cfg.GetValue<string>("AI:ReasoningEffort:WikiImages"),
+                    Temperature: cfg.GetValue<double>("AI:Temperature:WikiImages")),
+                context);
 
-            var response = await http.PostAsJsonAsync("https://api.openai.com/v1/responses", payload);
-            if (!response.IsSuccessStatusCode)
-            {
-                var body = await response.Content.ReadAsStringAsync();
-                Log.Error("❌ OpenAI learn-more failed with HTTP {StatusCode}: {Body}", (int)response.StatusCode, body);
-                return Results.Problem(AiFailureMessage.ForResponse(response.StatusCode, body));
-            }
+            if (!outcome.Succeeded) return outcome.Failure!;
 
-            using var stream = await response.Content.ReadAsStreamAsync();
-            using var doc = await JsonDocument.ParseAsync(stream);
-            var detail = aiResponseParser.ExtractText(doc.RootElement);
-
-            // Track token usage
-            if (doc.RootElement.TryGetProperty("usage", out var usage))
-            {
-                var promptTokens = usage.GetProperty("input_tokens").GetInt32();
-                var completionTokens = usage.GetProperty("output_tokens").GetInt32();
-                var userId = UserHelpers.GetUserIdFromContext(context);
-                if (userId != null)
-                    tokenUsage.AddUsage(userId, promptTokens, completionTokens);
-            }
-
-            return Results.Ok(new LearnMoreResponse(detail ?? "No details returned."));
+            return Results.Ok(new LearnMoreResponse(outcome.Text ?? "No details returned."));
         }
         catch (ArgumentException ex)
         {

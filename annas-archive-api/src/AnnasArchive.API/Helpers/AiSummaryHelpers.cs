@@ -3,6 +3,7 @@ using AnnasArchive.API.Configuration;
 using AnnasArchive.API.Models;
 using AnnasArchive.Core.Services;
 using Dropbox.Api;
+using AnnasArchive.API.Services.Ai;
 using Serilog;
 
 namespace AnnasArchive.API.Helpers;
@@ -97,14 +98,13 @@ public static class AiSummaryHelpers
     /// TIER 1: Summarizes text chunks with progress updates via SSE.
     /// </summary>
     public static async Task<(List<string> chunkSummaries, int promptTokens, int completionTokens)> SummarizeChunksAsync(
-        HttpClient http,
+        IAiResponsesCompletion ai,
         string model,
         List<string> chunks,
         string contextLine,
         HttpResponse response,
         IConfiguration cfg,
-        IAiResponseParser aiResponseParser,
-        ITokenUsageService tokenUsage)
+        string? billTo)
     {
         var chunkSummaries = new List<string>();
         var promptTokensTotal = 0;
@@ -132,33 +132,25 @@ Write 300-400 words that assume the reader is intelligent but may lack specializ
                 message = $"Analyzing chunk {i + 1}/{chunks.Count}..."
             }, "progress");
 
-            var payload = new
-            {
-                model,
-                input = chunkInput,
-                reasoning = new { effort = cfg.GetValue<string>("AI:ReasoningEffort:ChunkSummary") },
-                max_output_tokens = cfg.GetValue<int>("AI:MaxCompletionTokens:ChunkSummary")
-            };
+            var outcome = await ai.CompleteAsync(
+                new AiResponsesCall(
+                    Endpoint: "chunk-summary",
+                    Model: model,
+                    Input: chunkInput,
+                    MaxOutputTokens: cfg.GetValue<int>("AI:MaxCompletionTokens:ChunkSummary"),
+                    ReasoningEffort: cfg.GetValue<string>("AI:ReasoningEffort:ChunkSummary")),
+                billTo);
 
-            var chunkResponse = await http.PostAsJsonAsync("https://api.openai.com/v1/responses", payload);
-            if (!chunkResponse.IsSuccessStatusCode)
-                throw await FailedCallAsync(chunkResponse, $"chunk summary {i + 1}/{chunks.Count}");
+            if (!outcome.Succeeded)
+                throw new AiServiceException(outcome.FailureMessage);
 
-            using var stream = await chunkResponse.Content.ReadAsStreamAsync();
-            using var doc = await JsonDocument.ParseAsync(stream);
-
-            Log.Debug("🔍 Chunk {ChunkNumber} response JSON: {ResponseJson}", i + 1, doc.RootElement.GetRawText());
-
-            var chunkSummary = aiResponseParser.ExtractText(doc.RootElement) ?? string.Empty;
+            var chunkSummary = outcome.Text ?? string.Empty;
             Log.Information("🔍 Chunk {ChunkNumber} extracted summary length: {SummaryLength}", i + 1, chunkSummary.Length);
 
             chunkSummaries.Add(chunkSummary);
 
-            if (doc.RootElement.TryGetProperty("usage", out var usage))
-            {
-                promptTokensTotal += usage.GetProperty("input_tokens").GetInt32();
-                completionTokensTotal += usage.GetProperty("output_tokens").GetInt32();
-            }
+            promptTokensTotal += outcome.Usage.PromptTokens;
+            completionTokensTotal += outcome.Usage.CompletionTokens;
 
             await ServerSentEventsHelper.SendEventAsync(response, new
             {
@@ -183,14 +175,13 @@ Write 300-400 words that assume the reader is intelligent but may lack specializ
     /// TIER 2: Synthesizes chunk summaries into section summaries with progress updates via SSE.
     /// </summary>
     public static async Task<(List<string> sectionSummaries, int promptTokens, int completionTokens)> SynthesizeSectionsAsync(
-        HttpClient http,
+        IAiResponsesCompletion ai,
         string model,
         List<string> chunkSummaries,
         string contextLine,
         HttpResponse response,
         IConfiguration cfg,
-        IAiResponseParser aiResponseParser,
-        ITokenUsageService tokenUsage,
+        string? billTo,
         int chunksPerSection = 4)
     {
         var sectionSummaries = new List<string>();
@@ -225,29 +216,22 @@ Write 400-500 words. Maintain educational depth while creating a flowing narrati
 
             var sectionInput = $"{sectionInstructions}\n\nContext: {contextLine}\n\n{string.Join("\n\n---\n\n", sectionChunks)}";
 
-            var sectionPayload = new
-            {
-                model,
-                input = sectionInput,
-                reasoning = new { effort = cfg.GetValue<string>("AI:ReasoningEffort:SectionSynthesis") },
-                max_output_tokens = cfg.GetValue<int>("AI:MaxCompletionTokens:SectionSynthesis")
-            };
+            var outcome = await ai.CompleteAsync(
+                new AiResponsesCall(
+                    Endpoint: "section-synthesis",
+                    Model: model,
+                    Input: sectionInput,
+                    MaxOutputTokens: cfg.GetValue<int>("AI:MaxCompletionTokens:SectionSynthesis"),
+                    ReasoningEffort: cfg.GetValue<string>("AI:ReasoningEffort:SectionSynthesis")),
+                billTo);
 
-            var sectionResponse = await http.PostAsJsonAsync("https://api.openai.com/v1/responses", sectionPayload);
-            if (!sectionResponse.IsSuccessStatusCode)
-                throw await FailedCallAsync(sectionResponse, $"section synthesis {sectionNum}/{totalSections}");
+            if (!outcome.Succeeded)
+                throw new AiServiceException(outcome.FailureMessage);
 
-            using var sectionStream = await sectionResponse.Content.ReadAsStreamAsync();
-            using var sectionDoc = await JsonDocument.ParseAsync(sectionStream);
-            var sectionSummary = aiResponseParser.ExtractText(sectionDoc.RootElement) ?? string.Empty;
+            sectionSummaries.Add(outcome.Text ?? string.Empty);
 
-            sectionSummaries.Add(sectionSummary);
-
-            if (sectionDoc.RootElement.TryGetProperty("usage", out var sectionUsage))
-            {
-                promptTokensTotal += sectionUsage.GetProperty("input_tokens").GetInt32();
-                completionTokensTotal += sectionUsage.GetProperty("output_tokens").GetInt32();
-            }
+            promptTokensTotal += outcome.Usage.PromptTokens;
+            completionTokensTotal += outcome.Usage.CompletionTokens;
 
             await ServerSentEventsHelper.SendEventAsync(response, new
             {
@@ -272,13 +256,13 @@ Write 400-500 words. Maintain educational depth while creating a flowing narrati
     /// TIER 3: Creates final comprehensive summary from section summaries with progress update via SSE.
     /// </summary>
     public static async Task<(string finalSummary, int promptTokens, int completionTokens)> CreateFinalSummaryAsync(
-        HttpClient http,
+        IAiResponsesCompletion ai,
         string model,
         List<string> sectionSummaries,
         List<string> contextParts,
         HttpResponse response,
         IConfiguration cfg,
-        IAiResponseParser aiResponseParser)
+        string? billTo)
     {
         await ServerSentEventsHelper.SendEventAsync(response, new
         {
@@ -321,36 +305,22 @@ Write as if teaching an intelligent student. Define specialized terms, explain r
         var userContent = $"Book context: {string.Join(" | ", contextParts)}\n\nSection summaries:\n{string.Join("\n\n---\n\n", sectionSummaries)}";
         var fullInput = $"{finalInstructions}\n\n{userContent}";
 
-        var finalPrompt = new
-        {
-            model,
-            input = fullInput,
-            reasoning = new { effort = cfg.GetValue<string>("AI:ReasoningEffort:FinalSummary") },
-            max_output_tokens = cfg.GetValue<int>("AI:MaxCompletionTokens:FinalSummary")
-        };
+        var outcome = await ai.CompleteAsync(
+            new AiResponsesCall(
+                Endpoint: "final-summary",
+                Model: model,
+                Input: fullInput,
+                MaxOutputTokens: cfg.GetValue<int>("AI:MaxCompletionTokens:FinalSummary"),
+                ReasoningEffort: cfg.GetValue<string>("AI:ReasoningEffort:FinalSummary")),
+            billTo);
 
-        var finalResponse = await http.PostAsJsonAsync("https://api.openai.com/v1/responses", finalPrompt);
-        if (!finalResponse.IsSuccessStatusCode)
-            throw await FailedCallAsync(finalResponse, "final summary");
+        if (!outcome.Succeeded)
+            throw new AiServiceException(outcome.FailureMessage);
 
-        using var finalStream = await finalResponse.Content.ReadAsStreamAsync();
-        using var finalDoc = await JsonDocument.ParseAsync(finalStream);
-
-        Log.Debug("🔍 Final response JSON: {ResponseJson}", finalDoc.RootElement.GetRawText());
-
-        string finalSummary = aiResponseParser.ExtractText(finalDoc.RootElement) ?? "No summary returned.";
+        var finalSummary = string.IsNullOrWhiteSpace(outcome.Text) ? "No summary returned." : outcome.Text;
         Log.Information("🔍 Extracted summary length: {SummaryLength}", finalSummary.Length);
 
-        var promptTokens = 0;
-        var completionTokens = 0;
-
-        if (finalDoc.RootElement.TryGetProperty("usage", out var finalUsage))
-        {
-            promptTokens = finalUsage.GetProperty("input_tokens").GetInt32();
-            completionTokens = finalUsage.GetProperty("output_tokens").GetInt32();
-        }
-
-        return (finalSummary, promptTokens, completionTokens);
+        return (finalSummary, outcome.Usage.PromptTokens, outcome.Usage.CompletionTokens);
     }
 
     /// <summary>

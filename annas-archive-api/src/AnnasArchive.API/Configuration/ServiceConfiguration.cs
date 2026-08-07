@@ -669,6 +669,14 @@ public static class ServiceConfiguration
         services.AddSingleton<IAiResponseParser, AiResponseParser>();
         services.AddSingleton<IModelSelectionService, ModelSelectionService>();
 
+        // The chat-completion round trip every AI endpoint shares. Singleton
+        // because all four of its dependencies are.
+        services.AddSingleton<Services.Ai.IAiChatCompletion, Services.Ai.AiChatCompletion>();
+
+        // Scoped, not singleton: it holds the scoped AnnasArchiveService, which
+        // owns a per-request Playwright transport.
+        services.AddScoped<Services.BookDiscovery.IRelatedBooksEnricher, Services.BookDiscovery.RelatedBooksEnricher>();
+
         // Validation services
         services.AddSingleton<IValidationService, ValidationService>();
 

@@ -35,6 +35,13 @@ public static class HealthCheckConfiguration
                 failureStatus: HealthStatus.Degraded,
                 tags: new[] { "ready" })
 
+            // Config-only, so it costs nothing to run and never touches the network.
+            // Not tagged "ready": a member who owns nothing is a data problem, not a
+            // reason to keep traffic away from the container.
+            .AddCheck<HouseholdOwnersHealthCheck>(
+                "household-owners",
+                failureStatus: HealthStatus.Degraded)
+
             // External API checks - degraded if unavailable
             .AddCheck<OpenAiHealthCheck>(
                 "openai",

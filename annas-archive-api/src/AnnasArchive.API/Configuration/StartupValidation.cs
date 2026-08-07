@@ -86,6 +86,29 @@ public static class StartupValidation
         }
 
         Log.Information("Configuration validation passed - all required keys present");
+
+        ValidateHouseholdRoster(configuration);
+    }
+
+    /// <summary>
+    /// Reports every configured household member who will silently own nothing.
+    ///
+    /// Deliberately does not throw, unlike the missing-key checks above. A display
+    /// name that stops resolving costs one person their ownership tags; refusing to
+    /// start costs the whole household the entire app, which is the worse outcome
+    /// of the two. Error level, not Warning — ownership already logs a warning per
+    /// unowned item, and that is exactly the signal that went unnoticed.
+    /// </summary>
+    private static void ValidateHouseholdRoster(IConfiguration configuration)
+    {
+        var problems = Constants.HouseholdOwners.Validate(configuration);
+        if (problems.Count == 0)
+            return;
+
+        Log.Error(
+            "[Ownership] The configured household does not line up with the owner roster, so some " +
+            "items will be added with no owner:\n{Problems}",
+            string.Join("\n", problems.Select(problem => $"  - {problem}")));
     }
 
     /// <summary>

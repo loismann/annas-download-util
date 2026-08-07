@@ -332,9 +332,11 @@ export class MediaLibraryComponent implements OnInit, OnDestroy {
 
     if (this.selectedGenre && !genresOf(result).includes(this.selectedGenre)) return false;
 
+    // Untagged items stay visible under an owner filter — see the audiobook
+    // library's matchesFilters() for why hiding them is the wrong default.
     if (this.selectedOwners.size > 0) {
       const itemOwners = result.owners ?? [];
-      if (!itemOwners.some(o => this.selectedOwners.has(o))) return false;
+      if (itemOwners.length > 0 && !itemOwners.some(o => this.selectedOwners.has(o))) return false;
     }
 
     // Favorites filter — cross-referenced against whichever owner filter buttons are

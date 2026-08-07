@@ -77,7 +77,8 @@ import { MatTooltipModule } from '@angular/material/tooltip';
     <!-- loading="lazy": grids can hold hundreds of tiles (991 audiobooks) and
          eagerly fetching every proxied cover at once stampedes the backend —
          the browser only fetches covers as they near the viewport. -->
-    <img class="poster" [src]="posterUrl" [alt]="title" loading="lazy" decoding="async" />
+    <img class="poster" [src]="posterUrl" [alt]="title" [style.aspect-ratio]="coverAspect"
+         loading="lazy" decoding="async" />
     <div class="tile-title">{{ title }}</div>
     <div class="tile-status">
       <ng-content></ng-content>
@@ -118,6 +119,8 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 
     app-media-tile .poster {
       width: 100%;
+      /* Overridden per page via [coverAspect] — the binding wins over this, which
+         stays as the fallback for a tile that doesn't set one. */
       aspect-ratio: 2 / 3;
       object-fit: cover;
       border-radius: 4px;
@@ -220,6 +223,12 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 export class MediaTileComponent {
   @Input() title = '';
   @Input() posterUrl = '';
+  /**
+   * Cover shape. Movie/TV posters and ebook jackets are 2:3; audiobook art is
+   * square, because Audible's is. This tile is shared by both libraries, so the
+   * shape has to be the caller's choice rather than baked in.
+   */
+  @Input() coverAspect = '2 / 3';
   @Input() favorited = false;
   @Input() showEdit = true;
   @Input() showFavorite = true;

@@ -103,9 +103,8 @@ public static class MediaRequestEndpoints
             var added = await sonarr.AddSeriesAsync(request.Series, request.SelectedSeasons);
             if (added["id"] is not null)
             {
-                var owner = LibraryHelpers.ResolveUserDisplayName(context);
-                if (owner is not null)
-                    TryTagOwner(metadata, "tv", added["id"]!.GetValue<int>(), owner);
+                MediaOwnership.AssignToCaller(
+                    metadata, "tv", added["id"]!.GetValue<int>().ToString(), context, "TV add");
             }
             return Results.Ok(added);
         }
@@ -177,9 +176,8 @@ public static class MediaRequestEndpoints
             var added = await radarr.AddMovieAsync(movie);
             if (added["id"] is not null)
             {
-                var owner = LibraryHelpers.ResolveUserDisplayName(context);
-                if (owner is not null)
-                    TryTagOwner(metadata, "movie", added["id"]!.GetValue<int>(), owner);
+                MediaOwnership.AssignToCaller(
+                    metadata, "movie", added["id"]!.GetValue<int>().ToString(), context, "movie add");
             }
             return Results.Ok(added);
         }
@@ -209,9 +207,19 @@ public static class MediaRequestEndpoints
     /// silently unmonitoring it because it also appears on a B-movie list would be a
     /// surprising side effect of importing a list.</summary>
     private static async Task<IResult> HandleMovieBulkImport(
-        [FromBody] BulkImportMoviesRequest request, IRadarrService radarr, IMediaMetadataService metadata)
+        [FromBody] BulkImportMoviesRequest request, IRadarrService radarr, IMediaMetadataService metadata,
+        HttpContext context)
     {
         var results = new List<BulkImportMovieResult>();
+
+        // A row without an Owner column used to import untagged, which is how eleven
+        // B-movies and five animated films ended up in the library owned by nobody.
+        // The person running the import is the obvious default, and is exactly what
+        // the single-title add already records.
+        var importer = MediaOwnership.ResolveMember(context);
+        if (importer is null)
+            Log.Warning("[MediaRequest] Bulk import has no resolvable household member — " +
+                "rows without an Owner column will import unowned");
 
         var addMode = request.DateNightPool ? MovieAddMode.CatalogOnly : MovieAddMode.MonitorAndSearch;
         int[]? poolTag = null;
@@ -250,6 +258,10 @@ public static class MediaRequestEndpoints
                     continue;
                 }
                 owners.Add(owner);
+            }
+            else if (importer is not null)
+            {
+                owners.Add(importer);
             }
 
             var genres = (row.Genres ?? new List<string>())
@@ -322,23 +334,6 @@ public static class MediaRequestEndpoints
             results.Count(r => r.Status is "not-found" or "ambiguous" or "invalid" or "error"));
 
         return Results.Ok(results);
-    }
-
-    /// <summary>Best-effort owner tagging right after a successful Sonarr/Radarr
-    /// add — the add itself already succeeded at this point, so a failure to
-    /// persist the owner tag (e.g. a transient disk write issue) shouldn't turn
-    /// a successful add into an apparent failure for the caller; it's logged
-    /// and otherwise swallowed instead.</summary>
-    private static void TryTagOwner(IMediaMetadataService metadata, string type, int id, string owner)
-    {
-        try
-        {
-            metadata.AddOwner(type, id.ToString(), owner);
-        }
-        catch (Exception ex)
-        {
-            Log.Warning("[MediaRequest] Failed to tag {Type}:{Id} owner '{Owner}': {Message}", type, id, owner, ex.Message);
-        }
     }
 
     private static async Task<IResult> HandleGetQueue(ISonarrService sonarr, IRadarrService radarr)

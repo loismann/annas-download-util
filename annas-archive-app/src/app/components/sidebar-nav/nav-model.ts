@@ -58,6 +58,18 @@ export const NAV_ENTRIES: NavEntry[] = [
       { label: 'Audiobook Library', shortLabel: 'Audiobooks', route: '/audiobooks', icon: 'menu_book', overlayIcon: 'headphones' }
     ]
   },
+  // Admin-only until the CVS checkout leg works — see app.routes.ts. The route
+  // guard is the real enforcement; this just keeps it out of everyone's sidebar.
+  // Only the child carries the flag: a group is hidden automatically once it has
+  // no visible children (sidebar-nav.component.ts), and groups never consult
+  // adminOnly themselves.
+  {
+    label: 'Photos',
+    icon: 'photo_library',
+    children: [
+      { label: 'Photo Prints', shortLabel: 'Photo Prints', route: '/photo-prints', icon: 'print', adminOnly: true }
+    ]
+  },
   {
     label: 'TV & Movies',
     icon: 'live_tv',

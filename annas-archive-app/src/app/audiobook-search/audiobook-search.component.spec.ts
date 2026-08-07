@@ -210,7 +210,8 @@ describe('AudiobookSearchComponent', () => {
       qualityProfile: 'AAC M4B',
       autoSearch: true,
       autoSearchReason: 'Listenarr will search and download the best matching release.',
-      alreadyRequested: false
+      alreadyRequested: false,
+      releasesAvailable: true
     }));
     api.confirmRequest.and.returnValue(of({
       listenarrId: 42,

@@ -17,6 +17,11 @@
   </dl>
 
   <p class="warning" *ngIf="data.abridged"><mat-icon>warning</mat-icon>This edition is marked abridged.</p>
+  <p class="warning" *ngIf="!data.releasesAvailable" role="alert">
+    <mat-icon>cloud_off</mat-icon>
+    No releases for this book are on your indexers right now. Adding it monitors it
+    in case one appears — there will be nothing to download until then.
+  </p>
   <p class="policy">
     {{ data.alreadyRequested ? 'This edition already exists in Listenarr. Confirming adds you as a requester.' : 'This adds the exact edition to Listenarr as monitored.' }}
     {{ data.autoSearchReason }}
@@ -27,6 +32,6 @@
   <button mat-button type="button" [disabled]="busy" (click)="cancel()">Cancel</button>
   <button mat-raised-button color="primary" type="button" [disabled]="busy" (click)="confirm()">
     <mat-spinner *ngIf="busy" diameter="18"></mat-spinner>
-    <span *ngIf="!busy">{{ data.alreadyRequested ? 'Add me as requester' : 'Add monitored request' }}</span>
+    <span *ngIf="!busy">{{ confirmLabel }}</span>
   </button>
 </mat-dialog-actions>

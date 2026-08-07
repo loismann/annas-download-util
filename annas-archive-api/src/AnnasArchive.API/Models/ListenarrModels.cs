@@ -237,7 +237,7 @@ public sealed record AudiobookRequestPreviewRequest(
     string? NarratorPreference = null,
     string? LanguagePreference = null);
 
-public sealed record AudiobookRequestConfirmRequest(string? PreviewToken);
+public sealed record AudiobookRequestConfirmRequest(string? PreviewToken, bool AcceptNoReleases = false);
 
 public sealed record AudiobookRequestPreviewResponse(
     string PreviewToken,
@@ -252,7 +252,11 @@ public sealed record AudiobookRequestPreviewResponse(
     string QualityProfile,
     bool AutoSearch,
     string AutoSearchReason,
-    bool AlreadyRequested);
+    bool AlreadyRequested,
+    /// <summary>False when no indexer carried anything for this book at preview
+    /// time. Confirming anyway is allowed but has to say so — see
+    /// AudiobookRequestConfirmRequest.AcceptNoReleases.</summary>
+    bool ReleasesAvailable = true);
 
 public sealed record AudiobookRequestResponse(
     int ListenarrId,

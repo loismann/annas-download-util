@@ -94,6 +94,12 @@ if (app.Configuration.GetValue<bool>("YouTube:Enabled", false))
     app.MapYouTubeDownloadEndpoints();
 }
 app.MapSpotifyEndpoints();
+// Immich -> CVS pickup prints. Gated the same way as Gaming above: the feature
+// needs Immich configured, so the routes stay off the surface until it is.
+if (app.Configuration.GetValue<bool>("PhotoPrint:Enabled", false))
+{
+    app.MapPhotoPrintEndpoints();
+}
 app.MapVideoLibraryBrowserEndpoints();
 app.MapVideoLibraryMetadataEndpoints();
 app.MapQuizEndpoints();

@@ -200,3 +200,58 @@
     min-width: 140px;
   }
 }
+
+/* ─── Pending request tiles ──────────────────────────────────────────────
+   Books requested through Listenarr that Audiobookshelf cannot show, because
+   they have no file on disk yet. Sizing, poster aspect and the dimmed
+   .not-ready treatment all come from app-media-tile — only the bits specific
+   to "requested but not here yet" live below. */
+
+.pending-grid {
+  margin-bottom: 1.75rem;
+}
+
+/* Nothing to open — these are not playable. */
+app-media-tile.pending-tile {
+  cursor: default;
+}
+
+/* A dashed frame over the placeholder poster reads as "no cover yet" rather
+   than "cover failed to load". */
+app-media-tile.pending-tile .poster {
+  border: 2px dashed rgba(120, 120, 120, 0.45);
+  box-sizing: border-box;
+  background: rgba(120, 120, 120, 0.06);
+}
+
+app-media-tile.pending-tile.failed .poster {
+  border-color: rgba(211, 47, 47, 0.6);
+  background: rgba(211, 47, 47, 0.07);
+  /* Cancel .not-ready's dimming: a failure needs to be noticed, not faded. */
+  opacity: 1;
+}
+
+.pending-status {
+  font-style: italic;
+  opacity: 0.85;
+}
+
+app-media-tile.pending-tile.failed .pending-status {
+  color: #d32f2f;
+  font-style: normal;
+  opacity: 1;
+  font-weight: 500;
+}
+
+.pending-progress {
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(120, 120, 120, 0.22);
+  overflow: hidden;
+}
+
+.pending-progress-bar {
+  height: 100%;
+  background: #4caf50;
+  transition: width 0.4s ease;
+}

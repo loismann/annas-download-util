@@ -75,6 +75,8 @@ export interface AudiobookRequestPreview {
   autoSearch: boolean;
   autoSearchReason: string;
   alreadyRequested: boolean;
+  /** False when no indexer carried anything for this book at preview time. */
+  releasesAvailable: boolean;
 }
 
 /* ─────────────── AI discovery (phase 5) ─────────────────────────────── */
@@ -278,8 +280,10 @@ export class AudiobookRequestApiService {
     });
   }
 
-  confirmRequest(previewToken: string): Observable<AudiobookRequestResult> {
-    return this.http.post<AudiobookRequestResult>(this.baseUrl, { previewToken });
+  /** `acceptNoReleases` is required by the server whenever the preview found
+   *  none — showing the warning is not enough, it has to come back acknowledged. */
+  confirmRequest(previewToken: string, acceptNoReleases = false): Observable<AudiobookRequestResult> {
+    return this.http.post<AudiobookRequestResult>(this.baseUrl, { previewToken, acceptNoReleases });
   }
 
   searchReleases(listenarrId: number): Observable<AudiobookReleaseSearchResponse> {
@@ -295,6 +299,24 @@ export class AudiobookRequestApiService {
 
   getRequestStatus(listenarrId: number): Observable<AudiobookRequestStatus> {
     return this.http.get<AudiobookRequestStatus>(`${this.baseUrl}/${listenarrId}`);
+  }
+
+  /**
+   * Every request of mine that hasn't landed in the library yet. The library
+   * page needs this because getRequestStatus() takes a Listenarr id, and once
+   * you leave the search page that id is gone — which is why an in-progress
+   * download used to be invisible everywhere.
+   */
+  listMyRequests(): Observable<AudiobookRequestStatus[]> {
+    return this.http.get<AudiobookRequestStatus[]>(`${this.baseUrl}/mine`);
+  }
+
+  /** Hides one request from my library view. Per-person; doesn't cancel it. */
+  dismissRequest(listenarrId: number): Observable<{ listenarrId: number; dismissed: boolean }> {
+    return this.http.post<{ listenarrId: number; dismissed: boolean }>(
+      `${this.baseUrl}/${listenarrId}/dismiss`,
+      {}
+    );
   }
 
   cancelRequest(listenarrId: number): Observable<{ listenarrId: number; status: string }> {

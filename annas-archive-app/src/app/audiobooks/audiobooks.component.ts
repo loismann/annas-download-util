@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnDestroy, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MatFormFieldModule } from '@angular/material/form-field';
@@ -10,6 +10,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import { AudiobookApiService, AudiobookItem } from '../services/audiobook-api.service';
+import { AudiobookRequestApiService, AudiobookRequestStatus } from '../services/audiobook-request-api.service';
 import { MediaEditDialogComponent, MediaEditDialogData, MediaEditDialogResult } from '../components/media-edit-dialog/media-edit-dialog.component';
 import { MediaBulkEditDialogComponent, MediaBulkEditDialogData, MediaBulkEditDialogResult } from '../components/media-bulk-edit-dialog/media-bulk-edit-dialog.component';
 import { MediaTileComponent } from '../components/shared/media-tile/media-tile.component';
@@ -28,6 +29,46 @@ type TileSize = 'small' | 'medium' | 'large';
 const PLACEHOLDER_COVER = '/assets/placeholder.jpg';
 /** The only three household members — same fixed set as the ebook/media libraries. */
 const OWNERS = ['Paul', 'Mom', 'Dad'];
+
+/** Request states still moving. Anything else has settled and needs no polling. */
+const ACTIVE_REQUEST_STATES = new Set([
+  'Searching', 'Queued', 'Downloading', 'Paused', 'Processing', 'Importing', 'ReadyToScan'
+]);
+/** Matches the search page's cadence, and the server fetches Listenarr's queue once per call. */
+const REQUEST_POLL_MS = 10_000;
+
+/** Human wording per request state. Deliberately plain — the point of these
+ *  cards is that it's obvious the book is not ready to play yet. */
+const REQUEST_STATE_LABELS: Record<string, string> = {
+  // "Monitored" means Listenarr is tracking the book but has not grabbed
+  // anything — with Listenarr:AutoSearch off, it sits here until a release is
+  // picked by hand. The raw state name reads as jargon on a library shelf, and
+  // it is the most common state these cards will show.
+  Monitored: 'Not downloading yet — pick a release',
+  Searching: 'Looking for a release',
+  Queued: 'Waiting to download',
+  Downloading: 'Downloading',
+  Paused: 'Paused',
+  Processing: 'Processing',
+  Importing: 'Importing',
+  ReadyToScan: 'Almost ready',
+  ImportBlocked: 'Needs attention',
+  Failed: 'Failed',
+  Canceled: 'Canceled'
+};
+
+/** States where a progress bar is meaningful. "Monitored" has no download to measure. */
+const PROGRESS_STATES = new Set(['Downloading', 'Paused', 'Processing', 'Importing']);
+
+function requestStateLabel(state: string): string {
+  return REQUEST_STATE_LABELS[state] ?? state;
+}
+
+function formatBytes(bytes: number | undefined): string | undefined {
+  if (!bytes || bytes <= 0) return undefined;
+  const gb = bytes / 1_000_000_000;
+  return gb >= 1 ? `${gb.toFixed(1)} GB` : `${Math.round(bytes / 1_000_000)} MB`;
+}
 
 function genresOf(item: AudiobookItem): string[] {
   return item.customGenres ?? [];
@@ -107,10 +148,19 @@ function formatDuration(seconds: number | undefined): string | undefined {
   templateUrl: './audiobooks.component.html',
   styleUrl: './audiobooks.component.css'
 })
-export class AudiobooksComponent implements OnInit {
+export class AudiobooksComponent implements OnInit, OnDestroy {
   loading = false;
   error: string | null = null;
   items: AudiobookItem[] = [];
+
+  /**
+   * Books I've requested that Audiobookshelf can't know about yet — they have
+   * no file on disk, so they never appear in getCatalog(). Rendered as dimmed
+   * "ghost" tiles alongside the real library so an in-flight download is
+   * visible somewhere other than the search page it was started from.
+   */
+  pendingRequests: AudiobookRequestStatus[] = [];
+  private requestPollTimer: number | null = null;
 
   searchTerm = '';
   selectedGenre = '';
@@ -136,6 +186,7 @@ export class AudiobooksComponent implements OnInit {
 
   constructor(
     private api: AudiobookApiService,
+    private requestApi: AudiobookRequestApiService,
     private dialog: MatDialog,
     private logger: LoggerService,
     private authService: AuthService,
@@ -157,6 +208,119 @@ export class AudiobooksComponent implements OnInit {
     }
 
     this.load();
+    this.loadPendingRequests();
+  }
+
+  ngOnDestroy(): void {
+    this.stopRequestPolling();
+  }
+
+  // ─── Pending requests (ghost tiles) ────────────────────────────────────
+
+  /**
+   * A second, independent fetch: the catalog comes from Audiobookshelf, this
+   * comes from Listenarr. Failure here is deliberately silent — a Listenarr
+   * outage must not stop the playable library from rendering.
+   */
+  private loadPendingRequests(): void {
+    this.requestApi.listMyRequests().subscribe({
+      next: (requests) => {
+        this.pendingRequests = requests;
+        this.syncRequestPolling();
+      },
+      error: (err) => {
+        this.logger.error('[AudiobooksComponent] pending requests failed', err);
+        this.pendingRequests = [];
+        this.stopRequestPolling();
+      }
+    });
+  }
+
+  /** Polls only while something is actually moving, then stops on its own. */
+  private syncRequestPolling(): void {
+    const hasActive = this.pendingRequests.some(r => ACTIVE_REQUEST_STATES.has(r.state));
+    if (!hasActive) {
+      this.stopRequestPolling();
+      return;
+    }
+
+    if (this.requestPollTimer !== null) return;
+    this.requestPollTimer = window.setInterval(() => this.loadPendingRequests(), REQUEST_POLL_MS);
+  }
+
+  private stopRequestPolling(): void {
+    if (this.requestPollTimer !== null) window.clearInterval(this.requestPollTimer);
+    this.requestPollTimer = null;
+  }
+
+  get visiblePendingRequests(): AudiobookRequestStatus[] {
+    // Respects the search box so a filtered grid doesn't keep showing unrelated
+    // ghosts, but ignores genre/owner/favorite filters — a book that hasn't
+    // downloaded has none of that metadata yet and would always be filtered out.
+    const term = this.searchTerm.trim().toLowerCase();
+    if (!term) return this.pendingRequests;
+    return this.pendingRequests.filter(r => r.title.toLowerCase().includes(term));
+  }
+
+  requestStateLabel(request: AudiobookRequestStatus): string {
+    return requestStateLabel(request.state);
+  }
+
+  requestProgressPercent(request: AudiobookRequestStatus): number {
+    return Math.max(0, Math.min(100, Math.round(request.progress ?? 0)));
+  }
+
+  requestSubtitle(request: AudiobookRequestStatus): string {
+    const parts: string[] = [this.requestStateLabel(request)];
+    if (request.state === 'Downloading') {
+      const size = formatBytes(request.totalSize);
+      parts.push(size ? `${this.requestProgressPercent(request)}% of ${size}` : `${this.requestProgressPercent(request)}%`);
+    }
+    return parts.join(' · ');
+  }
+
+  showsProgress(request: AudiobookRequestStatus): boolean {
+    return PROGRESS_STATES.has(request.state);
+  }
+
+  /** Exposed for the template — pending tiles have no cover of their own. */
+  readonly placeholderCover = PLACEHOLDER_COVER;
+
+  /** Audiobook art is square (Audible's is), unlike the 2:3 the shared tile
+   *  defaults to for movie posters and ebook jackets. Applied to the pending
+   *  ghost tiles too, so a filled row and a waiting row line up. */
+  readonly audiobookCoverAspect = '1 / 1';
+
+  isRequestFailed(request: AudiobookRequestStatus): boolean {
+    return request.state === 'Failed' || request.state === 'ImportBlocked';
+  }
+
+  requestTooltip(request: AudiobookRequestStatus): string {
+    if (request.error) return request.error;
+    if (request.importBlockMessages?.length) return request.importBlockMessages.join(' ');
+    return `${request.title} — ${this.requestStateLabel(request)}. Not downloaded yet.`;
+  }
+
+  /** Removes it from my view only; the request itself and the other requesters are untouched. */
+  dismissRequest(request: AudiobookRequestStatus, event: Event): void {
+    event.stopPropagation();
+    const previous = this.pendingRequests;
+    this.pendingRequests = previous.filter(r => r.listenarrId !== request.listenarrId);
+
+    this.requestApi.dismissRequest(request.listenarrId).subscribe({
+      error: (err) => {
+        this.logger.error('[AudiobooksComponent] dismiss failed', err);
+        this.pendingRequests = previous; // put it back rather than lie about it
+      }
+    });
+  }
+
+  retryRequestImport(request: AudiobookRequestStatus, event: Event): void {
+    event.stopPropagation();
+    this.requestApi.retryImport(request.listenarrId).subscribe({
+      next: () => this.loadPendingRequests(),
+      error: (err) => this.logger.error('[AudiobooksComponent] retry import failed', err)
+    });
   }
 
   private load(): void {
@@ -210,9 +374,13 @@ export class AudiobooksComponent implements OnInit {
 
     if (this.selectedGenre && !genresOf(item).includes(this.selectedGenre)) return false;
 
+    // An owner filter answers "whose book is this". An untagged item has no
+    // answer, so there is nothing to exclude it on — and excluding it anyway
+    // means anything that reaches Audiobookshelf before someone tags it is
+    // invisible here while the search page happily offers to play it.
     if (this.selectedOwners.size > 0) {
       const itemOwners = item.owners ?? [];
-      if (!itemOwners.some(o => this.selectedOwners.has(o))) return false;
+      if (itemOwners.length > 0 && !itemOwners.some(o => this.selectedOwners.has(o))) return false;
     }
 
     // Favorites filter — cross-referenced against whichever owner filter buttons

@@ -15,9 +15,17 @@
   </div>
 
   <div class="storage-rows">
-    <div class="storage-row"><span>Movies</span><span>{{ formatTb(stats.moviesBytes) }}</span></div>
-    <div class="storage-row"><span>TV</span><span>{{ formatTb(stats.tvBytes) }}</span></div>
-    <div class="storage-row"><span>Books</span><span>{{ formatTb(stats.booksBytes) }}</span></div>
-    <div class="storage-row free"><span>Free</span><span>{{ formatTb(stats.freeBytes) }}</span></div>
+    <div class="storage-row"><span>Movies</span><span>{{ formatSize(stats.moviesBytes) }}</span></div>
+    <div class="storage-row"><span>TV</span><span>{{ formatSize(stats.tvBytes) }}</span></div>
+    <div class="storage-row"><span>Books</span><span>{{ formatSize(stats.booksBytes) }}</span></div>
+    <div class="storage-row"><span>Audiobooks</span><span>{{ formatSize(stats.audiobooksBytes) }}</span></div>
+    <div class="storage-row"><span>Photos</span><span>{{ formatSize(stats.photosBytes) }}</span></div>
+    <!-- Derived by subtraction, so it also absorbs any category that failed to
+         report. Flagged in the tooltip rather than presented as a measured figure. -->
+    <div
+      class="storage-row other"
+      title="Everything not in a category above — downloads in flight, Docker images, backups."
+    ><span>Other</span><span>{{ formatSize(stats.otherBytes) }}</span></div>
+    <div class="storage-row free"><span>Free</span><span>{{ formatSize(stats.freeBytes) }}</span></div>
   </div>
 </div>

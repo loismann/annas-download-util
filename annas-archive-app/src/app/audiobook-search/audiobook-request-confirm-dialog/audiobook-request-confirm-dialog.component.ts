@@ -29,11 +29,20 @@ export class AudiobookRequestConfirmDialogComponent {
     dialogRef.disableClose = true;
   }
 
+  /** Naming the consequence on the button is the point — a book nothing carries
+   *  should not be one OK click away from looking like a normal request. */
+  get confirmLabel(): string {
+    if (!this.data.releasesAvailable) return 'Add anyway to keep watching';
+    return this.data.alreadyRequested ? 'Add me as requester' : 'Add monitored request';
+  }
+
   confirm(): void {
     if (this.busy) return;
     this.busy = true;
     this.error = null;
-    this.api.confirmRequest(this.data.previewToken).subscribe({
+    // The server refuses the confirm unless the no-releases warning comes back
+    // acknowledged, so this flag has to mirror what the dialog actually showed.
+    this.api.confirmRequest(this.data.previewToken, !this.data.releasesAvailable).subscribe({
       next: result => this.dialogRef.close(result),
       error: err => {
         this.busy = false;

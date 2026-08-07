@@ -117,6 +117,36 @@ services:
       - Sonarr__ApiKey=${SONARR_API_KEY:-}
       - Radarr__BaseUrl=http://radarr:7878
       - Radarr__ApiKey=${RADARR_API_KEY:-}
+      # Immich — the photo library the CVS print pipeline reads from. Internal
+      # compose address, not the tailnet URL the browser and phones use. The API
+      # key is minted in Immich's UI (Account Settings -> API Keys) and kept in
+      # .env, never in tracked source.
+      # Turns the /api/photo-print routes on. Off by default in appsettings so a
+      # deploy without Immich does not expose endpoints that cannot work.
+      - PhotoPrint__Enabled=true
+      # Which CVS collects the prints. Blank is allowed — it only pre-fills the
+      # store step of the (not yet built) CVS checkout leg.
+      - PhotoPrint__PickupZipCode=${CVS_PICKUP_ZIP:-}
+      - PhotoPrint__Immich__BaseUrl=http://immich-server:2283
+      - PhotoPrint__Immich__ApiKey=${IMMICH_API_KEY:-}
+      # Print-ready renders. Deliberately NOT under Immich's upload location —
+      # Immich manages that tree (library/, thumbs/, encoded-video/ ...) and an
+      # unexpected folder inside it invites trouble during storage migrations.
+      - PhotoPrint__OutputRoot=/data/print-ready
+      # Logged-in cvs.com session, captured on a Mac with a real browser
+      # (scripts/capture-cvs-session.sh) and pushed here by
+      # scripts/push-cvs-session.sh. Lives on the persistent state mount so a
+      # rebuild does not sign the automation out. Absent = the CVS leg reports
+      # "not signed in" rather than trying and failing halfway.
+      # A logged-in cvs.com session, captured on a Mac by scripts/cvs-login.sh.
+      #
+      # There is no password to store: CVS moved to passkey / emailed-code sign
+      # in, and neither can run unattended — a passkey needs an authenticator,
+      # and scraping the emailed code would mean giving the server access to
+      # Paul's mailbox. So a human signs in once and the resulting session is
+      # what the automation carries. Lives on the persistent state mount so a
+      # rebuild does not sign it out.
+      - PhotoPrint__Cvs__SessionStatePath=/app/state/cvs-session.json
       - Jellyfin__BaseUrl=http://jellyfin:8096
       - Jellyfin__ApiKey=${JELLYFIN_API_KEY:-}
       # The nginx proxy's externally-reachable address — this is what the
@@ -159,6 +189,15 @@ services:
       # an abridged edition, still falls back to manual review, and bulk
       # series requests are never automatic.
       - Listenarr__AutoSearch=false
+      # Ownership backfill — adopts library items nobody owns and drops records
+      # whose item is gone. Tagging only ever happened inside this app's own add
+      # handlers, so anything added in Radarr/Sonarr's UI or by a script had no
+      # owner and was hidden by the libraries' owner filter. DefaultMember is who
+      # an unattributable item goes to; there is no attribution to recover for
+      # something added outside the app, and "invisible" is the worse answer.
+      # Same call the ebook library already makes with LibraryWatcher:AutoTagNewBooks.
+      - Ownership__BackfillEnabled=true
+      - Ownership__DefaultMember=Paul
       # Audiobook enrichment/rename background service — deliberately breaks
       # the "never touch the files directly" pattern used for Sonarr/Radarr/
       # Jellyfin/Audiobookshelf above: file reorganization is a different
@@ -191,6 +230,10 @@ services:
       - ../data/youtube:/data/youtube
       - ../data/logs:/app/logs
       - ../data/state:/app/state
+      # Print-ready photo renders, on the media array rather than the container
+      # filesystem — a 16x20 at 300dpi is a large file and a rebuild must not
+      # discard an order that is mid-flight.
+      - /home/pferrer/Media/PhotoPrints:/data/print-ready
       # Read-write access for AudiobookEnrichmentService's renames — the one
       # deliberate exception to this container never touching the arr-stack's
       # managed media files directly. Points at the *staging* copy, not the

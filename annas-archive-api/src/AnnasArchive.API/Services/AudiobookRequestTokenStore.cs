@@ -12,7 +12,11 @@ public sealed record AudiobookRequestPreviewToken(
     string Asin,
     string Region,
     bool AutoSearch,
-    DateTimeOffset ExpiresAt);
+    DateTimeOffset ExpiresAt,
+    /// <summary>The indexers had nothing for this book when the preview was built.
+    /// Carried on the token, not just shown in the UI, so confirming still has to
+    /// acknowledge it — the browser cannot quietly drop the warning.</summary>
+    bool NoReleasesFound = false);
 
 public sealed record AudiobookSeriesPreviewToken(
     string Token,
@@ -40,13 +44,15 @@ public sealed class AudiobookRequestTokenStore(TimeProvider timeProvider)
     private readonly ConcurrentDictionary<string, StoredSeries> _series = new();
 
     public AudiobookRequestPreviewToken CreatePreview(
-        string ownerKey, string asin, string region, bool autoSearch)
+        string ownerKey, string asin, string region, bool autoSearch, bool noReleasesFound = false)
     {
         PurgeExpired();
         var token = NewToken();
         var expiresAt = timeProvider.GetUtcNow().Add(Lifetime);
-        _previews[token] = new StoredPreview(HashOwner(ownerKey), asin, region, autoSearch, expiresAt);
-        return new AudiobookRequestPreviewToken(token, asin, region, autoSearch, expiresAt);
+        _previews[token] = new StoredPreview(
+            HashOwner(ownerKey), asin, region, autoSearch, expiresAt, noReleasesFound);
+        return new AudiobookRequestPreviewToken(
+            token, asin, region, autoSearch, expiresAt, noReleasesFound);
     }
 
     public AudiobookRequestPreviewToken? ConsumePreview(string ownerKey, string token)
@@ -57,7 +63,7 @@ public sealed class AudiobookRequestTokenStore(TimeProvider timeProvider)
             return null;
 
         return new AudiobookRequestPreviewToken(
-            token, stored.Asin, stored.Region, stored.AutoSearch, stored.ExpiresAt);
+            token, stored.Asin, stored.Region, stored.AutoSearch, stored.ExpiresAt, stored.NoReleasesFound);
     }
 
     /// <summary>Holds the exact set of editions the server classified as
@@ -135,7 +141,8 @@ public sealed class AudiobookRequestTokenStore(TimeProvider timeProvider)
     }
 
     private sealed record StoredPreview(
-        string OwnerHash, string Asin, string Region, bool AutoSearch, DateTimeOffset ExpiresAt);
+        string OwnerHash, string Asin, string Region, bool AutoSearch, DateTimeOffset ExpiresAt,
+        bool NoReleasesFound);
 
     private sealed record StoredSeries(
         string OwnerHash,

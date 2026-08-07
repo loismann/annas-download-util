@@ -18,6 +18,25 @@ public static class TitleMatchScorer
         return Math.Round((titleScore * 0.7) + (authorScore * 0.3), 3);
     }
 
+    /// <summary>
+    /// What fraction of <paramref name="wanted"/>'s tokens appear in
+    /// <paramref name="candidate"/>. Unlike <see cref="TokenSimilarity"/> this
+    /// does not punish a candidate for carrying extra tokens, which is what
+    /// ranking scene release names needs: "Star Wars - Jedi Academy, Bk 2 -
+    /// Dark Apprentice (NMR" is a near-perfect match for the book it names, yet
+    /// scores 0.2 on Jaccard purely because of the release-naming furniture.
+    /// </summary>
+    public static double Coverage(string? wanted, string? candidate)
+    {
+        var wantedTokens = NormalizeForMatch(wanted);
+        var candidateTokens = NormalizeForMatch(candidate);
+
+        if (wantedTokens.Count == 0 || candidateTokens.Count == 0)
+            return 0;
+
+        return (double)wantedTokens.Intersect(candidateTokens).Count() / wantedTokens.Count;
+    }
+
     public static double CandidateAuthorScore(string[] inputAuthors, string[] candidateAuthors)
     {
         if (candidateAuthors.Length == 0 || inputAuthors.Length == 0)

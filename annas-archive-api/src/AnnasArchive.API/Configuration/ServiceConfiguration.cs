@@ -124,7 +124,15 @@ public static class ServiceConfiguration
                         path.Equals("/api/media/tv/hls/master.m3u8", StringComparison.OrdinalIgnoreCase) ||
                         path.StartsWith("/api/media/hls/", StringComparison.OrdinalIgnoreCase);
 
-                    if (isAudiobookStreamOrCover || isMediaDownload || isMediaStream)
+                    // Photo print picker thumbnails — hundreds of <img> tags per
+                    // page, same header limitation as audiobook covers above.
+                    // Scoped to the thumbnail route only: the full-resolution
+                    // original is never fetched by the browser.
+                    var isPhotoPrintThumbnail =
+                        path.StartsWith("/api/photo-print/photos/", StringComparison.OrdinalIgnoreCase) &&
+                        path.EndsWith("/thumbnail", StringComparison.OrdinalIgnoreCase);
+
+                    if (isAudiobookStreamOrCover || isMediaDownload || isMediaStream || isPhotoPrintThumbnail)
                     {
                         var token = context.Request.Query["access_token"];
                         if (!string.IsNullOrEmpty(token))
@@ -351,6 +359,25 @@ public static class ServiceConfiguration
         })
         .AddStandardResilience("OpenLibrary");
 
+        // Immich — the household photo library, on the internal compose network.
+        // No resilience pipeline: it is a LAN-local service, and a retry storm
+        // against a multi-megabyte original download costs more than it saves.
+        var immichBaseUrl = configuration["PhotoPrint:Immich:BaseUrl"];
+        if (!string.IsNullOrWhiteSpace(immichBaseUrl))
+        {
+            services.AddHttpClient("Immich", client =>
+            {
+                client.BaseAddress = new Uri(immichBaseUrl.TrimEnd('/') + "/");
+                // Originals run to tens of megabytes; the standard API timeout
+                // would abort a large print-resolution download mid-stream.
+                client.Timeout = TimeSpan.FromMinutes(5);
+                client.DefaultRequestHeaders.Add("User-Agent", "AnnasArchive/1.0");
+                var apiKey = configuration["PhotoPrint:Immich:ApiKey"];
+                if (!string.IsNullOrWhiteSpace(apiKey))
+                    client.DefaultRequestHeaders.Add("x-api-key", apiKey);
+            });
+        }
+
         // Google Books HTTP Client (external API)
         services.AddTransient<GoogleBooksApiKeyHandler>();
         services.AddHttpClient("GoogleBooks", client =>
@@ -521,6 +548,11 @@ public static class ServiceConfiguration
         services.AddSingleton<DateNightCycleService>();
         services.AddHostedService<DateNightLifecycleService>();
 
+        // Adopts library items nobody owns and prunes records whose item is gone.
+        // Off by setting Ownership:BackfillEnabled=false; the member it adopts to is
+        // Ownership:DefaultMember.
+        services.AddHostedService<OwnershipBackfillService>();
+
         // Flyer AI pitch lines (phase 4) — singleton so its cache reads/writes go
         // through one instance, same reasoning as the two services above. Depends on
         // IAiResponseParser/ITokenUsageService/IModelSelectionService, registered
@@ -638,6 +670,8 @@ public static class ServiceConfiguration
         services.Configure<PhotoPrintConfiguration>(configuration.GetSection(PhotoPrintConfiguration.SectionName));
         services.AddSingleton<Data.IPhotoPrintOrderStore, Data.PhotoPrintOrderStore>();
         services.AddSingleton<IPrintImagePreparationService, PrintImagePreparationService>();
+        services.AddSingleton<IImmichService, ImmichService>();
+        services.AddSingleton<IPhotoPrintRunService, PhotoPrintRunService>();
 
         // Spotify configuration
         services.Configure<SpotifyConfiguration>(configuration.GetSection(SpotifyConfiguration.SectionName));

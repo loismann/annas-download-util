@@ -1,0 +1,304 @@
+.print-page {
+  padding: 16px 20px 32px;
+}
+
+.print-header h1 {
+  margin: 0 0 2px;
+  font-size: 1.5rem;
+  font-weight: 500;
+}
+
+.subtitle {
+  margin: 0 0 16px;
+  color: #5f6368;
+  font-size: 0.85rem;
+}
+
+/* ─── Notices ───────────────────────────────────────────────────────── */
+
+.notice {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  border-radius: 6px;
+  margin-bottom: 16px;
+  font-size: 0.88rem;
+}
+
+.notice.error {
+  background: rgba(211, 47, 47, 0.08);
+  border: 1px solid rgba(211, 47, 47, 0.25);
+  color: #b3261e;
+}
+
+.notice code {
+  background: rgba(0, 0, 0, 0.06);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 0.85em;
+}
+
+/* ─── Filters ───────────────────────────────────────────────────────── */
+
+.filters {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.range-field { width: 170px; }
+
+/* Material's outline fields carry a large hint-reserving gutter; the filter row
+   has no hints, so it would otherwise sit on 22px of dead space. */
+.filters .mat-mdc-form-field { margin-bottom: -1.25em; }
+
+.spacer { flex: 1 1 auto; }
+
+.photo-count {
+  color: #5f6368;
+  font-size: 0.82rem;
+}
+
+/* ─── Layout ────────────────────────────────────────────────────────── */
+
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 20px;
+  align-items: start;
+}
+
+/* One column below the breakpoint: a 340px basket beside a grid leaves the
+   thumbnails too small to choose from on a phone. */
+@media (max-width: 900px) {
+  .layout { grid-template-columns: minmax(0, 1fr); }
+  .basket-pane { position: static; max-height: none; }
+}
+
+/* ─── Photo grid ────────────────────────────────────────────────────── */
+
+.photo-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 8px;
+}
+
+.photo {
+  position: relative;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  border-radius: 6px;
+  overflow: hidden;
+  aspect-ratio: 1 / 1;
+  /* Reserves the ring so selecting doesn't reflow the grid. */
+  outline: 3px solid transparent;
+  outline-offset: -3px;
+  transition: outline-color 120ms ease;
+}
+
+.photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  background: #eceff1;
+}
+
+.photo.selected { outline-color: #3f51b5; }
+
+.photo.selected img { filter: brightness(0.82); }
+
+.photo .check {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #3f51b5;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.photo .check .mat-icon {
+  font-size: 15px;
+  width: 15px;
+  height: 15px;
+  line-height: 15px;
+}
+
+.photo .fav {
+  position: absolute;
+  bottom: 5px;
+  right: 5px;
+  color: #fff;
+  font-size: 16px;
+  width: 16px;
+  height: 16px;
+  /* The library is full of light images; a bare white glyph vanishes on them. */
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+}
+
+.loading, .empty-state, .load-more {
+  display: flex;
+  justify-content: center;
+  padding: 32px 0;
+}
+
+.empty-state { color: #5f6368; font-size: 0.9rem; }
+
+/* ─── Basket ────────────────────────────────────────────────────────── */
+
+.basket-pane {
+  position: sticky;
+  top: 12px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
+  padding: 12px 14px;
+  background: rgba(0, 0, 0, 0.015);
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+}
+
+.basket-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.basket-head h2 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.basket-empty {
+  color: #5f6368;
+  font-size: 0.85rem;
+  margin: 12px 0;
+}
+
+.basket-item {
+  display: flex;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.07);
+}
+
+.basket-item img {
+  width: 52px;
+  height: 52px;
+  object-fit: cover;
+  border-radius: 4px;
+  flex: 0 0 auto;
+  background: #eceff1;
+}
+
+.basket-controls {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.basket-name {
+  font-size: 0.78rem;
+  color: #5f6368;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 2px;
+}
+
+.basket-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.size-field { width: 96px; }
+.qty-field { width: 64px; }
+
+.basket-row .mat-mdc-form-field { margin-bottom: -1.25em; }
+
+.remove { flex: 0 0 auto; }
+
+.lowres {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+  font-size: 0.72rem;
+  color: #b26a00;
+}
+
+.lowres .mat-icon {
+  font-size: 14px;
+  width: 14px;
+  height: 14px;
+}
+
+/* ─── Foot / result ─────────────────────────────────────────────────── */
+
+.basket-foot { padding-top: 12px; }
+
+.total-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.total-row.over { color: #b3261e; }
+
+.total-row .limit {
+  font-weight: 400;
+  font-size: 0.78rem;
+}
+
+.prepare-btn { width: 100%; }
+
+.hint {
+  margin: 8px 0 0;
+  font-size: 0.74rem;
+  color: #5f6368;
+  line-height: 1.35;
+}
+
+.result {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: rgba(76, 175, 80, 0.1);
+  border: 1px solid rgba(76, 175, 80, 0.3);
+}
+
+.result.has-failures {
+  background: rgba(211, 47, 47, 0.08);
+  border-color: rgba(211, 47, 47, 0.28);
+}
+
+.result-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.88rem;
+}
+
+.result-line .mat-icon {
+  font-size: 18px;
+  width: 18px;
+  height: 18px;
+}
+
+.result-note {
+  margin: 4px 0 0;
+  font-size: 0.75rem;
+  color: #5f6368;
+}

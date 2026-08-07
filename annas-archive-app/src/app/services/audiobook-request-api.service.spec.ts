@@ -37,14 +37,28 @@ describe('AudiobookRequestApiService', () => {
     request.flush({ query: 'Pride & Prejudice', region: 'uk', language: 'english', totalResults: 0, results: [] });
   });
 
-  it('confirms only an opaque preview token', () => {
+  // The body carries an opaque token plus one flag, and the distinction between
+  // them is the point. Everything the server decided — which edition, which
+  // region, whether to auto-search — rides inside the token where the browser
+  // cannot touch it. `acceptNoReleases` is the one thing that is genuinely the
+  // user's to send, because it reports a human answering a warning.
+  it('confirms with an opaque preview token and nothing describing the destination', () => {
     const token = 'A'.repeat(64);
     service.confirmRequest(token).subscribe();
 
     const request = http.expectOne(req => req.url.endsWith('/api/audiobook-requests'));
     expect(request.request.method).toBe('POST');
-    expect(request.request.body).toEqual({ previewToken: token });
+    expect(request.request.body).toEqual({ previewToken: token, acceptNoReleases: false });
     expect(JSON.stringify(request.request.body)).not.toContain('destinationPath');
+    request.flush({ listenarrId: 42, asin: 'B012345678', title: 'Book', status: 'Monitored', alreadyExisted: false, requesterAdded: true });
+  });
+
+  it('reports an acknowledged no-releases warning back to the server', () => {
+    const token = 'A'.repeat(64);
+    service.confirmRequest(token, true).subscribe();
+
+    const request = http.expectOne(req => req.url.endsWith('/api/audiobook-requests'));
+    expect(request.request.body).toEqual({ previewToken: token, acceptNoReleases: true });
     request.flush({ listenarrId: 42, asin: 'B012345678', title: 'Book', status: 'Monitored', alreadyExisted: false, requesterAdded: true });
   });
 

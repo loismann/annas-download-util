@@ -120,7 +120,10 @@ public sealed class AudiobookAvailabilityService(
     {
         foreach (var node in owned)
         {
-            if (node is not JsonObject item) continue;
+            // A missing item is still catalogued by Audiobookshelf but its files are
+            // gone, so claiming "already in your library" would hand the household a
+            // Listen button that plays nothing. Same exclusion the reconciler makes.
+            if (node is not JsonObject item || AudiobookCatalogMatch.IsMissing(item)) continue;
             var metadata = item["media"]?["metadata"] as JsonObject;
             if (metadata is null) continue;
 
@@ -142,23 +145,18 @@ public sealed class AudiobookAvailabilityService(
                 return new OwnedMatch(itemId, "Audiobookshelf has this exact ISBN edition.");
             }
 
-            var title = metadata["title"]?.ToString();
-            var author = metadata["authorName"]?.ToString();
-            if (string.IsNullOrWhiteSpace(title) || string.IsNullOrWhiteSpace(author)) continue;
-
-            var titleScore = TitleMatchScorer.TokenSimilarity(candidate.Title, title);
-            var authorScore = TitleMatchScorer.CandidateAuthorScore(candidateAuthors, SplitNames(author));
-            if (titleScore < 0.98 || authorScore < 0.80) continue;
+            if (!AudiobookCatalogMatch.TitleAndAuthorMatch(candidate.Title, candidateAuthors, metadata)) continue;
 
             var narrator = metadata["narratorName"]?.ToString();
             if (!string.IsNullOrWhiteSpace(narrator) && candidateNarrators.Length > 0)
             {
-                var narratorScore = TitleMatchScorer.CandidateAuthorScore(candidateNarrators, SplitNames(narrator));
+                var narratorScore = TitleMatchScorer.CandidateAuthorScore(
+                    candidateNarrators, AudiobookCatalogMatch.SplitNames(narrator));
                 if (narratorScore < 0.75) continue;
                 return new OwnedMatch(itemId, "Audiobookshelf has the same title, author, and narrator edition.");
             }
 
-            return new OwnedMatch(itemId, "Audiobookshelf has an exact title and author match; narrator metadata is unavailable.");
+            return new OwnedMatch(itemId, "Audiobookshelf has a matching title and author; narrator metadata is unavailable.");
         }
 
         return null;
@@ -176,9 +174,6 @@ public sealed class AudiobookAvailabilityService(
 
     private static string NormalizeIdentifier(string value) =>
         new(value.Where(char.IsLetterOrDigit).Select(char.ToUpperInvariant).ToArray());
-
-    private static string[] SplitNames(string value) => value
-        .Split([',', ';', '&'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
     private sealed record OwnedMatch(string ItemId, string Reason);
 }

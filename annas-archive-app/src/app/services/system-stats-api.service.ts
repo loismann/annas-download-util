@@ -11,6 +11,10 @@ export interface StorageStats {
   moviesBytes: number;
   tvBytes: number;
   booksBytes: number;
+  audiobooksBytes: number;
+  photosBytes: number;
+  /** Everything no category claims — downloads, Docker images, backups. Derived by subtraction. */
+  otherBytes: number;
 }
 
 @Injectable({ providedIn: 'root' })

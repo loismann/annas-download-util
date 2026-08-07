@@ -49,6 +49,13 @@
   gap: 8px;
 }
 
+/* "Other" is derived, not measured — the lighter weight keeps it from reading
+   as an equal peer of the categories above it. */
+.storage-row.other {
+  opacity: 0.75;
+  font-style: italic;
+}
+
 .storage-row.free {
   margin-top: 4px;
   padding-top: 4px;
@@ -72,3 +79,5 @@
   border-top-color: rgba(255, 238, 201, 0.18);
   color: var(--thtr-cream, #ffeec9);
 }
+
+.storage-panel.dark .storage-row.other { opacity: 0.65; }

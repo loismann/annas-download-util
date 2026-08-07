@@ -20,26 +20,11 @@ public static class LibraryHelpers
     /// Resolves which of the three household users ("Paul"/"Mom"/"Dad") is
     /// currently authenticated, by matching a substring of the JWT's Name
     /// claim — avoids storing access codes in code/config.
+    /// Kept as the name its twenty-odd callers already use; the rule itself lives
+    /// in <see cref="Services.MediaOwnership.ResolveMember"/> so there is only one.
     /// </summary>
-    public static string? ResolveUserDisplayName(HttpContext context)
-    {
-        var name = context.User?.FindFirst(ClaimTypes.Name)?.Value;
-        if (string.IsNullOrWhiteSpace(name))
-            return null;
-
-        var normalized = name.Trim().ToLowerInvariant();
-
-        if (normalized.Contains("paul"))
-            return "Paul";
-
-        if (normalized.Contains("mom"))
-            return "Mom";
-
-        if (normalized.Contains("dad"))
-            return "Dad";
-
-        return null;
-    }
+    public static string? ResolveUserDisplayName(HttpContext context) =>
+        Services.MediaOwnership.ResolveMember(context);
 
     /// <summary>
     /// Resolves a user-specific library tag based on the authenticated user's name.

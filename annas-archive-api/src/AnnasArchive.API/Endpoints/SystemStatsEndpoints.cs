@@ -1,5 +1,6 @@
 using AnnasArchive.API.Helpers;
 using AnnasArchive.API.Services;
+using AnnasArchive.API.Services.PhotoPrint;
 using Microsoft.Extensions.Caching.Memory;
 using Serilog;
 
@@ -36,7 +37,11 @@ public static class SystemStatsEndpoints
     }
 
     private static async Task<IResult> HandleGetStorageStats(
-        ISonarrService sonarr, IRadarrService radarr, IMemoryCache cache)
+        ISonarrService sonarr,
+        IRadarrService radarr,
+        IAudiobookshelfService audiobookshelf,
+        IImmichService immich,
+        IMemoryCache cache)
     {
         if (cache.TryGetValue(StorageStatsCacheKey, out object? cached))
             return Results.Ok(cached);
@@ -91,8 +96,35 @@ public static class SystemStatsEndpoints
             Log.Warning("[SystemStats] Could not fetch Sonarr series sizes: {Message}", ex.Message);
         }
 
+        // Audiobookshelf tracks its own library total, so this is one cheap call
+        // rather than summing ~1000 items — and the app container has no mount
+        // for the audiobook folder to scan even if we wanted to.
+        long audiobooksBytes = 0;
+        try
+        {
+            audiobooksBytes = await audiobookshelf.GetLibrarySizeBytesAsync();
+        }
+        catch (Exception ex)
+        {
+            Log.Warning("[SystemStats] Could not fetch Audiobookshelf library size: {Message}", ex.Message);
+        }
+
+        // Immich likewise reports its own usage; it already swallows its failures
+        // and returns 0, for the same "one dead service must not blank the whole
+        // panel" reason as every other category here.
+        var photosBytes = await immich.GetLibrarySizeBytesAsync();
+
         var usedBytes = totalBytes - freeBytes;
         var percentFull = totalBytes > 0 ? Math.Round((double)usedBytes / totalBytes * 100, 1) : 0;
+
+        // Whatever is on the disk that no category above claims: downloads in
+        // flight, Docker images, backups, the containers' own data. Derived by
+        // subtraction rather than measured, so a category failing to report
+        // inflates "Other" instead of silently shrinking the total — clamped at
+        // zero because these figures come from five independent sources and need
+        // not sum to exactly the disk's used bytes.
+        var categorised = moviesBytes + tvBytes + booksBytes + audiobooksBytes + photosBytes;
+        var otherBytes = Math.Max(0, usedBytes - categorised);
 
         var result = new
         {
@@ -102,7 +134,10 @@ public static class SystemStatsEndpoints
             percentFull,
             moviesBytes,
             tvBytes,
-            booksBytes
+            booksBytes,
+            audiobooksBytes,
+            photosBytes,
+            otherBytes
         };
 
         cache.Set(StorageStatsCacheKey, result, StorageStatsCacheDuration);

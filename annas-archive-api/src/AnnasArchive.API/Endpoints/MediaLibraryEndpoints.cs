@@ -638,11 +638,16 @@ public static class MediaLibraryEndpoints
         }
     }
 
-    private static async Task<IResult> HandleDeleteSeries([FromRoute] int seriesId, ISonarrService sonarr)
+    private static async Task<IResult> HandleDeleteSeries(
+        [FromRoute] int seriesId, ISonarrService sonarr, IMediaMetadataService metadata)
     {
         try
         {
             await sonarr.DeleteSeriesAsync(seriesId);
+            // The owners/genres/favorites record outlives the series unless it is
+            // dropped here — the audiobook delete has always done this, the TV and
+            // movie deletes never did, and that is where 73 orphaned keys came from.
+            metadata.Delete("tv", seriesId.ToString());
             return Results.NoContent();
         }
         catch (HttpRequestException ex)
@@ -667,11 +672,13 @@ public static class MediaLibraryEndpoints
         }
     }
 
-    private static async Task<IResult> HandleDeleteMovie([FromRoute] int movieId, IRadarrService radarr)
+    private static async Task<IResult> HandleDeleteMovie(
+        [FromRoute] int movieId, IRadarrService radarr, IMediaMetadataService metadata)
     {
         try
         {
             await radarr.DeleteMovieAsync(movieId);
+            metadata.Delete("movie", movieId.ToString());  // see HandleDeleteSeries
             return Results.NoContent();
         }
         catch (HttpRequestException ex)

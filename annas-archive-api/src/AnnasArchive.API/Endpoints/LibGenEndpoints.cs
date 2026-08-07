@@ -194,6 +194,13 @@ public static class LibGenEndpoints
 
         var userName = GetUserName(context);
         var userTag = LibraryHelpers.ResolveUserLibraryTag(context);
+        if (userTag is null)
+            // Not fatal — LibraryWatcher:AutoTagNewBooks still gives the book an
+            // owner — but it means the download is about to be attributed to the
+            // fallback person rather than whoever actually asked for it, and that
+            // is worth a line rather than happening in silence.
+            Log.Warning("[LibGen] Could not resolve a household member for this download; " +
+                "the book will fall back to LibraryWatcher:AutoTagNewBooks");
         Log.Information("[LibGen] Saving book {Md5} to library for user {UserName}...", md5, userName);
 
         var job = jobs.Start(title ?? md5);

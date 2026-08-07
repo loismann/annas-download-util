@@ -216,6 +216,13 @@ public static class AnnaDownloadEndpoints
             ?? context.User?.FindFirst(ClaimTypes.Name)?.Value
             ?? "unknown";
         var userTag = LibraryHelpers.ResolveUserLibraryTag(context);
+        if (userTag is null)
+            // Not fatal — LibraryWatcher:AutoTagNewBooks still gives the book an
+            // owner — but it means the download is about to be attributed to the
+            // fallback person rather than whoever actually asked for it, and that
+            // is worth a line rather than happening in silence.
+            Log.Warning("[Anna] Could not resolve a household member for this download; " +
+                "the book will fall back to LibraryWatcher:AutoTagNewBooks");
 
         var job = jobs.Start(title ?? md5);
 

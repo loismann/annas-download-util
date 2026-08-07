@@ -118,6 +118,53 @@ public sealed class AudiobookRequestStore(AppDatabase database)
         command.ExecuteNonQuery();
     }
 
+    /// <summary>
+    /// Every request this person asked for and has not dismissed, newest first.
+    /// This is what lets the audiobook library show in-flight titles at all — the
+    /// per-request status route needs an id the caller no longer has once they
+    /// leave the search page.
+    /// </summary>
+    public IReadOnlyList<AudiobookRequestRecord> ListForUser(string appUserId)
+    {
+        using var connection = database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT r.listenarr_id, r.asin, r.title_snapshot, r.author_snapshot,
+                   r.last_observed_status, r.abs_item_id, r.last_error,
+                   r.created_at, r.updated_at
+              FROM audiobook_request r
+              JOIN audiobook_request_user u ON u.listenarr_id = r.listenarr_id
+             WHERE u.app_user_id = $user AND u.dismissed_at IS NULL
+             ORDER BY u.requested_at DESC
+            """;
+        command.Parameters.AddWithValue("$user", appUserId);
+        using var reader = command.ExecuteReader();
+
+        var records = new List<AudiobookRequestRecord>();
+        while (reader.Read()) records.Add(ReadRequest(reader));
+        return records;
+    }
+
+    /// <summary>
+    /// Hides one request from one person's library view. Deliberately not a
+    /// delete: a dismissed failure stays in Listenarr and stays visible to the
+    /// other requesters, and dismissing is reversible by re-requesting.
+    /// </summary>
+    public bool SetDismissed(int listenarrId, string appUserId, bool dismissed, DateTimeOffset now)
+    {
+        using var connection = database.OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE audiobook_request_user
+               SET dismissed_at = $at
+             WHERE listenarr_id = $id AND app_user_id = $user
+            """;
+        command.Parameters.AddWithValue("$at", dismissed ? now.ToString("O") : (object)DBNull.Value);
+        command.Parameters.AddWithValue("$id", listenarrId);
+        command.Parameters.AddWithValue("$user", appUserId);
+        return command.ExecuteNonQuery() == 1;
+    }
+
     public bool IsRequester(int listenarrId, string appUserId)
     {
         using var connection = database.OpenConnection();

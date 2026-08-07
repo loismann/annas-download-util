@@ -1,6 +1,7 @@
 using AnnasArchive.API.Data;
 using AnnasArchive.API.Models;
 using AnnasArchive.API.Services;
+using AnnasArchive.API.Services.Library;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 
@@ -92,6 +93,86 @@ public sealed class AudiobookRequestSafetyTests : IDisposable
     [InlineData("", "")]
     public void ReleaseQuery_UsesOnlyTheFirstAuthor(string authors, string expected) =>
         AudiobookRequestService.FirstAuthor(authors).Should().Be(expected);
+
+    /// <summary>
+    /// The no-releases warning rides on the preview token rather than living only in
+    /// the dialog, so a browser that drops it cannot turn a deliberate "add anyway"
+    /// into an ordinary request. Round-tripping the token is what proves that.
+    /// </summary>
+    [Fact]
+    public void PreviewToken_CarriesTheNoReleasesWarningThroughToConfirm()
+    {
+        var tokens = new AudiobookRequestTokenStore(TimeProvider.System);
+        var warned = tokens.CreatePreview("owner-a", "B012345678", "us", autoSearch: false, noReleasesFound: true);
+        var ordinary = tokens.CreatePreview("owner-a", "B087654321", "us", autoSearch: false);
+
+        warned.NoReleasesFound.Should().BeTrue();
+        ordinary.NoReleasesFound.Should().BeFalse();
+
+        tokens.ConsumePreview("owner-a", warned.Token)!.NoReleasesFound.Should().BeTrue();
+        tokens.ConsumePreview("owner-a", ordinary.Token)!.NoReleasesFound.Should().BeFalse();
+    }
+
+    /// <summary>
+    /// The reported failure: "pick a release" said nothing was available for books
+    /// the indexers definitely carry. Measured 2026-08-03 — the full Audible title
+    /// "Star Wars: The Jedi Academy: Dark Apprentice" returns zero, "Dark Apprentice"
+    /// returns the book. Nothing below the whole title was ever tried.
+    /// </summary>
+    [Fact]
+    public void ReleaseQuery_FallsBackToEachPartOfADecoratedTitle()
+    {
+        const string raw = "Star Wars: The Jedi Academy: Dark Apprentice";
+
+        var ladder = AudiobookRequestService
+            .BuildQueryLadder(raw, AudiobookRequestService.NormalizeQuery(raw), "Kevin Anderson")
+            .ToList();
+
+        ladder[0].Should().Be("Star Wars The Jedi Academy Dark Apprentice Kevin Anderson");
+        ladder[1].Should().Be("Star Wars The Jedi Academy Dark Apprentice");
+        ladder.Should().Contain("Dark Apprentice");
+    }
+
+    /// <summary>A one-word franchise stem matches a hundred unrelated music
+    /// releases, so widening must stop before it.</summary>
+    [Fact]
+    public void ReleaseQuery_NeverWidensToASingleWordStem()
+    {
+        const string raw = "Exodus: The Archimedes Engine";
+
+        var ladder = AudiobookRequestService
+            .BuildQueryLadder(raw, AudiobookRequestService.NormalizeQuery(raw), "Peter F Hamilton")
+            .ToList();
+
+        ladder.Should().NotContain("Exodus");
+        ladder.Should().Contain("The Archimedes Engine");
+    }
+
+    [Fact]
+    public void ReleaseQuery_DoesNotRepeatTheWholeTitleAsItsOwnPart()
+    {
+        var ladder = AudiobookRequestService
+            .BuildQueryLadder("Judas Unchained", "Judas Unchained", "Peter F Hamilton")
+            .ToList();
+
+        ladder.Should().Equal("Judas Unchained Peter F Hamilton", "Judas Unchained");
+    }
+
+    /// <summary>
+    /// Ranking is what makes the wider ladder safe: the widest attempt that returns
+    /// anything is often the least useful one, so scene-name furniture must not
+    /// outrank the release that actually names the book.
+    /// </summary>
+    [Fact]
+    public void ReleaseRanking_PrefersTheReleaseNamingTheBook()
+    {
+        const string wanted = "Star Wars The Jedi Academy Dark Apprentice Kevin Anderson";
+
+        var match = TitleMatchScorer.Coverage(wanted, "Star Wars - Jedi Academy, Bk 2 - Dark Apprentice (NMR");
+        var noise = TitleMatchScorer.Coverage(wanted, "Star Wars: Visions - The Village Bride (EP4)");
+
+        match.Should().BeGreaterThan(noise);
+    }
 
     public void Dispose()
     {

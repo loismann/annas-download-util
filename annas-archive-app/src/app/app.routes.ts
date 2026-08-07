@@ -76,6 +76,16 @@ export const routes: Routes = [
     loadComponent: () => import('./audiobook-search/audiobook-search.component').then(m => m.AudiobookSearchComponent),
     canActivate: [authGuard]
   },
+  // Immich -> CVS pickup prints. See
+  // DOCS/features/google-photos-cvs-print-automation-spec.md.
+  // Admin-only while the CVS half is unfinished: the page can prepare real
+  // print files but cannot yet place an order, so it would only confuse anyone
+  // else in the household. Drop adminGuard once §7 is working.
+  {
+    path: 'photo-prints',
+    loadComponent: () => import('./photo-prints/photo-prints.component').then(m => m.PhotoPrintsComponent),
+    canActivate: [authGuard, adminGuard]
+  },
   // The household-facing Date Night page — where Mom and Dad pick movies and
   // agree a night. See DOCS/features/DATE_NIGHT.md.
   {

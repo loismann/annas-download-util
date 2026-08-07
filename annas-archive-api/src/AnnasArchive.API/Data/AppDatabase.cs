@@ -162,6 +162,12 @@ public class AppDatabase
             """;
         cmd.ExecuteNonQuery();
         EnsureColumn(conn, "spotify_inventory_meta", "full_inventory_at", "TEXT");
+
+        // Per-person dismissal of a finished-but-unwanted request. Lives on the
+        // attribution row rather than the request, so one person clearing a failed
+        // download from their own library view does not hide it from everyone else
+        // who asked for the same book.
+        EnsureColumn(conn, "audiobook_request_user", "dismissed_at", "TEXT");
     }
 
     public SqliteConnection OpenConnection()

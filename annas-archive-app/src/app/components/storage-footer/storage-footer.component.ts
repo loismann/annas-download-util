@@ -4,6 +4,8 @@ import { Subscription, interval, startWith, switchMap } from 'rxjs';
 import { SystemStatsApiService, StorageStats } from '../../services/system-stats-api.service';
 import { LoggerService } from '../../services/logger.service';
 
+const MIB = 1024 ** 2;
+const GIB = 1024 ** 3;
 const TIB = 1024 ** 4;
 // The backend itself caches this for 10 minutes (it's not cheap to compute —
 // a full library directory scan plus Sonarr/Radarr calls) — refreshing more
@@ -45,7 +47,15 @@ export class StorageFooterComponent implements OnInit, OnDestroy {
     this.sub?.unsubscribe();
   }
 
-  formatTb(bytes: number): string {
-    return `${(bytes / TIB).toFixed(2)} TB`;
+  /**
+   * Scales the unit to the value. Everything was TB when the only categories
+   * were Movies/TV/Books, which are all multi-terabyte; Photos starts life at
+   * well under a gigabyte and would read as a flat "0.00 TB" forever.
+   */
+  formatSize(bytes: number): string {
+    if (bytes >= TIB) return `${(bytes / TIB).toFixed(2)} TB`;
+    if (bytes >= GIB) return `${(bytes / GIB).toFixed(1)} GB`;
+    if (bytes > 0) return `${Math.max(1, Math.round(bytes / MIB))} MB`;
+    return '—';
   }
 }

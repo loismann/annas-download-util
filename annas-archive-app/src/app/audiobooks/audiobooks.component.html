@@ -102,6 +102,37 @@
       Showing {{ filteredCount }} of {{ totalCount }} audiobooks
     </div>
 
+    <!-- Requested but not yet downloaded. These come from Listenarr, not
+         Audiobookshelf, which has never heard of them — they have no file on
+         disk. Rendered first so anything in flight is seen without scrolling. -->
+    <div
+      class="tiles-grid pending-grid"
+      [class.small]="tileSize === 'small'"
+      [class.large]="tileSize === 'large'"
+      *ngIf="!loading && visiblePendingRequests.length"
+    >
+      <app-media-tile
+        class="tile pending-tile"
+        [class.not-ready]="true"
+        [class.failed]="isRequestFailed(request)"
+        *ngFor="let request of visiblePendingRequests"
+        [title]="request.title"
+        [posterUrl]="placeholderCover"
+        [coverAspect]="audiobookCoverAspect"
+        [showEdit]="false"
+        [showFavorite]="false"
+        [showDelete]="true"
+        deleteTooltip="Hide from my library"
+        [matTooltip]="requestTooltip(request)"
+        (remove)="dismissRequest(request, $event)"
+      >
+        <div class="tile-meta pending-status">{{ requestSubtitle(request) }}</div>
+        <div class="pending-progress" *ngIf="showsProgress(request)">
+          <div class="pending-progress-bar" [style.width.%]="requestProgressPercent(request)"></div>
+        </div>
+      </app-media-tile>
+    </div>
+
     <div
       class="tiles-grid"
       [class.small]="tileSize === 'small'"
@@ -115,6 +146,7 @@
         (click)="openPlayer(item)"
         [title]="titleLabel(item)"
         [posterUrl]="coverUrl(item)"
+        [coverAspect]="audiobookCoverAspect"
         [favorited]="isFavorited(item)"
         [ownerLabel]="item.owners?.length ? item.owners.join(', ') : null"
         [bulkMode]="bulkEditMode"
@@ -128,7 +160,7 @@
       </app-media-tile>
     </div>
 
-    <div *ngIf="!loading && !error && filteredItems.length === 0" class="empty-state">
+    <div *ngIf="!loading && !error && filteredItems.length === 0 && !visiblePendingRequests.length" class="empty-state">
       {{ items.length === 0 ? 'No audiobooks cataloged yet — check that Audiobookshelf has scanned the library.' : 'No audiobooks match the current filters.' }}
     </div>
   </section>

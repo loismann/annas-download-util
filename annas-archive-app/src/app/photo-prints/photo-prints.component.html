@@ -1,0 +1,185 @@
+<div class="print-page">
+  <header class="print-header">
+    <h1>Photo Prints</h1>
+    <p class="subtitle" *ngIf="status?.pickupZip">
+      Pickup at CVS {{ status?.pickupZip }} · you place the final order yourself
+    </p>
+  </header>
+
+  <!-- Immich missing is a setup problem, not a runtime error — say which. -->
+  <div class="notice error" *ngIf="status && !status.configured">
+    <mat-icon>settings</mat-icon>
+    <div>
+      <strong>Photo library not configured.</strong>
+      Set <code>PhotoPrint:Immich:ApiKey</code> and redeploy.
+    </div>
+  </div>
+
+  <div class="notice error" *ngIf="status?.configured && !status?.reachable">
+    <mat-icon>cloud_off</mat-icon>
+    <div><strong>Immich is unreachable.</strong> Check the container is running.</div>
+  </div>
+
+  <div class="notice error" *ngIf="error">
+    <mat-icon>error_outline</mat-icon>
+    <div>{{ error }}</div>
+  </div>
+
+  <ng-container *ngIf="status?.configured && status?.reachable">
+    <!-- ─── Filters ─────────────────────────────────────────────────── -->
+    <section class="filters">
+      <mat-form-field appearance="outline" class="range-field">
+        <mat-label>Taken</mat-label>
+        <mat-select [(ngModel)]="dateRange" (ngModelChange)="onFiltersChanged()">
+          <mat-option *ngFor="let range of ranges" [value]="range.value">{{ range.label }}</mat-option>
+        </mat-select>
+      </mat-form-field>
+
+      <mat-checkbox [(ngModel)]="favoritesOnly" (ngModelChange)="onFiltersChanged()">
+        Favorites only
+      </mat-checkbox>
+
+      <span class="spacer"></span>
+      <span class="photo-count" *ngIf="!loadingPhotos">
+        {{ photos.length }} of {{ totalPhotos }} photos
+      </span>
+    </section>
+
+    <div class="layout">
+      <!-- ─── Photo grid ────────────────────────────────────────────── -->
+      <section class="grid-pane">
+        <div class="loading" *ngIf="loadingPhotos">
+          <mat-spinner diameter="36"></mat-spinner>
+        </div>
+
+        <div class="photo-grid" *ngIf="!loadingPhotos">
+          <button
+            type="button"
+            class="photo"
+            [class.selected]="isSelected(photo)"
+            *ngFor="let photo of photos; trackBy: trackByAssetId"
+            (click)="toggle(photo)"
+            [attr.aria-pressed]="isSelected(photo)"
+            [matTooltip]="photo.fileName"
+          >
+            <img [src]="thumbnailUrl(photo)" [alt]="photo.fileName" loading="lazy" decoding="async" />
+            <span class="check" *ngIf="isSelected(photo)"><mat-icon>check</mat-icon></span>
+            <mat-icon class="fav" *ngIf="photo.isFavorite">favorite</mat-icon>
+          </button>
+        </div>
+
+        <div class="empty-state" *ngIf="!loadingPhotos && !photos.length">
+          No photos in this range. Try widening the date filter.
+        </div>
+
+        <div class="load-more" *ngIf="nextPage !== null && !loadingPhotos">
+          <button mat-stroked-button (click)="loadMore()" [disabled]="loadingMore">
+            {{ loadingMore ? 'Loading…' : 'Load more' }}
+          </button>
+        </div>
+      </section>
+
+      <!-- ─── Basket ────────────────────────────────────────────────── -->
+      <aside class="basket-pane">
+        <div class="basket-head">
+          <h2>Your order</h2>
+          <button mat-button *ngIf="selections.size" (click)="clearAll()">Clear</button>
+        </div>
+
+        <p class="basket-empty" *ngIf="!selections.size">
+          Tap photos to add them.
+        </p>
+
+        <div class="basket-items" *ngIf="selections.size">
+          <div class="basket-item" *ngFor="let selection of selectedList">
+            <img [src]="thumbnailUrl(selection.asset)" [alt]="selection.asset.fileName" loading="lazy" />
+
+            <div class="basket-controls">
+              <div class="basket-name" [matTooltip]="selection.asset.fileName">
+                {{ selection.asset.fileName }}
+              </div>
+
+              <div class="basket-row">
+                <mat-form-field appearance="outline" class="size-field">
+                  <mat-label>Size</mat-label>
+                  <mat-select
+                    [value]="selection.sizeCode"
+                    (valueChange)="setSize(selection, $event)"
+                  >
+                    <mat-option *ngFor="let size of sizes" [value]="size.code">{{ size.name }}</mat-option>
+                  </mat-select>
+                </mat-form-field>
+
+                <mat-form-field appearance="outline" class="qty-field">
+                  <mat-label>Qty</mat-label>
+                  <input
+                    matInput
+                    type="number"
+                    min="1"
+                    max="99"
+                    [value]="selection.quantity"
+                    (change)="setQuantity(selection, $any($event.target).value)"
+                  />
+                </mat-form-field>
+
+                <button
+                  mat-icon-button
+                  class="remove"
+                  (click)="remove(selection)"
+                  matTooltip="Remove"
+                  aria-label="Remove"
+                >
+                  <mat-icon>close</mat-icon>
+                </button>
+              </div>
+
+              <!-- Flagged here rather than at the counter. -->
+              <div class="lowres" *ngIf="looksLowResolution(selection)">
+                <mat-icon>warning</mat-icon>
+                Low resolution for this size — the print may look soft.
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="basket-foot" *ngIf="selections.size">
+          <div class="total-row" [class.over]="overLimit">
+            <span>{{ totalPrints }} print{{ totalPrints === 1 ? '' : 's' }}</span>
+            <span class="limit" *ngIf="overLimit">
+              over the {{ status?.maxPrintsPerRun }} limit
+            </span>
+          </div>
+
+          <button
+            mat-flat-button
+            color="primary"
+            class="prepare-btn"
+            (click)="prepareOrder()"
+            [disabled]="preparing || overLimit"
+          >
+            {{ preparing ? 'Preparing…' : 'Prepare prints' }}
+          </button>
+
+          <p class="hint">
+            Crops and resizes for CVS. Nothing is ordered or paid for at this step.
+          </p>
+        </div>
+
+        <!-- ─── Outcome ─────────────────────────────────────────────── -->
+        <div class="result" *ngIf="result" [class.has-failures]="result.failed > 0">
+          <div class="result-line">
+            <mat-icon>{{ result.failed ? 'warning' : 'check_circle' }}</mat-icon>
+            <strong>{{ result.prepared }} ready</strong>
+            <span *ngIf="result.failed">· {{ result.failed }} failed</span>
+          </div>
+          <p *ngIf="result.belowQualityFloor" class="result-note">
+            {{ result.belowQualityFloor }} below 150 dpi — those will look soft.
+          </p>
+          <p class="result-note">
+            Files are on the server, ready for the CVS step.
+          </p>
+        </div>
+      </aside>
+    </div>
+  </ng-container>
+</div>

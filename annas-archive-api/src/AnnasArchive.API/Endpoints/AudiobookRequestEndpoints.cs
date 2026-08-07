@@ -47,7 +47,18 @@ public static class AudiobookRequestEndpoints
             .RequireAuthorization()
             .RequireRateLimiting("api");
 
+        // The caller's own in-flight requests. Declared before the
+        // {listenarrId:int} routes for readability only — the integer constraint
+        // already keeps "mine" from matching them.
+        app.MapGet("/api/audiobook-requests/mine", HandleListMine)
+            .RequireAuthorization()
+            .RequireRateLimiting("api");
+
         app.MapGet("/api/audiobook-requests/{listenarrId:int}", HandleRequestStatus)
+            .RequireAuthorization()
+            .RequireRateLimiting("api");
+
+        app.MapPost("/api/audiobook-requests/{listenarrId:int}/dismiss", HandleDismiss)
             .RequireAuthorization()
             .RequireRateLimiting("api");
 
@@ -217,7 +228,8 @@ public static class AudiobookRequestEndpoints
 
         try
         {
-            return Results.Ok(await requests.ConfirmAsync(ownerKey, ownerLabel, token, ct));
+            return Results.Ok(await requests.ConfirmAsync(
+                ownerKey, ownerLabel, token, request.AcceptNoReleases, ct));
         }
         catch (AudiobookRequestValidationException ex)
         {
@@ -409,6 +421,64 @@ public static class AudiobookRequestEndpoints
             {
                 error = "The download outcome is uncertain. Check request progress before trying again."
             }, statusCode: StatusCodes.Status504GatewayTimeout);
+        }
+    }
+
+    private static async Task<IResult> HandleListMine(
+        HttpContext context,
+        IListenarrService listenarr,
+        AudiobookRequestService requests,
+        CancellationToken ct)
+    {
+        // An empty list, not a 404. The library page calls this on every load and
+        // a missing Listenarr is not an error there — it just means nothing is
+        // in flight, and the finished library below still renders.
+        if (!listenarr.IsEnabled)
+            return Results.Ok(Array.Empty<AudiobookRequestStatusResponse>());
+
+        var ownerKey = UserHelpers.GetUserIdFromContext(context);
+        if (string.IsNullOrWhiteSpace(ownerKey))
+            return Results.BadRequest(new { error = "A signed-in user is required." });
+
+        try
+        {
+            return Results.Ok(await requests.ListMineAsync(
+                ownerKey, context.User.IsInRole("Admin"), ct));
+        }
+        catch (HttpRequestException ex)
+        {
+            Log.Warning("[Listenarr] Pending request list failed: {Message}", ex.Message);
+            return Results.Json(new { error = "Request progress is temporarily unavailable." },
+                statusCode: StatusCodes.Status503ServiceUnavailable);
+        }
+        catch (TaskCanceledException ex)
+        {
+            Log.Warning("[Listenarr] Pending request list timed out: {Message}", ex.Message);
+            return Results.Json(new { error = "Request progress is temporarily unavailable." },
+                statusCode: StatusCodes.Status504GatewayTimeout);
+        }
+    }
+
+    private static IResult HandleDismiss(
+        int listenarrId,
+        HttpContext context,
+        IListenarrService listenarr,
+        AudiobookRequestService requests)
+    {
+        if (!listenarr.IsEnabled)
+            return Results.NotFound(new { error = "Audiobook requests are not enabled yet." });
+        var ownerKey = UserHelpers.GetUserIdFromContext(context);
+        if (listenarrId <= 0 || string.IsNullOrWhiteSpace(ownerKey))
+            return Results.BadRequest(new { error = "A valid audiobook request is required." });
+
+        try
+        {
+            requests.Dismiss(ownerKey, listenarrId);
+            return Results.Ok(new { listenarrId, dismissed = true });
+        }
+        catch (AudiobookRequestValidationException ex)
+        {
+            return Results.NotFound(new { error = ex.Message });
         }
     }
 

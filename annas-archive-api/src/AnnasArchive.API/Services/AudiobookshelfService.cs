@@ -21,6 +21,13 @@ public interface IAudiobookshelfService
     /// metadata) — the list endpoint above returns a lighter-weight shape.</summary>
     Task<JsonObject?> GetItemAsync(string itemId, CancellationToken ct = default);
 
+    /// <summary>
+    /// Bytes the audiobook library occupies on disk, for the admin storage panel.
+    /// Reads Audiobookshelf's own <c>totalSize</c> rather than summing 992 items
+    /// or scanning a directory the app container cannot even see.
+    /// </summary>
+    Task<long> GetLibrarySizeBytesAsync(CancellationToken ct = default);
+
     /// <summary>Proxies one of the item's audio files, forwarding the
     /// incoming Range header so seeking works — Audiobookshelf does the
     /// actual byte-range slicing, this just relays its response.</summary>
@@ -83,6 +90,17 @@ public class AudiobookshelfService : IAudiobookshelfService
         response.EnsureSuccessStatusCode();
         var doc = await response.Content.ReadFromJsonAsync<JsonObject>(cancellationToken: ct);
         return doc?["results"] as JsonArray ?? [];
+    }
+
+    public async Task<long> GetLibrarySizeBytesAsync(CancellationToken ct = default)
+    {
+        var libraryId = await ResolveLibraryIdAsync(ct);
+        if (libraryId is null) return 0;
+
+        var response = await _http.GetAsync($"/api/libraries/{libraryId}/stats", ct);
+        response.EnsureSuccessStatusCode();
+        var doc = await response.Content.ReadFromJsonAsync<JsonObject>(cancellationToken: ct);
+        return (long?)doc?["totalSize"] ?? 0;
     }
 
     public async Task<JsonObject?> GetItemAsync(string itemId, CancellationToken ct = default)

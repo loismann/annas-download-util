@@ -44,7 +44,7 @@ Return ONLY valid JSON with no markdown or extra text.";
         CancellationToken cancellationToken)
     {
         if (request is null || string.IsNullOrWhiteSpace(request.Query))
-            return Results.BadRequest(new { error = "query is required." });
+            return ApiResponse.BadRequest("query is required.");
 
         if (TokenLimitHelpers.CheckTokenLimit(cfg, tokenUsage, context) is { } overLimit) return overLimit;
 
@@ -59,7 +59,7 @@ Return ONLY valid JSON with no markdown or extra text.";
 
             var root = Parse(outcome.Text, aiResponseParser);
             if (root is null)
-                return Results.BadRequest(new { error = "AI response could not be parsed. Try again or simplify the query." });
+                return ApiResponse.BadRequest("AI response could not be parsed. Try again or simplify the query.");
 
             using (root)
             {
@@ -67,10 +67,7 @@ Return ONLY valid JSON with no markdown or extra text.";
                     && flag.ValueKind == JsonValueKind.True;
                 if (!isMediaQuery)
                 {
-                    return Results.BadRequest(new
-                    {
-                        error = OptionalString(root.RootElement, "message") ?? "Query is not about TV shows or movies."
-                    });
+                    return ApiResponse.BadRequest(OptionalString(root.RootElement, "message") ?? "Query is not about TV shows or movies.");
                 }
 
                 var summary = OptionalString(root.RootElement, "summary");

@@ -60,7 +60,7 @@ public static class VocabEndpoints
         if (request is null || string.IsNullOrWhiteSpace(request.Term))
         {
             Log.Information("❌ [POST /api/vocab/known] Invalid request: term is null or empty");
-            return Results.BadRequest(new { error = "term is required." });
+            return ApiResponse.BadRequest("term is required.");
         }
 
         var knownWords = AiContentCache.LoadKnownWordsWithBooks();
@@ -109,7 +109,7 @@ public static class VocabEndpoints
     private static IResult HandleRemoveKnownWord(string term)
     {
         if (string.IsNullOrWhiteSpace(term))
-            return Results.BadRequest(new { error = "term is required." });
+            return ApiResponse.BadRequest("term is required.");
 
         var knownWords = AiContentCache.LoadKnownWordsWithBooks();
         var normalized = term.Trim().ToLowerInvariant();
@@ -154,7 +154,7 @@ public static class VocabEndpoints
         if (request is null || string.IsNullOrWhiteSpace(request.Term))
         {
             Log.Information("❌ [POST /api/vocab/study] Invalid request: term is null or empty");
-            return Results.BadRequest(new { error = "term is required." });
+            return ApiResponse.BadRequest("term is required.");
         }
 
         var studyWords = AiContentCache.LoadStudyWordsWithBooks();
@@ -211,7 +211,7 @@ public static class VocabEndpoints
     private static IResult HandleRemoveStudyWord(string term)
     {
         if (string.IsNullOrWhiteSpace(term))
-            return Results.BadRequest(new { error = "term is required." });
+            return ApiResponse.BadRequest("term is required.");
 
         var studyWords = AiContentCache.LoadStudyWordsWithBooks();
         var normalized = term.Trim().ToLowerInvariant();
@@ -233,7 +233,7 @@ public static class VocabEndpoints
 
         if (string.IsNullOrWhiteSpace(bookId))
         {
-            return Results.BadRequest(new { error = "bookId is required." });
+            return ApiResponse.BadRequest("bookId is required.");
         }
 
         int knownRemoved = 0;

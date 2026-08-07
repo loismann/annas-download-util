@@ -45,7 +45,7 @@ public static class AiCharacterEndpoints
         IAiChatCompletion chat)
     {
         if (string.IsNullOrWhiteSpace(request.DropboxPath))
-            return Results.BadRequest(new { error = "DropboxPath is required." });
+            return ApiResponse.BadRequest("DropboxPath is required.");
 
         Log.Information("📊 Generating character graph for {Book}...", request.BookTitle ?? request.DropboxPath);
 
@@ -56,7 +56,7 @@ public static class AiCharacterEndpoints
         if (chapterSummaries.Count == 0 && sectionSummaries.Count == 0)
         {
             Log.Information("⚠️ No summaries found. Generate some chapter or section summaries first.");
-            return Results.BadRequest(new { error = "No summaries found. Please generate chapter or section summaries as you read the book first." });
+            return ApiResponse.BadRequest("No summaries found. Please generate chapter or section summaries as you read the book first.");
         }
 
         Log.Information("📚 Found {ChapterSummariesCount} chapter summaries and {SectionSummariesCount} section summaries to analyze", chapterSummaries.Count, sectionSummaries.Count);
@@ -199,11 +199,11 @@ Create a character relationship network graph based ONLY on information in these
     private static IResult HandleGetGraph([FromQuery] string? dropboxPath)
     {
         if (string.IsNullOrWhiteSpace(dropboxPath))
-            return Results.BadRequest(new { error = "Query parameter 'dropboxPath' is required." });
+            return ApiResponse.BadRequest("Query parameter 'dropboxPath' is required.");
 
         var graph = AiContentCache.LoadCharacterGraph(dropboxPath);
         if (graph == null)
-            return Results.NotFound(new { error = "No character graph found. Generate one first." });
+            return ApiResponse.NotFound("No character graph found. Generate one first.");
 
         // Check if the graph is stale (has fewer summaries than currently exist)
         var currentChapterSummaries = AiContentCache.GetAllChapterSummariesAsStrings(dropboxPath);
@@ -231,11 +231,11 @@ Create a character relationship network graph based ONLY on information in these
         IAiChatCompletion chat)
     {
         if (string.IsNullOrWhiteSpace(request.DropboxPath) || string.IsNullOrWhiteSpace(request.NewContent))
-            return Results.BadRequest(new { error = "DropboxPath and NewContent are required." });
+            return ApiResponse.BadRequest("DropboxPath and NewContent are required.");
 
         var existingGraph = AiContentCache.LoadCharacterGraph(request.DropboxPath);
         if (existingGraph == null)
-            return Results.BadRequest(new { error = "No existing character graph. Generate one first." });
+            return ApiResponse.BadRequest("No existing character graph. Generate one first.");
 
         Log.Information("🔄 Updating character graph with new content...");
 

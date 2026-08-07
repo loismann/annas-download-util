@@ -1,3 +1,4 @@
+using AnnasArchive.API.Helpers;
 using System.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
 using Serilog;
@@ -85,7 +86,7 @@ public static class GamingEndpoints
         IConfiguration cfg)
     {
         if (action != 1 && action != 2)
-            return Results.BadRequest(new { error = "Invalid action. Use 1 to wake PC, 2 to sleep PC." });
+            return ApiResponse.BadRequest("Invalid action. Use 1 to wake PC, 2 to sleep PC.");
 
         var synologyHost = cfg["Gaming:SynologyHost"];
         var synologyUser = cfg["Gaming:SynologyUser"];

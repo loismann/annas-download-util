@@ -113,12 +113,12 @@ public static class AudiobookLibraryEndpoints
     private static async Task<IResult> HandleGetItem([FromRoute] string id, IAudiobookshelfService abs, IMediaMetadataService metadata)
     {
         var safeId = SanitizeId(id);
-        if (safeId is null) return Results.BadRequest(new { error = "Invalid id." });
+        if (safeId is null) return ApiResponse.BadRequest("Invalid id.");
 
         try
         {
             var item = await abs.GetItemAsync(safeId);
-            if (item is null) return Results.NotFound(new { error = "Audiobook not found." });
+            if (item is null) return ApiResponse.NotFound("Audiobook not found.");
 
             var items = new JsonArray(item.DeepClone());
             ApplyMetadata(items, metadata);
@@ -134,7 +134,7 @@ public static class AudiobookLibraryEndpoints
     private static async Task<IResult> HandleDelete([FromRoute] string id, IAudiobookshelfService abs, IMediaMetadataService metadata)
     {
         var safeId = SanitizeId(id);
-        if (safeId is null) return Results.BadRequest(new { error = "Invalid id." });
+        if (safeId is null) return ApiResponse.BadRequest("Invalid id.");
 
         try
         {
@@ -164,14 +164,14 @@ public static class AudiobookLibraryEndpoints
     private static IResult HandleSetMetadata([FromRoute] string id, [FromBody] SetMediaMetadataRequest request, IMediaMetadataService metadata)
     {
         var safeId = SanitizeId(id);
-        if (safeId is null) return Results.BadRequest(new { error = "Invalid id." });
+        if (safeId is null) return ApiResponse.BadRequest("Invalid id.");
 
         var titleValidation = ValidationHelpers.ValidateStringLength(request.Title, "title", 500);
         if (titleValidation != null) return titleValidation;
 
         var validated = ValidateMetadata(request);
         if (validated is null)
-            return Results.BadRequest(new { error = "owners may only contain Paul, Mom, Dad" });
+            return ApiResponse.BadRequest("owners may only contain Paul, Mom, Dad");
 
         try
         {
@@ -191,13 +191,13 @@ public static class AudiobookLibraryEndpoints
         [FromRoute] string id, [FromBody] SetMediaFavoriteRequest request, HttpContext context, IMediaMetadataService metadata)
     {
         var safeId = SanitizeId(id);
-        if (safeId is null) return Results.BadRequest(new { error = "Invalid id." });
+        if (safeId is null) return ApiResponse.BadRequest("Invalid id.");
 
         // Who's favoriting is resolved from the authenticated session, not a client-supplied
         // value — same reasoning as the ebook/TV/movie favorite endpoints.
         var owner = LibraryHelpers.ResolveUserDisplayName(context);
         if (owner == null)
-            return Results.BadRequest(new { error = "Could not resolve the logged-in user." });
+            return ApiResponse.BadRequest("Could not resolve the logged-in user.");
 
         try
         {
@@ -216,12 +216,12 @@ public static class AudiobookLibraryEndpoints
         [FromRoute] string id, [FromBody] SetAudiobookProgressRequest request, HttpContext context, IMediaMetadataService metadata)
     {
         var safeId = SanitizeId(id);
-        if (safeId is null) return Results.BadRequest(new { error = "Invalid id." });
-        if (request.PositionSeconds < 0) return Results.BadRequest(new { error = "positionSeconds must be >= 0" });
+        if (safeId is null) return ApiResponse.BadRequest("Invalid id.");
+        if (request.PositionSeconds < 0) return ApiResponse.BadRequest("positionSeconds must be >= 0");
 
         var owner = LibraryHelpers.ResolveUserDisplayName(context);
         if (owner == null)
-            return Results.BadRequest(new { error = "Could not resolve the logged-in user." });
+            return ApiResponse.BadRequest("Could not resolve the logged-in user.");
 
         try
         {
@@ -297,14 +297,14 @@ public static class AudiobookLibraryEndpoints
         IMediaMetadataService metadata)
     {
         var safeId = SanitizeId(id);
-        if (safeId is null) return Results.BadRequest(new { error = "Invalid id." });
+        if (safeId is null) return ApiResponse.BadRequest("Invalid id.");
 
         if (request is null || string.IsNullOrWhiteSpace(request.CoverUrl))
-            return Results.BadRequest(new { error = "coverUrl is required." });
+            return ApiResponse.BadRequest("coverUrl is required.");
 
         if (!Uri.TryCreate(request.CoverUrl, UriKind.Absolute, out var coverUri) ||
             (coverUri.Scheme != Uri.UriSchemeHttp && coverUri.Scheme != Uri.UriSchemeHttps))
-            return Results.BadRequest(new { error = "coverUrl must be an http(s) URL." });
+            return ApiResponse.BadRequest("coverUrl must be an http(s) URL.");
 
         byte[] coverBytes;
         try
@@ -328,10 +328,10 @@ public static class AudiobookLibraryEndpoints
         }
 
         if (!CoverLookupHelpers.TryGetImageSize(coverBytes, out var width, out var height))
-            return Results.BadRequest(new { error = "Unsupported cover image format." });
+            return ApiResponse.BadRequest("Unsupported cover image format.");
 
         if (!CoverLookupHelpers.IsCoverSizeValid(width, height))
-            return Results.BadRequest(new { error = "Cover image must be at least 100x100 pixels." });
+            return ApiResponse.BadRequest("Cover image must be at least 100x100 pixels.");
 
         var coverExt = CoverLookupHelpers.DetermineImageExtension(coverUri.ToString(), coverBytes);
         var coverDir = StoragePaths.AudiobookCoverOverrideRoot();

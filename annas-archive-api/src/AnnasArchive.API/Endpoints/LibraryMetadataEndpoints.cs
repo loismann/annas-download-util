@@ -93,18 +93,18 @@ public static class LibraryMetadataEndpoints
     {
         var safeFileName = SafeName(fileName);
         if (safeFileName == null)
-            return Results.BadRequest(new { error = "Invalid fileName." });
+            return ApiResponse.BadRequest("Invalid fileName.");
 
         // Who's favoriting is resolved from the authenticated session, not a client-supplied
         // value — the same reasoning as the Kindle-send tag fix: never trust the client to say
         // who they are when that identity determines what gets written.
         var owner = LibraryHelpers.ResolveUserDisplayName(context);
         if (owner == null)
-            return Results.BadRequest(new { error = "Could not resolve the logged-in user." });
+            return ApiResponse.BadRequest("Could not resolve the logged-in user.");
 
         var libraryRoot = LibraryHelpers.ResolveLibraryRoot();
         if (!BookExists(libraryRoot, safeFileName))
-            return Results.NotFound(new { error = "Book not found." });
+            return ApiResponse.NotFound("Book not found.");
 
         try
         {
@@ -144,11 +144,11 @@ public static class LibraryMetadataEndpoints
     {
         var safeFileName = SafeName(fileName);
         if (safeFileName == null)
-            return Results.BadRequest(new { error = "Invalid fileName." });
+            return ApiResponse.BadRequest("Invalid fileName.");
 
         var libraryRoot = LibraryHelpers.ResolveLibraryRoot();
         if (!BookExists(libraryRoot, safeFileName))
-            return Results.NotFound(new { error = "Book not found." });
+            return ApiResponse.NotFound("Book not found.");
 
         try
         {
@@ -187,11 +187,11 @@ public static class LibraryMetadataEndpoints
     {
         var safeFileName = SafeName(fileName);
         if (safeFileName == null)
-            return Results.BadRequest(new { error = "Invalid fileName." });
+            return ApiResponse.BadRequest("Invalid fileName.");
 
         var libraryRoot = LibraryHelpers.ResolveLibraryRoot();
         if (!BookExists(libraryRoot, safeFileName))
-            return Results.NotFound(new { error = "Book not found." });
+            return ApiResponse.NotFound("Book not found.");
 
         try
         {
@@ -240,14 +240,14 @@ public static class LibraryMetadataEndpoints
     {
         var safeFileName = SafeName(fileName);
         if (safeFileName == null)
-            return Results.BadRequest(new { error = "Invalid fileName." });
+            return ApiResponse.BadRequest("Invalid fileName.");
 
         if (requireEpub && !string.Equals(Path.GetExtension(safeFileName), ".epub", StringComparison.OrdinalIgnoreCase))
-            return Results.BadRequest(new { error = "Reader supports EPUB files only." });
+            return ApiResponse.BadRequest("Reader supports EPUB files only.");
 
         var libraryRoot = LibraryHelpers.ResolveLibraryRoot();
         if (!BookExists(libraryRoot, safeFileName))
-            return Results.NotFound(new { error = "Book not found." });
+            return ApiResponse.NotFound("Book not found.");
 
         try
         {
@@ -320,13 +320,13 @@ public static class LibraryMetadataEndpoints
     {
         var safeFileName = SafeName(fileName);
         if (safeFileName == null)
-            return Results.BadRequest(new { error = "Invalid fileName." });
+            return ApiResponse.BadRequest("Invalid fileName.");
 
         var libraryRoot = LibraryHelpers.ResolveLibraryRoot();
         var metaPath = Path.Combine(libraryRoot, safeFileName + ".meta.json");
 
         if (!File.Exists(metaPath))
-            return Results.NotFound(new { error = "Metadata file not found." });
+            return ApiResponse.NotFound("Metadata file not found.");
 
         try
         {
@@ -334,7 +334,7 @@ public static class LibraryMetadataEndpoints
             var meta = await TryReadMetaAsync(metaPath);
 
             if (meta == null)
-                return Results.BadRequest(new { error = "Invalid metadata file." });
+                return ApiResponse.BadRequest("Invalid metadata file.");
 
             // If we already have a description, return it
             if (!string.IsNullOrWhiteSpace(meta.Description))

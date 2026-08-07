@@ -92,9 +92,7 @@ public static class LibGenEndpoints
         if (!validation.IsValidSearchQuery(name))
         {
             Log.Information("[API LibGen Search] Validation failed for query: '{Name}'", name);
-            return Results.BadRequest(new {
-                error = "Query parameter 'name' is required and must be between 1 and 500 characters."
-            });
+            return ApiResponse.BadRequest("Query parameter 'name' is required and must be between 1 and 500 characters.");
         }
 
         var searchLimit = cfg.GetValue<int>("Anna:SearchLimit", 25);
@@ -142,7 +140,7 @@ public static class LibGenEndpoints
         var validationError = SendToTargetHelpers.ValidateSendParametersExtended(
             md5, title, coverUrl, authors, fileSize, description: null, validation);
         if (validationError != null)
-            return Results.BadRequest(new { error = validationError });
+            return ApiResponse.BadRequest(validationError);
 
         var userName = GetUserName(context);
         Log.Information("[LibGen] Downloading book {Md5} for user {UserName}...", md5, userName);
@@ -195,7 +193,7 @@ public static class LibGenEndpoints
         var validationError = SendToTargetHelpers.ValidateSendParametersExtended(
             md5, title, coverUrl, authors, fileSize, description, validation);
         if (validationError != null)
-            return Results.BadRequest(new { error = validationError });
+            return ApiResponse.BadRequest(validationError);
 
         var userName = GetUserName(context);
         var userTag = LibraryHelpers.ResolveUserLibraryTag(context);

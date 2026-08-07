@@ -67,7 +67,7 @@ public static class AiBookSearchEndpoints
         IAiChatCompletion chat)
     {
         if (request is null || string.IsNullOrWhiteSpace(request.BookTitle))
-            return Results.BadRequest(new { error = "BookTitle is required." });
+            return ApiResponse.BadRequest("BookTitle is required.");
 
         try
         {
@@ -115,7 +115,7 @@ public static class AiBookSearchEndpoints
         IRelatedBooksEnricher enricher)
     {
         if (request is null || string.IsNullOrWhiteSpace(request.BookTitle) || string.IsNullOrWhiteSpace(request.Author))
-            return Results.BadRequest(new { error = "BookTitle and Author are required." });
+            return ApiResponse.BadRequest("BookTitle and Author are required.");
 
         if (TokenLimitHelpers.CheckTokenLimit(cfg, tokenUsage, context) is { } overLimit) return overLimit;
 
@@ -159,7 +159,7 @@ public static class AiBookSearchEndpoints
         CancellationToken cancellationToken)
     {
         if (request is null || string.IsNullOrWhiteSpace(request.Query))
-            return Results.BadRequest(new { error = "query is required." });
+            return ApiResponse.BadRequest("query is required.");
 
         if (TokenLimitHelpers.CheckTokenLimit(cfg, tokenUsage, context) is { } overLimit) return overLimit;
 
@@ -183,10 +183,10 @@ public static class AiBookSearchEndpoints
 
             var payload = BookDiscoveryResponses.BookSearch(outcome.Text, aiResponseParser);
             if (payload is null)
-                return Results.BadRequest(new { error = "AI response could not be parsed. Try again or simplify the query." });
+                return ApiResponse.BadRequest("AI response could not be parsed. Try again or simplify the query.");
 
             if (!payload.IsBookQuery)
-                return Results.BadRequest(new { error = payload.Message ?? "Query is not about books." });
+                return ApiResponse.BadRequest(payload.Message ?? "Query is not about books.");
 
             // An empty list from a query the model itself called a book query is
             // a refusal, not an answer — retry once on a different model. Not
@@ -244,7 +244,7 @@ public static class AiBookSearchEndpoints
         IAiChatCompletion chat)
     {
         if (request is null || request.Books is null || request.Books.Count == 0)
-            return Results.BadRequest(new { error = "Books list is required." });
+            return ApiResponse.BadRequest("Books list is required.");
 
         if (TokenLimitHelpers.CheckTokenLimit(cfg, tokenUsage, context) is { } overLimit) return overLimit;
 
@@ -277,7 +277,7 @@ public static class AiBookSearchEndpoints
         IAiChatCompletion chat)
     {
         if (request is null || request.Books is null || request.Books.Count == 0)
-            return Results.BadRequest(new { error = "Books list is required." });
+            return ApiResponse.BadRequest("Books list is required.");
 
         // Nothing to group — skip the OpenAI round-trip for the trivial case.
         if (request.Books.Count == 1)

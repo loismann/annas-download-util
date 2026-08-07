@@ -110,19 +110,19 @@ public static class AudiobookRequestEndpoints
         CancellationToken ct)
     {
         if (!listenarr.IsEnabled)
-            return Results.NotFound(new { error = "Audiobook discovery is not enabled yet." });
+            return ApiResponse.NotFound("Audiobook discovery is not enabled yet.");
 
         var query = term?.Trim();
         if (string.IsNullOrWhiteSpace(query) || query.Length < 2)
-            return Results.BadRequest(new { error = "term must contain at least 2 characters." });
+            return ApiResponse.BadRequest("term must contain at least 2 characters.");
         if (query.Length > 200)
-            return Results.BadRequest(new { error = "term must be 200 characters or fewer." });
+            return ApiResponse.BadRequest("term must be 200 characters or fewer.");
 
         var requestedRegion = region?.Trim().ToLowerInvariant();
         if (!string.IsNullOrWhiteSpace(requestedRegion) && !SupportedRegions.Contains(requestedRegion))
-            return Results.BadRequest(new { error = "Unsupported Audible region." });
+            return ApiResponse.BadRequest("Unsupported Audible region.");
         if (language?.Length > 50)
-            return Results.BadRequest(new { error = "language must be 50 characters or fewer." });
+            return ApiResponse.BadRequest("language must be 50 characters or fewer.");
 
         try
         {
@@ -150,14 +150,14 @@ public static class AudiobookRequestEndpoints
         CancellationToken ct)
     {
         if (!listenarr.IsEnabled)
-            return Results.NotFound(new { error = "Audiobook requests are not enabled yet." });
+            return ApiResponse.NotFound("Audiobook requests are not enabled yet.");
 
         var asin = request.Asin?.Trim().ToUpperInvariant();
         var region = request.Region?.Trim().ToLowerInvariant() ?? "us";
         if (string.IsNullOrWhiteSpace(asin) || !AsinPattern.IsMatch(asin))
-            return Results.BadRequest(new { error = "A valid 10-character ASIN is required." });
+            return ApiResponse.BadRequest("A valid 10-character ASIN is required.");
         if (!SupportedRegions.Contains(region))
-            return Results.BadRequest(new { error = "Unsupported Audible region." });
+            return ApiResponse.BadRequest("Unsupported Audible region.");
 
         var ownerKey = UserHelpers.GetUserIdFromContext(context);
         if (string.IsNullOrWhiteSpace(ownerKey))
@@ -166,7 +166,7 @@ public static class AudiobookRequestEndpoints
         var narrator = Preference(request.NarratorPreference);
         var preferredLanguage = Preference(request.LanguagePreference);
         if (narrator is { Length: > 200 } || preferredLanguage is { Length: > 50 })
-            return Results.BadRequest(new { error = "That preference is too long." });
+            return ApiResponse.BadRequest("That preference is too long.");
 
         try
         {
@@ -175,7 +175,7 @@ public static class AudiobookRequestEndpoints
         }
         catch (AudiobookRequestValidationException ex)
         {
-            return Results.BadRequest(new { error = ex.Message });
+            return ApiResponse.BadRequest(ex.Message);
         }
         catch (HttpRequestException ex)
         {
@@ -199,10 +199,10 @@ public static class AudiobookRequestEndpoints
         CancellationToken ct)
     {
         if (!listenarr.IsEnabled)
-            return Results.NotFound(new { error = "Audiobook requests are not enabled yet." });
+            return ApiResponse.NotFound("Audiobook requests are not enabled yet.");
         var token = request.PreviewToken?.Trim().ToUpperInvariant();
         if (string.IsNullOrWhiteSpace(token) || !OpaqueTokenPattern.IsMatch(token))
-            return Results.BadRequest(new { error = "A valid request preview token is required." });
+            return ApiResponse.BadRequest("A valid request preview token is required.");
         var ownerKey = UserHelpers.GetUserIdFromContext(context);
         if (string.IsNullOrWhiteSpace(ownerKey))
             return Results.Unauthorized();
@@ -215,7 +215,7 @@ public static class AudiobookRequestEndpoints
         }
         catch (AudiobookRequestValidationException ex)
         {
-            return Results.BadRequest(new { error = ex.Message });
+            return ApiResponse.BadRequest(ex.Message);
         }
         catch (HttpRequestException ex)
         {
@@ -243,14 +243,14 @@ public static class AudiobookRequestEndpoints
         CancellationToken ct)
     {
         if (!listenarr.IsEnabled)
-            return Results.NotFound(new { error = "Audiobook requests are not enabled yet." });
+            return ApiResponse.NotFound("Audiobook requests are not enabled yet.");
 
         var seriesAsin = request.SeriesAsin?.Trim().ToUpperInvariant();
         var region = request.Region?.Trim().ToLowerInvariant() ?? "us";
         if (string.IsNullOrWhiteSpace(seriesAsin) || !AsinPattern.IsMatch(seriesAsin))
-            return Results.BadRequest(new { error = "A valid 10-character series ASIN is required." });
+            return ApiResponse.BadRequest("A valid 10-character series ASIN is required.");
         if (!SupportedRegions.Contains(region))
-            return Results.BadRequest(new { error = "Unsupported Audible region." });
+            return ApiResponse.BadRequest("Unsupported Audible region.");
 
         var ownerKey = UserHelpers.GetUserIdFromContext(context);
         if (string.IsNullOrWhiteSpace(ownerKey))
@@ -262,7 +262,7 @@ public static class AudiobookRequestEndpoints
         }
         catch (AudiobookRequestValidationException ex)
         {
-            return Results.BadRequest(new { error = ex.Message });
+            return ApiResponse.BadRequest(ex.Message);
         }
         catch (HttpRequestException ex)
         {
@@ -286,17 +286,17 @@ public static class AudiobookRequestEndpoints
         CancellationToken ct)
     {
         if (!listenarr.IsEnabled)
-            return Results.NotFound(new { error = "Audiobook requests are not enabled yet." });
+            return ApiResponse.NotFound("Audiobook requests are not enabled yet.");
 
         var token = request.PreviewToken?.Trim().ToUpperInvariant();
         if (string.IsNullOrWhiteSpace(token) || !OpaqueTokenPattern.IsMatch(token))
-            return Results.BadRequest(new { error = "A valid series preview token is required." });
+            return ApiResponse.BadRequest("A valid series preview token is required.");
 
         var asins = request.Asins ?? [];
         if (asins.Count == 0)
-            return Results.BadRequest(new { error = "Select at least one book to request." });
+            return ApiResponse.BadRequest("Select at least one book to request.");
         if (asins.Any(asin => !AsinPattern.IsMatch(asin?.Trim().ToUpperInvariant() ?? string.Empty)))
-            return Results.BadRequest(new { error = "That selection contains an invalid ASIN." });
+            return ApiResponse.BadRequest("That selection contains an invalid ASIN.");
 
         var ownerKey = UserHelpers.GetUserIdFromContext(context);
         if (string.IsNullOrWhiteSpace(ownerKey))
@@ -311,7 +311,7 @@ public static class AudiobookRequestEndpoints
         }
         catch (AudiobookRequestValidationException ex)
         {
-            return Results.BadRequest(new { error = ex.Message });
+            return ApiResponse.BadRequest(ex.Message);
         }
         catch (HttpRequestException ex)
         {
@@ -334,9 +334,9 @@ public static class AudiobookRequestEndpoints
         CancellationToken ct)
     {
         if (!listenarr.IsEnabled)
-            return Results.NotFound(new { error = "Audiobook requests are not enabled yet." });
+            return ApiResponse.NotFound("Audiobook requests are not enabled yet.");
         if (listenarrId <= 0)
-            return Results.BadRequest(new { error = "A valid audiobook request is required." });
+            return ApiResponse.BadRequest("A valid audiobook request is required.");
         var ownerKey = UserHelpers.GetUserIdFromContext(context);
         if (string.IsNullOrWhiteSpace(ownerKey))
             return Results.Unauthorized();
@@ -347,7 +347,7 @@ public static class AudiobookRequestEndpoints
         }
         catch (AudiobookRequestValidationException ex)
         {
-            return Results.NotFound(new { error = ex.Message });
+            return ApiResponse.NotFound(ex.Message);
         }
         catch (HttpRequestException ex)
         {
@@ -372,10 +372,10 @@ public static class AudiobookRequestEndpoints
         CancellationToken ct)
     {
         if (!listenarr.IsEnabled)
-            return Results.NotFound(new { error = "Audiobook requests are not enabled yet." });
+            return ApiResponse.NotFound("Audiobook requests are not enabled yet.");
         var token = selectionToken.Trim().ToUpperInvariant();
         if (listenarrId <= 0 || !OpaqueTokenPattern.IsMatch(token))
-            return Results.BadRequest(new { error = "A valid release choice is required." });
+            return ApiResponse.BadRequest("A valid release choice is required.");
         var ownerKey = UserHelpers.GetUserIdFromContext(context);
         if (string.IsNullOrWhiteSpace(ownerKey))
             return Results.Unauthorized();
@@ -386,7 +386,7 @@ public static class AudiobookRequestEndpoints
         }
         catch (AudiobookRequestValidationException ex)
         {
-            return Results.BadRequest(new { error = ex.Message });
+            return ApiResponse.BadRequest(ex.Message);
         }
         catch (HttpRequestException ex)
         {
@@ -420,7 +420,7 @@ public static class AudiobookRequestEndpoints
 
         var ownerKey = UserHelpers.GetUserIdFromContext(context);
         if (string.IsNullOrWhiteSpace(ownerKey))
-            return Results.BadRequest(new { error = "A signed-in user is required." });
+            return ApiResponse.BadRequest("A signed-in user is required.");
 
         try
         {
@@ -448,10 +448,10 @@ public static class AudiobookRequestEndpoints
         AudiobookRequestService requests)
     {
         if (!listenarr.IsEnabled)
-            return Results.NotFound(new { error = "Audiobook requests are not enabled yet." });
+            return ApiResponse.NotFound("Audiobook requests are not enabled yet.");
         var ownerKey = UserHelpers.GetUserIdFromContext(context);
         if (listenarrId <= 0 || string.IsNullOrWhiteSpace(ownerKey))
-            return Results.BadRequest(new { error = "A valid audiobook request is required." });
+            return ApiResponse.BadRequest("A valid audiobook request is required.");
 
         try
         {
@@ -460,7 +460,7 @@ public static class AudiobookRequestEndpoints
         }
         catch (AudiobookRequestValidationException ex)
         {
-            return Results.NotFound(new { error = ex.Message });
+            return ApiResponse.NotFound(ex.Message);
         }
     }
 
@@ -472,10 +472,10 @@ public static class AudiobookRequestEndpoints
         CancellationToken ct)
     {
         if (!listenarr.IsEnabled)
-            return Results.NotFound(new { error = "Audiobook requests are not enabled yet." });
+            return ApiResponse.NotFound("Audiobook requests are not enabled yet.");
         var ownerKey = UserHelpers.GetUserIdFromContext(context);
         if (listenarrId <= 0 || string.IsNullOrWhiteSpace(ownerKey))
-            return Results.BadRequest(new { error = "A valid audiobook request is required." });
+            return ApiResponse.BadRequest("A valid audiobook request is required.");
         try
         {
             return Results.Ok(await requests.GetStatusAsync(
@@ -483,7 +483,7 @@ public static class AudiobookRequestEndpoints
         }
         catch (AudiobookRequestValidationException ex)
         {
-            return Results.NotFound(new { error = ex.Message });
+            return ApiResponse.NotFound(ex.Message);
         }
         catch (HttpRequestException ex)
         {
@@ -502,10 +502,10 @@ public static class AudiobookRequestEndpoints
         CancellationToken ct)
     {
         if (!listenarr.IsEnabled)
-            return Results.NotFound(new { error = "Audiobook requests are not enabled yet." });
+            return ApiResponse.NotFound("Audiobook requests are not enabled yet.");
         var ownerKey = UserHelpers.GetUserIdFromContext(context);
         if (listenarrId <= 0 || string.IsNullOrWhiteSpace(ownerKey))
-            return Results.BadRequest(new { error = "A valid audiobook request is required." });
+            return ApiResponse.BadRequest("A valid audiobook request is required.");
         try
         {
             await requests.CancelAsync(
@@ -518,7 +518,7 @@ public static class AudiobookRequestEndpoints
         }
         catch (AudiobookRequestValidationException ex)
         {
-            return Results.BadRequest(new { error = ex.Message });
+            return ApiResponse.BadRequest(ex.Message);
         }
         catch (HttpRequestException ex)
         {
@@ -536,10 +536,10 @@ public static class AudiobookRequestEndpoints
         CancellationToken ct)
     {
         if (!listenarr.IsEnabled)
-            return Results.NotFound(new { error = "Audiobook requests are not enabled yet." });
+            return ApiResponse.NotFound("Audiobook requests are not enabled yet.");
         var ownerKey = UserHelpers.GetUserIdFromContext(context);
         if (listenarrId <= 0 || string.IsNullOrWhiteSpace(ownerKey))
-            return Results.BadRequest(new { error = "A valid audiobook request is required." });
+            return ApiResponse.BadRequest("A valid audiobook request is required.");
         try
         {
             return Results.Ok(await requests.RemoveRequestAsync(
@@ -551,7 +551,7 @@ public static class AudiobookRequestEndpoints
         }
         catch (AudiobookRequestValidationException ex)
         {
-            return Results.BadRequest(new { error = ex.Message });
+            return ApiResponse.BadRequest(ex.Message);
         }
         catch (HttpRequestException ex)
         {
@@ -569,10 +569,10 @@ public static class AudiobookRequestEndpoints
         CancellationToken ct)
     {
         if (!listenarr.IsEnabled)
-            return Results.NotFound(new { error = "Audiobook requests are not enabled yet." });
+            return ApiResponse.NotFound("Audiobook requests are not enabled yet.");
         var ownerKey = UserHelpers.GetUserIdFromContext(context);
         if (listenarrId <= 0 || string.IsNullOrWhiteSpace(ownerKey))
-            return Results.BadRequest(new { error = "A valid audiobook request is required." });
+            return ApiResponse.BadRequest("A valid audiobook request is required.");
         try
         {
             await requests.RetryImportAsync(
@@ -585,7 +585,7 @@ public static class AudiobookRequestEndpoints
         }
         catch (AudiobookRequestValidationException ex)
         {
-            return Results.BadRequest(new { error = ex.Message });
+            return ApiResponse.BadRequest(ex.Message);
         }
         catch (HttpRequestException ex)
         {

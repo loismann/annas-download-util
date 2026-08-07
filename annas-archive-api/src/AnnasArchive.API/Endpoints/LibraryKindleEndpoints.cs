@@ -39,7 +39,7 @@ public static class LibraryKindleEndpoints
         Log.Information("[library-send] Request fileName='{fileName}' target='{target}' toDropbox={toDropbox}", fileName, target, toDropbox);
 
         if (string.IsNullOrWhiteSpace(fileName))
-            return Results.BadRequest(new { error = "fileName is required." });
+            return ApiResponse.BadRequest("fileName is required.");
 
         // Validate fileName length and title length
         var fileNameValidation = ValidationHelpers.ValidateStringLength(fileName, "fileName", 500);
@@ -51,19 +51,19 @@ public static class LibraryKindleEndpoints
             return titleValidation;
 
         if (string.IsNullOrWhiteSpace(target) || (target != "dad" && target != "mom"))
-            return Results.BadRequest(new { error = "Invalid target. Must be 'dad' or 'mom'." });
+            return ApiResponse.BadRequest("Invalid target. Must be 'dad' or 'mom'.");
 
         var safeFileName = Path.GetFileName(fileName);
         if (!string.Equals(fileName, safeFileName, StringComparison.Ordinal))
-            return Results.BadRequest(new { error = "Invalid fileName." });
+            return ApiResponse.BadRequest("Invalid fileName.");
 
         if (!string.Equals(Path.GetExtension(safeFileName), ".epub", StringComparison.OrdinalIgnoreCase))
-            return Results.BadRequest(new { error = "Reader supports EPUB files only." });
+            return ApiResponse.BadRequest("Reader supports EPUB files only.");
 
         var libraryRoot = LibraryHelpers.ResolveLibraryRoot();
         var fullPath = Path.Combine(libraryRoot, safeFileName);
         if (!File.Exists(fullPath))
-            return Results.NotFound(new { error = "File not found." });
+            return ApiResponse.NotFound("File not found.");
 
         var kindleEmail = target == "dad"
             ? cfg["Email:DadsKindleEmail"] ?? throw new InvalidOperationException("Email:DadsKindleEmail not configured")

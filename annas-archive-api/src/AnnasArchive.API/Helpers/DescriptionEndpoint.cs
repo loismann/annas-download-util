@@ -1,3 +1,4 @@
+using AnnasArchive.API.Helpers;
 using Serilog;
 
 namespace AnnasArchive.API.Helpers;
@@ -47,7 +48,7 @@ public static class DescriptionEndpoint
         Func<string, string?, Task<string?>> lookup)
     {
         if (string.IsNullOrWhiteSpace(title))
-            return Results.BadRequest(new { error = "title is required." });
+            return ApiResponse.BadRequest("title is required.");
 
         Log.Information("{Source} description lookup: title='{Title}', author='{Author}'", source, title, author);
 

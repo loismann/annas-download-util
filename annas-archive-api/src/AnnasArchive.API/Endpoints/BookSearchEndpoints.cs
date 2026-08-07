@@ -79,9 +79,7 @@ public static class BookSearchEndpoints
         [FromQuery] int page = 1)
     {
         if (!validation.IsValidSearchQuery(name))
-            return Results.BadRequest(new {
-                error = "Query parameter 'name' is required and must be between 1 and 500 characters."
-            });
+            return ApiResponse.BadRequest("Query parameter 'name' is required and must be between 1 and 500 characters.");
 
         try
         {
@@ -151,7 +149,7 @@ public static class BookSearchEndpoints
         ICoverLookupService coverLookupService)
     {
         if (string.IsNullOrWhiteSpace(title))
-            return Results.BadRequest(new { error = "title is required." });
+            return ApiResponse.BadRequest("title is required.");
 
         Log.Information("Cover lookup: title='{Title}', author='{Author}'", title, author);
         var result = await coverLookupService.GetCoverAsync(title, author);
@@ -170,7 +168,7 @@ public static class BookSearchEndpoints
         IValidationService validation)
     {
         if (!validation.IsValidMd5(md5))
-            return Results.BadRequest(new { error = "Invalid MD5 format. Must be 32 hexadecimal characters." });
+            return ApiResponse.BadRequest("Invalid MD5 format. Must be 32 hexadecimal characters.");
 
         var coverUrl = await annaService.GetCoverByMd5Async(md5);
         return Results.Ok(new { coverUrl });

@@ -1,3 +1,4 @@
+using AnnasArchive.API.Helpers;
 using AnnasArchive.API.Services;
 using Microsoft.AspNetCore.Mvc;
 using Serilog;
@@ -41,7 +42,7 @@ public static class VpnSettingsEndpoints
         CancellationToken cancellationToken)
     {
         if (request is null || string.IsNullOrWhiteSpace(request.Region))
-            return Results.BadRequest(new { error = "region is required." });
+            return ApiResponse.BadRequest("region is required.");
 
         try
         {

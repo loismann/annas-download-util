@@ -38,13 +38,13 @@ public static class VideoLibraryMetadataEndpoints
     {
         var safeFileName = Path.GetFileName(fileName);
         if (!string.Equals(fileName, safeFileName, StringComparison.Ordinal))
-            return Results.BadRequest(new { error = "Invalid fileName." });
+            return ApiResponse.BadRequest("Invalid fileName.");
 
         var videoRoot = VideoHelpers.ResolveVideoRoot();
         var metaPath = Path.Combine(videoRoot, safeFileName + ".meta.json");
 
         if (!File.Exists(metaPath))
-            return Results.NotFound(new { error = "Metadata file not found." });
+            return ApiResponse.NotFound("Metadata file not found.");
 
         try
         {
@@ -53,7 +53,7 @@ public static class VideoLibraryMetadataEndpoints
             var meta = JsonSerializer.Deserialize<VideoMeta>(json, jsonOptions);
 
             if (meta == null)
-                return Results.BadRequest(new { error = "Invalid metadata file." });
+                return ApiResponse.BadRequest("Invalid metadata file.");
 
             // Update fields
             meta.PrimaryGenre = update.PrimaryGenre;
@@ -90,13 +90,13 @@ public static class VideoLibraryMetadataEndpoints
     {
         var safeFileName = Path.GetFileName(fileName);
         if (!string.Equals(fileName, safeFileName, StringComparison.Ordinal))
-            return Results.BadRequest(new { error = "Invalid fileName." });
+            return ApiResponse.BadRequest("Invalid fileName.");
 
         var videoRoot = VideoHelpers.ResolveVideoRoot();
         var metaPath = Path.Combine(videoRoot, safeFileName + ".meta.json");
 
         if (!File.Exists(metaPath))
-            return Results.NotFound(new { error = "Metadata file not found." });
+            return ApiResponse.NotFound("Metadata file not found.");
 
         try
         {
@@ -105,7 +105,7 @@ public static class VideoLibraryMetadataEndpoints
             var meta = JsonSerializer.Deserialize<VideoMeta>(json, jsonOptions);
 
             if (meta == null)
-                return Results.BadRequest(new { error = "Invalid metadata file." });
+                return ApiResponse.BadRequest("Invalid metadata file.");
 
             if (update.PersonalRating.HasValue)
             {

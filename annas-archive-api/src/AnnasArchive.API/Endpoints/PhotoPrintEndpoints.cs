@@ -151,7 +151,7 @@ public static class PhotoPrintEndpoints
         Owned(context, ownerKey =>
         {
             var run = store.GetRun(ownerKey, runId);
-            if (run is null) return Results.NotFound(new { error = "That print run was not found." });
+            if (run is null) return ApiResponse.NotFound("That print run was not found.");
 
             var items = store.ListItems(ownerKey, runId);
             return Results.Ok(new
@@ -178,7 +178,7 @@ public static class PhotoPrintEndpoints
         Owned(context, ownerKey =>
         {
             if (string.IsNullOrWhiteSpace(request.AssetId))
-                return Results.BadRequest(new { error = "A photo is required." });
+                return ApiResponse.BadRequest("A photo is required.");
 
             runs.AddItem(
                 ownerKey, runId, request.AssetId,
@@ -201,7 +201,7 @@ public static class PhotoPrintEndpoints
     {
         var ownerKey = UserHelpers.GetUserIdFromContext(context);
         if (string.IsNullOrWhiteSpace(ownerKey))
-            return Results.BadRequest(new { error = "A signed-in user is required." });
+            return ApiResponse.BadRequest("A signed-in user is required.");
 
         try
         {
@@ -216,11 +216,11 @@ public static class PhotoPrintEndpoints
         }
         catch (PhotoPrintValidationException ex)
         {
-            return Results.BadRequest(new { error = ex.Message });
+            return ApiResponse.BadRequest(ex.Message);
         }
         catch (KeyNotFoundException)
         {
-            return Results.NotFound(new { error = "That print run was not found." });
+            return ApiResponse.NotFound("That print run was not found.");
         }
     }
 
@@ -243,7 +243,7 @@ public static class PhotoPrintEndpoints
     {
         var ownerKey = UserHelpers.GetUserIdFromContext(context);
         if (string.IsNullOrWhiteSpace(ownerKey))
-            return Results.BadRequest(new { error = "A signed-in user is required." });
+            return ApiResponse.BadRequest("A signed-in user is required.");
 
         try
         {
@@ -251,13 +251,13 @@ public static class PhotoPrintEndpoints
         }
         catch (PhotoPrintValidationException ex)
         {
-            return Results.BadRequest(new { error = ex.Message });
+            return ApiResponse.BadRequest(ex.Message);
         }
         catch (KeyNotFoundException)
         {
             // Covers "not yours" as well as "does not exist" — the store cannot
             // distinguish them, and neither should the response.
-            return Results.NotFound(new { error = "That print run was not found." });
+            return ApiResponse.NotFound("That print run was not found.");
         }
     }
 

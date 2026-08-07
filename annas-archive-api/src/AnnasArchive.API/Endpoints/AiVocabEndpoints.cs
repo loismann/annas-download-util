@@ -42,7 +42,7 @@ public static class AiVocabEndpoints
         IAiResponsesCompletion ai)
     {
         if (request is null || string.IsNullOrWhiteSpace(request.Term))
-            return Results.BadRequest(new { error = "Term is required." });
+            return ApiResponse.BadRequest("Term is required.");
 
         var tokenLimitResult = TokenLimitHelpers.CheckTokenLimit(cfg, tokenUsage, context);
         if (tokenLimitResult is not null) return tokenLimitResult;
@@ -113,11 +113,11 @@ Relevant passage/context: {request.Context ?? "(none)"}";
     private static IResult HandleSaveSectionVocab([FromBody] SaveSectionVocabRequest request)
     {
         if (request is null || string.IsNullOrWhiteSpace(request.DropboxPath))
-            return Results.BadRequest(new { error = "dropboxPath is required." });
+            return ApiResponse.BadRequest("dropboxPath is required.");
         if (request.ChapterId < 0 || request.SectionIndex < 0)
-            return Results.BadRequest(new { error = "chapterId and sectionIndex must be zero or positive." });
+            return ApiResponse.BadRequest("chapterId and sectionIndex must be zero or positive.");
         if (request.Vocab == null)
-            return Results.BadRequest(new { error = "vocab is required." });
+            return ApiResponse.BadRequest("vocab is required.");
 
         Log.Information("💾 Saving {RequestVocabCount} vocab cards for chapter {RequestChapterId}, section {RequestSectionIndex}", request.Vocab.Count, request.ChapterId, request.SectionIndex);
 

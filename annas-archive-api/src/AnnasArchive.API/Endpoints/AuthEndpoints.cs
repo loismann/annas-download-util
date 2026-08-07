@@ -33,7 +33,7 @@ public static class AuthEndpoints
     private static IResult HandleLogin(CodeLoginRequest request, IConfiguration cfg)
     {
         if (string.IsNullOrEmpty(request.Code))
-            return Results.BadRequest(new { error = "Access code required" });
+            return ApiResponse.BadRequest("Access code required");
 
         // Get access codes from config
         var codesSection = cfg.GetSection("Auth:AccessCodes");

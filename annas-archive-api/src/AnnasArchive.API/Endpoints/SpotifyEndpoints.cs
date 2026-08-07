@@ -142,7 +142,7 @@ public static class SpotifyEndpoints
         CancellationToken token)
     {
         if (string.IsNullOrWhiteSpace(q))
-            return Results.BadRequest(new { error = "Search query 'q' is required." });
+            return ApiResponse.BadRequest("Search query 'q' is required.");
 
         try
         {
@@ -221,7 +221,7 @@ public static class SpotifyEndpoints
         ISpotifyKnownMusicService knownMusic)
     {
         if (string.IsNullOrWhiteSpace(request?.Name))
-            return Results.BadRequest(new { error = "A track or artist name is required." });
+            return ApiResponse.BadRequest("A track or artist name is required.");
         return Results.Ok(knownMusic.ApplyOverride(request));
     }
 
@@ -230,7 +230,7 @@ public static class SpotifyEndpoints
         ISpotifyDiscoveryService discovery) =>
         discovery.Get(draftId) is { } draft
             ? Results.Ok(draft)
-            : Results.NotFound(new { error = "That discovery draft was not found." });
+            : ApiResponse.NotFound("That discovery draft was not found.");
 
     private static IResult HandleListDiscoveryDrafts(ISpotifyDiscoveryService discovery) =>
         Results.Ok(discovery.ListSaved());
@@ -246,7 +246,7 @@ public static class SpotifyEndpoints
         }
         catch (KeyNotFoundException)
         {
-            return Results.NotFound(new { error = "That discovery draft was not found." });
+            return ApiResponse.NotFound("That discovery draft was not found.");
         }
         // No ArgumentException arm: nothing follows this catch, so it reaches
         // UseGlobalExceptionHandler, which answers 400 with the same message plus
@@ -262,7 +262,7 @@ public static class SpotifyEndpoints
         ISpotifyDiscoveryService discovery) =>
         discovery.Delete(draftId)
             ? Results.NoContent()
-            : Results.NotFound(new { error = "That discovery draft was not found." });
+            : ApiResponse.NotFound("That discovery draft was not found.");
 
     private static async Task<IResult> HandleGetPlaylist(
         string playlistId,
@@ -274,7 +274,7 @@ public static class SpotifyEndpoints
         {
             var playlist = await spotifyService.GetPlaylistAsync(playlistId, token);
             return playlist == null
-                ? Results.NotFound(new { error = "That playlist could not be found." })
+                ? ApiResponse.NotFound("That playlist could not be found.")
                 : Results.Ok(playlist);
         }
         catch (Exception ex)
@@ -312,7 +312,7 @@ public static class SpotifyEndpoints
         CancellationToken token)
     {
         if (string.IsNullOrWhiteSpace(request?.Message))
-            return Results.BadRequest(new { error = "Message is required." });
+            return ApiResponse.BadRequest("Message is required.");
 
         try
         {
@@ -340,8 +340,16 @@ public static class SpotifyEndpoints
 
             // A refusal is a normal answer, not a server error: the user asked for
             // something that is bounded, unreadable, or already true.
+            //
+            // The fallback is not dead code insurance. `Refused` is `Plan is null`
+            // and `Refusal` is independently nullable, so the type permits a
+            // reasonless refusal even though `Result.Refuse` is the only thing that
+            // builds one. Sending `{ error: null }` would fail the frontend
+            // interceptor's `typeof body.error === 'string'` check and surface as a
+            // bare "Http failure response … 400" — the same silent swallow the quiz
+            // endpoint's `{ errors }` was causing.
             return result.Refused
-                ? Results.BadRequest(new { error = result.Refusal })
+                ? ApiResponse.BadRequest(result.Refusal ?? "The request was refused.")
                 : Results.Ok(SpotifyPlanService.ToDto(result.Plan!));
         }
         catch (Exception ex)
@@ -359,7 +367,7 @@ public static class SpotifyEndpoints
         Guid planId, ISpotifyPlanService plans, ISpotifyCurrentUser currentUser) =>
         plans.Get(currentUser.GetRequiredOwnerKey(), planId) is { } plan
             ? Results.Ok(plan)
-            : Results.NotFound(new { error = "That plan does not exist." });
+            : ApiResponse.NotFound("That plan does not exist.");
 
     private static async Task<IResult> HandleConfirmPlan(
         Guid planId,
@@ -383,7 +391,7 @@ public static class SpotifyEndpoints
         {
             // Expired, already-changed, or missing high-impact acknowledgement. The
             // user needs the sentence, not a stack trace.
-            return Results.Conflict(new { error = ex.Message });
+            return ApiResponse.Conflict(ex.Message);
         }
         catch (Exception ex)
         {
@@ -399,11 +407,11 @@ public static class SpotifyEndpoints
         {
             return plans.Cancel(currentUser.GetRequiredOwnerKey(), planId) is { } plan
                 ? Results.Ok(plan)
-                : Results.NotFound(new { error = "That plan does not exist." });
+                : ApiResponse.NotFound("That plan does not exist.");
         }
         catch (InvalidOperationException ex)
         {
-            return Results.Conflict(new { error = ex.Message });
+            return ApiResponse.Conflict(ex.Message);
         }
     }
 
@@ -429,7 +437,7 @@ public static class SpotifyEndpoints
         }
         catch (InvalidOperationException ex)
         {
-            return Results.Conflict(new { error = ex.Message });
+            return ApiResponse.Conflict(ex.Message);
         }
         catch (Exception ex)
         {
@@ -454,7 +462,7 @@ public static class SpotifyEndpoints
         }
         catch (InvalidOperationException ex)
         {
-            return Results.Conflict(new { error = ex.Message });
+            return ApiResponse.Conflict(ex.Message);
         }
         catch (Exception ex)
         {
@@ -584,7 +592,7 @@ public static class SpotifyEndpoints
         CancellationToken token)
     {
         if (string.IsNullOrWhiteSpace(request?.DeviceId))
-            return Results.BadRequest(new { error = "A device is required." });
+            return ApiResponse.BadRequest("A device is required.");
 
         try
         {

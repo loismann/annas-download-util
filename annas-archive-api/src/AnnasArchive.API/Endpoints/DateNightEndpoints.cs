@@ -263,7 +263,7 @@ public static class DateNightEndpoints
     {
         var person = LibraryHelpers.ResolveUserDisplayName(context);
         if (person is null)
-            return Results.BadRequest(new { error = "Could not identify the current user." });
+            return ApiResponse.BadRequest("Could not identify the current user.");
 
         availability.MarkAnnouncementSeen(person);
         return Results.Ok(new { dismissed = true });
@@ -548,7 +548,7 @@ public static class DateNightEndpoints
         // UseGlobalExceptionHandler — same 400, plus errorCode and details.
         catch (InvalidOperationException ex)
         {
-            return Results.Conflict(new { error = ex.Message });
+            return ApiResponse.Conflict(ex.Message);
         }
     }
 
@@ -557,11 +557,11 @@ public static class DateNightEndpoints
         // No test-cycle equivalent — skip is a real, household-wide concept.
         var (person, isTest) = ResolveDateNightContext(context);
         if (!IsAudience(person)) return NotAudienceResult;
-        if (isTest) return Results.Conflict(new { error = "Skip is disabled in the isolated dry run." });
+        if (isTest) return ApiResponse.Conflict("Skip is disabled in the isolated dry run.");
         if (!cycles.IsLive()) return FeatureDarkResult;
 
         if (request.Scope is not ("week" or "month"))
-            return Results.BadRequest(new { error = "scope must be \"week\" or \"month\"." });
+            return ApiResponse.BadRequest("scope must be \"week\" or \"month\".");
 
         cycles.SetSkip(person!, request.Scope);
         return Results.Ok(new { skipped = true });
@@ -592,7 +592,7 @@ public static class DateNightEndpoints
         // UseGlobalExceptionHandler — same 400, plus errorCode and details.
         catch (InvalidOperationException ex)
         {
-            return Results.Conflict(new { error = ex.Message });
+            return ApiResponse.Conflict(ex.Message);
         }
     }
 
@@ -609,7 +609,7 @@ public static class DateNightEndpoints
         }
         catch (InvalidOperationException ex)
         {
-            return Results.Conflict(new { error = ex.Message });
+            return ApiResponse.Conflict(ex.Message);
         }
     }
 
@@ -625,7 +625,7 @@ public static class DateNightEndpoints
         }
         catch (InvalidOperationException ex)
         {
-            return Results.Conflict(new { error = ex.Message });
+            return ApiResponse.Conflict(ex.Message);
         }
     }
 
@@ -641,7 +641,7 @@ public static class DateNightEndpoints
         }
         catch (InvalidOperationException ex)
         {
-            return Results.Conflict(new { error = ex.Message });
+            return ApiResponse.Conflict(ex.Message);
         }
     }
 
@@ -661,7 +661,7 @@ public static class DateNightEndpoints
         }
         catch (InvalidOperationException ex)
         {
-            return Results.Conflict(new { error = ex.Message });
+            return ApiResponse.Conflict(ex.Message);
         }
     }
 
@@ -689,7 +689,7 @@ public static class DateNightEndpoints
         }
         catch (InvalidOperationException ex)
         {
-            return Results.Conflict(new { error = ex.Message });
+            return ApiResponse.Conflict(ex.Message);
         }
     }
 
@@ -700,9 +700,9 @@ public static class DateNightEndpoints
 
         var cycle = isTest ? await cycles.GetCurrentTestCycleAsync() : await cycles.GetCurrentCycleAsync();
         if (cycle?.Schedule?.Status != "Locked" || cycle.ResolvedMovieId is not int movieId)
-            return Results.Conflict(new { error = "Nothing locked in to mark watched." });
+            return ApiResponse.Conflict("Nothing locked in to mark watched.");
         if (cycle.Schedule.PlaybackStartedUtc is null)
-            return Results.Conflict(new { error = "Start the movie before marking it watched." });
+            return ApiResponse.Conflict("Start the movie before marking it watched.");
 
         await cycles.MarkWatchedAsync(movieId, isTest);
         return Results.Ok(new { watched = true });
@@ -712,7 +712,7 @@ public static class DateNightEndpoints
     {
         var cycle = await cycles.ForceIssueAsync();
         return cycle is null
-            ? Results.Conflict(new { error = "No eligible movies to draw from." })
+            ? ApiResponse.Conflict("No eligible movies to draw from.")
             : Results.Ok(new { issued = true, cycle.CycleId });
     }
 
@@ -720,7 +720,7 @@ public static class DateNightEndpoints
     {
         var cycle = await cycles.ResolveNowAsync();
         return cycle is null
-            ? Results.Conflict(new { error = "No cycle to resolve." })
+            ? ApiResponse.Conflict("No cycle to resolve.")
             : Results.Ok(new { cycle.Status, cycle.ResolvedMovieId });
     }
 
@@ -763,7 +763,7 @@ public static class DateNightEndpoints
         }
         catch (InvalidOperationException ex)
         {
-            return Results.Conflict(new { error = ex.Message });
+            return ApiResponse.Conflict(ex.Message);
         }
     }
 
@@ -777,7 +777,7 @@ public static class DateNightEndpoints
     {
         // IsScanning, not the persisted flag — see DateNightAvailabilityService.
         if (availability.IsScanning)
-            return Results.Conflict(new { error = "A scan is already running." });
+            return ApiResponse.Conflict("A scan is already running.");
 
         // Detached on purpose: nothing is waiting on this, and the request that
         // started it will be long gone before it finishes.

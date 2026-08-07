@@ -60,10 +60,10 @@ public static class AiSummarizeEndpoints
         IAiResponsesCompletion ai)
     {
         if (request is null || string.IsNullOrWhiteSpace(request.Text))
-            return Results.BadRequest(new { error = "Text is required." });
+            return ApiResponse.BadRequest("Text is required.");
 
         if (!validation.IsValidTextLength(request.Text))
-            return Results.BadRequest(new { error = "Text too long. Maximum 1,000,000 characters." });
+            return ApiResponse.BadRequest("Text too long. Maximum 1,000,000 characters.");
 
         var tokenLimitResult = TokenLimitHelpers.CheckTokenLimit(cfg, tokenUsage, context);
         if (tokenLimitResult is not null) return tokenLimitResult;
@@ -393,7 +393,7 @@ Then add a 'Definitions:' section. BE EXTREMELY THOROUGH with definitions - incl
         [FromQuery] int chapterId)
     {
         if (string.IsNullOrWhiteSpace(dropboxPath) || chapterId < 0)
-            return Results.BadRequest(new { error = "dropboxPath and valid chapterId are required." });
+            return ApiResponse.BadRequest("dropboxPath and valid chapterId are required.");
 
         var cached = AiContentCache.LoadChapterSummary<Dictionary<string, object>>(dropboxPath, chapterId);
         if (cached == null)
@@ -407,7 +407,7 @@ Then add a 'Definitions:' section. BE EXTREMELY THOROUGH with definitions - incl
         [FromQuery] int chapterId)
     {
         if (string.IsNullOrWhiteSpace(dropboxPath) || chapterId < 0)
-            return Results.BadRequest(new { error = "dropboxPath and valid chapterId are required." });
+            return ApiResponse.BadRequest("dropboxPath and valid chapterId are required.");
 
         AiContentCache.DeleteChapterSummary(dropboxPath, chapterId);
         return Results.Ok(new { message = "Cached summary deleted." });
@@ -425,7 +425,7 @@ Then add a 'Definitions:' section. BE EXTREMELY THOROUGH with definitions - incl
         IModelSelectionService modelSelection)
     {
         if (request is null || string.IsNullOrWhiteSpace(request.DropboxPath) || request.ChapterId < 0)
-            return Results.BadRequest(new { error = "dropboxPath and valid chapterId are required." });
+            return ApiResponse.BadRequest("dropboxPath and valid chapterId are required.");
 
         if (request.ForceRegenerate)
         {
@@ -549,7 +549,7 @@ Chapter summary:
         [FromQuery] int chapterId)
     {
         if (string.IsNullOrWhiteSpace(dropboxPath) || chapterId < 0)
-            return Results.BadRequest(new { error = "dropboxPath and valid chapterId are required." });
+            return ApiResponse.BadRequest("dropboxPath and valid chapterId are required.");
 
         var cached = AiContentCache.LoadUltraChapterSummary<Dictionary<string, object>>(dropboxPath, chapterId);
         if (cached == null)
@@ -561,7 +561,7 @@ Chapter summary:
     private static IResult HandleGetBookSummaries([FromQuery] string? dropboxPath)
     {
         if (string.IsNullOrWhiteSpace(dropboxPath))
-            return Results.BadRequest(new { error = "dropboxPath is required." });
+            return ApiResponse.BadRequest("dropboxPath is required.");
 
         var summaries = AiContentCache.LoadAllChapterSummaries(dropboxPath);
         return Results.Ok(summaries);

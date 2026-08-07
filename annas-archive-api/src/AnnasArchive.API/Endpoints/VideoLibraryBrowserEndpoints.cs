@@ -79,18 +79,18 @@ public static class VideoLibraryBrowserEndpoints
     private static IResult HandleServeThumbnail([FromRoute] string path)
     {
         if (string.IsNullOrWhiteSpace(path))
-            return Results.BadRequest(new { error = "Path is required." });
+            return ApiResponse.BadRequest("Path is required.");
 
         // Sanitize path to prevent directory traversal
         var safePath = Path.GetFileName(path);
         if (!string.Equals(path, safePath, StringComparison.Ordinal))
-            return Results.BadRequest(new { error = "Invalid path." });
+            return ApiResponse.BadRequest("Invalid path.");
 
         var videoRoot = VideoHelpers.ResolveVideoRoot();
         var fullPath = Path.Combine(videoRoot, safePath);
 
         if (!File.Exists(fullPath))
-            return Results.NotFound(new { error = "Thumbnail not found." });
+            return ApiResponse.NotFound("Thumbnail not found.");
 
         var ext = Path.GetExtension(fullPath).ToLowerInvariant();
         var contentType = ext switch
@@ -109,7 +109,7 @@ public static class VideoLibraryBrowserEndpoints
     {
         var safeFileName = Path.GetFileName(fileName);
         if (!string.Equals(fileName, safeFileName, StringComparison.Ordinal))
-            return Results.BadRequest(new { error = "Invalid fileName." });
+            return ApiResponse.BadRequest("Invalid fileName.");
 
         var videoRoot = VideoHelpers.ResolveVideoRoot();
         var videoPath = Path.Combine(videoRoot, safeFileName);
@@ -123,7 +123,7 @@ public static class VideoLibraryBrowserEndpoints
             .FirstOrDefault(File.Exists);
 
         if (!File.Exists(videoPath) && !File.Exists(metaPath) && thumbnailPath == null)
-            return Results.NotFound(new { error = "Video not found." });
+            return ApiResponse.NotFound("Video not found.");
 
         try
         {

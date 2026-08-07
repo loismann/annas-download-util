@@ -54,15 +54,15 @@ public static class LibraryReaderEndpoints
         HttpContext context)
     {
         if (string.IsNullOrWhiteSpace(fileName))
-            return Results.BadRequest(new { error = "fileName is required." });
+            return ApiResponse.BadRequest("fileName is required.");
 
         var libraryRoot = LibraryHelpers.ResolveLibraryRoot();
         var safeFileName = Path.GetFileName(fileName);
         if (!string.Equals(Path.GetExtension(safeFileName), ".epub", StringComparison.OrdinalIgnoreCase))
-            return Results.BadRequest(new { error = "Reader supports EPUB files only." });
+            return ApiResponse.BadRequest("Reader supports EPUB files only.");
         var fullPath = Path.Combine(libraryRoot, safeFileName);
         if (!File.Exists(fullPath))
-            return Results.NotFound(new { error = "Book file not found." });
+            return ApiResponse.NotFound("Book file not found.");
 
         var readerKey = ResolveReaderKey(safeFileName, AiContentCache.GetExistingSummaryKeys());
         var (index, cacheDir) = await LibraryEpubCache.GetOrBuildChapterIndexQuickAsync(fullPath, readerKey);
@@ -92,21 +92,21 @@ public static class LibraryReaderEndpoints
         HttpContext context)
     {
         if (string.IsNullOrWhiteSpace(fileName))
-            return Results.BadRequest(new { error = "fileName is required." });
+            return ApiResponse.BadRequest("fileName is required.");
 
         var libraryRoot = LibraryHelpers.ResolveLibraryRoot();
         var safeFileName = Path.GetFileName(fileName);
         if (!string.Equals(Path.GetExtension(safeFileName), ".epub", StringComparison.OrdinalIgnoreCase))
-            return Results.BadRequest(new { error = "Reader supports EPUB files only." });
+            return ApiResponse.BadRequest("Reader supports EPUB files only.");
         var fullPath = Path.Combine(libraryRoot, safeFileName);
         if (!File.Exists(fullPath))
-            return Results.NotFound(new { error = "Book file not found." });
+            return ApiResponse.NotFound("Book file not found.");
 
         var readerKey = ResolveReaderKey(safeFileName, AiContentCache.GetExistingSummaryKeys());
         var (index, cacheDir) = await LibraryEpubCache.GetOrBuildChapterIndexQuickAsync(fullPath, readerKey);
         var chapter = index.Chapters.FirstOrDefault(ch => ch.Id == chapterId);
         if (chapter == null)
-            return Results.NotFound(new { error = "Chapter not found." });
+            return ApiResponse.NotFound("Chapter not found.");
 
         var contentPath = Path.Combine(cacheDir, chapter.FileName);
         if (!File.Exists(contentPath))
@@ -114,7 +114,7 @@ public static class LibraryReaderEndpoints
             _ = LibraryEpubCache.EnsureCacheBuildAsync(fullPath, readerKey, cacheDir);
             var fallback = await LibraryEpubCache.ReadChapterContentCachedAsync(fullPath, chapterId);
             if (fallback == null)
-                return Results.NotFound(new { error = "Chapter content not ready yet." });
+                return ApiResponse.NotFound("Chapter content not ready yet.");
 
             try
             {
@@ -143,15 +143,15 @@ public static class LibraryReaderEndpoints
     private static async Task<IResult> HandleGetReaderStatus([FromQuery] string? fileName)
     {
         if (string.IsNullOrWhiteSpace(fileName))
-            return Results.BadRequest(new { error = "fileName is required." });
+            return ApiResponse.BadRequest("fileName is required.");
 
         var libraryRoot = LibraryHelpers.ResolveLibraryRoot();
         var safeFileName = Path.GetFileName(fileName);
         if (!string.Equals(Path.GetExtension(safeFileName), ".epub", StringComparison.OrdinalIgnoreCase))
-            return Results.BadRequest(new { error = "Reader supports EPUB files only." });
+            return ApiResponse.BadRequest("Reader supports EPUB files only.");
         var fullPath = Path.Combine(libraryRoot, safeFileName);
         if (!File.Exists(fullPath))
-            return Results.NotFound(new { error = "Book file not found." });
+            return ApiResponse.NotFound("Book file not found.");
 
         var readerKey = ResolveReaderKey(safeFileName, AiContentCache.GetExistingSummaryKeys());
         var status = await LibraryEpubCache.GetCacheStatusAsync(fullPath, readerKey);
@@ -161,15 +161,15 @@ public static class LibraryReaderEndpoints
     private static async Task<IResult> HandleStartReaderIndexing([FromBody] LibraryReaderIndexRequest request)
     {
         if (request is null || string.IsNullOrWhiteSpace(request.FileName))
-            return Results.BadRequest(new { error = "fileName is required." });
+            return ApiResponse.BadRequest("fileName is required.");
 
         var fileName = Path.GetFileName(request.FileName);
         if (!string.Equals(Path.GetExtension(fileName), ".epub", StringComparison.OrdinalIgnoreCase))
-            return Results.BadRequest(new { error = "Reader supports EPUB files only." });
+            return ApiResponse.BadRequest("Reader supports EPUB files only.");
         var libraryRoot = LibraryHelpers.ResolveLibraryRoot();
         var fullPath = Path.Combine(libraryRoot, fileName);
         if (!File.Exists(fullPath))
-            return Results.NotFound(new { error = "Book file not found." });
+            return ApiResponse.NotFound("Book file not found.");
 
         var readerKey = ResolveReaderKey(fileName, AiContentCache.GetExistingSummaryKeys());
         var (_, cacheDir) = await LibraryEpubCache.GetOrBuildChapterIndexAsync(fullPath, readerKey);
@@ -180,11 +180,11 @@ public static class LibraryReaderEndpoints
     private static IResult HandleDeleteReaderIndex([FromBody] LibraryReaderIndexRequest request)
     {
         if (request is null || string.IsNullOrWhiteSpace(request.FileName))
-            return Results.BadRequest(new { error = "fileName is required." });
+            return ApiResponse.BadRequest("fileName is required.");
 
         var fileName = Path.GetFileName(request.FileName);
         if (!string.Equals(Path.GetExtension(fileName), ".epub", StringComparison.OrdinalIgnoreCase))
-            return Results.BadRequest(new { error = "Reader supports EPUB files only." });
+            return ApiResponse.BadRequest("Reader supports EPUB files only.");
         var readerKey = ResolveReaderKey(fileName, AiContentCache.GetExistingSummaryKeys());
 
         // Delete EPUB chapter cache
@@ -204,19 +204,19 @@ public static class LibraryReaderEndpoints
         [FromQuery] string? q)
     {
         if (string.IsNullOrWhiteSpace(fileName))
-            return Results.BadRequest(new { error = "fileName is required." });
+            return ApiResponse.BadRequest("fileName is required.");
 
         var libraryRoot = LibraryHelpers.ResolveLibraryRoot();
         var safeFileName = Path.GetFileName(fileName);
         if (!string.Equals(Path.GetExtension(safeFileName), ".epub", StringComparison.OrdinalIgnoreCase))
-            return Results.BadRequest(new { error = "Reader supports EPUB files only." });
+            return ApiResponse.BadRequest("Reader supports EPUB files only.");
         var fullPath = Path.Combine(libraryRoot, safeFileName);
         if (!File.Exists(fullPath))
-            return Results.NotFound(new { error = "Book file not found." });
+            return ApiResponse.NotFound("Book file not found.");
 
         var normalizedQuery = (query ?? q)?.Trim();
         if (string.IsNullOrWhiteSpace(normalizedQuery) || normalizedQuery.Length < 10)
-            return Results.BadRequest(new { error = "Search query must be at least 10 characters." });
+            return ApiResponse.BadRequest("Search query must be at least 10 characters.");
 
         // Validate query max length
         var queryValidation = ValidationHelpers.ValidateStringLength(normalizedQuery, "query", 500);

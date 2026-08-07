@@ -49,16 +49,13 @@ public static class AiAudiobookSearchEndpoints
         CancellationToken cancellationToken)
     {
         if (!listenarr.IsEnabled)
-            return Results.NotFound(new { error = "Audiobook discovery is not enabled yet." });
+            return ApiResponse.NotFound("Audiobook discovery is not enabled yet.");
 
         var query = request?.Query?.Trim();
         if (string.IsNullOrWhiteSpace(query))
-            return Results.BadRequest(new { error = "query is required." });
+            return ApiResponse.BadRequest("query is required.");
         if (query.Length > AudiobookDiscoveryPrompt.MaxQueryLength)
-            return Results.BadRequest(new
-            {
-                error = $"query must be {AudiobookDiscoveryPrompt.MaxQueryLength} characters or fewer."
-            });
+            return ApiResponse.BadRequest($"query must be {AudiobookDiscoveryPrompt.MaxQueryLength} characters or fewer.");
 
         var tokenLimitResult = TokenLimitHelpers.CheckTokenLimit(cfg, tokenUsage, context);
         if (tokenLimitResult is not null) return tokenLimitResult;
@@ -76,10 +73,7 @@ public static class AiAudiobookSearchEndpoints
 
             if (!completion.IsAudiobookQuery)
             {
-                return Results.BadRequest(new
-                {
-                    error = completion.Message ?? "That query is not about audiobooks. Try naming a genre, author, or mood."
-                });
+                return ApiResponse.BadRequest(completion.Message ?? "That query is not about audiobooks. Try naming a genre, author, or mood.");
             }
 
             var candidates = completion.Candidates;
@@ -103,10 +97,7 @@ public static class AiAudiobookSearchEndpoints
 
             if (candidates.Count == 0)
             {
-                return Results.BadRequest(new
-                {
-                    error = "The assistant returned no audiobook suggestions. Try rephrasing the request."
-                });
+                return ApiResponse.BadRequest("The assistant returned no audiobook suggestions. Try rephrasing the request.");
             }
 
             var resolveStarted = Stopwatch.GetTimestamp();
@@ -179,10 +170,7 @@ public static class AiAudiobookSearchEndpoints
             Log.Information(
                 "❌ AI audiobook-search JSON parse failed after {Length} characters: {Message}",
                 rawText.Length, ex.Message);
-            return AiCompletion.Failed(Results.BadRequest(new
-            {
-                error = "The assistant's answer could not be read. Try again or simplify the request."
-            }));
+            return AiCompletion.Failed(ApiResponse.BadRequest("The assistant's answer could not be read. Try again or simplify the request."));
         }
 
         using (parsed)

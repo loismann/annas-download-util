@@ -79,21 +79,18 @@ public static class LibraryUploadEndpoints
         catch (Exception ex)
         {
             Log.Warning("[LibraryUpload] Failed to read form data: {Error}", ex.Message);
-            return Results.BadRequest(new { error = "Failed to read upload data." });
+            return ApiResponse.BadRequest("Failed to read upload data.");
         }
 
         if (file == null || file.Length == 0)
         {
-            return Results.BadRequest(new { error = "No file provided." });
+            return ApiResponse.BadRequest("No file provided.");
         }
 
         // Validate file size
         if (file.Length > MaxFileSizeBytes)
         {
-            return Results.BadRequest(new
-            {
-                error = $"File too large. Maximum size is {MaxFileSizeBytes / (1024 * 1024)}MB."
-            });
+            return ApiResponse.BadRequest($"File too large. Maximum size is {MaxFileSizeBytes / (1024 * 1024)}MB.");
         }
 
         // Sanitize and validate filename
@@ -102,17 +99,14 @@ public static class LibraryUploadEndpoints
 
         if (string.IsNullOrWhiteSpace(safeFileName))
         {
-            return Results.BadRequest(new { error = "Invalid filename." });
+            return ApiResponse.BadRequest("Invalid filename.");
         }
 
         // Validate extension
         var extension = Path.GetExtension(safeFileName);
         if (!SupportedExtensions.Contains(extension))
         {
-            return Results.BadRequest(new
-            {
-                error = $"Unsupported file format. Supported formats: {string.Join(", ", SupportedExtensions.OrderBy(e => e))}"
-            });
+            return ApiResponse.BadRequest($"Unsupported file format. Supported formats: {string.Join(", ", SupportedExtensions.OrderBy(e => e))}");
         }
 
         var libraryRoot = LibraryHelpers.ResolveLibraryRoot();
@@ -152,7 +146,7 @@ public static class LibraryUploadEndpoints
 
                 if (counter > 100)
                 {
-                    return Results.Conflict(new { error = "Too many files with similar names." });
+                    return ApiResponse.Conflict("Too many files with similar names.");
                 }
             }
         }

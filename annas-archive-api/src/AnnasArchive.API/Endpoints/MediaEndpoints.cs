@@ -25,7 +25,7 @@ public static class MediaEndpoints
     private static async Task<IResult> HandleWikiImages([FromQuery] string? term)
     {
         if (string.IsNullOrWhiteSpace(term))
-            return Results.BadRequest(new { error = "Query parameter 'term' is required." });
+            return ApiResponse.BadRequest("Query parameter 'term' is required.");
 
         // Validate term length
         var termValidation = ValidationHelpers.ValidateStringLength(term, "term", 200);

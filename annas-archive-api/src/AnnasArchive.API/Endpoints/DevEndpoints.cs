@@ -19,7 +19,7 @@ public static class DevEndpoints
         app.MapGet("/api/dev/hash", (string? code) =>
         {
             if (string.IsNullOrEmpty(code))
-                return Results.BadRequest(new { error = "Provide ?code=yourcode in the query string" });
+                return ApiResponse.BadRequest("Provide ?code=yourcode in the query string");
 
             var hash = BCrypt.Net.BCrypt.HashPassword(code, workFactor: 12);
 
@@ -67,7 +67,7 @@ public static class DevEndpoints
             return name.ToLowerInvariant() switch
             {
                 "librarychaptercontent" or "library" => ClearAndRespond("libraryChapterContent", LibraryEpubCache.ClearCache),
-                _ => Results.NotFound(new { error = $"Unknown cache: {name}" })
+                _ => ApiResponse.NotFound($"Unknown cache: {name}")
             };
         })
         .WithName("ClearCache")

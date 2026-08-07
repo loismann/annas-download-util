@@ -1,3 +1,4 @@
+using AnnasArchive.API.Helpers;
 using AnnasArchive.API.Models;
 using AnnasArchive.API.Services;
 using Microsoft.AspNetCore.Mvc;
@@ -45,11 +46,11 @@ public static class LibraryReviewEndpoints
         ILibraryReviewService reviewService)
     {
         if (string.IsNullOrWhiteSpace(request.FileName) || string.IsNullOrWhiteSpace(request.Decision))
-            return Results.BadRequest(new { error = "fileName and decision are required." });
+            return ApiResponse.BadRequest("fileName and decision are required.");
 
         var result = await reviewService.RecordDecisionAsync(request.FileName, request.Decision);
         if (!result.Success)
-            return Results.BadRequest(new { error = result.Error ?? "Failed to record decision." });
+            return ApiResponse.BadRequest(result.Error ?? "Failed to record decision.");
 
         return Results.Ok(new { success = true });
     }

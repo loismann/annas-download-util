@@ -1,3 +1,4 @@
+using AnnasArchive.API.Helpers;
 using AnnasArchive.API.Models;
 using AnnasArchive.API.Services;
 
@@ -37,11 +38,15 @@ public static class QuizEndpoints
             CancellationToken token) =>
         {
             if (!string.Equals(subjectId, subject.Id, StringComparison.OrdinalIgnoreCase))
-                return Results.BadRequest(new { error = "Subject id in route must match payload id." });
+                return ApiResponse.BadRequest("Subject id in route must match payload id.");
 
             var validation = validator.ValidateSubject(subject);
             if (!validation.IsValid)
-                return Results.BadRequest(new { errors = validation.Errors });
+                // Was `new { errors = … }` — plural, with no singular `error`, which
+                // is the one field the frontend interceptor looks for. Every one of
+                // these messages was being discarded and shown as a bare
+                // "Http failure response … 400 Bad Request".
+                return ApiResponse.ValidationFailed("Quiz subject is not valid.", validation.Errors);
 
             try
             {
@@ -50,7 +55,7 @@ public static class QuizEndpoints
             }
             catch (Exception ex) when (ex is not ArgumentException)
             {
-                return Results.BadRequest(new { error = ex.Message });
+                return ApiResponse.BadRequest(ex.Message);
             }
         });
 

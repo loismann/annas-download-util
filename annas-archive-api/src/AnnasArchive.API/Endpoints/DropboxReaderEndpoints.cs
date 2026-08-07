@@ -83,9 +83,7 @@ public static class DropboxReaderEndpoints
             return Results.StatusCode(503); // Service unavailable - Dropbox not configured
 
         if (!validation.IsValidDropboxPath(path))
-            return Results.BadRequest(new {
-                error = "Invalid Dropbox path. Must start with '/', end with '.epub', and be less than 500 characters."
-            });
+            return ApiResponse.BadRequest("Invalid Dropbox path. Must start with '/', end with '.epub', and be less than 500 characters.");
 
         try
         {
@@ -137,12 +135,10 @@ public static class DropboxReaderEndpoints
             return Results.StatusCode(503); // Service unavailable - Dropbox not configured
 
         if (!validation.IsValidDropboxPath(path))
-            return Results.BadRequest(new {
-                error = "Invalid Dropbox path. Must start with '/', end with '.epub', and be less than 500 characters."
-            });
+            return ApiResponse.BadRequest("Invalid Dropbox path. Must start with '/', end with '.epub', and be less than 500 characters.");
 
         if (!chapterId.HasValue || !validation.IsValidChapterId(chapterId.Value))
-            return Results.BadRequest(new { error = "Chapter ID is required and must be between 0 and 9999." });
+            return ApiResponse.BadRequest("Chapter ID is required and must be between 0 and 9999.");
 
         try
         {
@@ -189,10 +185,10 @@ public static class DropboxReaderEndpoints
             return Results.StatusCode(503); // Service unavailable - Dropbox not configured
 
         if (string.IsNullOrWhiteSpace(path))
-            return Results.BadRequest(new { error = "Query parameter 'path' is required." });
+            return ApiResponse.BadRequest("Query parameter 'path' is required.");
 
         if (!path.EndsWith(".epub", StringComparison.OrdinalIgnoreCase))
-            return Results.BadRequest(new { error = "Only .epub files are supported." });
+            return ApiResponse.BadRequest("Only .epub files are supported.");
 
         try
         {
@@ -214,10 +210,10 @@ public static class DropboxReaderEndpoints
             return Results.StatusCode(503); // Service unavailable - Dropbox not configured
 
         if (string.IsNullOrWhiteSpace(path))
-            return Results.BadRequest(new { error = "Query parameter 'path' is required." });
+            return ApiResponse.BadRequest("Query parameter 'path' is required.");
 
         if (!path.EndsWith(".epub", StringComparison.OrdinalIgnoreCase))
-            return Results.BadRequest(new { error = "Only .epub files are supported." });
+            return ApiResponse.BadRequest("Only .epub files are supported.");
 
         try
         {
@@ -236,10 +232,10 @@ public static class DropboxReaderEndpoints
     private static IResult HandleDeleteIndex([FromQuery] string? path)
     {
         if (string.IsNullOrWhiteSpace(path))
-            return Results.BadRequest(new { error = "Query parameter 'path' is required." });
+            return ApiResponse.BadRequest("Query parameter 'path' is required.");
 
         if (!path.EndsWith(".epub", StringComparison.OrdinalIgnoreCase))
-            return Results.BadRequest(new { error = "Only .epub files are supported." });
+            return ApiResponse.BadRequest("Only .epub files are supported.");
 
         try
         {
@@ -268,13 +264,13 @@ public static class DropboxReaderEndpoints
             return Results.StatusCode(503); // Service unavailable - Dropbox not configured
 
         if (string.IsNullOrWhiteSpace(path))
-            return Results.BadRequest(new { error = "Query parameter 'path' is required." });
+            return ApiResponse.BadRequest("Query parameter 'path' is required.");
 
         if (!path.EndsWith(".epub", StringComparison.OrdinalIgnoreCase))
-            return Results.BadRequest(new { error = "Only .epub files are supported." });
+            return ApiResponse.BadRequest("Only .epub files are supported.");
 
         if (string.IsNullOrWhiteSpace(query) || query.Length < 10)
-            return Results.BadRequest(new { error = "Search query must be at least 10 characters." });
+            return ApiResponse.BadRequest("Search query must be at least 10 characters.");
 
         // Validate query max length
         var queryValidation = ValidationHelpers.ValidateStringLength(query, "query", 500);

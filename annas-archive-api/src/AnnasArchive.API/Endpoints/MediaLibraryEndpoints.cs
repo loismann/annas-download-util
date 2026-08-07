@@ -171,7 +171,7 @@ public static class MediaLibraryEndpoints
             {
                 var state = await jellyfin.GetEpisodePlaybackStateAsync(owner, tvdbId, season, episode);
                 return state is null
-                    ? Results.NotFound(new { error = "Jellyfin hasn't matched this episode yet — it may still be scanning." })
+                    ? ApiResponse.NotFound("Jellyfin hasn't matched this episode yet — it may still be scanning.")
                     : Results.Ok(new
                     {
                         mode = "native",
@@ -187,7 +187,7 @@ public static class MediaLibraryEndpoints
 
             var embedUrl = await jellyfin.GetTvEmbedUrlAsync(tvdbId, season, episode);
             return embedUrl is null
-                ? Results.NotFound(new { error = "Jellyfin hasn't matched this episode yet — it may still be scanning." })
+                ? ApiResponse.NotFound("Jellyfin hasn't matched this episode yet — it may still be scanning.")
                 : Results.Ok(new { mode = "embed", embedUrl });
         }
         catch (HttpRequestException ex)
@@ -236,7 +236,7 @@ public static class MediaLibraryEndpoints
     {
         var owner = LibraryHelpers.ResolveUserDisplayName(context);
         if (owner is null)
-            return Results.BadRequest(new { error = "Could not resolve the logged-in user." });
+            return ApiResponse.BadRequest("Could not resolve the logged-in user.");
 
         var saved = await jellyfin.SaveEpisodePositionAsync(owner, request.TvdbId, request.Season, request.Episode, request.PositionSeconds);
         return saved ? Results.NoContent() : Results.NotFound();
@@ -248,7 +248,7 @@ public static class MediaLibraryEndpoints
     {
         var owner = LibraryHelpers.ResolveUserDisplayName(context);
         if (owner is null)
-            return Results.BadRequest(new { error = "Could not resolve the logged-in user." });
+            return ApiResponse.BadRequest("Could not resolve the logged-in user.");
 
         var vtt = await jellyfin.GetEpisodeSubtitleVttAsync(owner, tvdbId, season, episode, mediaSourceId, subtitleIndex);
         return vtt is null ? Results.NotFound() : Results.Text(vtt, "text/vtt");
@@ -318,7 +318,7 @@ public static class MediaLibraryEndpoints
             {
                 var state = await jellyfin.GetMoviePlaybackStateAsync(owner, tmdbId);
                 return state is null
-                    ? Results.NotFound(new { error = "Jellyfin hasn't matched this movie yet — it may still be scanning." })
+                    ? ApiResponse.NotFound("Jellyfin hasn't matched this movie yet — it may still be scanning.")
                     : Results.Ok(new
                     {
                         mode = "native",
@@ -334,7 +334,7 @@ public static class MediaLibraryEndpoints
 
             var embedUrl = await jellyfin.GetMovieEmbedUrlAsync(tmdbId);
             return embedUrl is null
-                ? Results.NotFound(new { error = "Jellyfin hasn't matched this movie yet — it may still be scanning." })
+                ? ApiResponse.NotFound("Jellyfin hasn't matched this movie yet — it may still be scanning.")
                 : Results.Ok(new { mode = "embed", embedUrl });
         }
         catch (HttpRequestException ex)
@@ -381,13 +381,13 @@ public static class MediaLibraryEndpoints
     {
         var owner = LibraryHelpers.ResolveUserDisplayName(context);
         if (owner is null)
-            return Results.BadRequest(new { error = "Could not resolve the logged-in user." });
+            return ApiResponse.BadRequest("Could not resolve the logged-in user.");
 
         try
         {
             var result = await jellyfin.GetMovieHlsMasterAsync(owner, tmdbId, context.RequestAborted);
             if (result is null)
-                return Results.NotFound(new { error = "Jellyfin hasn't matched this movie yet — it may still be scanning." });
+                return ApiResponse.NotFound("Jellyfin hasn't matched this movie yet — it may still be scanning.");
 
             var accessToken = context.Request.Query["access_token"].ToString();
             return Results.Text(RewriteHlsPlaylist(result.PlaylistText, result.ItemId, accessToken), "application/vnd.apple.mpegurl");
@@ -404,13 +404,13 @@ public static class MediaLibraryEndpoints
     {
         var owner = LibraryHelpers.ResolveUserDisplayName(context);
         if (owner is null)
-            return Results.BadRequest(new { error = "Could not resolve the logged-in user." });
+            return ApiResponse.BadRequest("Could not resolve the logged-in user.");
 
         try
         {
             var result = await jellyfin.GetEpisodeHlsMasterAsync(owner, tvdbId, season, episode, context.RequestAborted);
             if (result is null)
-                return Results.NotFound(new { error = "Jellyfin hasn't matched this episode yet — it may still be scanning." });
+                return ApiResponse.NotFound("Jellyfin hasn't matched this episode yet — it may still be scanning.");
 
             var accessToken = context.Request.Query["access_token"].ToString();
             return Results.Text(RewriteHlsPlaylist(result.PlaylistText, result.ItemId, accessToken), "application/vnd.apple.mpegurl");
@@ -503,7 +503,7 @@ public static class MediaLibraryEndpoints
     {
         var owner = LibraryHelpers.ResolveUserDisplayName(context);
         if (owner is null)
-            return Results.BadRequest(new { error = "Could not resolve the logged-in user." });
+            return ApiResponse.BadRequest("Could not resolve the logged-in user.");
 
         var saved = await jellyfin.SaveMoviePositionAsync(owner, request.TmdbId, request.PositionSeconds);
         return saved ? Results.NoContent() : Results.NotFound();
@@ -514,7 +514,7 @@ public static class MediaLibraryEndpoints
     {
         var owner = LibraryHelpers.ResolveUserDisplayName(context);
         if (owner is null)
-            return Results.BadRequest(new { error = "Could not resolve the logged-in user." });
+            return ApiResponse.BadRequest("Could not resolve the logged-in user.");
 
         var vtt = await jellyfin.GetMovieSubtitleVttAsync(owner, tmdbId, mediaSourceId, subtitleIndex);
         return vtt is null ? Results.NotFound() : Results.Text(vtt, "text/vtt");
@@ -651,7 +651,7 @@ public static class MediaLibraryEndpoints
     {
         var validated = ValidateMetadata(request);
         if (validated is null)
-            return Results.BadRequest(new { error = "owners may only contain Paul, Mom, Dad" });
+            return ApiResponse.BadRequest("owners may only contain Paul, Mom, Dad");
 
         try
         {
@@ -671,7 +671,7 @@ public static class MediaLibraryEndpoints
     {
         var validated = ValidateMetadata(request);
         if (validated is null)
-            return Results.BadRequest(new { error = "owners may only contain Paul, Mom, Dad" });
+            return ApiResponse.BadRequest("owners may only contain Paul, Mom, Dad");
 
         try
         {
@@ -702,7 +702,7 @@ public static class MediaLibraryEndpoints
         // value — same reasoning as the book library's favorite endpoint.
         var owner = LibraryHelpers.ResolveUserDisplayName(context);
         if (owner == null)
-            return Results.BadRequest(new { error = "Could not resolve the logged-in user." });
+            return ApiResponse.BadRequest("Could not resolve the logged-in user.");
 
         try
         {

@@ -58,7 +58,7 @@ public static class LibraryBrowserEndpoints
     {
         var job = jobs.Get(jobId);
         if (job == null)
-            return Results.NotFound(new { error = "Job not found." });
+            return ApiResponse.NotFound("Job not found.");
 
         double? percent = job.TotalBytes is > 0
             ? Math.Round(job.BytesDownloaded * 100.0 / job.TotalBytes.Value, 1)
@@ -221,13 +221,13 @@ public static class LibraryBrowserEndpoints
     {
         var safeFileName = Path.GetFileName(fileName);
         if (!string.Equals(fileName, safeFileName, StringComparison.Ordinal))
-            return Results.BadRequest(new { error = "Invalid fileName." });
+            return ApiResponse.BadRequest("Invalid fileName.");
 
         try
         {
             var result = LibraryBookDeletionHelper.DeleteBookCompletely(safeFileName, cache, personalization);
             if (!result.Found)
-                return Results.NotFound(new { error = "Book not found." });
+                return ApiResponse.NotFound("Book not found.");
 
             return Results.Ok(new { success = true });
         }
@@ -242,17 +242,17 @@ public static class LibraryBrowserEndpoints
     {
         var safeFileName = Path.GetFileName(fileName);
         if (!string.Equals(fileName, safeFileName, StringComparison.Ordinal))
-            return Results.BadRequest(new { error = "Invalid fileName." });
+            return ApiResponse.BadRequest("Invalid fileName.");
 
         // Only PDFs are viewable in-app for now — other formats go out via
         // Kindle/Dropbox instead, so there's no browser-side renderer for them.
         if (!string.Equals(Path.GetExtension(safeFileName), ".pdf", StringComparison.OrdinalIgnoreCase))
-            return Results.BadRequest(new { error = "Only PDF files can be viewed in-app." });
+            return ApiResponse.BadRequest("Only PDF files can be viewed in-app.");
 
         var libraryRoot = LibraryHelpers.ResolveLibraryRoot();
         var fullPath = Path.Combine(libraryRoot, safeFileName);
         if (!File.Exists(fullPath))
-            return Results.NotFound(new { error = "File not found." });
+            return ApiResponse.NotFound("File not found.");
 
         return Results.File(fullPath, "application/pdf", enableRangeProcessing: true);
     }

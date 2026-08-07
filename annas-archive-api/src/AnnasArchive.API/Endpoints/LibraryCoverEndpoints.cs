@@ -97,7 +97,7 @@ public static class LibraryCoverEndpoints
         var libraryRoot = LibraryHelpers.ResolveLibraryRoot();
         var fullPath = Path.GetFullPath(Path.Combine(libraryRoot, path));
         if (!IsInsideRoot(libraryRoot, fullPath))
-            return Results.BadRequest(new { error = "Invalid path." });
+            return ApiResponse.BadRequest("Invalid path.");
 
         // Checked before File.Exists so a non-image under the root and a path that
         // is not there at all answer identically — the response must not tell an
@@ -121,7 +121,7 @@ public static class LibraryCoverEndpoints
         ICoverLookupService coverLookupService)
     {
         if (string.IsNullOrWhiteSpace(title))
-            return Results.BadRequest(new { error = "title is required." });
+            return ApiResponse.BadRequest("title is required.");
 
         // Validate title length
         var titleValidation = ValidationHelpers.ValidateStringLength(title, "title", 500);
@@ -140,11 +140,11 @@ public static class LibraryCoverEndpoints
         LibraryIndexCache cache)
     {
         if (update == null || string.IsNullOrWhiteSpace(update.CoverUrl))
-            return Results.BadRequest(new { error = "coverUrl is required." });
+            return ApiResponse.BadRequest("coverUrl is required.");
 
         if (!Uri.TryCreate(update.CoverUrl, UriKind.Absolute, out var coverUri) ||
             (coverUri.Scheme != Uri.UriSchemeHttp && coverUri.Scheme != Uri.UriSchemeHttps))
-            return Results.BadRequest(new { error = "coverUrl must be an http(s) URL." });
+            return ApiResponse.BadRequest("coverUrl must be an http(s) URL.");
 
         // SSRF guard: this fetch happens from inside the compose network, next to
         // services that trust anything already in there. Resolve first so a public
@@ -152,18 +152,18 @@ public static class LibraryCoverEndpoints
         if (!await ValidationHelpers.IsPubliclyRoutableAsync(coverUri, context.RequestAborted))
         {
             Log.Warning("[library] Rejected cover URL resolving to a non-public address: {CoverHost}", coverUri.Host);
-            return Results.BadRequest(new { error = "coverUrl must point to a public address." });
+            return ApiResponse.BadRequest("coverUrl must point to a public address.");
         }
 
         var safeFileName = Path.GetFileName(fileName);
         if (!string.Equals(fileName, safeFileName, StringComparison.Ordinal))
-            return Results.BadRequest(new { error = "Invalid fileName." });
+            return ApiResponse.BadRequest("Invalid fileName.");
 
         var libraryRoot = LibraryHelpers.ResolveLibraryRoot();
         var metaPath = Path.Combine(libraryRoot, safeFileName + ".meta.json");
 
         if (!File.Exists(metaPath))
-            return Results.NotFound(new { error = "Metadata file not found." });
+            return ApiResponse.NotFound("Metadata file not found.");
 
         byte[] coverBytes;
         try
@@ -187,14 +187,11 @@ public static class LibraryCoverEndpoints
         }
 
         if (!CoverLookupHelpers.TryGetImageSize(coverBytes, out var width, out var height))
-            return Results.BadRequest(new { error = "Unsupported cover image format." });
+            return ApiResponse.BadRequest("Unsupported cover image format.");
 
         if (!CoverLookupHelpers.IsCoverSizeValid(width, height))
         {
-            return Results.BadRequest(new
-            {
-                error = "Cover image must be at least 100x100 pixels."
-            });
+            return ApiResponse.BadRequest("Cover image must be at least 100x100 pixels.");
         }
 
         var coverExt = CoverLookupHelpers.DetermineImageExtension(coverUri.ToString(), coverBytes);
@@ -220,7 +217,7 @@ public static class LibraryCoverEndpoints
             var meta = JsonSerializer.Deserialize<LibraryBookMeta>(json, jsonOptions);
 
             if (meta == null)
-                return Results.BadRequest(new { error = "Invalid metadata file." });
+                return ApiResponse.BadRequest("Invalid metadata file.");
 
             Log.Information("[library-cover]   Deserialized CoverUrl: {MetaCoverUrl}", meta.CoverUrl);
 
@@ -257,7 +254,7 @@ public static class LibraryCoverEndpoints
         if (update == null || string.IsNullOrWhiteSpace(update.ImageBase64))
         {
             Log.Information("[library-cover-bytes] ❌ Missing imageBase64 data");
-            return Results.BadRequest(new { error = "imageBase64 is required." });
+            return ApiResponse.BadRequest("imageBase64 is required.");
         }
 
         Log.Information("[library-cover-bytes] Received base64 data: {Length} chars, MimeType: {MimeType}",
@@ -265,13 +262,13 @@ public static class LibraryCoverEndpoints
 
         var safeFileName = Path.GetFileName(fileName);
         if (!string.Equals(fileName, safeFileName, StringComparison.Ordinal))
-            return Results.BadRequest(new { error = "Invalid fileName." });
+            return ApiResponse.BadRequest("Invalid fileName.");
 
         var libraryRoot = LibraryHelpers.ResolveLibraryRoot();
         var metaPath = Path.Combine(libraryRoot, safeFileName + ".meta.json");
 
         if (!File.Exists(metaPath))
-            return Results.NotFound(new { error = "Metadata file not found." });
+            return ApiResponse.NotFound("Metadata file not found.");
 
         byte[] coverBytes;
         try
@@ -288,13 +285,13 @@ public static class LibraryCoverEndpoints
         }
         catch (FormatException)
         {
-            return Results.BadRequest(new { error = "Invalid base64 data." });
+            return ApiResponse.BadRequest("Invalid base64 data.");
         }
 
         if (coverBytes.Length == 0)
         {
             Log.Information("[library-cover-bytes] ❌ Empty image data after base64 decode");
-            return Results.BadRequest(new { error = "Empty image data." });
+            return ApiResponse.BadRequest("Empty image data.");
         }
 
         Log.Information("[library-cover-bytes] ✓ Decoded {ByteCount} bytes from base64", coverBytes.Length);
@@ -302,14 +299,14 @@ public static class LibraryCoverEndpoints
         if (coverBytes.Length > 10 * 1024 * 1024) // 10MB limit
         {
             Log.Information("[library-cover-bytes] ❌ Image too large: {ByteCount} bytes", coverBytes.Length);
-            return Results.BadRequest(new { error = "Image too large. Maximum size is 10MB." });
+            return ApiResponse.BadRequest("Image too large. Maximum size is 10MB.");
         }
 
         if (!CoverLookupHelpers.TryGetImageSize(coverBytes, out var width, out var height))
         {
             Log.Information("[library-cover-bytes] ❌ Could not determine image size (unsupported format). First 16 bytes: {Bytes}",
                 BitConverter.ToString(coverBytes.Take(16).ToArray()));
-            return Results.BadRequest(new { error = "Unsupported cover image format." });
+            return ApiResponse.BadRequest("Unsupported cover image format.");
         }
 
         Log.Information("[library-cover-bytes] ✓ Image dimensions: {Width}x{Height}", width, height);
@@ -317,10 +314,7 @@ public static class LibraryCoverEndpoints
         if (!CoverLookupHelpers.IsCoverSizeValid(width, height))
         {
             Log.Information("[library-cover-bytes] ❌ Image too small: {Width}x{Height}", width, height);
-            return Results.BadRequest(new
-            {
-                error = "Cover image must be at least 100x100 pixels."
-            });
+            return ApiResponse.BadRequest("Cover image must be at least 100x100 pixels.");
         }
 
         // Determine extension from MIME type or image magic bytes
@@ -362,7 +356,7 @@ public static class LibraryCoverEndpoints
             if (meta == null)
             {
                 Log.Information("[library-cover-bytes] ❌ Failed to deserialize metadata");
-                return Results.BadRequest(new { error = "Invalid metadata file." });
+                return ApiResponse.BadRequest("Invalid metadata file.");
             }
 
             Log.Information("[library-cover-bytes] ✓ Metadata loaded. Old CoverUrl: {OldUrl}", meta.CoverUrl);

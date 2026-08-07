@@ -515,9 +515,9 @@ Return format (JSON only, no explanation):
         [FromQuery] int sectionIndex)
     {
         if (string.IsNullOrWhiteSpace(dropboxPath))
-            return Results.BadRequest(new { error = "dropboxPath is required." });
+            return ApiResponse.BadRequest("dropboxPath is required.");
         if (chapterId < 0 || sectionIndex < 0)
-            return Results.BadRequest(new { error = "chapterId and sectionIndex must be zero or positive." });
+            return ApiResponse.BadRequest("chapterId and sectionIndex must be zero or positive.");
 
         var cached = AiContentCache.LoadSectionSummary(dropboxPath, chapterId, sectionIndex);
         if (cached != null)
@@ -569,7 +569,7 @@ Return format (JSON only, no explanation):
             return Results.Ok(response);
         }
 
-        return Results.NotFound(new { error = "No cached summary found for this section." });
+        return ApiResponse.NotFound("No cached summary found for this section.");
     }
 
     private static async Task<IResult> HandleGenerateSectionSummary(
@@ -585,9 +585,9 @@ Return format (JSON only, no explanation):
         IAiJobLockService jobLock)
     {
         if (request is null || string.IsNullOrWhiteSpace(request.DropboxPath))
-            return Results.BadRequest(new { error = "dropboxPath is required." });
+            return ApiResponse.BadRequest("dropboxPath is required.");
         if (request.ChapterId < 0 || request.SectionIndex < 0)
-            return Results.BadRequest(new { error = "chapterId and sectionIndex must be zero or positive." });
+            return ApiResponse.BadRequest("chapterId and sectionIndex must be zero or positive.");
 
         // Check if summary already cached
         var cached = AiContentCache.LoadSectionSummary(request.DropboxPath, request.ChapterId, request.SectionIndex);
@@ -600,7 +600,7 @@ Return format (JSON only, no explanation):
         var sectionSummaryLockKey = $"section-summary:{request.DropboxPath}:{request.ChapterId}:{request.SectionIndex}";
         if (!jobLock.TryStartJob(sectionSummaryLockKey))
         {
-            return Results.Conflict(new { error = "Section summary already in progress." });
+            return ApiResponse.Conflict("Section summary already in progress.");
         }
 
         try
@@ -612,7 +612,7 @@ Return format (JSON only, no explanation):
             // Load chunk boundaries
             var boundaries = AiContentCache.LoadChunkBoundaries(request.DropboxPath, request.ChapterId);
             if (boundaries == null || request.SectionIndex >= boundaries.Chunks.Count)
-                return Results.BadRequest(new { error = "Invalid sectionIndex or chunk boundaries not detected." });
+                return ApiResponse.BadRequest("Invalid sectionIndex or chunk boundaries not detected.");
 
             // Load chapter content
             var existingKeys = AiContentCache.GetExistingSummaryKeys();
@@ -636,7 +636,7 @@ Return format (JSON only, no explanation):
             }
 
             if (!File.Exists(chapterPath))
-                return Results.NotFound(new { error = "Chapter not indexed." });
+                return ApiResponse.NotFound("Chapter not indexed.");
 
             var chapterText = await File.ReadAllTextAsync(chapterPath);
             var words = chapterText.Split(new[] { ' ', '\n', '\r', '\t' }, StringSplitOptions.RemoveEmptyEntries);

@@ -44,7 +44,7 @@ public static class AiFlashcardsEndpoints
     private static IResult HandleGetFlashcards([FromQuery] string? path, IFlashcardService flashcardService)
     {
         if (string.IsNullOrWhiteSpace(path))
-            return Results.BadRequest(new { error = "Query parameter 'path' is required." });
+            return ApiResponse.BadRequest("Query parameter 'path' is required.");
 
         var flashcards = flashcardService.LoadFlashcards(path);
         return Results.Ok(flashcards);
@@ -60,11 +60,11 @@ public static class AiFlashcardsEndpoints
         IFlashcardService flashcardService)
     {
         if (request is null || string.IsNullOrWhiteSpace(request.Term))
-            return Results.BadRequest(new { error = "Term is required." });
+            return ApiResponse.BadRequest("Term is required.");
 
         var shouldSave = request.SaveToLibrary ?? true;
         if (shouldSave && string.IsNullOrWhiteSpace(request.DropboxPath))
-            return Results.BadRequest(new { error = "dropboxPath is required when saving flashcards." });
+            return ApiResponse.BadRequest("dropboxPath is required when saving flashcards.");
 
         var tokenLimitResult = TokenLimitHelpers.CheckTokenLimit(cfg, tokenUsage, context);
         if (tokenLimitResult is not null) return tokenLimitResult;
@@ -223,7 +223,7 @@ Return JSON array of flashcards for individual terms found in the passage.";
     private static IResult HandleClearFlashcards([FromQuery] string? path, IFlashcardService flashcardService)
     {
         if (string.IsNullOrWhiteSpace(path))
-            return Results.BadRequest(new { error = "Query parameter 'path' is required." });
+            return ApiResponse.BadRequest("Query parameter 'path' is required.");
 
         try
         {
@@ -242,16 +242,16 @@ Return JSON array of flashcards for individual terms found in the passage.";
     private static IResult HandleDeleteFlashcard([FromQuery] string? path, [FromQuery] string? term, IFlashcardService flashcardService)
     {
         if (string.IsNullOrWhiteSpace(path))
-            return Results.BadRequest(new { error = "Query parameter 'path' is required." });
+            return ApiResponse.BadRequest("Query parameter 'path' is required.");
         if (string.IsNullOrWhiteSpace(term))
-            return Results.BadRequest(new { error = "Query parameter 'term' is required." });
+            return ApiResponse.BadRequest("Query parameter 'term' is required.");
 
         try
         {
             var deleted = flashcardService.DeleteFlashcard(path, term);
             if (deleted)
                 return Results.Ok(new { deleted = true });
-            return Results.NotFound(new { error = "Flashcard not found." });
+            return ApiResponse.NotFound("Flashcard not found.");
         }
         catch (Exception ex) when (ex is not ArgumentException)
         {

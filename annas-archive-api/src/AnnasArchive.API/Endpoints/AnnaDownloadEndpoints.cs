@@ -62,7 +62,7 @@ public static class AnnaDownloadEndpoints
         // token gate: a blank title is a malformed request, and answering it with
         // "you are out of tokens" would blame the user's quota for the caller's bug.
         if (string.IsNullOrWhiteSpace(title))
-            return Results.BadRequest(new { error = "title is required." });
+            return ApiResponse.BadRequest("title is required.");
 
         // The only source with a spend gate, so it stays here rather than moving
         // into the shared helper — the other three are free.
@@ -93,7 +93,7 @@ public static class AnnaDownloadEndpoints
         IValidationService validation)
     {
         if (!validation.IsValidMd5(md5))
-            return Results.BadRequest(new { error = "Invalid MD5 format. Must be 32 hexadecimal characters." });
+            return ApiResponse.BadRequest("Invalid MD5 format. Must be 32 hexadecimal characters.");
 
         var links = await svc.GetDownloadLinksAsync(md5);
         return links.Any()
@@ -122,7 +122,7 @@ public static class AnnaDownloadEndpoints
         var validationError = SendToTargetHelpers.ValidateSendParametersExtended(
             md5, title, coverUrl, authors, fileSize, description: null, validation);
         if (validationError != null)
-            return Results.BadRequest(new { error = validationError });
+            return ApiResponse.BadRequest(validationError);
 
         var memberKey = cfg["Anna:MemberKey"]
             ?? throw new InvalidOperationException("Missing Anna:MemberKey.");
@@ -200,7 +200,7 @@ public static class AnnaDownloadEndpoints
         var validationError = SendToTargetHelpers.ValidateSendParametersExtended(
             md5, title, coverUrl, authors, fileSize, description, validation);
         if (validationError != null)
-            return Results.BadRequest(new { error = validationError });
+            return ApiResponse.BadRequest(validationError);
 
         var memberKey = cfg["Anna:MemberKey"]
             ?? throw new InvalidOperationException("Missing Anna:MemberKey.");
@@ -315,7 +315,7 @@ public static class AnnaDownloadEndpoints
         var validationError = SendToTargetHelpers.ValidateSendParametersExtended(
             md5, title, coverUrl, authors: null, fileSize: null, description: null, validation);
         if (validationError != null)
-            return Results.BadRequest(new { error = validationError });
+            return ApiResponse.BadRequest(validationError);
 
         var memberKey = cfg["Anna:MemberKey"]
             ?? throw new InvalidOperationException("Missing Anna:MemberKey.");
@@ -469,11 +469,11 @@ public static class AnnaDownloadEndpoints
         var validationError = SendToTargetHelpers.ValidateSendParametersExtended(
             md5, title, coverUrl, authors: null, fileSize: null, description: null, validation);
         if (validationError != null)
-            return Results.BadRequest(new { error = validationError });
+            return ApiResponse.BadRequest(validationError);
 
         var kindleTargetError = SendToTargetHelpers.ValidateKindleTarget(target);
         if (kindleTargetError != null)
-            return Results.BadRequest(new { error = kindleTargetError });
+            return ApiResponse.BadRequest(kindleTargetError);
 
         var memberKey = cfg["Anna:MemberKey"]
             ?? throw new InvalidOperationException("Missing Anna:MemberKey.");

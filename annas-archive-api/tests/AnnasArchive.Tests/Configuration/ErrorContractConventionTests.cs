@@ -260,6 +260,108 @@ public class ErrorContractConventionTests
     }
 
     /// <summary>
+    /// Error bodies are built by <c>ApiResponse</c>, not by hand.
+    ///
+    /// <para>The shape <c>{ error = … }</c> was written out at 279 call sites. The
+    /// cost of that was not untidiness: it is why the one site that drifted went
+    /// unnoticed. A quiz endpoint answered <c>{ errors = … }</c> — plural, with no
+    /// singular <c>error</c> — and since the frontend interceptor accepts a body
+    /// only when it has a top-level string <c>error</c>, every validation message
+    /// it produced was discarded and shown as a bare "Http failure response …
+    /// 400 Bad Request".</para>
+    ///
+    /// <para>One hand-written site is one that can drift again, so the rule is
+    /// enforced rather than agreed.</para>
+    /// </summary>
+    [Fact]
+    public void NoEndpointHandWritesAPlainErrorBody()
+    {
+        var offenders = HandBuiltErrorBodies()
+            .Where(b => b.Properties.Count == 1 && b.Properties[0] == "error")
+            .Select(b => b.Where)
+            .ToList();
+
+        offenders.Should().BeEmpty(
+            "a body that is exactly { error = … } is what ApiResponse.BadRequest/NotFound/" +
+            "Conflict produces; writing it out again puts the shape back in N places");
+    }
+
+    /// <summary>
+    /// The rule underneath the one above, and the one that actually bit.
+    ///
+    /// <para>A richer body is fine — two endpoints legitimately add <c>status</c> or
+    /// <c>existingFileName</c> alongside the message, and the interceptor reads
+    /// straight past them. What is not fine is an error body with <b>no top-level
+    /// <c>error</c> at all</b>: the interceptor accepts a body only when
+    /// <c>typeof body.error === 'string'</c>, so such a body is discarded whole and
+    /// the user sees "Http failure response … 400 Bad Request" instead of the
+    /// message that was carefully computed and sent.</para>
+    /// </summary>
+    [Fact]
+    public void EveryHandWrittenErrorBodyStillCarriesAnErrorField()
+    {
+        var offenders = HandBuiltErrorBodies()
+            .Where(b => !b.Properties.Contains("error"))
+            .Select(b => $"{b.Where} -> {{ {string.Join(", ", b.Properties)} }}")
+            .ToList();
+
+        offenders.Should().BeEmpty(
+            "the frontend interceptor discards any error body without a top-level string " +
+            "'error'; { errors = … } shipped like this and silently swallowed every quiz " +
+            "validation message");
+    }
+
+    /// <summary>Each <c>Results.BadRequest/NotFound/Conflict(new { … })</c> in the
+    /// API project, with the property names it sets.</summary>
+    private static IEnumerable<(string Where, IReadOnlyList<string> Properties)> HandBuiltErrorBodies()
+    {
+        foreach (var (name, raw) in ApiSources())
+        {
+            // The one place that is supposed to build the body.
+            if (name.EndsWith("ApiResponseHelper.cs")) continue;
+
+            var text = WithoutComments(raw);
+
+            foreach (System.Text.RegularExpressions.Match m in Regex.Matches(
+                         text, @"Results\.(BadRequest|NotFound|Conflict)\s*\(\s*new\s*\{"))
+            {
+                var open = text.IndexOf('{', m.Index);
+                var body = BracedBlock(text, open);
+                var props = Regex.Matches(body, @"(?:^|,)\s*(?:(\w+)\s*=|(\w+)\s*(?=[,}]|$))")
+                    .Select(x => x.Groups[1].Success ? x.Groups[1].Value : x.Groups[2].Value)
+                    .Where(p => p.Length > 0)
+                    .ToList();
+
+                yield return ($"{name}:{text[..m.Index].Count(c => c == '\n') + 1}", props);
+            }
+        }
+    }
+
+    /// <summary>The contents of the <c>{ … }</c> whose opening brace is at
+    /// <paramref name="open"/>, ignoring braces inside string literals.</summary>
+    private static string BracedBlock(string text, int open)
+    {
+        var depth = 0;
+        for (var i = open; i < text.Length; i++)
+        {
+            var c = text[i];
+            if (c == '"')
+            {
+                i++;
+                while (i < text.Length && text[i] != '"')
+                    i += text[i] == '\\' ? 2 : 1;
+            }
+            else if (c == '{') depth++;
+            else if (c == '}')
+            {
+                depth--;
+                if (depth == 0) return text[(open + 1)..i];
+            }
+        }
+        return "";
+    }
+
+    /// <summary>
     /// The source text of a call's first argument, given the index of its opening
     /// parenthesis. Stops at the first top-level comma, so a template that is
     /// correctly literal is not blamed for an interpolated <em>argument</em> after

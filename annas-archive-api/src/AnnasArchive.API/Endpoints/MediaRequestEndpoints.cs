@@ -79,7 +79,7 @@ public static class MediaRequestEndpoints
     private static async Task<IResult> HandleTvSearch([FromQuery] string? term, ISonarrService sonarr)
     {
         if (string.IsNullOrWhiteSpace(term))
-            return Results.BadRequest(new { error = "term is required." });
+            return ApiResponse.BadRequest("term is required.");
 
         try
         {
@@ -108,7 +108,7 @@ public static class MediaRequestEndpoints
         }
         catch (InvalidOperationException ex)
         {
-            return Results.BadRequest(new { error = ex.Message });
+            return ApiResponse.BadRequest(ex.Message);
         }
         catch (HttpRequestException ex)
         {
@@ -140,7 +140,7 @@ public static class MediaRequestEndpoints
         }
         catch (InvalidOperationException ex)
         {
-            return Results.BadRequest(new { error = ex.Message });
+            return ApiResponse.BadRequest(ex.Message);
         }
         catch (HttpRequestException ex)
         {
@@ -152,7 +152,7 @@ public static class MediaRequestEndpoints
     private static async Task<IResult> HandleMovieSearch([FromQuery] string? term, IRadarrService radarr)
     {
         if (string.IsNullOrWhiteSpace(term))
-            return Results.BadRequest(new { error = "term is required." });
+            return ApiResponse.BadRequest("term is required.");
 
         try
         {
@@ -181,7 +181,7 @@ public static class MediaRequestEndpoints
         }
         catch (InvalidOperationException ex)
         {
-            return Results.BadRequest(new { error = ex.Message });
+            return ApiResponse.BadRequest(ex.Message);
         }
         catch (HttpRequestException ex)
         {

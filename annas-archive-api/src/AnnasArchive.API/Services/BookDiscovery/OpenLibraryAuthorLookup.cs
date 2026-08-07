@@ -51,7 +51,7 @@ public static class OpenLibraryAuthorLookup
 
         // The cache compares keys case-insensitively itself, and TTL and
         // eviction live in LruCache, so this only needs to trim.
-        if (_cache.TryGetValue(title.Trim(), out var cached)) return cached;
+        if (_cache.TryGetValue(title.Trim(), out var cached) && cached is not null) return cached;
 
         try
         {

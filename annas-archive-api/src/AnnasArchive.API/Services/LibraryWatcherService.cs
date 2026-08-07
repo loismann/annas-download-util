@@ -38,6 +38,7 @@ public class LibraryWatcherService : BackgroundService
     private readonly IEnrichmentStatsService _statsService;
     private readonly IGoogleBooksService _googleBooks;
     private readonly string? _autoTagNewBooks;
+    private readonly BookEnrichmentPipeline _pipeline;
     private FileSystemWatcher? _watcher;
     private int _processedSinceLastSave;
 
@@ -58,6 +59,28 @@ public class LibraryWatcherService : BackgroundService
         _statsService = statsService;
         _googleBooks = googleBooks;
         _autoTagNewBooks = configuration["LibraryWatcher:AutoTagNewBooks"];
+        _pipeline = new BookEnrichmentPipeline(new Lookups(this), statsService);
+    }
+
+    /// <summary>
+    /// Hands the pipeline the four fetchers without handing it this whole
+    /// service — the fetchers are the only part of a 1,198-line background
+    /// worker the ladder has any business reaching.
+    /// </summary>
+    private sealed class Lookups(LibraryWatcherService owner) : IBookMetadataLookups
+    {
+        public Task<OpenLibraryData?> OpenLibraryAsync(string title, string[] authors, CancellationToken token) =>
+            owner.FetchOpenLibraryDataAsync(title, authors, token);
+
+        public Task<AiValidationAndEnrichment?> ValidateWithAiAsync(
+            string title, string[] authors, string fileName, OpenLibraryData? openLibrary, CancellationToken token) =>
+            owner.FetchAiValidationAndEnrichmentAsync(title, authors, fileName, openLibrary, token);
+
+        public Task<string?> GoogleBooksCoverAsync(string title, string[] authors, CancellationToken token) =>
+            owner.FetchGoogleBooksCoverAsync(title, authors, token);
+
+        public Task<double?> GoodreadsRatingAsync(string title, string[] authors, CancellationToken token) =>
+            owner.FetchGoodreadsRatingSimpleAsync(title, authors, token);
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -290,46 +313,8 @@ public class LibraryWatcherService : BackgroundService
         }
 
         var ext = Path.GetExtension(filePath);
-        var format = ext.TrimStart('.').ToUpperInvariant();
         var parsed = _metadataExtraction.ParseTitleAuthorFromFileName(filePath);
-        var rawBaseName = Path.GetFileNameWithoutExtension(filePath);
-        var resolvedTitle = LibraryMetadataRules.ShouldUseParsedTitle(existing?.Title, parsed.Title, rawBaseName)
-            ? parsed.Title
-            : existing?.Title;
-        var resolvedAuthors = (existing?.Authors == null || existing.Authors.Length == 0)
-            ? parsed.Authors
-            : existing.Authors;
-
-        var meta = new Dictionary<string, object?>
-        {
-            ["title"] = resolvedTitle ?? parsed.Title ?? rawBaseName,
-            ["authors"] = resolvedAuthors ?? parsed.Authors ?? Array.Empty<string>(),
-            ["format"] = format,
-            ["fileSize"] = LibraryMetadataRules.FormatFileSize(fileInfo.Length),
-            ["fileName"] = Path.GetFileName(filePath),
-            ["coverUrl"] = existing?.CoverUrl,
-            ["source"] = existing?.Source ?? "library",
-            ["md5"] = existing?.Md5,
-            ["savedAt"] = existing?.SavedAt ?? DateTime.UtcNow.ToString("o"),
-            ["primaryGenre"] = existing?.PrimaryGenre,
-            ["tags"] = existing?.Tags ?? Array.Empty<string>(),
-            ["series"] = existing?.Series,
-            ["genres"] = existing?.Genres ?? Array.Empty<string>(),
-            ["publishedDate"] = existing?.PublishedDate,
-            ["pages"] = existing?.Pages,
-            ["goodreadsRating"] = existing?.GoodreadsRating,
-            ["personalRating"] = existing?.PersonalRating,
-            ["readerEnabled"] = existing?.ReaderEnabled,
-            ["description"] = existing?.Description,
-            ["openLibraryConfidence"] = existing?.OpenLibraryConfidence,
-            ["aiEnrichedAt"] = existing?.AiEnrichedAt,
-            ["enrichmentComplete"] = existing?.EnrichmentComplete ?? false,
-            // User-editable fields the enrichment pass never touches — carried forward here so
-            // this rewrite doesn't silently drop them, then re-synced from disk again right
-            // before the final write (see below) in case the user edited them mid-scan.
-            ["favoritedBy"] = existing?.FavoritedBy ?? Array.Empty<string>(),
-            ["cullReviewedAt"] = existing?.CullReviewedAt?.ToString("o")
-        };
+        var meta = BookMetaDocument.Seed(existing, parsed.Title, parsed.Authors, filePath, fileInfo.Length);
 
         // Auto-tagging for new books is applied later, right before the final write, against
         // the freshest on-disk tags rather than this method's start-of-processing snapshot —
@@ -365,161 +350,11 @@ public class LibraryWatcherService : BackgroundService
                 meta["coverUrl"] = sdrCover;
         }
 
-        var coverUrl = LibraryMetadataRules.TryGetMetaValue(meta, "coverUrl") as string;
-        var title = LibraryMetadataRules.TryGetMetaValue(meta, "title") as string;
-        var authors = LibraryMetadataRules.TryGetMetaArray(meta, "authors") ?? Array.Empty<string>();
-        var series = LibraryMetadataRules.TryGetMetaValue(meta, "series") as string;
-        var aiEnrichedAt = LibraryMetadataRules.TryGetMetaValue(meta, "aiEnrichedAt") as string;
-        var goodreadsRating = LibraryMetadataRules.TryGetMetaValue(meta, "goodreadsRating") as double?;
-
-        // API Call 1: OpenLibrary (free, high rate limit)
-        OpenLibraryData? openLibraryData = null;
-        if (LibraryMetadataRules.IsMetadataReliable(title, authors))
-        {
-            openLibraryData = await FetchOpenLibraryDataAsync(title!, authors!, token);
-            var olSuccess = openLibraryData != null && openLibraryData.Confidence >= 0.5;
-            _statsService.RecordCall("OpenLibrary", olSuccess, openLibraryData?.Confidence);
-
-            if (openLibraryData != null)
-            {
-                meta["openLibraryConfidence"] = openLibraryData.Confidence;
-                if (openLibraryData.Confidence >= 0.75)
-                {
-                    if (!string.IsNullOrWhiteSpace(openLibraryData.Title))
-                        meta["title"] = openLibraryData.Title;
-                    if (openLibraryData.Authors.Length > 0)
-                        meta["authors"] = openLibraryData.Authors;
-                    if (openLibraryData.FirstPublishYear != null)
-                        meta["publishedDate"] = openLibraryData.FirstPublishYear.ToString();
-                }
-
-                // Only use external cover if no local cover exists
-                if (!LibraryMetadataRules.IsLocalCover(coverUrl) && string.IsNullOrWhiteSpace(coverUrl) && !string.IsNullOrWhiteSpace(openLibraryData.CoverUrl))
-                    meta["coverUrl"] = openLibraryData.CoverUrl;
-
-                if (string.IsNullOrWhiteSpace(series) && !string.IsNullOrWhiteSpace(openLibraryData.Series))
-                    meta["series"] = openLibraryData.Series;
-            }
-
-            // Throttle between API calls
-            await AiThrottlingConfiguration.ThrottleAsync(token);
-        }
-
-        // API Call 2: Combined AI validation + enrichment (single call instead of two)
-        // Only call if OpenLibrary confidence is low AND no prior AI enrichment
-        var aiProvidedBetterMetadata = false;
-        string? aiTitle = null;
-        string[]? aiAuthors = null;
-
-        if (string.IsNullOrWhiteSpace(aiEnrichedAt) && (openLibraryData?.Confidence ?? 0) < 0.75 && LibraryMetadataRules.IsMetadataReliable(title, authors))
-        {
-            var aiResult = await FetchAiValidationAndEnrichmentAsync(
-                title!,
-                authors,
-                fileInfo.Name,
-                openLibraryData,
-                token);
-
-            _statsService.RecordCall("GPT4", aiResult != null);
-
-            if (aiResult != null)
-            {
-                // Apply AI results
-                if (aiResult.UseOpenLibrary && openLibraryData != null)
-                {
-                    // AI validated OpenLibrary data - use it
-                    if (!string.IsNullOrWhiteSpace(openLibraryData.Title))
-                        meta["title"] = openLibraryData.Title;
-                    if (openLibraryData.Authors.Length > 0)
-                        meta["authors"] = openLibraryData.Authors;
-                    if (!LibraryMetadataRules.IsLocalCover(coverUrl) && string.IsNullOrWhiteSpace(coverUrl) && !string.IsNullOrWhiteSpace(openLibraryData.CoverUrl))
-                        meta["coverUrl"] = openLibraryData.CoverUrl;
-                    meta["openLibraryConfidence"] = Math.Max(openLibraryData.Confidence, 0.75);
-                }
-                else if (!string.IsNullOrWhiteSpace(aiResult.Title))
-                {
-                    // AI provided better metadata - save for retry
-                    aiTitle = aiResult.Title;
-                    aiAuthors = aiResult.Authors;
-                    aiProvidedBetterMetadata = true;
-
-                    // Use AI-provided metadata
-                    meta["title"] = aiResult.Title;
-                    meta["authors"] = aiResult.Authors;
-                    meta["publishedDate"] = aiResult.PublishedDate;
-                    meta["series"] = aiResult.Series;
-                    var existingCover = LibraryMetadataRules.TryGetMetaValue(meta, "coverUrl") as string;
-                    if (string.IsNullOrWhiteSpace(existingCover) && !string.IsNullOrWhiteSpace(aiResult.CoverUrl))
-                        meta["coverUrl"] = aiResult.CoverUrl;
-                }
-                meta["aiEnrichedAt"] = DateTime.UtcNow.ToString("o");
-            }
-
-            // Throttle between API calls
-            await AiThrottlingConfiguration.ThrottleAsync(token);
-        }
-
-        // API Call 2b: RETRY OpenLibrary with AI-corrected title/author
-        // This is the key improvement - if AI gave us better metadata, try OpenLibrary again
-        if (aiProvidedBetterMetadata && !string.IsNullOrWhiteSpace(aiTitle))
-        {
-            Log.Information("[LibraryWatcher] Retrying OpenLibrary with AI-corrected metadata: {Title}", aiTitle);
-            var retryOlData = await FetchOpenLibraryDataAsync(aiTitle!, aiAuthors ?? Array.Empty<string>(), token);
-            _statsService.RecordCall("OpenLibrary_Retry", retryOlData != null && retryOlData.Confidence >= 0.75, retryOlData?.Confidence);
-
-            if (retryOlData != null && retryOlData.Confidence >= 0.75)
-            {
-                Log.Information("[LibraryWatcher] OpenLibrary retry successful! Confidence: {Confidence}", retryOlData.Confidence);
-                meta["openLibraryConfidence"] = retryOlData.Confidence;
-
-                // Update metadata from high-confidence OpenLibrary result
-                if (!string.IsNullOrWhiteSpace(retryOlData.Title))
-                    meta["title"] = retryOlData.Title;
-                if (retryOlData.Authors.Length > 0)
-                    meta["authors"] = retryOlData.Authors;
-                if (retryOlData.FirstPublishYear != null)
-                    meta["publishedDate"] = retryOlData.FirstPublishYear.ToString();
-
-                coverUrl = LibraryMetadataRules.TryGetMetaValue(meta, "coverUrl") as string;
-                if (!LibraryMetadataRules.IsLocalCover(coverUrl) && string.IsNullOrWhiteSpace(coverUrl) && !string.IsNullOrWhiteSpace(retryOlData.CoverUrl))
-                    meta["coverUrl"] = retryOlData.CoverUrl;
-
-                if (string.IsNullOrWhiteSpace(LibraryMetadataRules.TryGetMetaValue(meta, "series") as string) && !string.IsNullOrWhiteSpace(retryOlData.Series))
-                    meta["series"] = retryOlData.Series;
-            }
-
-            await AiThrottlingConfiguration.ThrottleAsync(token);
-        }
-
-        // Re-read title/authors after potential updates
-        title = LibraryMetadataRules.TryGetMetaValue(meta, "title") as string;
-        authors = LibraryMetadataRules.TryGetMetaArray(meta, "authors") ?? Array.Empty<string>();
-
-        // API Call 3: Google Books (only for cover if still missing)
-        coverUrl = LibraryMetadataRules.TryGetMetaValue(meta, "coverUrl") as string;
-        if (!LibraryMetadataRules.IsLocalCover(coverUrl) && string.IsNullOrWhiteSpace(coverUrl))
-        {
-            var externalCover = await FetchGoogleBooksCoverAsync(title ?? "", authors, token);
-            _statsService.RecordCall("GoogleBooks", !string.IsNullOrWhiteSpace(externalCover));
-
-            if (!string.IsNullOrWhiteSpace(externalCover))
-                meta["coverUrl"] = externalCover;
-
-            // Throttle between API calls
-            await AiThrottlingConfiguration.ThrottleAsync(token);
-        }
-
-        // API Call 4: Goodreads (search only - no fallback chain)
-        if (!goodreadsRating.HasValue && LibraryMetadataRules.IsMetadataReliable(title, authors))
-        {
-            var fetchedRating = await FetchGoodreadsRatingSimpleAsync(title ?? "", authors, token);
-            _statsService.RecordCall("Goodreads", fetchedRating.HasValue);
-
-            if (fetchedRating.HasValue)
-                meta["goodreadsRating"] = fetchedRating.Value;
-            else
-                meta["goodreadsRating"] ??= null;
-        }
+        // The four external lookups and the rules for whose answer wins now live
+        // in BookEnrichmentPipeline. They came out together because they are one
+        // decision — "how sure are we who wrote this" — and interleaving them with
+        // file I/O was what made this method 309 lines and untestable.
+        await _pipeline.RunAsync(meta, fileInfo.Name, token);
 
         // Mark enrichment complete after a full pass
         meta["enrichmentComplete"] = true;
@@ -652,237 +487,13 @@ public class LibraryWatcherService : BackgroundService
         return _googleBooks.GetCoverUrlAsync(title, author);
     }
 
-    private async Task<double?> FetchGoodreadsRatingAsync(
-        string title,
-        string[] authors,
-        OpenLibraryData? openLibrary,
-        CancellationToken token)
-    {
-        if (string.IsNullOrWhiteSpace(title))
-            return null;
+    // The Goodreads fallback ladder (search page -> book page -> ISBN lookup -> an
+    // AI pass over the search HTML, five methods and up to six HTTP requests per
+    // book) lived here and was reachable from nothing. FetchGoodreadsRatingSimpleAsync
+    // replaced it deliberately -- see its summary -- but the old chain was left
+    // behind, so the file carried 240 lines that could not run, including a paid
+    // AI call. Recoverable from git if the fallbacks are ever wanted back.
 
-        var (best, searchHtml) = await FetchGoodreadsSearchResultsAsync(title, authors, token);
-        if (best?.Rating.HasValue == true)
-            return best.Rating;
-
-        if (!string.IsNullOrWhiteSpace(best?.Url))
-        {
-            var rating = await FetchGoodreadsRatingFromBookPageAsync(best.Url!, token);
-            if (rating.HasValue)
-                return rating;
-        }
-
-        if (openLibrary?.Isbns is { Length: > 0 })
-        {
-            var rating = await FetchGoodreadsRatingFromIsbnAsync(openLibrary.Isbns, token);
-            if (rating.HasValue)
-                return rating;
-        }
-
-        if (!string.IsNullOrWhiteSpace(searchHtml))
-        {
-            var rating = await FetchGoodreadsRatingWithAiFallbackAsync(searchHtml!, title, authors, token);
-            if (rating.HasValue)
-                return rating;
-        }
-
-        return null;
-    }
-
-    private async Task<(GoodreadsSearchResult? Best, string? Html)> FetchGoodreadsSearchResultsAsync(
-        string title,
-        string[] authors,
-        CancellationToken token)
-    {
-        var primaryAuthor = authors.FirstOrDefault(a => !string.IsNullOrWhiteSpace(a));
-        var query = string.IsNullOrWhiteSpace(primaryAuthor) ? title : $"{title} {primaryAuthor}";
-        var url = $"https://www.goodreads.com/search?q={Uri.EscapeDataString(query)}&search_type=books";
-
-        try
-        {
-            using var http = _httpFactory.CreateClient();
-            http.Timeout = TimeSpan.FromSeconds(10);
-            http.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36");
-            http.DefaultRequestHeaders.Accept.ParseAdd("text/html,application/xhtml+xml");
-
-            using var resp = await http.GetAsync(url, token);
-            if (!resp.IsSuccessStatusCode)
-                return (null, null);
-
-            var html = await resp.Content.ReadAsStringAsync(token);
-            if (string.IsNullOrWhiteSpace(html))
-                return (null, null);
-
-            var doc = new HtmlDocument();
-            doc.LoadHtml(html);
-            var rows = doc.DocumentNode.SelectNodes("//table[contains(@class,'tableList')]//tr");
-            if (rows == null || rows.Count == 0)
-                return (null, html);
-
-            GoodreadsSearchResult? best = null;
-            foreach (var row in rows)
-            {
-                var titleNode = row.SelectSingleNode(".//a[contains(@class,'bookTitle')]");
-                if (titleNode == null)
-                    continue;
-
-                var candidateTitle = WebUtility.HtmlDecode(titleNode.InnerText ?? string.Empty).Trim();
-                if (string.IsNullOrWhiteSpace(candidateTitle))
-                    continue;
-
-                var authorNodes = row.SelectNodes(".//a[contains(@class,'authorName')]");
-                var candidateAuthors = authorNodes == null
-                    ? Array.Empty<string>()
-                    : authorNodes
-                        .Select(n => WebUtility.HtmlDecode(n.InnerText ?? string.Empty).Trim())
-                        .Where(n => !string.IsNullOrWhiteSpace(n))
-                        .Distinct(StringComparer.OrdinalIgnoreCase)
-                        .ToArray();
-
-                var ratingNode = row.SelectSingleNode(".//span[contains(@class,'minirating')]");
-                var rating = ratingNode != null ? GoodreadsRatingParser.FromSearchResultText(ratingNode.InnerText) : null;
-
-                var href = titleNode.GetAttributeValue("href", "");
-                var urlValue = string.IsNullOrWhiteSpace(href) ? null : $"https://www.goodreads.com{href}";
-
-                var titleScore = TitleMatchScorer.TokenSimilarity(title, candidateTitle);
-                var authorScore = TitleMatchScorer.CandidateAuthorScore(authors, candidateAuthors);
-                var score = (titleScore * 0.7) + (authorScore * 0.3);
-
-                if (best == null || score > best.Score)
-                {
-                    best = new GoodreadsSearchResult(candidateTitle, candidateAuthors, rating, urlValue, score);
-                }
-            }
-
-            return (best, html);
-        }
-        catch
-        {
-            return (null, null);
-        }
-    }
-
-    private async Task<double?> FetchGoodreadsRatingFromBookPageAsync(string url, CancellationToken token)
-    {
-        try
-        {
-            using var http = _httpFactory.CreateClient();
-            http.Timeout = TimeSpan.FromSeconds(10);
-            http.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36");
-            http.DefaultRequestHeaders.Accept.ParseAdd("text/html,application/xhtml+xml");
-
-            using var resp = await http.GetAsync(url, token);
-            if (!resp.IsSuccessStatusCode)
-                return null;
-
-            var html = await resp.Content.ReadAsStringAsync(token);
-            return GoodreadsRatingParser.FromHtml(html);
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-    private async Task<double?> FetchGoodreadsRatingFromIsbnAsync(string[] isbns, CancellationToken token)
-    {
-        foreach (var isbn in isbns.Take(4))
-        {
-            if (string.IsNullOrWhiteSpace(isbn))
-                continue;
-
-            var clean = isbn.Trim();
-            if (clean.Length is < 9 or > 17)
-                continue;
-
-            var url = $"https://www.goodreads.com/book/isbn/{Uri.EscapeDataString(clean)}";
-            var rating = await FetchGoodreadsRatingFromBookPageAsync(url, token);
-            if (rating.HasValue)
-                return rating;
-        }
-
-        return null;
-    }
-
-    private async Task<double?> FetchGoodreadsRatingWithAiFallbackAsync(
-        string html,
-        string title,
-        string[] authors,
-        CancellationToken token)
-    {
-        var markerIndex = html.IndexOf("avg rating", StringComparison.OrdinalIgnoreCase);
-        if (markerIndex < 0)
-            markerIndex = html.IndexOf("ratingValue", StringComparison.OrdinalIgnoreCase);
-        if (markerIndex < 0)
-            return null;
-
-        var start = Math.Max(0, markerIndex - 4000);
-        var length = Math.Min(12000, html.Length - start);
-        var snippet = html.Substring(start, length);
-
-        try
-        {
-            using var http = _httpFactory.CreateClient("OpenAI");
-            var systemPrompt = @"You extract Goodreads average rating values from HTML snippets. Return ONLY JSON.";
-            var authorText = authors.Length > 0 ? string.Join(", ", authors) : "Unknown";
-            var userPrompt = $@"Title: {title}
-Author: {authorText}
-HTML snippet:
-{snippet}
-
-Return JSON:
-{{ ""rating"": number|null }}";
-
-            var payload = new
-            {
-                model = "gpt-4o",
-                input = new[]
-                {
-                    new { role = "system", content = systemPrompt },
-                    new { role = "user", content = userPrompt }
-                },
-                temperature = 0.0,
-                max_output_tokens = 120
-            };
-
-            var response = await http.PostAsJsonAsync("https://api.openai.com/v1/responses", payload, token);
-            if (!response.IsSuccessStatusCode)
-                return null;
-
-            using var stream = await response.Content.ReadAsStreamAsync(token);
-            using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: token);
-            var text = LibraryMetadataRules.ExtractResponseText(doc.RootElement);
-            if (string.IsNullOrWhiteSpace(text))
-                return null;
-
-            var cleaned = AiText.StripCodeFences(text);
-
-            using var resultDoc = JsonDocument.Parse(cleaned);
-            var root = resultDoc.RootElement;
-            if (root.TryGetProperty("rating", out var ratingProp))
-            {
-                if (ratingProp.ValueKind == JsonValueKind.Number && ratingProp.TryGetDouble(out var num))
-                    return num;
-                if (ratingProp.ValueKind == JsonValueKind.String &&
-                    double.TryParse(ratingProp.GetString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed))
-                    return parsed;
-            }
-        }
-        catch
-        {
-            return null;
-        }
-
-        return null;
-    }
-
-    private sealed record GoodreadsSearchResult(
-        string Title,
-        string[] Authors,
-        double? Rating,
-        string? Url,
-        double Score);
 
     // Jaccard token-similarity scoring (TokenSimilarity/CandidateAuthorScore/
     // NormalizeForMatch) moved to the shared Services/Library/TitleMatchScorer.cs
@@ -1143,55 +754,6 @@ Return JSON with:
         {
             return null;
         }
-    }
-
-    private sealed record OpenLibraryData(
-        string? CoverUrl,
-        string? PrimaryGenre,
-        string[] Tags,
-        string? Series,
-        string? Title,
-        string[] Authors,
-        int? FirstPublishYear,
-        double Confidence,
-        string[] Isbns);
-
-    private sealed record AiValidationAndEnrichment(
-        bool UseOpenLibrary,
-        string? Title,
-        string[] Authors,
-        string? PublishedDate,
-        string? Series,
-        string? CoverUrl);
-
-    private sealed class ExistingMeta
-    {
-        public string? Title { get; init; }
-        public string[]? Authors { get; init; }
-        public string? CoverUrl { get; init; }
-        public string? Source { get; init; }
-        public string? Md5 { get; init; }
-        public string? SavedAt { get; init; }
-        public string? PrimaryGenre { get; init; }
-        public string[]? Tags { get; init; }
-        public string? Series { get; init; }
-        public string[]? Genres { get; init; }
-        public string? PublishedDate { get; init; }
-        public string? Pages { get; init; }
-        public double? GoodreadsRating { get; init; }
-        public int? PersonalRating { get; init; }
-        public bool? ReaderEnabled { get; init; }
-        public string? Description { get; init; }
-        public double? OpenLibraryConfidence { get; init; }
-        public string? AiEnrichedAt { get; init; }
-        public bool EnrichmentComplete { get; init; }
-        public string[]? FavoritedBy { get; init; }
-        public DateTime? CullReviewedAt { get; init; }
-
-        public bool HasCoreMetadata =>
-            !string.IsNullOrWhiteSpace(Title) &&
-            Authors != null &&
-            Authors.Length > 0;
     }
 
     private static string ResolveLibraryRoot() => Helpers.StoragePaths.LibraryRoot();

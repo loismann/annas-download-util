@@ -151,8 +151,8 @@ Return JSON array of flashcards for individual terms found in the passage.";
             if (!response.IsSuccessStatusCode)
             {
                 var body = await response.Content.ReadAsStringAsync();
-                Log.Information("❌ OpenAI flashcard failed status={(int)response.StatusCode} body={Body}", body);
-                return Results.Problem($"OpenAI request failed: {(int)response.StatusCode}");
+                Log.Error("❌ OpenAI flashcard failed with HTTP {StatusCode}: {Body}", (int)response.StatusCode, body);
+                return Results.Problem(AiFailureMessage.ForResponse(response.StatusCode, body));
             }
 
             using var stream = await response.Content.ReadAsStreamAsync();

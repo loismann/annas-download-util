@@ -208,7 +208,8 @@ public static class LibraryHelpers
                 meta.Tags = existingTags.ToArray();
                 var updatedJson = JsonSerializer.Serialize(meta, jsonOptions);
                 await File.WriteAllTextAsync(metaPath, updatedJson);
-                Log.Information("[AddTags] Successfully updated tags for {fileName}: {string.Join(", ", meta.Tags)}");
+                Log.Information("[AddTags] Successfully updated tags for {FileName}: {Tags}",
+                    fileName, string.Join(", ", meta.Tags));
             }
             else
             {

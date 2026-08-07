@@ -89,7 +89,7 @@ public static class ResilienceConfiguration
                 BackoffType = DelayBackoffType.Exponential,
                 UseJitter = true,
                 Delay = TimeSpan.FromSeconds(2),
-                ShouldHandle = args => ValueTask.FromResult(ShouldRetry(args.Outcome)),
+                ShouldHandle = args => ShouldRetryAiCallAsync(args.Outcome),
                 OnRetry = args =>
                 {
                     Log.Warning("[{ServiceName}] Retry attempt {AttemptNumber} after {Delay}ms. Reason: {Reason}",
@@ -108,7 +108,7 @@ public static class ResilienceConfiguration
                 SamplingDuration = TimeSpan.FromSeconds(60),
                 MinimumThroughput = 3,
                 BreakDuration = TimeSpan.FromSeconds(60),
-                ShouldHandle = args => ValueTask.FromResult(ShouldRetry(args.Outcome)),
+                ShouldHandle = args => ShouldRetryAiCallAsync(args.Outcome),
                 OnOpened = args =>
                 {
                     Log.Warning("[{ServiceName}] Circuit breaker OPENED. AI service unavailable for {BreakDuration}s",
@@ -183,6 +183,61 @@ public static class ResilienceConfiguration
         });
 
         return builder;
+    }
+
+    /// <summary>
+    /// The error codes OpenAI returns, inside a 429, for conditions no amount of
+    /// waiting resolves.
+    /// </summary>
+    private static readonly string[] NonTransientQuotaCodes =
+    {
+        "insufficient_quota",
+        "credit_balance_exhausted",
+        "billing_hard_limit_reached",
+        "billing_not_active"
+    };
+
+    /// <summary>
+    /// Retry rule for AI calls. Identical to <see cref="ShouldRetry"/> except for
+    /// 429, which OpenAI overloads for two unrelated conditions: a real rate limit
+    /// (transient — back off and it clears) and an exhausted credit balance
+    /// (permanent — retrying cannot produce credits). Only the error body tells
+    /// them apart.
+    ///
+    /// Treating both as transient is what turned "you have no credits remaining"
+    /// into "the circuit is now open and is not allowing calls": three attempts
+    /// per chunk, all failing, tripped the breaker inside one chapter — and since
+    /// every AI feature shares the "OpenAI" client, that breaker then blanked
+    /// flashcards, quiz and vocab for a minute too, for a billing problem no
+    /// message ever named. Reading the body costs nothing on the success path;
+    /// it only runs on a 429.
+    /// </summary>
+    private static async ValueTask<bool> ShouldRetryAiCallAsync(Outcome<HttpResponseMessage> outcome)
+    {
+        if (outcome.Result is { StatusCode: HttpStatusCode.TooManyRequests } rateLimited)
+            return !await IsQuotaExhaustedAsync(rateLimited);
+
+        return ShouldRetry(outcome);
+    }
+
+    /// <summary>
+    /// True when a 429 is a billing failure rather than a rate limit. An
+    /// unreadable body falls back to "transient", the behaviour before this
+    /// existed — a broken guess must not make a recoverable call unrecoverable.
+    /// </summary>
+    private static async ValueTask<bool> IsQuotaExhaustedAsync(HttpResponseMessage response)
+    {
+        try
+        {
+            // ReadAsStringAsync buffers, so the caller can still read the body.
+            var body = await response.Content.ReadAsStringAsync();
+            return NonTransientQuotaCodes.Any(code =>
+                body.Contains(code, StringComparison.OrdinalIgnoreCase));
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     /// <summary>

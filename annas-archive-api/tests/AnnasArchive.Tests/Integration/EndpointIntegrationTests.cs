@@ -88,7 +88,14 @@ public class EndpointIntegrationTests : IClassFixture<WebApplicationFactory<Prog
                     ["Logging:LogLevel:Microsoft"] = "Error",
                     ["Logging:LogLevel:Microsoft.AspNetCore"] = "Error",
                     // Disable health checks that make real HTTP calls to external services
-                    ["Testing:DisableHealthChecks"] = "true"
+                    ["Testing:DisableHealthChecks"] = "true",
+                    // Gaming routes are mapped only when this is on, so with it off the
+                    // seven gaming tests asserted 401/400 against paths that answered
+                    // 404. Enabled here deliberately *without* Gaming:PcIp or
+                    // Gaming:SynologyHost: auth and argument validation both run before
+                    // either is read, so the tests exercise the real pipeline and no
+                    // handler ever reaches its ping or its ssh.
+                    ["Gaming:Enabled"] = "true"
                 }!);
             });
 
@@ -1861,14 +1868,24 @@ public class EndpointIntegrationTests : IClassFixture<WebApplicationFactory<Prog
     [Fact]
     public async Task Auth_UserActivity_WithValidToken_ShouldReturnOk()
     {
-        // Arrange
+        // The route is GET /api/auth/user-activity. This used to POST
+        // /api/auth/activity, which exists nowhere — and the SPA fallback answers
+        // any unmatched GET, so an unmatched POST came back 405 rather than the 404
+        // the test was willing to accept. It could not have passed, and it was not
+        // testing the endpoint it named.
         SetAuthToken();
 
-        // Act
-        var response = await _client.PostAsync("/api/auth/activity", null);
+        var response = await _client.GetAsync("/api/auth/user-activity");
 
-        // Assert - NotFound if endpoint doesn't exist in this API version
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NoContent, HttpStatusCode.Unauthorized, HttpStatusCode.NotFound);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task Auth_UserActivity_WithoutAuth_ShouldReturnUnauthorized()
+    {
+        var response = await _client.GetAsync("/api/auth/user-activity");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
     #endregion

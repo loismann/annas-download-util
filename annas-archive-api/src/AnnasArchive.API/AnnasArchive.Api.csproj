@@ -10,9 +10,9 @@
     <PackageReference Include="Dropbox.Api" Version="7.0.0" />
     <PackageReference Include="HtmlAgilityPack" Version="1.11.70" />
     <PackageReference Include="NReadabilityCore" Version="1.0.0" />
-    <PackageReference Include="MailKit" Version="4.14.0" />
+    <PackageReference Include="MailKit" Version="4.17.0" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.11" />
-    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.0" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.11" />
     <PackageReference Include="Serilog.AspNetCore" Version="10.0.0" />
     <PackageReference Include="Serilog.Enrichers.Environment" Version="3.0.1" />
     <PackageReference Include="Serilog.Enrichers.Thread" Version="4.0.0" />
@@ -22,7 +22,11 @@
     <PackageReference Include="VersOne.Epub" Version="3.3.4" />
     <ProjectReference Include="..\AnnasArchive.Core\AnnasArchive.Core.csproj" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.7.0" />
-    <PackageReference Include="Microsoft.Extensions.Http.Resilience" Version="8.11.0" />
+    <PackageReference Include="Microsoft.Extensions.Http.Resilience" Version="9.0.0" />
+    <!-- Pinned above the version Microsoft.Data.Sqlite 8.0.11 drags in (2.1.6),
+         which carries a High-severity advisory (GHSA-2m69-gcr7-jv3q) in the
+         bundled native SQLite. Staying on the 2.x line keeps net8.0 support. -->
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.5" />
     <PackageReference Include="Microsoft.Playwright" Version="1.49.0" />
   </ItemGroup>
 

@@ -156,8 +156,8 @@ Do NOT include any markdown formatting, explanations, or text outside the JSON a
             if (!response.IsSuccessStatusCode)
             {
                 var body = await response.Content.ReadAsStringAsync();
-                Log.Information("❌ OpenAI suggest-authors failed status={(int)response.StatusCode} body={Body}", body);
-                return Results.Problem($"OpenAI request failed: {(int)response.StatusCode}");
+                Log.Error("❌ OpenAI suggest-authors failed with HTTP {StatusCode}: {Body}", (int)response.StatusCode, body);
+                return Results.Problem(AiFailureMessage.ForResponse(response.StatusCode, body));
             }
 
             using var stream = await response.Content.ReadAsStreamAsync();
@@ -308,8 +308,8 @@ Rules:
             if (!response.IsSuccessStatusCode)
             {
                 var body = await response.Content.ReadAsStringAsync();
-                Log.Information("❌ OpenAI related-books failed status={(int)response.StatusCode} body={Body}", body);
-                return Results.Problem($"OpenAI request failed: {(int)response.StatusCode}");
+                Log.Error("❌ OpenAI related-books failed with HTTP {StatusCode}: {Body}", (int)response.StatusCode, body);
+                return Results.Problem(AiFailureMessage.ForResponse(response.StatusCode, body));
             }
 
             using var stream = await response.Content.ReadAsStreamAsync();
@@ -677,8 +677,8 @@ Rules:
             if (!response.IsSuccessStatusCode)
             {
                 var body = await response.Content.ReadAsStringAsync();
-                Log.Information("❌ OpenAI book-search failed status={(int)response.StatusCode} body={Body}", body);
-                return Results.Problem($"OpenAI request failed: {(int)response.StatusCode}");
+                Log.Error("❌ OpenAI book-search failed with HTTP {StatusCode}: {Body}", (int)response.StatusCode, body);
+                return Results.Problem(AiFailureMessage.ForResponse(response.StatusCode, body));
             }
 
             using var stream = await response.Content.ReadAsStreamAsync();
@@ -918,8 +918,8 @@ Rules:
             if (!response.IsSuccessStatusCode)
             {
                 var body = await response.Content.ReadAsStringAsync();
-                Log.Information("❌ OpenAI match-series-books failed status={(int)response.StatusCode} body={Body}", body);
-                return Results.Problem($"OpenAI request failed: {(int)response.StatusCode}");
+                Log.Error("❌ OpenAI match-series-books failed with HTTP {StatusCode}: {Body}", (int)response.StatusCode, body);
+                return Results.Problem(AiFailureMessage.ForResponse(response.StatusCode, body));
             }
 
             using var stream = await response.Content.ReadAsStreamAsync();

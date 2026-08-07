@@ -293,7 +293,8 @@ Return format (JSON only, no explanation):
                     if (response.StatusCode == System.Net.HttpStatusCode.TooManyRequests && retryCount < maxRetries)
                     {
                         var body = await response.Content.ReadAsStringAsync();
-                        Log.Information("⚠️  Rate limited (attempt {retryCount + 1}/{maxRetries + 1}): {Body}", body);
+                        Log.Warning("⚠️  Rate limited (attempt {Attempt}/{MaxAttempts}): {Body}",
+                            retryCount + 1, maxRetries + 1, body);
 
                         // Extract retry-after time from error message
                         double retryAfterSeconds = baseDelaySeconds * Math.Pow(2, retryCount); // Exponential backoff
@@ -556,7 +557,8 @@ Return format (JSON only, no explanation):
             // Create new response with filtered vocab included
             var response = cached with { Vocab = vocab };
 
-            Log.Information("✅ Returning cached section summary for chapter {ChapterId}, section {SectionIndex} (vocab: {vocab?.Count ?? 0} cards)", chapterId, sectionIndex);
+            Log.Information("✅ Returning cached section summary for chapter {ChapterId}, section {SectionIndex} (vocab: {VocabCount} cards)",
+                chapterId, sectionIndex, vocab?.Count ?? 0);
             return Results.Ok(response);
         }
 
@@ -731,7 +733,8 @@ Text to summarize:
                 var userId = UserHelpers.GetUserIdFromContext(context);
                 if (userId != null)
                     tokenUsage.AddUsage(userId, promptTokens, completionTokens);
-                Log.Information("📊 Token usage: {PromptTokens} prompt + {CompletionTokens} completion = {promptTokens + completionTokens} total", promptTokens, completionTokens);
+                Log.Information("📊 Token usage: {PromptTokens} prompt + {CompletionTokens} completion = {TotalTokens} total",
+                    promptTokens, completionTokens, promptTokens + completionTokens);
             }
 
             // Save to cache

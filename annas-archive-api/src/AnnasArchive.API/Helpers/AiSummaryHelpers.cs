@@ -13,6 +13,30 @@ namespace AnnasArchive.API.Helpers;
 public static class AiSummaryHelpers
 {
     /// <summary>
+    /// The one failure path for all three summary tiers: record the provider's own
+    /// reason against the status that carried it, and hand back an exception whose
+    /// message is already fit to show the reader.
+    ///
+    /// Each tier used to do this itself — log, emit an SSE <c>error</c> event, then
+    /// throw — which meant the client received two error events per failure (this
+    /// one, then the endpoint's catch-all) and the second, less specific one won.
+    /// Reporting to the client now happens once, in the endpoint, so the tiers only
+    /// have to explain what broke.
+    /// </summary>
+    private static async Task<AiServiceException> FailedCallAsync(
+        HttpResponseMessage failed,
+        string tier)
+    {
+        var body = await failed.Content.ReadAsStringAsync();
+        var userMessage = AiFailureMessage.ForResponse(failed.StatusCode, body);
+
+        Log.Error("❌ OpenAI {Tier} failed with HTTP {StatusCode}: {Body}",
+            tier, (int)failed.StatusCode, body);
+
+        return new AiServiceException(userMessage);
+    }
+
+    /// <summary>
     /// Loads the chapter index for a book, checking both library and Dropbox sources.
     /// </summary>
     public static async Task<CachedChapterIndex?> LoadChapterIndexAsync(
@@ -118,27 +142,15 @@ Write 300-400 words that assume the reader is intelligent but may lack specializ
 
             var chunkResponse = await http.PostAsJsonAsync("https://api.openai.com/v1/responses", payload);
             if (!chunkResponse.IsSuccessStatusCode)
-            {
-                var body = await chunkResponse.Content.ReadAsStringAsync();
-                Log.Information("❌ OpenAI chunk summary failed status={(int)chunkResponse.StatusCode} body={Body}", body);
-                await ServerSentEventsHelper.SendEventAsync(response, new
-                {
-                    stage = "chunks",
-                    stepNumber = i + 1,
-                    totalSteps = chunks.Count,
-                    message = $"Failed at chunk {i + 1}/{chunks.Count}",
-                    error = $"HTTP {(int)chunkResponse.StatusCode}: {body}"
-                }, "error");
-                throw new HttpRequestException($"Chunk summarization failed at chunk {i + 1}");
-            }
+                throw await FailedCallAsync(chunkResponse, $"chunk summary {i + 1}/{chunks.Count}");
 
             using var stream = await chunkResponse.Content.ReadAsStreamAsync();
             using var doc = await JsonDocument.ParseAsync(stream);
 
-            Log.Information("🔍 Chunk {i + 1} response JSON: {DocRootElementGetRawText}", doc.RootElement.GetRawText());
+            Log.Debug("🔍 Chunk {ChunkNumber} response JSON: {ResponseJson}", i + 1, doc.RootElement.GetRawText());
 
             var chunkSummary = aiResponseParser.ExtractText(doc.RootElement) ?? string.Empty;
-            Log.Information("🔍 Chunk {i + 1} extracted summary length: {ChunkSummaryLength}", chunkSummary.Length);
+            Log.Information("🔍 Chunk {ChunkNumber} extracted summary length: {SummaryLength}", i + 1, chunkSummary.Length);
 
             chunkSummaries.Add(chunkSummary);
 
@@ -223,19 +235,7 @@ Write 400-500 words. Maintain educational depth while creating a flowing narrati
 
             var sectionResponse = await http.PostAsJsonAsync("https://api.openai.com/v1/responses", sectionPayload);
             if (!sectionResponse.IsSuccessStatusCode)
-            {
-                var body = await sectionResponse.Content.ReadAsStringAsync();
-                Log.Information("❌ OpenAI section summary failed status={(int)sectionResponse.StatusCode} body={Body}", body);
-                await ServerSentEventsHelper.SendEventAsync(response, new
-                {
-                    stage = "sections",
-                    stepNumber = sectionNum,
-                    totalSteps = totalSections,
-                    message = $"Failed at section {sectionNum}/{totalSections}",
-                    error = $"HTTP {(int)sectionResponse.StatusCode}: {body}"
-                }, "error");
-                throw new HttpRequestException($"Section synthesis failed at section {sectionNum}");
-            }
+                throw await FailedCallAsync(sectionResponse, $"section synthesis {sectionNum}/{totalSections}");
 
             using var sectionStream = await sectionResponse.Content.ReadAsStreamAsync();
             using var sectionDoc = await JsonDocument.ParseAsync(sectionStream);
@@ -331,27 +331,15 @@ Write as if teaching an intelligent student. Define specialized terms, explain r
 
         var finalResponse = await http.PostAsJsonAsync("https://api.openai.com/v1/responses", finalPrompt);
         if (!finalResponse.IsSuccessStatusCode)
-        {
-            var body = await finalResponse.Content.ReadAsStringAsync();
-            Log.Information("❌ OpenAI final summary failed status={(int)finalResponse.StatusCode} body={Body}", body);
-            await ServerSentEventsHelper.SendEventAsync(response, new
-            {
-                stage = "final",
-                stepNumber = 1,
-                totalSteps = 1,
-                message = "Failed to create final summary",
-                error = $"HTTP {(int)finalResponse.StatusCode}: {body}"
-            }, "error");
-            throw new HttpRequestException("Final summary creation failed");
-        }
+            throw await FailedCallAsync(finalResponse, "final summary");
 
         using var finalStream = await finalResponse.Content.ReadAsStreamAsync();
         using var finalDoc = await JsonDocument.ParseAsync(finalStream);
 
-        Log.Information("🔍 Final response JSON: {FinalDocRootElementGetRawText}", finalDoc.RootElement.GetRawText());
+        Log.Debug("🔍 Final response JSON: {ResponseJson}", finalDoc.RootElement.GetRawText());
 
         string finalSummary = aiResponseParser.ExtractText(finalDoc.RootElement) ?? "No summary returned.";
-        Log.Information("🔍 Extracted summary length: {FinalSummaryLength}", finalSummary.Length);
+        Log.Information("🔍 Extracted summary length: {SummaryLength}", finalSummary.Length);
 
         var promptTokens = 0;
         var completionTokens = 0;

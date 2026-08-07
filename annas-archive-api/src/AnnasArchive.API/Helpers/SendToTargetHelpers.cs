@@ -19,16 +19,42 @@ public static class SendToTargetHelpers
     /// <param name="fileName">Name of the ebook file (used for extension detection)</param>
     /// <param name="coverService">The cover service to use for replacement</param>
     /// <param name="logPrefix">Prefix for log messages (e.g., "send-to-library")</param>
+    /// <param name="ct">Cancellation token for the SSRF guard's DNS lookup</param>
     /// <returns>The modified stream with the new cover, or the original stream</returns>
+    /// <remarks>
+    /// The SSRF guard lives here rather than at the six endpoints that call this,
+    /// because here it cannot be forgotten by the seventh. Every one of those
+    /// endpoints takes <c>coverUrl</c> straight off the query string and the only
+    /// check it got was <c>Uri.TryCreate(…, UriKind.Absolute)</c> — which happily
+    /// accepts <c>http://172.18.0.4:7878/api</c> or <c>http://169.254.169.254/</c>,
+    /// and <see cref="IEbookCoverService.ReplaceCoverAsync"/> then fetches it from
+    /// inside the compose network. `LibraryCoverEndpoints` already guarded its own
+    /// copy of this fetch; these six did not.
+    /// </remarks>
     public static async Task<Stream> TryReplaceCoverAsync(
         Stream ebookStream,
         string? coverUrl,
         string fileName,
         IEbookCoverService coverService,
-        string logPrefix)
+        string logPrefix,
+        CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(coverUrl))
             return ebookStream;
+
+        if (!Uri.TryCreate(coverUrl, UriKind.Absolute, out var coverUri) ||
+            (coverUri.Scheme != Uri.UriSchemeHttp && coverUri.Scheme != Uri.UriSchemeHttps))
+        {
+            Log.Warning("[{LogPrefix}] Rejected cover URL that is not an http(s) URL", logPrefix);
+            return ebookStream;
+        }
+
+        if (!await ValidationHelpers.IsPubliclyRoutableAsync(coverUri, ct))
+        {
+            Log.Warning("[{LogPrefix}] Rejected cover URL resolving to a non-public address: {CoverHost}",
+                logPrefix, coverUri.Host);
+            return ebookStream;
+        }
 
         var ext = Path.GetExtension(fileName).TrimStart('.');
         if (!coverService.IsFormatSupported(ext))

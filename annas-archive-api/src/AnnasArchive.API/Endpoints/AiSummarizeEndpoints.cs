@@ -173,8 +173,8 @@ Then add a 'Definitions:' section. BE EXTREMELY THOROUGH with definitions - incl
             if (!response.IsSuccessStatusCode)
             {
                 var body = await response.Content.ReadAsStringAsync();
-                Log.Information("❌ OpenAI summarize failed status={(int)response.StatusCode} body={Body}", body);
-                return Results.Problem($"OpenAI request failed: {(int)response.StatusCode}");
+                Log.Error("❌ OpenAI summarize failed with HTTP {StatusCode}: {Body}", (int)response.StatusCode, body);
+                return Results.Problem(AiFailureMessage.ForResponse(response.StatusCode, body));
             }
 
             using var stream = await response.Content.ReadAsStreamAsync();
@@ -213,8 +213,8 @@ Then add a 'Definitions:' section. BE EXTREMELY THOROUGH with definitions - incl
         }
         catch (Exception ex)
         {
-            Log.Information("❌ OpenAI summarize failed: {ExMessage}", ex.Message);
-            return ApiResponse.InternalError("Failed to summarize text.");
+            Log.Error(ex, "❌ OpenAI summarize failed");
+            return ApiResponse.InternalError(AiFailureMessage.ForException(ex));
         }
     }
 
@@ -405,8 +405,17 @@ Then add a 'Definitions:' section. BE EXTREMELY THOROUGH with definitions - incl
         }
         catch (Exception ex)
         {
-            Log.Information("❌ Full-chapter summary failed: {ExMessage}", ex.Message);
-            await ServerSentEventsHelper.SendEventAsync(context.Response, new { message = "Failed to summarize chapter.", error = ex.Message }, "error");
+            // The only place a chapter-summary failure reaches the browser. What
+            // goes out is the reason phrased for a reader — ex.Message here is an
+            // internal detail (after a tripped breaker, Polly's own "the circuit is
+            // now open"), which named neither the cause nor the fix.
+            Log.Error(ex, "❌ Full-chapter summary failed for {DropboxPath} chapter {ChapterId}",
+                request.DropboxPath, request.ChapterId);
+            await ServerSentEventsHelper.SendEventAsync(context.Response, new
+            {
+                message = "Failed to summarize chapter.",
+                error = AiFailureMessage.ForException(ex)
+            }, "error");
         }
         finally
         {
@@ -535,9 +544,8 @@ Chapter summary:
         if (!response.IsSuccessStatusCode)
         {
             var body = await response.Content.ReadAsStringAsync();
-            Log.Information("❌ OpenAI ultra summary failed: {ResponseStatusCode}", response.StatusCode);
-            Log.Information("   Response body: {Body}", body);
-            return Results.Problem($"Ultra summary failed: {(int)response.StatusCode}");
+            Log.Error("❌ OpenAI ultra summary failed with HTTP {StatusCode}: {Body}", (int)response.StatusCode, body);
+            return Results.Problem(AiFailureMessage.ForResponse(response.StatusCode, body));
         }
 
         using var stream = await response.Content.ReadAsStreamAsync();

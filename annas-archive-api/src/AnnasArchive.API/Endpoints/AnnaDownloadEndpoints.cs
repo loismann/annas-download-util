@@ -365,7 +365,7 @@ public static class AnnaDownloadEndpoints
                     body: stream
                 );
 
-                Log.Information("[send-to-boox] Dropbox upload successful! File: {uploaded.PathDisplay}", uploaded.PathDisplay);
+                Log.Information("[send-to-boox] Dropbox upload successful! File: {UploadedPath}", uploaded.PathDisplay);
 
                 // Get user name from auth context
                 var userName = context.User?.FindFirst(ClaimTypes.Email)?.Value

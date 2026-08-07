@@ -104,32 +104,15 @@
   display: none !important;
 }
 
-:host ::ng-deep .vocab-select-panel {
-  background: #ffffff !important;
-  color: #0f172a !important;
-  width: max-content !important;
-  min-width: 520px !important;
-  max-width: 80vw !important;
-  box-sizing: border-box;
-  border: 1px solid #e5e7eb !important;
-}
-
-:host ::ng-deep .vocab-select-panel .mat-mdc-option {
-  white-space: nowrap !important;
-  height: 48px !important;
-  padding: 0 16px !important;
-  line-height: 48px !important;
-  overflow: visible !important;
-}
-
-:host ::ng-deep .vocab-select-panel .mdc-list-item__primary-text {
-  white-space: nowrap !important;
-  overflow: visible !important;
-  text-overflow: unset !important;
-  line-height: 48px !important;
-  display: block !important;
-}
-
+/* The .vocab-select-panel rules that used to live here were deleted, not moved.
+   mat-select renders its panel into .cdk-overlay-container at <body>, so
+   `:host ::ng-deep .vocab-select-panel` — which compiles to a descendant
+   selector rooted at this component's host — could never match it. The panel
+   has always rendered with Material's defaults. Globalising them into
+   styles.scss would make them apply for the first time and widen the dropdown
+   to 520px; that is a visual change nobody has asked for, so it is deliberately
+   not done here. The panelClass in the template is left in place: it is the
+   hook that a global rule would need. */
 .vocab-modal-actions-row {
   display: flex;
   gap: 8px;

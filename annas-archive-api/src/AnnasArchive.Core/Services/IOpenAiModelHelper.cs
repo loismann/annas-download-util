@@ -24,7 +24,8 @@ public interface IOpenAiModelHelper
         object[] messages,
         int? maxCompletionTokens = null,
         double? temperature = null,
-        string? reasoningEffort = null);
+        string? reasoningEffort = null,
+        bool jsonMode = false);
 
     /// <summary>
     /// Gets a user-friendly description of model capabilities

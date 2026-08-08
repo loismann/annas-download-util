@@ -33,13 +33,12 @@ public interface ISpotifyDiscoveryService
 /// to account data. Spotify responses never travel back into an AI request.
 /// </summary>
 public sealed class SpotifyDiscoveryService(
-    IHttpClientFactory httpClientFactory,
     IConfiguration configuration,
     ISpotifyService spotify,
     ISpotifyKnownMusicService knownMusic,
     ISpotifyDiscoveryStore store,
     ISpotifyCurrentUser currentUser,
-    ITokenUsageService tokenUsage,
+    IAiChatCompletion chat,
     TimeProvider timeProvider) : ISpotifyDiscoveryService
 {
     private static readonly JsonSerializerOptions AiOptions = new()
@@ -283,41 +282,31 @@ public sealed class SpotifyDiscoveryService(
             A refinement replaces the candidate set using the complete user-request history below.
             """;
         var userPrompt = string.Join("\n", userPrompts.Select((value, index) => $"Request {index + 1}: {value}"));
-        var requestBody = new
-        {
-            model = "gpt-4o-mini",
-            messages = new[]
-            {
-                new { role = "system", content = systemPrompt },
-                new { role = "user", content = userPrompt }
-            },
-            temperature = 0.4,
-            max_tokens = 3_500,
-            response_format = new { type = "json_object" }
-        };
-
-        var client = httpClientFactory.CreateClient("OpenAI");
-        using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.openai.com/v1/chat/completions")
-        {
-            Content = new StringContent(JsonSerializer.Serialize(requestBody), Encoding.UTF8, "application/json")
-        };
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
-        using var response = await client.SendAsync(request, token);
-        var content = await response.Content.ReadAsStringAsync(token);
-        if (!response.IsSuccessStatusCode)
-            throw new InvalidOperationException("The music discovery service could not generate candidates.");
-
-        using var document = JsonDocument.Parse(content);
 
         // Discovery is the most expensive call Spotifinator makes (3,500
-        // tokens), and it was recorded nowhere. Billed to the owner whose
-        // library it is generating for.
-        AiSpend.Record(tokenUsage, currentUser.GetRequiredOwnerKey(), document.RootElement);
+        // tokens). Billed to the owner whose library it is generating for.
+        var outcome = await chat.CompleteAsync(
+            new AiChatCall(
+                Endpoint: "spotify-discovery",
+                Model: "gpt-4o-mini",
+                SystemPrompt: systemPrompt,
+                UserPrompt: userPrompt,
+                MaxCompletionTokens: 3_500,
+                Temperature: 0.4,
+                JsonMode: true),
+            currentUser.GetRequiredOwnerKey(),
+            token);
 
-        var json = document.RootElement.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString();
-        var parsed = string.IsNullOrWhiteSpace(json)
+        // The provider's own sentence is deliberately not surfaced here. This
+        // failure is rendered inside a conversation about music, where "You
+        // exceeded your current quota" is a worse answer than one sentence
+        // about the feature. The client has already logged the real reason.
+        if (!outcome.Succeeded)
+            throw new InvalidOperationException("The music discovery service could not generate candidates.");
+
+        var parsed = string.IsNullOrWhiteSpace(outcome.Text)
             ? null
-            : JsonSerializer.Deserialize<SpotifyDiscoveryAiResponse>(AiText.StripCodeFences(json), AiOptions);
+            : JsonSerializer.Deserialize<SpotifyDiscoveryAiResponse>(AiText.StripCodeFences(outcome.Text), AiOptions);
         return parsed ?? throw new InvalidOperationException("The music discovery service returned an invalid response.");
     }
 

@@ -39,18 +39,13 @@ public sealed class SpotifyCommandParser : ISpotifyCommandParser
         NumberHandling = JsonNumberHandling.AllowReadingFromString
     };
 
-    private readonly IHttpClientFactory _httpClientFactory;
     private readonly IConfiguration _configuration;
-    private readonly ITokenUsageService _tokenUsage;
+    private readonly IAiChatCompletion _chat;
 
-    public SpotifyCommandParser(
-        IHttpClientFactory httpClientFactory,
-        IConfiguration configuration,
-        ITokenUsageService tokenUsage)
+    public SpotifyCommandParser(IConfiguration configuration, IAiChatCompletion chat)
     {
-        _httpClientFactory = httpClientFactory;
         _configuration = configuration;
-        _tokenUsage = tokenUsage;
+        _chat = chat;
     }
 
     public async Task<SpotifyValidatedCommand> ParseAsync(
@@ -67,8 +62,10 @@ public sealed class SpotifyCommandParser : ISpotifyCommandParser
         if (LooksLikeCapabilityQuestion(message))
             return new SpotifyValidatedCommand(SpotifyReadAction.ExplainCapability, new SpotifyCommandArguments(), 1.0);
 
-        var apiKey = _configuration["OpenAI:ApiKey"];
-        if (string.IsNullOrWhiteSpace(apiKey))
+        // Checked here rather than left to the shared client: an unconfigured key
+        // is a state this feature degrades through — the assistant says it cannot
+        // interpret requests — where the client's own check throws.
+        if (string.IsNullOrWhiteSpace(_configuration["OpenAI:ApiKey"]))
         {
             Log.Warning("[Spotify] OpenAI:ApiKey is not configured; command parsing is unavailable");
             return Unresolved("I cannot interpret requests right now — the AI service is not configured.");
@@ -76,7 +73,7 @@ public sealed class SpotifyCommandParser : ISpotifyCommandParser
 
         try
         {
-            var envelope = await RequestEnvelopeAsync(message, conversationContext, apiKey, billTo, token);
+            var envelope = await RequestEnvelopeAsync(message, conversationContext, billTo, token);
             var validated = SpotifyActionCatalog.Validate(envelope);
 
             Log.Information(
@@ -96,7 +93,6 @@ public sealed class SpotifyCommandParser : ISpotifyCommandParser
     private async Task<SpotifyCommandEnvelope?> RequestEnvelopeAsync(
         string message,
         string? conversationContext,
-        string apiKey,
         string? billTo,
         CancellationToken token)
     {
@@ -144,51 +140,26 @@ public sealed class SpotifyCommandParser : ISpotifyCommandParser
             ? message
             : $"Earlier in this conversation:\n{conversationContext}\n\nNew message: {message}";
 
-        var requestBody = new
-        {
-            model = "gpt-4o-mini",
-            messages = new[]
-            {
-                new { role = "system", content = systemPrompt },
-                new { role = "user", content = userPrompt }
-            },
-            temperature = 0.0,
-            max_tokens = 300,
-            response_format = new { type = "json_object" }
-        };
+        var outcome = await _chat.CompleteAsync(
+            new AiChatCall(
+                Endpoint: "spotify-command-parse",
+                Model: "gpt-4o-mini",
+                SystemPrompt: systemPrompt,
+                UserPrompt: userPrompt,
+                MaxCompletionTokens: 300,
+                Temperature: 0.0,
+                JsonMode: true),
+            billTo,
+            token);
 
-        var client = _httpClientFactory.CreateClient("OpenAI");
-        using var request = new HttpRequestMessage(
-            HttpMethod.Post, "https://api.openai.com/v1/chat/completions")
-        {
-            Content = new StringContent(
-                JsonSerializer.Serialize(requestBody), Encoding.UTF8, "application/json")
-        };
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
-
-        using var response = await client.SendAsync(request, token);
-        var content = await response.Content.ReadAsStringAsync(token);
-
-        if (!response.IsSuccessStatusCode)
-        {
-            Log.Warning("[Spotify] OpenAI returned {StatusCode} while parsing a command", response.StatusCode);
-            return null;
-        }
-
-        using var document = JsonDocument.Parse(content);
-        AiSpend.Record(_tokenUsage, billTo, document.RootElement);
-
-        var messageContent = document.RootElement
-            .GetProperty("choices")[0]
-            .GetProperty("message")
-            .GetProperty("content")
-            .GetString();
-
-        if (string.IsNullOrWhiteSpace(messageContent))
+        // A failed classification is not an error to show anyone — the caller
+        // turns it into "I could not interpret that". The client has already
+        // logged the provider's reason.
+        if (!outcome.Succeeded || string.IsNullOrWhiteSpace(outcome.Text))
             return null;
 
         return JsonSerializer.Deserialize<SpotifyCommandEnvelope>(
-            AiText.StripCodeFences(messageContent), EnvelopeOptions);
+            AiText.StripCodeFences(outcome.Text), EnvelopeOptions);
     }
 
     private static readonly string[] CapabilityPhrases =

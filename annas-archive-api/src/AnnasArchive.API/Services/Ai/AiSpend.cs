@@ -4,6 +4,17 @@ using AnnasArchive.Core.Services;
 namespace AnnasArchive.API.Services.Ai;
 
 /// <summary>
+/// What one call cost. <see cref="None"/> means the response carried no usable
+/// numbers, which is a gap in a report rather than an error.
+/// </summary>
+public sealed record AiUsage(int PromptTokens, int CompletionTokens)
+{
+    public static readonly AiUsage None = new(0, 0);
+
+    public int TotalTokens => PromptTokens + CompletionTokens;
+}
+
+/// <summary>
 /// Records what an OpenAI call actually cost, from whichever response shape it
 /// came back in.
 ///
@@ -33,25 +44,37 @@ public static class AiSpend
 
     /// <summary>
     /// Charges <paramref name="billTo"/> for the call described by
-    /// <paramref name="responseRoot"/>. A null or blank account, or a response
-    /// carrying no usable numbers, records nothing.
+    /// <paramref name="responseRoot"/>, and returns what it cost. A null or
+    /// blank account is not billed, but the numbers are still read — a caller
+    /// that reports token counts back to the browser needs them either way.
     /// </summary>
     /// <remarks>
     /// Every field is probed rather than demanded. An unbilled call is a wrong
     /// figure in a report; a throw here would discard an answer the account was
     /// already charged for, which is strictly worse.
     /// </remarks>
-    public static void Record(ITokenUsageService tokenUsage, string? billTo, JsonElement responseRoot)
+    public static AiUsage Record(ITokenUsageService tokenUsage, string? billTo, JsonElement responseRoot)
     {
-        if (string.IsNullOrWhiteSpace(billTo)) return;
-        if (responseRoot.ValueKind != JsonValueKind.Object) return;
-        if (!responseRoot.TryGetProperty("usage", out var usage) || usage.ValueKind != JsonValueKind.Object) return;
+        var usage = Read(responseRoot);
+        if (usage == AiUsage.None) return usage;
+        if (string.IsNullOrWhiteSpace(billTo)) return usage;
 
-        var promptTokens = Count(usage, "prompt_tokens", "input_tokens");
-        var completionTokens = Count(usage, "completion_tokens", "output_tokens");
-        if (promptTokens == 0 && completionTokens == 0) return;
+        tokenUsage.AddUsage(billTo, usage.PromptTokens, usage.CompletionTokens);
+        return usage;
+    }
 
-        tokenUsage.AddUsage(billTo, promptTokens, completionTokens);
+    /// <summary>
+    /// Reads the two numbers without billing anyone. Both API shapes are
+    /// accepted; anything else reads as zero.
+    /// </summary>
+    public static AiUsage Read(JsonElement responseRoot)
+    {
+        if (responseRoot.ValueKind != JsonValueKind.Object) return AiUsage.None;
+        if (!responseRoot.TryGetProperty("usage", out var usage) || usage.ValueKind != JsonValueKind.Object) return AiUsage.None;
+
+        return new AiUsage(
+            Count(usage, "prompt_tokens", "input_tokens"),
+            Count(usage, "completion_tokens", "output_tokens"));
     }
 
     private static int Count(JsonElement usage, params string[] names)

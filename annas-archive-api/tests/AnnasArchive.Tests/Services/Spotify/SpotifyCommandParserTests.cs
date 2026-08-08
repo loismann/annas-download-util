@@ -2,6 +2,7 @@ using AnnasArchive.Core.Services;
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using AnnasArchive.API.Services.Ai;
 using AnnasArchive.API.Services.Spotify;
 using Microsoft.Extensions.Configuration;
 
@@ -215,12 +216,19 @@ public class SpotifyCommandParserTests
 
     private static SpotifyCommandParser Build(HttpMessageHandler handler, string? apiKey)
     {
-        var factory = new StubFactory(new HttpClient(handler));
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?> { ["OpenAI:ApiKey"] = apiKey })
             .Build();
 
-        return new SpotifyCommandParser(factory, configuration, Mock.Of<ITokenUsageService>());
+        // The real chat client over the stubbed handler, so the tests that read
+        // the outgoing request body still have one to read.
+        var chat = new AiChatCompletion(
+            new StubFactory(new HttpClient(handler)),
+            new OpenAiModelHelper(),
+            new AiResponseParser(),
+            Mock.Of<ITokenUsageService>());
+
+        return new SpotifyCommandParser(configuration, chat);
     }
 
     private sealed class StubFactory(HttpClient client) : IHttpClientFactory

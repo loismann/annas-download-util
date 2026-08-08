@@ -16,9 +16,23 @@ namespace AnnasArchive.API.Services.Ai;
 /// budget silently truncates the answer.
 /// </summary>
 /// <param name="Endpoint">Names this call in <c>PerfLog</c>; use the route's own name.</param>
+/// <param name="Temperature">
+/// Null means "do not send one", which is not the same as sending a default. On
+/// the GPT-5 family a temperature forces <c>reasoning_effort: none</c>, so a
+/// prompt that wants the model to reason must leave this unset — see
+/// <c>OpenAiModelHelper.BuildChatCompletionPayload</c>.
+/// </param>
 /// <param name="IsRetry">
 /// Recorded as a PerfLog tag when set. Null means the endpoint has no retry leg,
 /// so the tag is omitted entirely rather than logged as a constant false.
+/// </param>
+/// <param name="ReasoningEffort">
+/// Sent only when set, and mutually exclusive with <paramref name="Temperature"/>
+/// on the GPT-5 family for the reason above.
+/// </param>
+/// <param name="JsonMode">
+/// Makes the provider guarantee parseable JSON rather than merely being asked
+/// for it in the prompt. Set this for any prompt whose answer is deserialized.
 /// </param>
 public sealed record AiChatCall(
     string Endpoint,
@@ -26,8 +40,10 @@ public sealed record AiChatCall(
     string SystemPrompt,
     string UserPrompt,
     int MaxCompletionTokens,
-    double Temperature,
-    bool? IsRetry = null);
+    double? Temperature,
+    bool? IsRetry = null,
+    string? ReasoningEffort = null,
+    bool JsonMode = false);
 
 /// <summary>
 /// Either the model's text or the <see cref="IResult"/> to return instead.
@@ -38,6 +54,14 @@ public sealed record AiChatCall(
 public sealed record AiChatOutcome(string? Text, IResult? Failure)
 {
     public bool Succeeded => Failure is null;
+
+    /// <summary>
+    /// What the call cost. Billing already happened inside the client; this is
+    /// here only for the few responses that report the figures back to the
+    /// browser. <see cref="AiUsage.None"/> on failure, and when the provider
+    /// sent no usable numbers.
+    /// </summary>
+    public AiUsage Usage { get; init; } = AiUsage.None;
 }
 
 public interface IAiChatCompletion
@@ -97,7 +121,11 @@ public sealed class AiChatCompletion(
         string? billTo,
         CancellationToken cancellationToken = default)
     {
-        using var http = httpFactory.CreateClient("OpenAI");
+        // Not `using`: IHttpClientFactory owns the handler behind this client and
+        // pools it. Disposing the client does nothing useful in production, and
+        // where a factory hands back the same instance twice — which is how the
+        // Spotify tests stub it — the second caller gets ObjectDisposedException.
+        var http = httpFactory.CreateClient("OpenAI");
 
         var payload = modelHelper.BuildChatCompletionPayload(
             call.Model,
@@ -106,7 +134,9 @@ public sealed class AiChatCompletion(
                 new { role = "user", content = call.UserPrompt }
             ],
             maxCompletionTokens: call.MaxCompletionTokens,
-            temperature: call.Temperature);
+            temperature: call.Temperature,
+            reasoningEffort: call.ReasoningEffort,
+            jsonMode: call.JsonMode);
 
         var sw = Stopwatch.StartNew();
         var response = await http.PostAsJsonAsync(CompletionsUrl, payload, cancellationToken);
@@ -131,9 +161,9 @@ public sealed class AiChatCompletion(
         using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
         using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
 
-        AiSpend.Record(tokenUsage, billTo, doc.RootElement);
+        var usage = AiSpend.Record(tokenUsage, billTo, doc.RootElement);
 
-        return new AiChatOutcome(responseParser.ExtractText(doc.RootElement), null);
+        return new AiChatOutcome(responseParser.ExtractText(doc.RootElement), null) { Usage = usage };
     }
 
     private static (string Key, object? Value)[] Tags(AiChatCall call) =>

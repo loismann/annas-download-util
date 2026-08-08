@@ -123,42 +123,14 @@ public static class AiSummarizeEndpoints
                 ? $"Book context -> {string.Join(" | ", contextParts)}"
                 : "Book context -> (not provided)";
 
-            // Build the system prompt with known words exclusion
-            var systemPromptBase = @"You are an advanced literary analysis assistant with deep knowledge of philosophy, critical theory, and cultural studies. Provide a rich, thoughtful analysis (max 200 words) that goes beyond surface-level reading:
-
-**Analysis should include:**
-- What's happening narratively and conceptually
-- Philosophical undertones and implicit arguments the author is making
-- Literary techniques and their rhetorical effect
-- How this passage connects to broader themes in the work
-- Academic interpretations and critical perspectives (if applicable)
-- Cultural, historical, or political context that enriches understanding
-- Connections to other philosophical or literary traditions
-
-Then add a 'Definitions:' section. BE EXTREMELY THOROUGH with definitions - include ALL words/phrases a typical high school student might not know: archaic terms, foreign words/phrases, technical jargon, sophisticated vocabulary, philosophical concepts, brand names, historical items, British/European terms, proper nouns needing context, academic terminology. Err on the side of over-defining.";
-
-            string systemPrompt;
-            if (request.KnownWords != null && request.KnownWords.Count > 0)
-            {
-                var knownWordsList = string.Join(", ", request.KnownWords);
-                systemPrompt = $"{systemPromptBase}\n\nIMPORTANT: The user already knows these words, so DO NOT define them: {knownWordsList}. Total response can be up to 600 words.";
-            }
-            else
-            {
-                systemPrompt = $"{systemPromptBase}\n\nTotal response can be up to 600 words.";
-            }
-
-            var userPrompt = textProcessing.BuildAnalysisPrompt(contextBlock, previousAnalyses, request.Text);
-            var fullInput = $"{systemPrompt}\n\n{userPrompt}";
-
             var outcome = await ai.CompleteAsync(
-                new AiResponsesCall(
-                    Endpoint: "summarize",
-                    Model: model,
-                    Input: fullInput,
-                    MaxOutputTokens: cfg.GetValue<int>("AI:MaxCompletionTokens:Vocabulary"),
-                    ReasoningEffort: cfg.GetValue<string>("AI:ReasoningEffort:Vocabulary"),
-                    Temperature: cfg.GetValue<double>("AI:Temperature:Vocabulary")),
+                ChapterSummaryPrompts.PassageAnalysis(
+                    model: model,
+                    userPrompt: textProcessing.BuildAnalysisPrompt(contextBlock, previousAnalyses, request.Text),
+                    knownWords: request.KnownWords,
+                    maxOutputTokens: cfg.GetValue<int>("AI:MaxCompletionTokens:Vocabulary"),
+                    reasoningEffort: cfg.GetValue<string>("AI:ReasoningEffort:Vocabulary"),
+                    temperature: cfg.GetValue<double>("AI:Temperature:Vocabulary")),
                 context);
 
             if (!outcome.Succeeded) return outcome.Failure!;
@@ -412,12 +384,9 @@ Then add a 'Definitions:' section. BE EXTREMELY THOROUGH with definitions - incl
         HttpContext context,
         [FromBody] UltraChapterSummaryRequest request,
         DropboxClient dropbox,
-        IHttpClientFactory httpFactory,
         IConfiguration cfg,
-        ITokenUsageService tokenUsage,
-        IOpenAiModelHelper modelHelper,
-        IAiResponseParser aiResponseParser,
-        IModelSelectionService modelSelection)
+        IModelSelectionService modelSelection,
+        IAiChatCompletion chat)
     {
         if (request is null || string.IsNullOrWhiteSpace(request.DropboxPath) || request.ChapterId < 0)
             return ApiResponse.BadRequest("dropboxPath and valid chapterId are required.");
@@ -439,10 +408,6 @@ Then add a 'Definitions:' section. BE EXTREMELY THOROUGH with definitions - incl
         if (string.IsNullOrWhiteSpace(baseSummaryText))
             return ApiResponse.NotFound("Full chapter summary is required before generating the dummy explanation.");
 
-        var apiKey = cfg["OpenAI:ApiKey"] ?? Environment.GetEnvironmentVariable("OPENAI_API_KEY");
-        if (string.IsNullOrWhiteSpace(apiKey))
-            return Results.Problem("OpenAI API key not configured.");
-
         var index = await AiSummaryHelpers.LoadChapterIndexAsync(dropbox, request.DropboxPath);
         var chapter = index?.Chapters.FirstOrDefault(c => c.Id == request.ChapterId);
         var chapterTitle = chapter?.Title;
@@ -460,78 +425,30 @@ Then add a 'Definitions:' section. BE EXTREMELY THOROUGH with definitions - incl
 
         var contextLine = contextParts.Count > 0 ? string.Join(" | ", contextParts) : "Chapter context";
 
-        var systemPrompt = @"You are a friendly teacher who makes hard ideas feel obvious.
-Write in a warm, conversational tone for a smart reader with zero background knowledge.
-Use 3–5 short paragraphs. No headings, no bullet points, no numbered lists.";
+        var outcome = await chat.CompleteAsync(
+            ReaderPrompts.DummyChapterSummary(
+                model: cfg["OpenAI:ModelUltra"]
+                    ?? Environment.GetEnvironmentVariable("OPENAI_MODEL_ULTRA")
+                    ?? modelSelection.GetModelDeep(),
+                chapterContext: contextLine,
+                baseSummaryText: baseSummaryText,
+                maxCompletionTokens: cfg.GetValue<int?>("AI:MaxCompletionTokens:UltraChapterSummary")
+                    ?? cfg.GetValue<int?>("AI:MaxCompletionTokens:FullChapterSummary")
+                    ?? 1400,
+                reasoningEffort: cfg.GetValue<string>("AI:ReasoningEffort:UltraSummary") ?? "high"),
+            context);
 
-        var userPrompt = $@"Explain this chapter in the clearest, most human way possible.
-Focus on:
-- why this matters
-- what the author is really getting at
-- why someone should care
-- how it connects (or doesn't) to modern life
-
-Be direct, vivid, and helpful without dumbing it down.
-
-{contextLine}
-
-Chapter summary:
-{baseSummaryText}";
-
-        using var http = httpFactory.CreateClient("OpenAI");
-        var model = cfg["OpenAI:ModelUltra"]
-            ?? Environment.GetEnvironmentVariable("OPENAI_MODEL_ULTRA")
-            ?? modelSelection.GetModelDeep();
-
-        var reasoningEffort = cfg.GetValue<string>("AI:ReasoningEffort:UltraSummary") ?? "high";
-        var maxCompletion = cfg.GetValue<int?>("AI:MaxCompletionTokens:UltraChapterSummary")
-            ?? cfg.GetValue<int?>("AI:MaxCompletionTokens:FullChapterSummary")
-            ?? 1400;
-
-        var payload = modelHelper.BuildChatCompletionPayload(
-            model,
-            new object[]
-            {
-                new { role = "system", content = systemPrompt },
-                new { role = "user", content = userPrompt }
-            },
-            maxCompletionTokens: maxCompletion,
-            temperature: null,
-            reasoningEffort: reasoningEffort
-        );
-
-        var response = await http.PostAsJsonAsync("https://api.openai.com/v1/chat/completions", payload);
-        if (!response.IsSuccessStatusCode)
-        {
-            var body = await response.Content.ReadAsStringAsync();
-            Log.Error("❌ OpenAI ultra summary failed with HTTP {StatusCode}: {Body}", (int)response.StatusCode, body);
-            return Results.Problem(AiFailureMessage.ForResponse(response.StatusCode, body));
-        }
-
-        using var stream = await response.Content.ReadAsStreamAsync();
-        using var doc = await JsonDocument.ParseAsync(stream);
-        var summary = aiResponseParser.ExtractText(doc.RootElement);
-        if (string.IsNullOrWhiteSpace(summary))
+        if (!outcome.Succeeded) return outcome.Failure!;
+        if (string.IsNullOrWhiteSpace(outcome.Text))
             return Results.Problem("Ultra summary response was empty.");
-
-        var promptTokens = 0;
-        var completionTokens = 0;
-        if (doc.RootElement.TryGetProperty("usage", out var usage))
-        {
-            promptTokens = usage.GetProperty("prompt_tokens").GetInt32();
-            completionTokens = usage.GetProperty("completion_tokens").GetInt32();
-            var userId = UserHelpers.GetUserIdFromContext(context);
-            if (userId != null)
-                tokenUsage.AddUsage(userId, promptTokens, completionTokens);
-        }
 
         // Note: No longer calculating global allowance stats (now tracked per-user)
         var summaryData = new
         {
-            summary = summary,
-            promptTokens,
-            completionTokens,
-            totalTokens = promptTokens + completionTokens,
+            summary = outcome.Text,
+            promptTokens = outcome.Usage.PromptTokens,
+            completionTokens = outcome.Usage.CompletionTokens,
+            totalTokens = outcome.Usage.TotalTokens,
             cachedAt = DateTime.UtcNow
         };
 

@@ -110,19 +110,9 @@ public static class AiSummaryHelpers
         var promptTokensTotal = 0;
         var completionTokensTotal = 0;
 
-        var chunkInstructions = @"You are an educational guide helping someone deeply understand complex texts. Analyze this passage with rich detail:
-
-1. **What's Happening**: Summarize the main points, arguments, or narrative events
-2. **Key Concepts**: Identify and explain central ideas or terminology
-3. **Context**: What historical, philosophical, or intellectual background is relevant?
-4. **Significance**: Why does this matter? What is the author building toward?
-
-Write 300-400 words that assume the reader is intelligent but may lack specialized background knowledge. Explain references and provide context.";
-
         for (var i = 0; i < chunks.Count; i++)
         {
             var chunk = chunks[i];
-            var chunkInput = $"{chunkInstructions}\n\nContext: {contextLine}\n\n{chunk}";
 
             await ServerSentEventsHelper.SendEventAsync(response, new
             {
@@ -133,12 +123,10 @@ Write 300-400 words that assume the reader is intelligent but may lack specializ
             }, "progress");
 
             var outcome = await ai.CompleteAsync(
-                new AiResponsesCall(
-                    Endpoint: "chunk-summary",
-                    Model: model,
-                    Input: chunkInput,
-                    MaxOutputTokens: cfg.GetValue<int>("AI:MaxCompletionTokens:ChunkSummary"),
-                    ReasoningEffort: cfg.GetValue<string>("AI:ReasoningEffort:ChunkSummary")),
+                ChapterSummaryPrompts.ChunkSummary(
+                    model, contextLine, chunk,
+                    cfg.GetValue<int>("AI:MaxCompletionTokens:ChunkSummary"),
+                    cfg.GetValue<string>("AI:ReasoningEffort:ChunkSummary")),
                 billTo);
 
             if (!outcome.Succeeded)
@@ -191,15 +179,6 @@ Write 300-400 words that assume the reader is intelligent but may lack specializ
         var totalSections = (int)Math.Ceiling((double)chunkSummaries.Count / chunksPerSection);
         var sectionNum = 0;
 
-        var sectionInstructions = @"You are synthesizing multiple passage analyses into a coherent section summary. Create a unified narrative that:
-
-1. **Traces the Development**: How do the ideas/arguments/events progress through these passages?
-2. **Identifies Core Themes**: What are the central concerns of this section?
-3. **Contextualizes**: What intellectual traditions, historical debates, or prior thinkers is the author engaging with?
-4. **Clarifies**: Explain difficult concepts in accessible terms
-
-Write 400-500 words. Maintain educational depth while creating a flowing narrative.";
-
         for (var i = 0; i < chunkSummaries.Count; i += chunksPerSection)
         {
             sectionNum++;
@@ -214,15 +193,11 @@ Write 400-500 words. Maintain educational depth while creating a flowing narrati
                 message = $"Synthesizing section {sectionNum}/{totalSections}..."
             }, "progress");
 
-            var sectionInput = $"{sectionInstructions}\n\nContext: {contextLine}\n\n{string.Join("\n\n---\n\n", sectionChunks)}";
-
             var outcome = await ai.CompleteAsync(
-                new AiResponsesCall(
-                    Endpoint: "section-synthesis",
-                    Model: model,
-                    Input: sectionInput,
-                    MaxOutputTokens: cfg.GetValue<int>("AI:MaxCompletionTokens:SectionSynthesis"),
-                    ReasoningEffort: cfg.GetValue<string>("AI:ReasoningEffort:SectionSynthesis")),
+                ChapterSummaryPrompts.SectionSynthesis(
+                    model, contextLine, sectionChunks,
+                    cfg.GetValue<int>("AI:MaxCompletionTokens:SectionSynthesis"),
+                    cfg.GetValue<string>("AI:ReasoningEffort:SectionSynthesis")),
                 billTo);
 
             if (!outcome.Succeeded)
@@ -272,46 +247,11 @@ Write 400-500 words. Maintain educational depth while creating a flowing narrati
             message = "Creating final comprehensive summary..."
         }, "progress");
 
-        var finalInstructions = $@"Create a comprehensive 700-900 word educational summary of this chapter that helps someone truly understand and appreciate the material.
-
-Your summary should cover:
-
-1. **Overview**:
-   - What is this chapter fundamentally about?
-   - What are the main arguments, ideas, or events?
-
-2. **Historical & Intellectual Context**:
-   - When and where was this written?
-   - What historical events, political climate, or cultural conditions shaped this work?
-   - What intellectual traditions or prior thinkers is the author responding to?
-   - What debates or questions was the author engaging with?
-
-3. **Core Arguments & Ideas**:
-   - What are the key claims or propositions?
-   - How does the author support these claims?
-   - What concepts or terminology are central to understanding this?
-
-4. **Significance & Interpretation**:
-   - Why does this matter?
-   - What impact has this had (or might it have)?
-   - What makes this important or interesting?
-
-5. **Connections**:
-   - How does this relate to other thinkers, movements, or texts?
-   - What contemporary issues or questions does this illuminate?
-
-Write as if teaching an intelligent student. Define specialized terms, explain references, and provide context that helps someone new to this material truly understand what's going on and why it matters. Be thorough and educational.";
-
-        var userContent = $"Book context: {string.Join(" | ", contextParts)}\n\nSection summaries:\n{string.Join("\n\n---\n\n", sectionSummaries)}";
-        var fullInput = $"{finalInstructions}\n\n{userContent}";
-
         var outcome = await ai.CompleteAsync(
-            new AiResponsesCall(
-                Endpoint: "final-summary",
-                Model: model,
-                Input: fullInput,
-                MaxOutputTokens: cfg.GetValue<int>("AI:MaxCompletionTokens:FinalSummary"),
-                ReasoningEffort: cfg.GetValue<string>("AI:ReasoningEffort:FinalSummary")),
+            ChapterSummaryPrompts.FinalSummary(
+                model, contextParts, sectionSummaries,
+                cfg.GetValue<int>("AI:MaxCompletionTokens:FinalSummary"),
+                cfg.GetValue<string>("AI:ReasoningEffort:FinalSummary")),
             billTo);
 
         if (!outcome.Succeeded)

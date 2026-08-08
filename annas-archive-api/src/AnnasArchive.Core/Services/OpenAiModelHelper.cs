@@ -26,12 +26,19 @@ public class OpenAiModelHelper : IOpenAiModelHelper
     /// Builds a Chat Completions API payload with model-specific parameters.
     /// Handles GPT-5.2, o1, and GPT-4 model families correctly.
     /// </summary>
+    /// <param name="jsonMode">
+    /// Sends <c>response_format: {"type":"json_object"}</c>, which makes the
+    /// provider itself guarantee parseable JSON. Asking for JSON in the prompt
+    /// and asking for it here are not the same thing — the prompt is a request
+    /// the model may approximate, this is a constraint on decoding.
+    /// </param>
     public object BuildChatCompletionPayload(
         string model,
         object[] messages,
         int? maxCompletionTokens = null,
         double? temperature = null,
-        string? reasoningEffort = null)
+        string? reasoningEffort = null,
+        bool jsonMode = false)
     {
         var payload = new Dictionary<string, object>
         {
@@ -42,6 +49,11 @@ public class OpenAiModelHelper : IOpenAiModelHelper
         if (maxCompletionTokens.HasValue)
         {
             payload["max_completion_tokens"] = maxCompletionTokens.Value;
+        }
+
+        if (jsonMode)
+        {
+            payload["response_format"] = new { type = "json_object" };
         }
 
         // Handle temperature and reasoning based on model family

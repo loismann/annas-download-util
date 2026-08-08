@@ -36,12 +36,6 @@ public sealed record AiResponsesCall(
     string? ReasoningEffort = null,
     double? Temperature = null);
 
-/// <summary>What a call cost. Zero when the response carried no usable numbers.</summary>
-public sealed record AiUsage(int PromptTokens, int CompletionTokens)
-{
-    public static readonly AiUsage None = new(0, 0);
-}
-
 /// <summary>
 /// Either the model's text, or the failure. <see cref="Usage"/> is populated on
 /// success so callers that aggregate across several calls — the three-tier
@@ -98,7 +92,8 @@ public sealed class AiResponsesCompletion(
     public async Task<AiResponsesOutcome> CompleteAsync(
         AiResponsesCall call, string? billTo, CancellationToken cancellationToken = default)
     {
-        using var http = httpFactory.CreateClient("OpenAI");
+        // Not `using` — see the note on the same line in AiChatCompletion.
+        var http = httpFactory.CreateClient("OpenAI");
 
         var sw = Stopwatch.StartNew();
         var response = await http.PostAsJsonAsync(ResponsesUrl, BuildPayload(call), cancellationToken);
@@ -125,12 +120,10 @@ public sealed class AiResponsesCompletion(
         using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
         using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
 
-        AiSpend.Record(tokenUsage, billTo, doc.RootElement);
+        // Billing and reporting read the same numbers, so they read them once.
+        var usage = AiSpend.Record(tokenUsage, billTo, doc.RootElement);
 
-        return new AiResponsesOutcome(
-            responseParser.ExtractText(doc.RootElement),
-            null,
-            ReadUsage(doc.RootElement));
+        return new AiResponsesOutcome(responseParser.ExtractText(doc.RootElement), null, usage);
     }
 
     /// <summary>
@@ -161,17 +154,4 @@ public sealed class AiResponsesCompletion(
 
         return payload;
     }
-
-    private static AiUsage ReadUsage(JsonElement root)
-    {
-        if (!root.TryGetProperty("usage", out var usage) || usage.ValueKind != JsonValueKind.Object)
-            return AiUsage.None;
-
-        return new AiUsage(Count(usage, "input_tokens"), Count(usage, "output_tokens"));
-    }
-
-    private static int Count(JsonElement usage, string name) =>
-        usage.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Number
-            ? value.GetInt32()
-            : 0;
 }

@@ -129,6 +129,29 @@ public class AiChatCompletionTests
     }
 
     [Fact]
+    public async Task DoesNotDisposeTheClientItWasHanded()
+    {
+        // IHttpClientFactory owns the handler and pools it, so disposing the
+        // client it returns is never the caller's job. It looked harmless
+        // because AddHttpClient hands back a fresh wrapper each time — but a
+        // factory that returns one instance twice, which is how several suites
+        // stub it, made the second call throw ObjectDisposedException.
+        var handler = Ok(Completion("answer"));
+        var client = new HttpClient(handler.Object);
+        var factory = new Mock<IHttpClientFactory>();
+        factory.Setup(f => f.CreateClient(It.IsAny<string>())).Returns(client);
+
+        var service = new AiChatCompletion(
+            factory.Object, new OpenAiModelHelper(), new AiResponseParser(), _tokenUsage.Object);
+
+        var first = await service.CompleteAsync(Call(), billTo: null);
+        var second = await service.CompleteAsync(Call(), billTo: null);
+
+        first.Succeeded.Should().BeTrue();
+        second.Succeeded.Should().BeTrue("the client must survive the first call");
+    }
+
+    [Fact]
     public async Task AbandonsTheCallWhenTheCallerCancels()
     {
         var handler = new Mock<HttpMessageHandler>();
@@ -149,6 +172,14 @@ public class AiChatCompletionTests
     }
 
     // ─── Helpers ─────────────────────────────────────────────────────────
+
+    private static AiChatCall Call() => new(
+        Endpoint: "test",
+        Model: "gpt-4o",
+        SystemPrompt: "You are a test.",
+        UserPrompt: "Do the thing.",
+        MaxCompletionTokens: 100,
+        Temperature: 0.3);
 
     private static string Completion(string content, int? promptTokens = null, int? completionTokens = null)
     {

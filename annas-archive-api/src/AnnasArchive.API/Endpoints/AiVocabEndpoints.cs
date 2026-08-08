@@ -49,54 +49,22 @@ public static class AiVocabEndpoints
 
         try
         {
-            var model = modelSelection.GetModelDeep();
-
-            var contextParts = new List<string>();
-            if (!string.IsNullOrWhiteSpace(request.BookTitle))
-                contextParts.Add($"Book: {request.BookTitle}");
-            if (!string.IsNullOrWhiteSpace(request.DropboxPath))
-                contextParts.Add($"Source path: {request.DropboxPath}");
-
-            var prompt = $@"Provide a rich, scholarly 300-400 word deep dive on the term/phrase ""{request.Term}"" that goes beyond dictionary definitions.
-
-Respond as concise HTML with paragraphs, <ul>, <strong>, and include up to 2-3 reliable image URLs and 1-2 reference links (e.g., Wikipedia) that help explain the term.
-
-**Your analysis should explore:**
-- Core meaning and etymology
-- Historical development and evolution of the concept
-- How this term/concept is understood in different academic disciplines (philosophy, literature, sociology, etc.)
-- Key thinkers, works, or movements associated with it
-- How it appears in popular culture vs. academic discourse
-- Common misconceptions or debates surrounding the term
-- Relevance to contemporary discussions or current events (if applicable)
-- Interesting facts or notable usage examples
-
-IMAGE RULES (strict):
-- Prefer upload.wikimedia.org or commons.wikimedia.org images; use fully-qualified HTTPS URLs with underscores instead of spaces.
-- Do NOT include images unless you are confident the URL exists and is directly fetchable (ending in .jpg/.png/.jpeg).
-- If unsure about an image URL, skip images entirely.
-
-Structure:
-- Rich overview paragraph (2-3 sentences)
-- Bullet list covering the points above
-- A ""Resources"" section with authoritative hyperlinks (plain <a href=""..."">text</a>)
-- After the text, include a line ""Images:"" followed by <img src=""..."" alt=""..."" loading=""lazy"" /> for each image (absolute URLs only). Use images that are likely to be stable (e.g., Wikimedia, Wikipedia, major news/edu sites). No base64.
-
-Context: {string.Join(" | ", contextParts)}
-Definition (if given): {request.Definition ?? "(none)"}
-Relevant passage/context: {request.Context ?? "(none)"}";
-
-            var systemInstructions = "You are a scholarly explainer with expertise in philosophy, critical theory, literature, history, and cultural studies. Provide nuanced, intellectually rich analysis that bridges academic and accessible discourse.";
-            var fullInput = $"{systemInstructions}\n\n{prompt}";
-
+            // The budget keys say WikiImages, not LearnMore, and that is not a
+            // typo being preserved by accident — AI:MaxCompletionTokens:LearnMore
+            // exists in appsettings and has never been read. Changing which key
+            // this reads changes the answer's length in production, so it is a
+            // deliberate decision rather than a rename, and it is not this one.
             var outcome = await ai.CompleteAsync(
-                new AiResponsesCall(
-                    Endpoint: "learn-more",
-                    Model: model,
-                    Input: fullInput,
-                    MaxOutputTokens: cfg.GetValue<int>("AI:MaxCompletionTokens:WikiImages"),
-                    ReasoningEffort: cfg.GetValue<string>("AI:ReasoningEffort:WikiImages"),
-                    Temperature: cfg.GetValue<double>("AI:Temperature:WikiImages")),
+                ReaderPrompts.LearnMore(
+                    model: modelSelection.GetModelDeep(),
+                    term: request.Term,
+                    bookTitle: request.BookTitle,
+                    sourcePath: request.DropboxPath,
+                    definition: request.Definition,
+                    passageContext: request.Context,
+                    maxOutputTokens: cfg.GetValue<int>("AI:MaxCompletionTokens:WikiImages"),
+                    reasoningEffort: cfg.GetValue<string>("AI:ReasoningEffort:WikiImages"),
+                    temperature: cfg.GetValue<double>("AI:Temperature:WikiImages")),
                 context);
 
             if (!outcome.Succeeded) return outcome.Failure!;

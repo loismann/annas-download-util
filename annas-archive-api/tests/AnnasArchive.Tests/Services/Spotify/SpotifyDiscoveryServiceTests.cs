@@ -5,6 +5,7 @@ using System.Text.Json;
 using AnnasArchive.API.Data;
 using AnnasArchive.API.Models;
 using AnnasArchive.API.Services;
+using AnnasArchive.API.Services.Ai;
 using AnnasArchive.API.Services.Spotify;
 using Microsoft.Extensions.Configuration;
 using Moq;
@@ -174,9 +175,20 @@ public sealed class SpotifyDiscoveryServiceTests : IDisposable
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?> { ["OpenAI:ApiKey"] = "test-key" })
             .Build();
+
+        // The real chat client over the stubbed handler, rather than a mock of
+        // it: the assertion that matters here reads the outgoing request body to
+        // prove no Spotify data reaches OpenAI, and a mocked client would have
+        // nothing to read.
+        var chat = new AiChatCompletion(
+            new StubFactory(new HttpClient(handler)),
+            new OpenAiModelHelper(),
+            new AiResponseParser(),
+            Mock.Of<ITokenUsageService>());
+
         return new SpotifyDiscoveryService(
-            new StubFactory(new HttpClient(handler)), configuration, spotify, knownMusic,
-            _store, new CurrentUser(), Mock.Of<ITokenUsageService>(), TimeProvider.System);
+            configuration, spotify, knownMusic,
+            _store, new CurrentUser(), chat, TimeProvider.System);
     }
 
     private static Mock<ISpotifyService> StrictSpotify(List<SpotifyTrackDto> tracks)

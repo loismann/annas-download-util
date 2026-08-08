@@ -130,7 +130,8 @@ public class DateNightSummaryService
             new AiResponsesCall(
                 Endpoint: "date-night-summary",
                 Model: _modelSelection.GetModelFast(),
-                Input: $"{SystemPrompt}\n\n{userPrompt}",
+                SystemPrompt: SystemPrompt,
+                Input: userPrompt,
                 MaxOutputTokens: _config.GetValue<int>("AI:MaxCompletionTokens:DateNightSummary"),
                 Temperature: _config.GetValue<double>("AI:Temperature:DateNightSummary")),
             attributedTo ?? AiSpend.BackgroundAccount,

@@ -1,8 +1,8 @@
-<div class="reader-wrapper" [class.sidebar-hidden]="!showSidebar" [class.reader-fullscreen]="isReaderFullscreen">
-  <section class="controls" *ngIf="showSidebar">
+<div class="reader-wrapper" [class.sidebar-hidden]="!appearance.showSidebar" [class.reader-fullscreen]="appearance.isFullscreen">
+  <section class="controls" *ngIf="appearance.showSidebar">
     <div class="control-header">
       <h2>Ebook Reader</h2>
-      <button mat-icon-button color="primary" aria-label="Hide menu" (click)="toggleSidebar(false)">
+      <button mat-icon-button color="primary" aria-label="Hide menu" (click)="onToggleSidebar(false)">
         <mat-icon>chevron_left</mat-icon>
       </button>
     </div>
@@ -79,11 +79,11 @@
     ></app-chapter-list>
 
     <div class="reading-tools-section">
-      <button mat-button class="cache-toggle settings-toggle" (click)="showReadingToolsSection = !showReadingToolsSection">
-        <mat-icon>{{ showReadingToolsSection ? 'expand_less' : 'expand_more' }}</mat-icon>
+      <button mat-button class="cache-toggle settings-toggle" (click)="appearance.showReadingToolsSection = !appearance.showReadingToolsSection">
+        <mat-icon>{{ appearance.showReadingToolsSection ? 'expand_less' : 'expand_more' }}</mat-icon>
         Reading Tools
       </button>
-      <div class="settings-content" *ngIf="showReadingToolsSection">
+      <div class="settings-content" *ngIf="appearance.showReadingToolsSection">
         <div class="settings-subsection reading-tools-buttons">
           <button mat-flat-button color="accent" class="w-100 vocab-btn-main"
             (click)="openVocabModal()">
@@ -135,11 +135,11 @@
     </div>
 
     <div class="settings-section">
-      <button mat-button class="cache-toggle settings-toggle" (click)="showSettingsSection = !showSettingsSection">
-        <mat-icon>{{ showSettingsSection ? 'expand_less' : 'expand_more' }}</mat-icon>
+      <button mat-button class="cache-toggle settings-toggle" (click)="appearance.showSettingsSection = !appearance.showSettingsSection">
+        <mat-icon>{{ appearance.showSettingsSection ? 'expand_less' : 'expand_more' }}</mat-icon>
         Settings
       </button>
-      <div class="settings-content" *ngIf="showSettingsSection">
+      <div class="settings-content" *ngIf="appearance.showSettingsSection">
         <div class="settings-subsection" [class.dropdown-disabled]="!chapterContent">
           <div class="settings-subsection-header">Display</div>
           <div class="control-row font-row">
@@ -148,25 +148,25 @@
               <button
                 type="button"
                 class="segmented-button"
-                [class.active]="fontFamily === 'serif'"
+                [class.active]="appearance.fontFamily === 'serif'"
                 [disabled]="!chapterContent"
-                (click)="fontFamily = 'serif'">
+                (click)="appearance.setFontFamily('serif')">
                 Serif
               </button>
               <button
                 type="button"
                 class="segmented-button"
-                [class.active]="fontFamily === 'sans'"
+                [class.active]="appearance.fontFamily === 'sans'"
                 [disabled]="!chapterContent"
-                (click)="fontFamily = 'sans'">
+                (click)="appearance.setFontFamily('sans')">
                 Sans
               </button>
               <button
                 type="button"
                 class="segmented-button"
-                [class.active]="fontFamily === 'mono'"
+                [class.active]="appearance.fontFamily === 'mono'"
                 [disabled]="!chapterContent"
-                (click)="fontFamily = 'mono'">
+                (click)="appearance.setFontFamily('mono')">
                 Mono
               </button>
             </div>
@@ -174,11 +174,11 @@
           <div class="control-row">
             <span class="control-label">Size</span>
             <div class="size-stepper">
-              <button mat-icon-button aria-label="Decrease font" (click)="changeFontSize(-1)" [disabled]="!chapterContent || fontSize <= 12">
+              <button mat-icon-button aria-label="Decrease font" (click)="onChangeFontSize(-1)" [disabled]="!chapterContent || appearance.fontSize <= 12">
                 <mat-icon>remove</mat-icon>
               </button>
-              <span class="size-value">{{ fontSize }}</span>
-              <button mat-icon-button aria-label="Increase font" (click)="changeFontSize(1)" [disabled]="!chapterContent || fontSize >= 28">
+              <span class="size-value">{{ appearance.fontSize }}</span>
+              <button mat-icon-button aria-label="Increase font" (click)="onChangeFontSize(1)" [disabled]="!chapterContent || appearance.fontSize >= 28">
                 <mat-icon>add</mat-icon>
               </button>
             </div>
@@ -189,25 +189,25 @@
               <button
                 type="button"
                 class="segmented-button"
-                [class.active]="theme === 'light'"
+                [class.active]="appearance.theme === 'light'"
                 [disabled]="!chapterContent"
-                (click)="theme = 'light'">
+                (click)="appearance.setTheme('light')">
                 Light
               </button>
               <button
                 type="button"
                 class="segmented-button"
-                [class.active]="theme === 'sepia'"
+                [class.active]="appearance.theme === 'sepia'"
                 [disabled]="!chapterContent"
-                (click)="theme = 'sepia'">
+                (click)="appearance.setTheme('sepia')">
                 Sepia
               </button>
               <button
                 type="button"
                 class="segmented-button"
-                [class.active]="theme === 'dark'"
+                [class.active]="appearance.theme === 'dark'"
                 [disabled]="!chapterContent"
-                (click)="theme = 'dark'">
+                (click)="appearance.setTheme('dark')">
                 Dark
               </button>
             </div>
@@ -288,9 +288,9 @@
     <div class="content-stack two-pane" #contentStack *ngIf="!error && !loadingContent && chapterContent">
       <div
         class="text-window"
-        [ngStyle]="readerTextStyles"
-        [ngClass]="['reader-theme-' + theme, 'reader-font-' + fontFamily]"
-        [style.flex]="leftFlex"
+        [ngStyle]="appearance.textStyles"
+        [ngClass]="['reader-theme-' + appearance.theme, 'reader-font-' + appearance.fontFamily]"
+        [style.flex]="splitter.leftFlex"
         (touchstart)="onTextWindowTouchStart($event)"
         (touchend)="onTextWindowTouchEnd($event)"
         #textWindow>
@@ -300,11 +300,11 @@
       <div
         class="vertical-resize-handle"
         (mousedown)="startHorizontalResize($event)"
-        (touchstart)="startHorizontalResizeTouch($event)">
+        (touchstart)="startHorizontalResize($event)">
         <span class="handle-bar"></span>
       </div>
 
-      <div class="text-window analysis-pane" [style.flex]="rightFlex" [ngClass]="['reader-theme-' + theme, 'reader-font-' + fontFamily]" [ngStyle]="readerTextStyles">
+      <div class="text-window analysis-pane" [style.flex]="splitter.rightFlex" [ngClass]="['reader-theme-' + appearance.theme, 'reader-font-' + appearance.fontFamily]" [ngStyle]="appearance.textStyles">
         <div class="analysis-header">
           <div class="analysis-title-row">
             <span class="analysis-label">Analysis</span>
@@ -554,7 +554,7 @@
           <button
             mat-icon-button
             class="fullscreen-btn"
-            (click)="enterReaderFullscreen()"
+            (click)="appearance.enterFullscreen()"
             aria-label="Enter fullscreen reading mode">
             <mat-icon>fullscreen</mat-icon>
           </button>
@@ -601,10 +601,10 @@
     </div>
   </section>
   <button
-    *ngIf="!showSidebar"
+    *ngIf="!appearance.showSidebar"
     class="sidebar-toggle collapsed"
     aria-label="Show menu"
-    (click)="toggleSidebar(true)">
+    (click)="onToggleSidebar(true)">
     <mat-icon>chevron_right</mat-icon>
   </button>
 </div>

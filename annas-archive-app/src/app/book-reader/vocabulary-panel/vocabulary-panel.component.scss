@@ -208,6 +208,15 @@
   line-height: 1.6;
 }
 
+/* Was injected as an inline `style` attribute on every model-written <img>.
+   Sanitising strips inline styles, and this is where it belonged anyway. */
+.learn-more-text img {
+  display: block;
+  margin: 6px 0;
+  max-width: 100%;
+  border-radius: 8px;
+}
+
 .learn-more-images img {
   display: block;
   width: 100%;

@@ -375,4 +375,76 @@ describe('VocabularyPanelComponent', () => {
       expect(vocabulary.deleteBook).not.toHaveBeenCalled();
     });
   });
+
+  // The learn-more prompt asks the model for HTML — paragraphs, <ul>, <strong>,
+  // plus <img> and <a> — and the answer is injected with [innerHTML]. The term
+  // being explained comes from an EPUB downloaded from Anna's Archive, so the
+  // model is summarising third-party content and the page holds the user's
+  // token. `bypassSecurityTrustHtml` on that answer trusts whatever comes back.
+  describe('learn-more HTML is rendered, not trusted', () => {
+    function shown(): string {
+      return String(component.learnMoreSafeContent ?? '');
+    }
+
+    it('should strip an injected error handler from a fresh answer', () => {
+      aiApi.learnMore.and.returnValue(
+        of({ detail: '<p>A term.</p><img src="x" onerror="alert(1)">' } as any)
+      );
+
+      component.learnMore({ term: 'palimpsest', definition: 'd' });
+
+      expect(shown()).not.toContain('onerror');
+    });
+
+    it('should strip a script from a fresh answer', () => {
+      aiApi.learnMore.and.returnValue(
+        of({ detail: '<p>A term.</p><script>alert(1)</script>' } as any)
+      );
+
+      component.learnMore({ term: 'palimpsest', definition: 'd' });
+
+      expect(shown()).not.toContain('<script');
+    });
+
+    it('should strip a live javascript: link from a fresh answer', () => {
+      aiApi.learnMore.and.returnValue(
+        of({ detail: '<a href="javascript:alert(1)">more</a>' } as any)
+      );
+
+      component.learnMore({ term: 'palimpsest', definition: 'd' });
+
+      expect(shown()).not.toMatch(/(href|src)\s*=\s*["']javascript:/i);
+    });
+
+    it('should strip an injected handler from a CACHED answer too', () => {
+      // The cache is written from a previous answer, so a poisoned entry
+      // survives a reload and is replayed without ever going through the
+      // network path again.
+      vocabulary.getCachedLearnMore.and.returnValue(
+        { detail: '<p>A term.</p><img src="x" onerror="alert(1)">', images: [] } as any
+      );
+
+      component.learnMore({ term: 'palimpsest', definition: 'd' });
+
+      expect(shown()).not.toContain('onerror');
+    });
+
+    it('should keep the formatting the feature is for', () => {
+      aiApi.learnMore.and.returnValue(of({
+        detail: '<p>Overview.</p><ul><li><strong>Key</strong> idea</li></ul>'
+               + '<a href="https://en.wikipedia.org/wiki/Palimpsest">Wikipedia</a>'
+               + '<img src="https://upload.wikimedia.org/a.jpg" alt="A page">'
+      } as any));
+
+      component.learnMore({ term: 'palimpsest', definition: 'd' });
+
+      const html = shown();
+      expect(html).toContain('<ul>');
+      expect(html).toContain('<strong>Key</strong>');
+      expect(html).toContain('href="https://en.wikipedia.org/wiki/Palimpsest"');
+      expect(html).toContain('src="https://upload.wikimedia.org/a.jpg"');
+      expect(html).toContain('alt="A page"');
+    });
+  });
+
 });

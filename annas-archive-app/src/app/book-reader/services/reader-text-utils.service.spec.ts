@@ -324,15 +324,26 @@ describe('ReaderTextUtilsService', () => {
       expect(result).toContain('referrerpolicy="no-referrer"');
     });
 
-    it('should hide images that fail to load rather than leaving a broken icon', () => {
+    it('should never inject an inline event handler', () => {
+      // This used to add `onerror="this.style.display='none'"`. Hiding a broken
+      // image is still the behaviour — it moved to HideBrokenImagesDirective —
+      // but injecting a handler into model-written HTML is the exact shape that
+      // made the payload dangerous, and sanitising strips it anyway.
       const result = service.cleanModelHtml('<img src="https://example.com/a.jpg">');
-      expect(result).toContain('onerror=');
+      expect(result).not.toContain('onerror');
+      expect(result).not.toMatch(/\son[a-z]+\s*=/i);
     });
 
-    it('should lazy-load and style images', () => {
+    it('should not inject an inline style', () => {
+      // Sizing lives in `.learn-more-text img`; an inline style would not
+      // survive sanitisation.
+      const result = service.cleanModelHtml('<img src="https://example.com/a.jpg">');
+      expect(result).not.toContain('style=');
+    });
+
+    it('should lazy-load images', () => {
       const result = service.cleanModelHtml('<img src="https://example.com/a.jpg">');
       expect(result).toContain('loading="lazy"');
-      expect(result).toContain('max-width:100%');
     });
 
     it('should not duplicate attributes that are already present', () => {

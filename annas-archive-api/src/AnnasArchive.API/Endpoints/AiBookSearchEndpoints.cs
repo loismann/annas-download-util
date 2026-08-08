@@ -99,7 +99,7 @@ public static class AiBookSearchEndpoints
         }
         catch (Exception ex) when (ex is not ArgumentException)
         {
-            Log.Information("❌ OpenAI suggest-authors failed: {ErrorMessage}", ex.Message);
+            Log.Error("❌ OpenAI suggest-authors failed: {ErrorMessage}", ex.Message);
             return ApiResponse.InternalError("Failed to suggest authors.");
         }
     }
@@ -142,7 +142,7 @@ public static class AiBookSearchEndpoints
         }
         catch (Exception ex) when (ex is not ArgumentException)
         {
-            Log.Information("❌ OpenAI related-books failed: {ExMessage}", ex.Message);
+            Log.Error("❌ OpenAI related-books failed: {ExMessage}", ex.Message);
             return ApiResponse.InternalError("Failed to get related books.");
         }
     }
@@ -202,7 +202,7 @@ public static class AiBookSearchEndpoints
         }
         catch (Exception ex) when (ex is not ArgumentException)
         {
-            Log.Information("❌ OpenAI book-search failed: {ExMessage}", ex.Message);
+            Log.Error("❌ OpenAI book-search failed: {ExMessage}", ex.Message);
             return ApiResponse.InternalError("Failed to run AI book search.");
         }
     }

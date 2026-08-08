@@ -180,20 +180,18 @@ export class ReaderTextUtilsService {
       const encoded = encodeURI(rest.trim().replace(/\s+/g, '_'));
       return `<img${pre}src="https://${encoded}"`;
     });
-    // Ensure images have lazy loading, referrer policy, error hide, and basic styling
+    // Lazy loading and a suppressed referrer, and nothing else.
+    //
+    // This used to inject `onerror="this.style.display='none'"` and an inline
+    // `style` on every image. Both are gone: the HTML is now sanitised before
+    // rendering, which strips inline handlers — and an injected handler was the
+    // single most dangerous thing in a model-written payload. Hiding a broken
+    // image is `appHideBrokenImages` on the container; the sizing is CSS on
+    // `.learn-more-text img`.
     cleaned = cleaned.replace(/<img([^>]*?)>/gi, (_match, attrs) => {
-      const hasLoading = /loading\s*=/.test(attrs);
-      const hasReferrer = /referrerpolicy\s*=/.test(attrs);
-      const hasStyle = /style\s*=/.test(attrs);
-      const hasOnError = /onerror\s*=/.test(attrs);
-      const styleAppend = 'display:block;margin:6px 0;max-width:100%;border-radius:8px;';
-
       let finalAttrs = `${attrs}`;
-      if (!hasLoading) finalAttrs += ' loading="lazy"';
-      if (!hasReferrer) finalAttrs += ' referrerpolicy="no-referrer"';
-      if (!hasOnError) finalAttrs += ' onerror="this.style.display=\'none\'"';
-      if (!hasStyle) finalAttrs += ` style="${styleAppend}"`;
-
+      if (!/loading\s*=/.test(attrs)) finalAttrs += ' loading="lazy"';
+      if (!/referrerpolicy\s*=/.test(attrs)) finalAttrs += ' referrerpolicy="no-referrer"';
       return `<img${finalAttrs}>`;
     });
     return cleaned;

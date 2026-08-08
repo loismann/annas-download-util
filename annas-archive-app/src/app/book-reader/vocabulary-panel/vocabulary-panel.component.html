@@ -120,8 +120,8 @@
     <div class="learn-more-body">
       <div *ngIf="loadingLearnMore" class="learn-more-text">{{ learnMoreContent }}</div>
       <div *ngIf="!loadingLearnMore">
-        <div class="learn-more-text" [innerHTML]="learnMoreSafeContent"></div>
-        <div class="learn-more-images" *ngIf="learnMoreImages?.length">
+        <div class="learn-more-text" appHideBrokenImages [innerHTML]="learnMoreSafeContent"></div>
+        <div class="learn-more-images" appHideBrokenImages *ngIf="learnMoreImages?.length">
           <div *ngFor="let img of learnMoreImages">
             <img [src]="img" [alt]="learnMoreTerm || 'Image'" loading="lazy" referrerpolicy="no-referrer" />
           </div>

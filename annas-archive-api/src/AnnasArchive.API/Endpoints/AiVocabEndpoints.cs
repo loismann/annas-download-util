@@ -49,11 +49,12 @@ public static class AiVocabEndpoints
 
         try
         {
-            // The budget keys say WikiImages, not LearnMore, and that is not a
-            // typo being preserved by accident — AI:MaxCompletionTokens:LearnMore
-            // exists in appsettings and has never been read. Changing which key
-            // this reads changes the answer's length in production, so it is a
-            // deliberate decision rather than a rename, and it is not this one.
+            // Reads its own LearnMore budget. It previously read the WikiImages
+            // keys while AI:MaxCompletionTokens:LearnMore sat in appsettings
+            // unread, so this deep dive was capped at 1,200 tokens rather than
+            // the 2,000 it was configured for — a 300-400 word scholarly answer
+            // with images and a resources list was being truncated by a budget
+            // meant for a different feature.
             var outcome = await ai.CompleteAsync(
                 ReaderPrompts.LearnMore(
                     model: modelSelection.GetModelDeep(),
@@ -62,9 +63,9 @@ public static class AiVocabEndpoints
                     sourcePath: request.DropboxPath,
                     definition: request.Definition,
                     passageContext: request.Context,
-                    maxOutputTokens: cfg.GetValue<int>("AI:MaxCompletionTokens:WikiImages"),
-                    reasoningEffort: cfg.GetValue<string>("AI:ReasoningEffort:WikiImages"),
-                    temperature: cfg.GetValue<double>("AI:Temperature:WikiImages")),
+                    maxOutputTokens: cfg.GetValue<int>("AI:MaxCompletionTokens:LearnMore"),
+                    reasoningEffort: cfg.GetValue<string>("AI:ReasoningEffort:LearnMore"),
+                    temperature: cfg.GetValue<double>("AI:Temperature:LearnMore")),
                 context);
 
             if (!outcome.Succeeded) return outcome.Failure!;
@@ -73,7 +74,7 @@ public static class AiVocabEndpoints
         }
         catch (Exception ex) when (ex is not ArgumentException)
         {
-            Log.Information("❌ OpenAI learn-more failed: {ExMessage}", ex.Message);
+            Log.Error("❌ OpenAI learn-more failed: {ExMessage}", ex.Message);
             return ApiResponse.InternalError("Failed to fetch details.");
         }
     }

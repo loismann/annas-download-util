@@ -55,7 +55,7 @@ public static class AiCharacterEndpoints
 
         if (chapterSummaries.Count == 0 && sectionSummaries.Count == 0)
         {
-            Log.Information("⚠️ No summaries found. Generate some chapter or section summaries first.");
+            Log.Warning("⚠️ No summaries found. Generate some chapter or section summaries first.");
             return ApiResponse.BadRequest("No summaries found. Please generate chapter or section summaries as you read the book first.");
         }
 
@@ -150,7 +150,7 @@ Create a character relationship network graph based ONLY on information in these
             var content = outcome.Text;
             if (string.IsNullOrWhiteSpace(content))
             {
-                Log.Information("❌ No content returned from GPT");
+                Log.Error("❌ No content returned from GPT");
                 return Results.Problem("No character graph data returned.");
             }
 
@@ -184,14 +184,14 @@ Create a character relationship network graph based ONLY on information in these
             }
             catch (Exception ex)
             {
-                Log.Information("❌ Failed to parse character graph: {ExMessage}", ex.Message);
+                Log.Warning("❌ Failed to parse character graph: {ExMessage}", ex.Message);
                 Log.Information("   Content: {ContentSubstring}", content.Substring(0, Math.Min(200, content.Length)));
                 return Results.Problem("Failed to parse character graph data.");
             }
         }
         catch (Exception ex) when (ex is not ArgumentException)
         {
-            Log.Information("❌ Character graph generation failed: {ExMessage}", ex.Message);
+            Log.Error("❌ Character graph generation failed: {ExMessage}", ex.Message);
             return Results.Problem("Failed to generate character graph.");
         }
     }
@@ -296,7 +296,7 @@ Update the character graph with any new information. Return the complete updated
         }
         catch (Exception ex) when (ex is not ArgumentException)
         {
-            Log.Information("❌ Character graph update failed: {ExMessage}", ex.Message);
+            Log.Error("❌ Character graph update failed: {ExMessage}", ex.Message);
             return Results.Problem("Failed to update character graph.");
         }
     }

@@ -12,11 +12,13 @@ namespace AnnasArchive.API.Services.Ai;
 /// <c>AI:MaxCompletionTokens:ChunkSummary</c> → <c>SectionSynthesis</c> →
 /// <c>FinalSummary</c> — and the reasoning effort with them.
 ///
-/// <para>Each call still concatenates its instructions and content into a single
-/// <c>Input</c> string rather than using <see cref="AiResponsesCall.SystemPrompt"/>.
-/// That is deliberate for now: a chapter summary runs twenty-plus calls through
-/// these tiers, and switching the request shape is a change worth making on its
-/// own, separately from moving the text.</para>
+/// <para>Instructions go in <see cref="AiResponsesCall.SystemPrompt"/> and the
+/// material in <c>Input</c>, so <c>input</c> is sent as a role/content array.
+/// These four used to concatenate the two into one string, which the Responses
+/// API accepts but which leaves the model no way to tell a standing instruction
+/// from the chapter it is reading — and the chapter is attacker-adjacent text in
+/// the sense that matters here: it is arbitrary prose that can contain anything,
+/// including sentences shaped like instructions.</para>
 /// </summary>
 public static class ChapterSummaryPrompts
 {
@@ -65,7 +67,8 @@ Then add a 'Definitions:' section. BE EXTREMELY THOROUGH with definitions - incl
         return new AiResponsesCall(
             Endpoint: "summarize",
             Model: model,
-            Input: $"{systemPrompt}\n\n{userPrompt}",
+            SystemPrompt: systemPrompt,
+            Input: userPrompt,
             MaxOutputTokens: maxOutputTokens,
             ReasoningEffort: reasoningEffort,
             Temperature: temperature);
@@ -91,7 +94,8 @@ Write 300-400 words that assume the reader is intelligent but may lack specializ
         string? reasoningEffort) => new(
         Endpoint: "chunk-summary",
         Model: model,
-        Input: $"{ChunkInstructions}\n\nContext: {contextLine}\n\n{chunk}",
+        SystemPrompt: ChunkInstructions,
+        Input: $"Context: {contextLine}\n\n{chunk}",
         MaxOutputTokens: maxOutputTokens,
         ReasoningEffort: reasoningEffort);
 
@@ -115,7 +119,8 @@ Write 400-500 words. Maintain educational depth while creating a flowing narrati
         string? reasoningEffort) => new(
         Endpoint: "section-synthesis",
         Model: model,
-        Input: $"{SectionInstructions}\n\nContext: {contextLine}\n\n{string.Join("\n\n---\n\n", chunkSummaries)}",
+        SystemPrompt: SectionInstructions,
+        Input: $"Context: {contextLine}\n\n{string.Join("\n\n---\n\n", chunkSummaries)}",
         MaxOutputTokens: maxOutputTokens,
         ReasoningEffort: reasoningEffort);
 
@@ -160,7 +165,8 @@ Write as if teaching an intelligent student. Define specialized terms, explain r
         string? reasoningEffort) => new(
         Endpoint: "final-summary",
         Model: model,
-        Input: $"{FinalInstructions}\n\nBook context: {string.Join(" | ", contextParts)}\n\nSection summaries:\n{string.Join("\n\n---\n\n", sectionSummaries)}",
+        SystemPrompt: FinalInstructions,
+        Input: $"Book context: {string.Join(" | ", contextParts)}\n\nSection summaries:\n{string.Join("\n\n---\n\n", sectionSummaries)}",
         MaxOutputTokens: maxOutputTokens,
         ReasoningEffort: reasoningEffort);
 }

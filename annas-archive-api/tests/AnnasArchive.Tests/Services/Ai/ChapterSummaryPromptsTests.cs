@@ -19,8 +19,8 @@ public class ChapterSummaryPromptsTests
     {
         var call = PassageAnalysis(knownWords: ["palimpsest", "hermeneutic"]);
 
-        call.Input.Should().Contain("DO NOT define them");
-        call.Input.Should().Contain("palimpsest, hermeneutic");
+        call.SystemPrompt.Should().Contain("DO NOT define them");
+        call.SystemPrompt.Should().Contain("palimpsest, hermeneutic");
     }
 
     [Fact]
@@ -29,8 +29,8 @@ public class ChapterSummaryPromptsTests
         // Not cosmetic: an empty exclusion list reads to the model as "do not
         // define them: " with nothing after it, which is an instruction it can
         // act on in ways nobody intended.
-        PassageAnalysis(knownWords: []).Input.Should().NotContain("DO NOT define them");
-        PassageAnalysis(knownWords: null).Input.Should().NotContain("DO NOT define them");
+        PassageAnalysis(knownWords: []).SystemPrompt.Should().NotContain("DO NOT define them");
+        PassageAnalysis(knownWords: null).SystemPrompt.Should().NotContain("DO NOT define them");
     }
 
     [Fact]
@@ -39,8 +39,8 @@ public class ChapterSummaryPromptsTests
         // The allowance is what makes the exclusion worth having — the model
         // spends the saved definitions elsewhere. Both branches carry it, and
         // the branch that forgets it is the easy mistake.
-        PassageAnalysis(knownWords: ["palimpsest"]).Input.Should().Contain("up to 600 words");
-        PassageAnalysis(knownWords: null).Input.Should().Contain("up to 600 words");
+        PassageAnalysis(knownWords: ["palimpsest"]).SystemPrompt.Should().Contain("up to 600 words");
+        PassageAnalysis(knownWords: null).SystemPrompt.Should().Contain("up to 600 words");
     }
 
     [Fact]
@@ -50,15 +50,6 @@ public class ChapterSummaryPromptsTests
 
         call.Input.Should().Contain("Call me Ishmael.");
         call.Input.Should().Contain("Title: Moby-Dick");
-    }
-
-    [Fact]
-    public void PutsTheInstructionsBeforeThePassage()
-    {
-        var call = PassageAnalysis(userPrompt: "Call me Ishmael.");
-
-        call.Input.IndexOf("literary analysis assistant", StringComparison.Ordinal)
-            .Should().BeLessThan(call.Input.IndexOf("Call me Ishmael.", StringComparison.Ordinal));
     }
 
     // ─── The three tiers ─────────────────────────────────────────────────
@@ -132,16 +123,34 @@ public class ChapterSummaryPromptsTests
     }
 
     [Fact]
-    public void TheTiersSendNoSystemPromptField()
+    public void InstructionsGoInTheSystemPromptAndNeverInTheInput()
     {
-        // Documents the shape these currently use: instructions are concatenated
-        // into Input, so `input` goes to OpenAI as a plain string rather than a
-        // role/content array. Moving to SystemPrompt is a deliberate, separate
-        // change — twenty-plus calls per chapter summary ride on this path.
-        ChapterSummaryPrompts.ChunkSummary("m", "c", "t", 1, null).SystemPrompt.Should().BeNull();
-        ChapterSummaryPrompts.SectionSynthesis("m", "c", [], 1, null).SystemPrompt.Should().BeNull();
-        ChapterSummaryPrompts.FinalSummary("m", [], [], 1, null).SystemPrompt.Should().BeNull();
-        PassageAnalysis().SystemPrompt.Should().BeNull();
+        // The separation is the point: `Input` is the book, and a book is
+        // arbitrary prose that can contain sentences shaped like instructions.
+        // Concatenating the two — which these did — gives the model no way to
+        // tell the standing instruction from the chapter quoting one.
+        var calls = new[]
+        {
+            PassageAnalysis(userPrompt: "Some passage."),
+            ChapterSummaryPrompts.ChunkSummary("m", "ctx", "Some passage.", 1, null),
+            ChapterSummaryPrompts.SectionSynthesis("m", "ctx", ["Some passage."], 1, null),
+            ChapterSummaryPrompts.FinalSummary("m", ["ctx"], ["Some passage."], 1, null)
+        };
+
+        calls.Should().OnlyContain(c => !string.IsNullOrWhiteSpace(c.SystemPrompt));
+        calls.Should().OnlyContain(c => c.Input.Contains("Some passage."));
+    }
+
+    [Fact]
+    public void TheMaterialCarriesNoneOfTheInstructionText()
+    {
+        ChapterSummaryPrompts.ChunkSummary("m", "ctx", "text", 1, null)
+            .Input.Should().NotContain("educational guide");
+        ChapterSummaryPrompts.SectionSynthesis("m", "ctx", ["s"], 1, null)
+            .Input.Should().NotContain("synthesizing multiple passage analyses");
+        ChapterSummaryPrompts.FinalSummary("m", ["c"], ["s"], 1, null)
+            .Input.Should().NotContain("700-900 word educational summary");
+        PassageAnalysis().Input.Should().NotContain("literary analysis assistant");
     }
 
     // ─── Helpers ─────────────────────────────────────────────────────────

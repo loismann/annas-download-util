@@ -169,7 +169,7 @@ Return JSON array of flashcards for individual terms found in the passage.";
             }
             catch (Exception parseEx)
             {
-                Log.Information("⚠️ Failed to parse flashcards as array: {ParseExMessage}", parseEx.Message);
+                Log.Warning("⚠️ Failed to parse flashcards as array: {ParseExMessage}", parseEx.Message);
                 Log.Information("   AI response: {ContentSubstring}...", content.Substring(0, Math.Min(200, content.Length)));
 
                 try
@@ -189,11 +189,11 @@ Return JSON array of flashcards for individual terms found in the passage.";
                 }
                 catch (Exception singleEx)
                 {
-                    Log.Information("❌ Failed to parse flashcards: {SingleExMessage}", singleEx.Message);
+                    Log.Warning("❌ Failed to parse flashcards: {SingleExMessage}", singleEx.Message);
                     // Don't create a fallback card - return empty list
                     // This prevents creating giant vocab cards with entire text
                     cardsParsed = new List<FlashcardItem>();
-                    Log.Information("⚠️ Returning empty flashcard list due to parsing failure");
+                    Log.Warning("⚠️ Returning empty flashcard list due to parsing failure");
                 }
             }
 
@@ -215,7 +215,7 @@ Return JSON array of flashcards for individual terms found in the passage.";
         }
         catch (Exception ex) when (ex is not ArgumentException)
         {
-            Log.Information("❌ Flashcard create failed: {ExMessage}", ex.Message);
+            Log.Error("❌ Flashcard create failed: {ExMessage}", ex.Message);
             return ApiResponse.InternalError("Failed to create flashcard.");
         }
     }
@@ -234,7 +234,7 @@ Return JSON array of flashcards for individual terms found in the passage.";
         }
         catch (Exception ex) when (ex is not ArgumentException)
         {
-            Log.Information("❌ Failed to clear flashcards: {Message}", ex.Message);
+            Log.Error("❌ Failed to clear flashcards: {Message}", ex.Message);
             return ApiResponse.InternalError("Failed to clear flashcards.");
         }
     }
@@ -255,7 +255,7 @@ Return JSON array of flashcards for individual terms found in the passage.";
         }
         catch (Exception ex) when (ex is not ArgumentException)
         {
-            Log.Information("❌ Failed to delete flashcard: {Message}", ex.Message);
+            Log.Error("❌ Failed to delete flashcard: {Message}", ex.Message);
             return ApiResponse.InternalError("Failed to delete flashcard.");
         }
     }

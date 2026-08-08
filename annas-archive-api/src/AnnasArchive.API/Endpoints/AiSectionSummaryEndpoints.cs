@@ -85,6 +85,7 @@ public static class AiSectionSummaryEndpoints
             Log.Information("🔍 Detecting chunk boundaries for chapter {ChapterId}...", chapterId);
 
             ServerSentEventsHelper.BeginStream(context.Response);
+            var progress = new SseProgress(context.Response);
 
             // Load chapter content (index if needed)
             var existingKeys = AiContentCache.GetExistingSummaryKeys();
@@ -98,13 +99,7 @@ public static class AiSectionSummaryEndpoints
             if (!File.Exists(chapterPath))
             {
                 // Chapter not indexed - index it now
-                await ServerSentEventsHelper.SendEventAsync(context.Response, new
-                {
-                    stage = "indexing",
-                    stepNumber = 0,
-                    totalSteps = 1,
-                    message = "Indexing book (first time only)..."
-                });
+                await progress.StepAsync("indexing", 0, 1, "Indexing book (first time only)...");
                 Log.Information("📑 Chapter {ChapterId} not indexed - indexing entire book now...", chapterId);
 
                 try
@@ -118,51 +113,27 @@ public static class AiSectionSummaryEndpoints
                     {
                         await DropboxEpubCache.EnsureCacheBuildAsync(dropbox, dropboxPath, cacheDir);
                     }
-                    await ServerSentEventsHelper.SendEventAsync(context.Response, new
-                    {
-                        stage = "indexing",
-                        stepNumber = 1,
-                        totalSteps = 1,
-                        message = "Book indexed successfully"
-                    });
+                    await progress.StepAsync("indexing", 1, 1, "Book indexed successfully");
                     Log.Information("✅ Book indexed successfully");
                 }
                 catch (Exception ex)
                 {
-                    Log.Information("❌ Failed to index book: {ExMessage}", ex.Message);
-                    await ServerSentEventsHelper.SendEventAsync(context.Response, new
-                    {
-                        stage = "error",
-                        stepNumber = 0,
-                        totalSteps = 1,
-                        message = $"Failed to index book: {ex.Message}"
-                    });
+                    Log.Error("❌ Failed to index book: {ExMessage}", ex.Message);
+                    await progress.ErrorAsync($"Failed to index book: {ex.Message}");
                     return;
                 }
 
                 // Verify chapter file now exists
                 if (!File.Exists(chapterPath))
                 {
-                    await ServerSentEventsHelper.SendEventAsync(context.Response, new
-                    {
-                        stage = "error",
-                        stepNumber = 0,
-                        totalSteps = 1,
-                        message = "Chapter file not found after indexing"
-                    });
+                    await progress.ErrorAsync("Chapter file not found after indexing");
                     return;
                 }
             }
 
             var chapterText = await File.ReadAllTextAsync(chapterPath);
 
-            await ServerSentEventsHelper.SendEventAsync(context.Response, new
-            {
-                stage = "detecting",
-                stepNumber = 0,
-                totalSteps = 1,
-                message = "Finding section breaks..."
-            });
+            await progress.StepAsync("detecting", 0, 1, "Finding section breaks...");
 
             var chunks = SectionChunker.Detect(chapterText);
 
@@ -189,25 +160,13 @@ public static class AiSectionSummaryEndpoints
         // simply stops, with no `error` event to render.
         catch (ArgumentException ex)
         {
-            Log.Information("❌ Invalid argument for chunk boundary detection: {Message}", ex.Message);
-            await ServerSentEventsHelper.SendEventAsync(context.Response, new
-            {
-                stage = "error",
-                stepNumber = 0,
-                totalSteps = 1,
-                message = $"Invalid parameter: {ex.ParamName ?? "unknown"}"
-            });
+            Log.Error("❌ Invalid argument for chunk boundary detection: {Message}", ex.Message);
+            await new SseProgress(context.Response).ErrorAsync($"Invalid parameter: {ex.ParamName ?? "unknown"}");
         }
         catch (Exception ex)
         {
-            Log.Information("❌ Chunk boundary detection failed: {ExMessage}", ex.Message);
-            await ServerSentEventsHelper.SendEventAsync(context.Response, new
-            {
-                stage = "error",
-                stepNumber = 0,
-                totalSteps = 1,
-                message = $"Detection failed: {ex.Message}"
-            });
+            Log.Error(ex, "❌ Chunk boundary detection failed for chapter {ChapterId}", chapterId);
+            await new SseProgress(context.Response).ErrorAsync($"Detection failed: {ex.Message}");
         }
         finally
         {
@@ -380,7 +339,7 @@ public static class AiSectionSummaryEndpoints
         }
         catch (Exception ex) when (ex is not ArgumentException)
         {
-            Log.Information("❌ Section summary generation failed: {ExMessage}", ex.Message);
+            Log.Error("❌ Section summary generation failed: {ExMessage}", ex.Message);
             Log.Information("   Stack trace: {ExStackTrace}", ex.StackTrace);
             return Results.Problem("Failed to generate section summary.");
         }

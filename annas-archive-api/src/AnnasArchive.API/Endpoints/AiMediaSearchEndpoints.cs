@@ -88,7 +88,7 @@ Return ONLY valid JSON with no markdown or extra text.";
         }
         catch (Exception ex) when (ex is not ArgumentException)
         {
-            Log.Information("❌ OpenAI media-search failed: {Message}", ex.Message);
+            Log.Error("❌ OpenAI media-search failed: {Message}", ex.Message);
             return ApiResponse.InternalError("Failed to run AI media search.");
         }
     }
@@ -188,8 +188,8 @@ Rules:
         }
         catch (JsonException ex)
         {
-            Log.Information("❌ AI media-search JSON parse failed: {Message}", ex.Message);
-            Log.Information("❌ AI media-search raw preview: {RawPreview}",
+            Log.Error("❌ AI media-search JSON parse failed: {Message}", ex.Message);
+            Log.Error("❌ AI media-search raw preview: {RawPreview}",
                 rawText.Length > 2000 ? rawText[..2000] + "…" : rawText);
             return null;
         }

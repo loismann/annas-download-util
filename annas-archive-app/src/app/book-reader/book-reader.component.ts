@@ -53,7 +53,6 @@ import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { marked } from 'marked';
 import { Subject } from 'rxjs';
 import { PROGRESS_MESSAGE_DURATION_MS, SUCCESS_MESSAGE_DURATION_MS } from '../constants/timeouts';
-import { MAX_FONT_SIZE, MIN_FONT_SIZE } from '../constants/limits';
 import { takeUntil } from 'rxjs/operators';
 import { apiBase as resolveApiBase } from '../services/api-base';
 import {
@@ -63,7 +62,9 @@ import {
   ReaderSseService,
   ReaderSectionsService,
   ViewedBook,
-  BookmarkEntry
+  BookmarkEntry,
+  ReaderSplitter,
+  ReaderAppearance
 } from './services';
 
 @Component({
@@ -122,9 +123,7 @@ export class BookReaderComponent implements OnInit, OnDestroy {
   private pendingCharOffset: number | null = null;
   private pendingWordOffset: number | null = null;
 
-  topHeightPercent = 50;
-  isResizing = false;
-  isHorizontalResizing = false;
+  readonly splitter = new ReaderSplitter();
 
   @ViewChild('contentStack') contentStackRef!: ElementRef<HTMLDivElement>;
   @ViewChild('textWindow') textWindowRef!: ElementRef<HTMLDivElement>;
@@ -150,15 +149,8 @@ export class BookReaderComponent implements OnInit, OnDestroy {
   showVocabModal = false;
   loadingSelectionVocab = false;
   loadingChapterVocab = false;
-  leftFlex = '1 1 0';
-  rightFlex = '1 1 0';
-  showSidebar = true;
-  showSettingsSection = false;
-  showReadingToolsSection = false;
   showChapterRegenerateConfirm = false;
-  fontFamily: 'serif' | 'sans' | 'mono' = 'serif';
-  fontSize: number = 14;
-  theme: 'light' | 'sepia' | 'dark' = 'sepia';
+  readonly appearance = new ReaderAppearance();
   analysisMode: 'section' | 'page' | 'chapter' = 'section';
   selectedText: string | null = null;
   tokenUsage: { promptTokens: number; completionTokens: number; totalTokens: number; allowance?: number | null; allowanceUsedPercent?: number | null; tokensRemaining?: number | null; resetsAtUtc?: string | null; totalCostUsd?: number | null } | null = null;
@@ -199,30 +191,34 @@ export class BookReaderComponent implements OnInit, OnDestroy {
   private readonly SWIPE_VERTICAL_LIMIT = 100; // Max vertical movement to still count as horizontal swipe
 
   // Fullscreen reading mode
-  isReaderFullscreen = false;
   private readonly SWIPE_DOWN_THRESHOLD = 80; // Pixels to swipe down to exit fullscreen
 
-  get readerTextStyles(): { 'font-family': string; 'font-size.px': number } {
-    return {
-      'font-family': this.fontFamily === 'serif'
-        ? '"Georgia", "Times New Roman", serif'
-        : this.fontFamily === 'mono'
-          ? '"SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace'
-          : '"Inter", "Segoe UI", system-ui, -apple-system, sans-serif',
-      'font-size.px': this.fontSize
-    };
-  }
-
+  /**
+   * Model output is rendered, never trusted.
+   *
+   * These two used to call `sanitize()` purely as a truthiness test and then
+   * hand the *unsanitized* string to `bypassSecurityTrustHtml` — so the sanitised
+   * result was computed and thrown away. Anything the model emitted reached
+   * `[innerHTML]` intact.
+   *
+   * That is a live path, not a theoretical one: the summary is written from an
+   * EPUB downloaded from Anna's Archive or LibGen, so the text feeding the
+   * prompt is arbitrary third-party content, and the page it renders into holds
+   * the signed-in user's token. `formatSectionSummaryAsHtml` below always had
+   * this right; these two had drifted.
+   */
   get fullChapterSummaryHtml(): SafeHtml | null {
-    if (!this.fullChapterSummary) return null;
-    const html = marked(this.fullChapterSummary);
-    return this.sanitizer.sanitize(1, html) ? this.sanitizer.bypassSecurityTrustHtml(html as string) : null;
+    return this.renderMarkdown(this.fullChapterSummary);
   }
 
   get ultraChapterSummaryHtml(): SafeHtml | null {
-    if (!this.ultraChapterSummary) return null;
-    const html = marked(this.ultraChapterSummary);
-    return this.sanitizer.sanitize(1, html) ? this.sanitizer.bypassSecurityTrustHtml(html as string) : null;
+    return this.renderMarkdown(this.ultraChapterSummary);
+  }
+
+  private renderMarkdown(source: string | null): SafeHtml | null {
+    if (!source) return null;
+    const html = marked.parse(source, { async: false }) as string;
+    return this.sanitizer.sanitize(1 /* SecurityContext.HTML */, html) ?? null;
   }
 
   constructor(
@@ -747,8 +743,8 @@ export class BookReaderComponent implements OnInit, OnDestroy {
     this.touchStartY = null;
 
     // Check for swipe-down to exit fullscreen mode
-    if (this.isReaderFullscreen && deltaY > this.SWIPE_DOWN_THRESHOLD && absDeltaX < this.SWIPE_VERTICAL_LIMIT) {
-      this.exitReaderFullscreen();
+    if (this.appearance.isFullscreen && deltaY > this.SWIPE_DOWN_THRESHOLD && absDeltaX < this.SWIPE_VERTICAL_LIMIT) {
+      this.appearance.exitFullscreen();
       return;
     }
 
@@ -770,17 +766,6 @@ export class BookReaderComponent implements OnInit, OnDestroy {
     }
   }
 
-  enterReaderFullscreen(): void {
-    this.isReaderFullscreen = true;
-  }
-
-  exitReaderFullscreen(): void {
-    this.isReaderFullscreen = false;
-  }
-
-  toggleReaderFullscreen(): void {
-    this.isReaderFullscreen = !this.isReaderFullscreen;
-  }
 
   startIndexing(): void {
     if (!this.selectedBookFileName) return;
@@ -1319,12 +1304,23 @@ export class BookReaderComponent implements OnInit, OnDestroy {
           this.loadingContent = false;
         }
       },
-      error: err => {
-        this.logger.error('Failed to load chapter content', err);
-        this.error = 'Unable to load chapter content.';
-        this.loadingContent = false;
-      }
+      error: err => this.reportChapterContentFailure(fileName, chapterId, err)
     });
+  }
+
+  /**
+   * The success path above already checks the chapter is still open before
+   * applying content; this is the same check for the failure path, which did
+   * not have it. A slow failure for a chapter the reader has left would
+   * otherwise clear the spinner and post an error against whatever is on
+   * screen now — reporting a chapter that loaded fine as broken.
+   */
+  private reportChapterContentFailure(fileName: string, chapterId: number, err: unknown): void {
+    this.logger.error('Failed to load chapter content', err);
+    if (this.selectedBookFileName !== fileName || this.selectedChapterId !== chapterId) return;
+
+    this.error = 'Unable to load chapter content.';
+    this.loadingContent = false;
   }
 
   private subscribeToReaderParams(): void {
@@ -1696,32 +1692,25 @@ export class BookReaderComponent implements OnInit, OnDestroy {
     this.selectedText = text || null;
   }
 
-  startResize(): void {
-    this.isResizing = true;
+  startHorizontalResize(event: MouseEvent | TouchEvent): void {
+    this.splitter.start(event);
   }
 
-  startHorizontalResize(event: MouseEvent): void {
-    this.isHorizontalResizing = true;
-    event.preventDefault();
+  onToggleSidebar(show: boolean): void {
+    if (this.appearance.setSidebar(show)) this.repaginateAfterRender();
   }
 
-  startHorizontalResizeTouch(event: TouchEvent): void {
-    this.isHorizontalResizing = true;
-    event.preventDefault();
+  onChangeFontSize(delta: number): void {
+    if (this.appearance.changeFontSize(delta)) this.repaginateAfterRender();
   }
 
-  toggleSidebar(show: boolean): void {
-    this.showSidebar = show;
+  /**
+   * Page size is measured from rendered text, so it can only be recomputed
+   * after the browser has laid the new size out — hence the zero-delay hop
+   * rather than an immediate call.
+   */
+  private repaginateAfterRender(): void {
     this.timeoutIds.push(setTimeout(() => this.recalcPageSize(), 0));
-  }
-
-  changeFontSize(delta: number): void {
-    const next = Math.min(MAX_FONT_SIZE, Math.max(MIN_FONT_SIZE, this.fontSize + delta));
-    if (next !== this.fontSize) {
-      this.fontSize = next;
-      // Wait for DOM to update with new font size before recalculating
-      this.timeoutIds.push(setTimeout(() => this.recalcPageSize(), 0));
-    }
   }
 
   createVocabFromSelection(): void {
@@ -1867,44 +1856,28 @@ export class BookReaderComponent implements OnInit, OnDestroy {
 
   @HostListener('window:mousemove', ['$event'])
   onMouseMove(event: MouseEvent): void {
-    if (this.isHorizontalResizing && this.contentStackRef) {
-      const rect = this.contentStackRef.nativeElement.getBoundingClientRect();
-      const offsetX = event.clientX - rect.left;
-      const percentX = Math.min(80, Math.max(20, (offsetX / rect.width) * 100));
-      const left = percentX / 100;
-      const right = 1 - left;
-      this.leftFlex = `${left} 1 0`;
-      this.rightFlex = `${right} 1 0`;
-      this.recalcPageSize();
-    }
+    if (this.splitter.dragTo(event.clientX, this.paneBounds())) this.recalcPageSize();
   }
 
   @HostListener('window:touchmove', ['$event'])
   onTouchMove(event: TouchEvent): void {
-    if (this.isHorizontalResizing && this.contentStackRef && event.touches.length > 0) {
-      const rect = this.contentStackRef.nativeElement.getBoundingClientRect();
-      const offsetX = event.touches[0].clientX - rect.left;
-      const percentX = Math.min(80, Math.max(20, (offsetX / rect.width) * 100));
-      const left = percentX / 100;
-      const right = 1 - left;
-      this.leftFlex = `${left} 1 0`;
-      this.rightFlex = `${right} 1 0`;
-      this.recalcPageSize();
-    }
+    const touch = event.touches[0];
+    if (touch && this.splitter.dragTo(touch.clientX, this.paneBounds())) this.recalcPageSize();
   }
 
   @HostListener('window:mouseup')
   onMouseUp(): void {
-    this.isResizing = false;
-    this.isHorizontalResizing = false;
-    this.recalcPageSize();
+    if (this.splitter.end()) this.recalcPageSize();
   }
 
   @HostListener('window:touchend')
   onTouchEnd(): void {
-    this.isResizing = false;
-    this.isHorizontalResizing = false;
-    this.recalcPageSize();
+    if (this.splitter.end()) this.recalcPageSize();
+  }
+
+  /** Null until a chapter renders and the panes exist to be measured. */
+  private paneBounds(): DOMRect | null {
+    return this.contentStackRef?.nativeElement.getBoundingClientRect() ?? null;
   }
 
   @HostListener('window:resize')
@@ -1931,7 +1904,7 @@ export class BookReaderComponent implements OnInit, OnDestroy {
     const { pageSize: newSize, cached } = this.paginationService.calculatePageSize(
       this.chapterContent.content,
       el,
-      this.fontSize
+      this.appearance.fontSize
     );
 
     // Nothing was re-measured, so the layout hasn't moved — only make sure the
@@ -2030,24 +2003,13 @@ export class BookReaderComponent implements OnInit, OnDestroy {
       if (contentType && contentType.includes('application/json')) {
         // Cached result - return as JSON
         return response.json().then(data => {
-          this.ngZone.run(() => {
-            this.chunkBoundaries = data as ChunkBoundariesResponse;
-            this.loadingChunkBoundaries = false;
-            this.chunkBoundariesProgress = null;
-            this.updateCurrentSection();
-            this.logger.log(`✅ Loaded ${data.chunks.length} cached chunk boundaries for chapter ${chapterId}`);
-
-            // Auto-load cached summary for current section (if it exists)
-            if (this.currentSectionIndex !== null) {
-              this.loadCachedSectionSummary(this.currentSectionIndex);
-            }
-          });
+          this.ngZone.run(() => this.applyChunkBoundaries(data as ChunkBoundariesResponse, chapterId));
         });
       }
 
       // SSE stream - parse events
       const reader = response.body?.getReader();
-      return this.sse.readStream(reader!, event => this.handleChunkBoundarySSEEvent(event));
+      return this.sse.readStream(reader!, event => this.handleChunkBoundarySSEEvent(event, chapterId));
     }).catch(err => {
       this.logger.error('Failed to load chunk boundaries', err);
       this.ngZone.run(() => {
@@ -2063,9 +2025,54 @@ export class BookReaderComponent implements OnInit, OnDestroy {
     });
   }
 
-  private handleChunkBoundarySSEEvent(event: ChunkBoundarySSEEvent): void {
+  /**
+   * Section boundaries are word offsets into one specific chapter, so applying
+   * a set belonging to a chapter the reader has left points every section at
+   * the wrong text — and the section summaries requested from those offsets are
+   * then summaries of the wrong passage. Detection can take long enough to
+   * index a whole book, so switching chapters mid-flight is ordinary use.
+   */
+  private applyChunkBoundaries(boundaries: ChunkBoundariesResponse, chapterId: number): void {
+    if (this.selectedChapterId !== chapterId) {
+      this.logger.log(`Discarded section boundaries for chapter ${chapterId}; reader is on ${this.selectedChapterId}`);
+      return;
+    }
+
+    this.chunkBoundaries = boundaries;
+    this.loadingChunkBoundaries = false;
+    this.chunkBoundariesProgress = {
+      stage: 'complete',
+      currentStep: 1,
+      totalSteps: 1,
+      message: 'Section boundaries detected!',
+      error: undefined
+    };
+    this.updateCurrentSection();
+
+    if (this.currentSectionIndex !== null) {
+      this.loadCachedSectionSummary(this.currentSectionIndex);
+    }
+
+    this.timeoutIds.push(setTimeout(() => this.chunkBoundariesProgress = null, SUCCESS_MESSAGE_DURATION_MS));
+  }
+
+  private handleChunkBoundarySSEEvent(event: ChunkBoundarySSEEvent, chapterId: number): void {
     this.ngZone.run(() => {
-      if (event.stage && event.stepNumber !== undefined) {
+      // Error first. A server error arrives as a fully-formed progress event
+      // (`stage: 'error'`, `stepNumber: 0`), so testing for progress before
+      // testing for failure matched it here and left the spinner running
+      // forever — the branch below that clears it was unreachable.
+      if (event.stage === 'error') {
+        this.logger.error('Boundary detection error:', event);
+        this.chunkBoundariesProgress = {
+          stage: 'error',
+          currentStep: event.stepNumber ?? 0,
+          totalSteps: event.totalSteps ?? 1,
+          message: event.message ?? 'Detection failed',
+          error: event.error ?? event.message
+        };
+        this.loadingChunkBoundaries = false;
+      } else if (event.stage && event.stepNumber !== undefined) {
         // Progress event
         this.logger.log(`Boundary detection: ${event.stage} ${event.stepNumber}/${event.totalSteps}`);
         this.chunkBoundariesProgress = {
@@ -2076,36 +2083,8 @@ export class BookReaderComponent implements OnInit, OnDestroy {
           error: event.error
         };
       } else if (event.chapterId !== undefined && event.chunks) {
-        // Complete event
         this.logger.log('Boundary detection complete! Sections:', event.chunks.length);
-        this.chunkBoundaries = event as ChunkBoundariesResponse;
-        this.chunkBoundariesProgress = {
-          stage: 'complete',
-          currentStep: 1,
-          totalSteps: 1,
-          message: 'Section boundaries detected!',
-          error: undefined
-        };
-        this.loadingChunkBoundaries = false;
-        this.updateCurrentSection();
-
-        // Auto-load cached summary for current section
-        if (this.currentSectionIndex !== null) {
-          this.loadCachedSectionSummary(this.currentSectionIndex);
-        }
-
-        this.timeoutIds.push(setTimeout(() => this.chunkBoundariesProgress = null, SUCCESS_MESSAGE_DURATION_MS));
-      } else if (event.error) {
-        // Error event
-        this.logger.error('Boundary detection error:', event);
-        this.chunkBoundariesProgress = {
-          stage: 'error',
-          currentStep: event.stepNumber ?? 0,
-          totalSteps: event.totalSteps ?? 1,
-          message: event.message ?? 'Detection failed',
-          error: event.error
-        };
-        this.loadingChunkBoundaries = false;
+        this.applyChunkBoundaries(event as ChunkBoundariesResponse, chapterId);
       }
     });
   }

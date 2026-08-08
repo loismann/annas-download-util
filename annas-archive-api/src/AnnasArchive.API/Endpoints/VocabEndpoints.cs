@@ -59,7 +59,7 @@ public static class VocabEndpoints
 
         if (request is null || string.IsNullOrWhiteSpace(request.Term))
         {
-            Log.Information("❌ [POST /api/vocab/known] Invalid request: term is null or empty");
+            Log.Warning("❌ [POST /api/vocab/known] Invalid request: term is null or empty");
             return ApiResponse.BadRequest("term is required.");
         }
 
@@ -153,7 +153,7 @@ public static class VocabEndpoints
 
         if (request is null || string.IsNullOrWhiteSpace(request.Term))
         {
-            Log.Information("❌ [POST /api/vocab/study] Invalid request: term is null or empty");
+            Log.Warning("❌ [POST /api/vocab/study] Invalid request: term is null or empty");
             return ApiResponse.BadRequest("term is required.");
         }
 

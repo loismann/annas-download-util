@@ -18,7 +18,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { MatDialog } from '@angular/material/dialog';
 import { ActivatedRoute, Router } from '@angular/router';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 
 import { BookReaderComponent } from './book-reader.component';
 import { AiApiService } from '../services/ai-api.service';
@@ -55,8 +55,11 @@ describe('BookReaderComponent (characterization)', () => {
     localStorage.clear();
 
     const aiApi = jasmine.createSpyObj<AiApiService>('AiApiService', [
-      'getTokenUsage', 'getAllUsersTokenUsage', 'saveSectionVocab'
+      'getTokenUsage', 'getAllUsersTokenUsage', 'saveSectionVocab', 'getCachedSectionSummary'
     ]);
+    // The real endpoint 404s when nothing is cached, which is the default state
+    // for a chapter nobody has summarised — so that is what the stub models.
+    aiApi.getCachedSectionSummary.and.returnValue(throwError(() => ({ status: 404 })));
     aiApi.getTokenUsage.and.returnValue(of(null as any));
     aiApi.getAllUsersTokenUsage.and.returnValue(of([]));
     aiApi.saveSectionVocab.and.returnValue(of({} as any));
@@ -115,6 +118,88 @@ describe('BookReaderComponent (characterization)', () => {
 
   it('should create', () => {
     expect(component).toBeTruthy();
+  });
+
+  // Everything rendered in the analysis pane goes through [innerHTML], and all
+  // of it is model output derived from an EPUB — a file downloaded from Anna's
+  // Archive or LibGen, i.e. arbitrary third-party content. The page holds the
+  // signed-in user's token, and the CSP is `script-src 'self' 'unsafe-inline'`
+  // with `img-src https:`, so an injected handler both runs and can beacon out.
+  describe('untrusted HTML from the model', () => {
+    const attacks = [
+      '<img src="x" onerror="alert(1)">',
+      '<script>alert(1)</script>',
+      '<a href="javascript:alert(1)">click</a>',
+      '<iframe src="https://evil.example"></iframe>',
+      '<svg onload="alert(1)"></svg>',
+      '<div onmouseover="alert(1)">hover</div>'
+    ];
+
+    function rendered(value: unknown): string {
+      return String(value ?? '');
+    }
+
+    attacks.forEach(attack => {
+      it(`should strip the handler from a chapter summary containing ${attack.slice(0, 24)}…`, () => {
+        component.fullChapterSummary = `Real summary text.\n\n${attack}`;
+
+        const html = rendered(component.fullChapterSummaryHtml);
+
+        expect(html).not.toContain('onerror');
+        expect(html).not.toContain('onload');
+        expect(html).not.toContain('onmouseover');
+        expect(html).not.toContain('<script');
+        expect(html).not.toContain('<iframe');
+        // Angular neutralises a javascript: URL by rewriting the scheme to
+        // `unsafe:`, which no browser will navigate to. So the property to
+        // assert is that no *live* one survives, not that the substring is
+        // absent — the inert form still contains it.
+        expect(html).not.toMatch(/(href|src)\s*=\s*["']javascript:/i);
+      });
+
+      it(`should strip the handler from a dummy summary containing ${attack.slice(0, 24)}…`, () => {
+        component.ultraChapterSummary = `Real summary text.\n\n${attack}`;
+
+        const html = rendered(component.ultraChapterSummaryHtml);
+
+        expect(html).not.toContain('onerror');
+        expect(html).not.toContain('onload');
+        expect(html).not.toContain('onmouseover');
+        expect(html).not.toContain('<script');
+        expect(html).not.toContain('<iframe');
+        // Angular neutralises a javascript: URL by rewriting the scheme to
+        // `unsafe:`, which no browser will navigate to. So the property to
+        // assert is that no *live* one survives, not that the substring is
+        // absent — the inert form still contains it.
+        expect(html).not.toMatch(/(href|src)\s*=\s*["']javascript:/i);
+      });
+    });
+
+    it('should still render the markdown the summary is actually made of', () => {
+      component.fullChapterSummary = '# Heading\n\nSome **bold** text and a [link](https://example.com).';
+
+      const html = rendered(component.fullChapterSummaryHtml);
+
+      expect(html).toContain('<h1');
+      expect(html).toContain('<strong>bold</strong>');
+      expect(html).toContain('href="https://example.com"');
+    });
+
+    it('should render nothing when there is no summary', () => {
+      component.fullChapterSummary = null;
+      component.ultraChapterSummary = null;
+
+      expect(component.fullChapterSummaryHtml).toBeNull();
+      expect(component.ultraChapterSummaryHtml).toBeNull();
+    });
+
+    it('should strip a handler from a section summary too', () => {
+      const html = rendered(
+        component.formatSectionSummaryAsHtml('Text.\n\n<img src="x" onerror="alert(1)">')
+      );
+
+      expect(html).not.toContain('onerror');
+    });
   });
 
   describe('visible text windowing', () => {
@@ -477,6 +562,48 @@ describe('BookReaderComponent (characterization)', () => {
   // index maths. The behaviour that actually matters is upstream of it: short
   // front matter is dropped on load, which is what makes chapter *positions*
   // differ from EPUB ids, and what the summary's display number counts.
+  // The server sends failures as a fully-formed progress event — stage 'error',
+  // stepNumber 0 — not as a separate error shape. Dispatching on "has a stage
+  // and a stepNumber" therefore matched failures too, and the spinner never
+  // stopped.
+  describe('section detection failing', () => {
+    function receive(event: any): void {
+      component['handleChunkBoundarySSEEvent'](event, 20);
+    }
+
+    beforeEach(() => {
+      component.loadingChunkBoundaries = true;
+      // Boundaries are only applied to the chapter they were requested for.
+      component.selectedChapterId = 20;
+    });
+
+    it('should stop loading when the server reports an error', () => {
+      receive({ stage: 'error', stepNumber: 0, totalSteps: 1, message: 'Failed to index book: disk full' });
+
+      expect(component.loadingChunkBoundaries).toBe(false);
+    });
+
+    it('should show the reason the server gave', () => {
+      receive({ stage: 'error', stepNumber: 0, totalSteps: 1, message: 'Chapter file not found after indexing' });
+
+      expect(component.chunkBoundariesProgress?.stage).toBe('error');
+      expect(component.chunkBoundariesProgress?.message).toBe('Chapter file not found after indexing');
+    });
+
+    it('should keep loading while real progress arrives', () => {
+      receive({ stage: 'detecting', stepNumber: 0, totalSteps: 1, message: 'Finding section breaks...' });
+
+      expect(component.loadingChunkBoundaries).toBe(true);
+      expect(component.chunkBoundariesProgress?.stage).toBe('detecting');
+    });
+
+    it('should stop loading when the boundaries arrive', () => {
+      receive({ chapterId: 1, chunks: [{ start: 0, end: 100, wordCount: 100 }], cachedAt: '2026-08-08T00:00:00Z' });
+
+      expect(component.loadingChunkBoundaries).toBe(false);
+    });
+  });
+
   describe('chapter loading', () => {
     function loadChaptersWith(chapters: any[]): void {
       const libraryApi = TestBed.inject(LibraryApiService) as jasmine.SpyObj<LibraryApiService>;
@@ -606,4 +733,60 @@ describe('BookReaderComponent (characterization)', () => {
       expect(pagination.calculatePageSize).not.toHaveBeenCalled();
     });
   });
+
+  // Every one of these fetches names the chapter it was started for, and the
+  // reader lets you switch chapters while one is in flight. A response that
+  // lands after the switch describes a chapter that is no longer open.
+  describe('responses that arrive after the reader has moved on', () => {
+    it('should ignore section boundaries for a chapter that is no longer open', () => {
+      component.selectedBookPath = 'book-key';
+      component.selectedChapterId = 20;
+
+      // Boundaries for chapter 10 arrive after the reader moved to 20.
+      component['applyChunkBoundaries'](
+        { chapterId: 10, chunks: [{ start: 0, end: 50, wordCount: 50 }], cachedAt: '' } as any,
+        10
+      );
+
+      expect(component.chunkBoundaries).toBeNull();
+    });
+
+    it('should apply section boundaries for the chapter still open', () => {
+      component.selectedBookPath = 'book-key';
+      component.selectedChapterId = 20;
+
+      component['applyChunkBoundaries'](
+        { chapterId: 20, chunks: [{ start: 0, end: 50, wordCount: 50 }], cachedAt: '' } as any,
+        20
+      );
+
+      expect(component.chunkBoundaries?.chunks.length).toBe(1);
+    });
+
+    it('should not clear the spinner for a chapter that is no longer loading', () => {
+      // The failure path had no staleness guard where the success path did, so
+      // a slow failure for the previous chapter reported itself against the one
+      // now on screen.
+      component.selectedBookFileName = 'book.epub';
+      component.selectedChapterId = 20;
+      component.loadingContent = true;
+
+      component['reportChapterContentFailure']('book.epub', 10, new Error('boom'));
+
+      expect(component.error).toBeNull();
+      expect(component.loadingContent).toBe(true);
+    });
+
+    it('should report a failure for the chapter that is actually open', () => {
+      component.selectedBookFileName = 'book.epub';
+      component.selectedChapterId = 20;
+      component.loadingContent = true;
+
+      component['reportChapterContentFailure']('book.epub', 20, new Error('boom'));
+
+      expect(component.error).toBe('Unable to load chapter content.');
+      expect(component.loadingContent).toBe(false);
+    });
+  });
+
 });

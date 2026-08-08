@@ -109,18 +109,13 @@ public static class AiSummaryHelpers
         var chunkSummaries = new List<string>();
         var promptTokensTotal = 0;
         var completionTokensTotal = 0;
+        var progress = new SseProgress(response, "progress");
 
         for (var i = 0; i < chunks.Count; i++)
         {
             var chunk = chunks[i];
 
-            await ServerSentEventsHelper.SendEventAsync(response, new
-            {
-                stage = "chunks",
-                stepNumber = i + 1,
-                totalSteps = chunks.Count,
-                message = $"Analyzing chunk {i + 1}/{chunks.Count}..."
-            }, "progress");
+            await progress.StepAsync("chunks", i + 1, chunks.Count, $"Analyzing chunk {i + 1}/{chunks.Count}...");
 
             var outcome = await ai.CompleteAsync(
                 ChapterSummaryPrompts.ChunkSummary(
@@ -140,14 +135,7 @@ public static class AiSummaryHelpers
             promptTokensTotal += outcome.Usage.PromptTokens;
             completionTokensTotal += outcome.Usage.CompletionTokens;
 
-            await ServerSentEventsHelper.SendEventAsync(response, new
-            {
-                stage = "chunks",
-                stepNumber = i + 1,
-                totalSteps = chunks.Count,
-                message = $"Completed chunk {i + 1}/{chunks.Count}",
-                success = true
-            }, "progress");
+            await progress.StepAsync("chunks", i + 1, chunks.Count, $"Completed chunk {i + 1}/{chunks.Count}");
 
             // Throttle between API calls to prevent rate limiting
             if (i < chunks.Count - 1)
@@ -178,6 +166,7 @@ public static class AiSummaryHelpers
 
         var totalSections = (int)Math.Ceiling((double)chunkSummaries.Count / chunksPerSection);
         var sectionNum = 0;
+        var progress = new SseProgress(response, "progress");
 
         for (var i = 0; i < chunkSummaries.Count; i += chunksPerSection)
         {
@@ -185,13 +174,7 @@ public static class AiSummaryHelpers
             var sectionChunks = chunkSummaries.Skip(i).Take(chunksPerSection).ToList();
             if (sectionChunks.Count == 0) continue;
 
-            await ServerSentEventsHelper.SendEventAsync(response, new
-            {
-                stage = "sections",
-                stepNumber = sectionNum,
-                totalSteps = totalSections,
-                message = $"Synthesizing section {sectionNum}/{totalSections}..."
-            }, "progress");
+            await progress.StepAsync("sections", sectionNum, totalSections, $"Synthesizing section {sectionNum}/{totalSections}...");
 
             var outcome = await ai.CompleteAsync(
                 ChapterSummaryPrompts.SectionSynthesis(
@@ -208,14 +191,7 @@ public static class AiSummaryHelpers
             promptTokensTotal += outcome.Usage.PromptTokens;
             completionTokensTotal += outcome.Usage.CompletionTokens;
 
-            await ServerSentEventsHelper.SendEventAsync(response, new
-            {
-                stage = "sections",
-                stepNumber = sectionNum,
-                totalSteps = totalSections,
-                message = $"Completed section {sectionNum}/{totalSections}",
-                success = true
-            }, "progress");
+            await progress.StepAsync("sections", sectionNum, totalSections, $"Completed section {sectionNum}/{totalSections}");
 
             // Throttle between API calls to prevent rate limiting
             if (sectionNum < totalSections)
@@ -239,13 +215,7 @@ public static class AiSummaryHelpers
         IConfiguration cfg,
         string? billTo)
     {
-        await ServerSentEventsHelper.SendEventAsync(response, new
-        {
-            stage = "final",
-            stepNumber = 1,
-            totalSteps = 1,
-            message = "Creating final comprehensive summary..."
-        }, "progress");
+        await new SseProgress(response, "progress").StepAsync("final", 1, 1, "Creating final comprehensive summary...");
 
         var outcome = await ai.CompleteAsync(
             ChapterSummaryPrompts.FinalSummary(

@@ -7,8 +7,7 @@ import {
   OnDestroy,
   OnInit,
   Output,
-  SimpleChanges
-} from '@angular/core';
+  SimpleChanges, SecurityContext } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
@@ -27,6 +26,7 @@ import { AiApiService } from '../../services/ai-api.service';
 import { LoggerService } from '../../services/logger.service';
 import { VocabularyService } from '../../services/vocabulary.service';
 import { ReaderTextUtilsService } from '../services';
+import { HideBrokenImagesDirective } from '../../shared/hide-broken-images.directive';
 
 /**
  * The "Vocabulary lists" modal and its Learn More companion.
@@ -52,6 +52,8 @@ import { ReaderTextUtilsService } from '../services';
     MatIconModule,
     MatSelectModule,
     MatTooltipModule
+  ,
+    HideBrokenImagesDirective
   ],
   templateUrl: './vocabulary-panel.component.html',
   styleUrl: './vocabulary-panel.component.scss'
@@ -296,7 +298,7 @@ export class VocabularyPanelComponent implements OnInit, OnChanges, OnDestroy {
     const cached = this.vocabularyService.getCachedLearnMore(item.term);
     if (cached) {
       this.learnMoreContent = cached.detail;
-      this.learnMoreSafeContent = this.sanitizer.bypassSecurityTrustHtml(cached.detail);
+      this.learnMoreSafeContent = this.renderModelHtml(cached.detail);
       this.learnMoreImages = cached.images || [];
       this.loadingLearnMore = false;
       return;
@@ -369,6 +371,20 @@ export class VocabularyPanelComponent implements OnInit, OnChanges, OnDestroy {
       });
   }
 
+  /**
+   * Model-written HTML is rendered, never trusted.
+   *
+   * The learn-more prompt asks for HTML on purpose — paragraphs, lists, links
+   * and images are the feature — so the answer cannot simply be escaped. It is
+   * sanitised instead: Angular keeps that structure and drops scripts, event
+   * handlers and live `javascript:` URLs. Both the fresh and the cached path go
+   * through here, because a poisoned cache entry outlives the response that
+   * produced it.
+   */
+  private renderModelHtml(html: string): SafeHtml {
+    return this.sanitizer.sanitize(SecurityContext.HTML, html) ?? '';
+  }
+
   /** Shared tail of the three success paths above, which differ only in the image list. */
   private applyLearnMoreResult(
     cleaned: string,
@@ -378,7 +394,7 @@ export class VocabularyPanelComponent implements OnInit, OnChanges, OnDestroy {
   ): void {
     this.learnMoreImages = images;
     this.learnMoreContent = cleaned;
-    this.learnMoreSafeContent = this.sanitizer.bypassSecurityTrustHtml(cleaned);
+    this.learnMoreSafeContent = this.renderModelHtml(cleaned);
     if (cacheResult) {
       this.vocabularyService.cacheLearnMore(term, cleaned, images);
     }

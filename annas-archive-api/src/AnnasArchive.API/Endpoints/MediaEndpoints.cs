@@ -123,7 +123,7 @@ public static class MediaEndpoints
         }
         catch
         {
-            Log.Information("⚠️ Wiki images lookup failed for term '{Term}'", term);
+            Log.Warning("⚠️ Wiki images lookup failed for term '{Term}'", term);
             return Results.Ok(new WikiImagesResponse(new List<string>()));
         }
     }

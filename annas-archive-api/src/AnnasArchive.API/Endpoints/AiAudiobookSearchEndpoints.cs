@@ -126,7 +126,7 @@ public static class AiAudiobookSearchEndpoints
         }
         catch (Exception ex)
         {
-            Log.Information("❌ AI audiobook discovery failed: {Message}", ex.Message);
+            Log.Error("❌ AI audiobook discovery failed: {Message}", ex.Message);
             return ApiResponse.InternalError("Failed to run AI audiobook search.");
         }
     }

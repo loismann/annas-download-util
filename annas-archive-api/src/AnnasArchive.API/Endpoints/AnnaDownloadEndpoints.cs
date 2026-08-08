@@ -558,15 +558,15 @@ public static class AnnaDownloadEndpoints
                 catch (Dropbox.Api.ApiException<UploadError> ex)
                 {
                     var details = ex.ErrorResponse?.ToString() ?? ex.ToString();
-                    Log.Information("⚠️ Dropbox backup failed (non-critical): {ErrorMessage} | Details: {Details}", ex.Message, details);
+                    Log.Warning("⚠️ Dropbox backup failed (non-critical): {ErrorMessage} | Details: {Details}", ex.Message, details);
                 }
                 catch (Dropbox.Api.HttpException ex)
                 {
-                    Log.Information("⚠️ Dropbox backup failed (non-critical, HTTP {StatusCode}): {ErrorMessage}", ex.StatusCode, ex.Message);
+                    Log.Warning("⚠️ Dropbox backup failed (non-critical, HTTP {StatusCode}): {ErrorMessage}", ex.StatusCode, ex.Message);
                 }
                 catch (Dropbox.Api.DropboxException ex)
                 {
-                    Log.Information("⚠️ Dropbox backup failed (non-critical): {ErrorMessage}", ex.Message);
+                    Log.Warning("⚠️ Dropbox backup failed (non-critical): {ErrorMessage}", ex.Message);
                 }
                 // Deliberately swallows everything, including ArgumentException:
                 // this is a best-effort backup, and its failure must not fail the
@@ -575,7 +575,7 @@ public static class AnnaDownloadEndpoints
                 // improve — no response is being produced.
                 catch (Exception ex)
                 {
-                    Log.Information("⚠️ Dropbox backup failed (non-critical): {ErrorMessage}", ex.Message);
+                    Log.Warning("⚠️ Dropbox backup failed (non-critical): {ErrorMessage}", ex.Message);
                 }
 
                 // Get user name from auth context

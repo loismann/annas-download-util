@@ -239,10 +239,8 @@ DOCS/
 # Auto-generated version file
 **/version.ts
 
-.DS_Store
-
-# CVS Photo session state — live login cookies for cvs.com. Captured by
-# scripts/capture-cvs-session.sh, kept outside the repo by default (~/.cvs-photo)
+# CVS Photo session state — live login cookies for cvs.com. Produced by
+# scripts/cvs-session-import.sh, kept outside the repo by default (~/.cvs-photo)
 # and pushed straight to the NAS state mount. Listed here as a second line of
 # defence in case one is ever dropped in the tree by hand.
 cvs-session.json

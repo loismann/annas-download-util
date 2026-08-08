@@ -311,6 +311,39 @@ public class ErrorContractConventionTests
             "validation message");
     }
 
+    /// <summary>
+    /// The SSE preamble is set by <c>ServerSentEventsHelper.BeginStream</c>, not
+    /// by hand.
+    ///
+    /// <para>Three call sites set the same three headers three different ways, and
+    /// one used <c>Headers.Append("Content-Type", …)</c> — which appends rather
+    /// than replaces, so a content type already on the response becomes
+    /// <c>application/json, text/event-stream</c> and the browser refuses the
+    /// stream. It worked only because nothing set a content type first on that
+    /// path.</para>
+    /// </summary>
+    [Fact]
+    public void NoEndpointSetsTheSseHeadersByHand()
+    {
+        var offenders = new List<string>();
+
+        foreach (var (name, raw) in ApiSources())
+        {
+            if (name.EndsWith("ServerSentEventsHelper.cs")) continue;   // the one place that may
+
+            var text = WithoutComments(raw);
+            foreach (System.Text.RegularExpressions.Match m in Regex.Matches(
+                         text, @"""text/event-stream"""))
+            {
+                offenders.Add($"{name}:{text[..m.Index].Count(c => c == '\n') + 1}");
+            }
+        }
+
+        offenders.Should().BeEmpty(
+            "call ServerSentEventsHelper.BeginStream(response); it assigns rather than " +
+            "appends, which is the part that was getting written wrong");
+    }
+
     /// <summary>Each <c>Results.BadRequest/NotFound/Conflict(new { … })</c> in the
     /// API project, with the property names it sets.</summary>
     private static IEnumerable<(string Where, IReadOnlyList<string> Properties)> HandBuiltErrorBodies()

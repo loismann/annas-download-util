@@ -56,8 +56,9 @@ public class CvsOptions
 {
     /// <summary>
     /// Playwright storage state (cookies + localStorage) for a signed-in
-    /// cvs.com session, captured on a machine with a real browser by
-    /// <c>scripts/cvs-login.sh</c>.
+    /// cvs.com session. Produced by <c>scripts/cvs-session-import.sh</c>, which
+    /// converts cookies exported from a real Chrome — CVS fingerprints
+    /// Playwright's own Chromium and refuses to show it the login page at all.
     ///
     /// There is no username/password pair to configure: CVS signs in with a
     /// passkey or an emailed one-time code, neither of which can run

@@ -38,10 +38,6 @@ public static class PhotoPrintEndpoints
         group.MapDelete("/runs/{runId}/items/{itemId}", HandleRemoveItem);
         group.MapPost("/runs/{runId}/prepare", HandlePrepare);
         group.MapPost("/runs/{runId}/cancel", HandleCancelRun);
-        // TODO(photo-prints): HandleDownloadRun was mapped before it was written, which
-        // broke the whole API build. Parked rather than guessed at — PhotoPrintRunService
-        // has no download/zip surface yet, so what this returns is still a design call.
-        // group.MapGet("/runs/{runId}/download", HandleDownloadRun);
 
         return app;
     }

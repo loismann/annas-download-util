@@ -101,17 +101,7 @@ public class DateNightCycleService
     /// week.</summary>
     private const string TestCycleId = "test";
 
-    private static readonly TimeSpan HawaiiOffset = TimeSpan.FromHours(-10);
-
-    public const int MaxFlyerReminderCount = 3;
-
-    /// <summary>Public so the admin endpoint can compute "still cooling off" the same
-    /// way issuance does, instead of re-hardcoding the 4 weeks.</summary>
-    public static readonly TimeSpan CoolingOff = TimeSpan.FromDays(28); // 4 weeks
-
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
-
-    private static readonly HashSet<string> ValidVotes = new(StringComparer.OrdinalIgnoreCase) { "Up", "Down", "Never" };
 
     private readonly DateNightAvailabilityService _availability;
     private readonly DateNightSummaryService _summaries;
@@ -135,24 +125,6 @@ public class DateNightCycleService
         _scopeFactory = scopeFactory;
     }
 
-    private static DateTimeOffset NowHawaii => DateTimeOffset.UtcNow.ToOffset(HawaiiOffset);
-
-    private static DateOnly MondayOf(DateTimeOffset hawaiiNow)
-    {
-        var date = DateOnly.FromDateTime(hawaiiNow.Date);
-        var back = ((int)date.DayOfWeek - (int)DayOfWeek.Monday + 7) % 7;
-        return date.AddDays(-back);
-    }
-
-    private static DateTime ToUtc(DateOnly hawaiiDate, TimeOnly hawaiiTime) =>
-        new DateTimeOffset(hawaiiDate.ToDateTime(hawaiiTime), HawaiiOffset).UtcDateTime;
-
-    /// <summary>The full Monday-Sunday calendar week remains available for voting
-    /// and scheduling. Sunday at 11:59:59 PM Hawaii time is the final fallback for
-    /// an unfinished ballot.</summary>
-    public static DateTime WeeklyDeadlineUtc(DateOnly monday) =>
-        ToUtc(monday.AddDays(6), new TimeOnly(23, 59, 59));
-
     /// <summary>Advances and returns the current cycle: issues a fresh week if none is
     /// active for this week (and no skip is in effect), and resolves/cancels an active
     /// cycle whose deadline has passed. Every read of the cycle goes through this, so the
@@ -172,13 +144,13 @@ public class DateNightCycleService
 
     private async Task<WeeklyCycle?> AdvanceAsync(CancellationToken ct)
     {
-        var now = NowHawaii;
+        var now = DateNightPolicy.NowHawaii(DateTime.UtcNow);
         var skip = GetSkip();
         if (skip.SkipUntilUtc is DateTime skipUntil && skipUntil > now.UtcDateTime)
             return null;
 
         var cycle = LoadCycle();
-        var thisMonday = MondayOf(now);
+        var thisMonday = DateNightPolicy.MondayOf(now);
 
         if (cycle is not null)
             cycle = await AdvanceShowtimeLifecycleAsync(cycle, isTest: false, ct);
@@ -196,13 +168,13 @@ public class DateNightCycleService
             (needsReminderPolicyUpgrade || needsScheduleUpgrade))
         {
             var wasLegacyDeadlineCancellation =
-                needsReminderPolicyUpgrade && cycle.Status == "Cancelled" && !EveryoneVoted(cycle);
+                needsReminderPolicyUpgrade && cycle.Status == "Cancelled" && !DateNightPolicy.EveryoneVoted(cycle);
             cycle = cycle with
             {
-                DeadlineUtc = WeeklyDeadlineUtc(thisMonday),
+                DeadlineUtc = DateNightPolicy.WeeklyDeadlineUtc(thisMonday),
                 Status = wasLegacyDeadlineCancellation ? "Active" : cycle.Status,
                 ResolvedUtc = wasLegacyDeadlineCancellation ? null : cycle.ResolvedUtc,
-                Schedule = cycle.Schedule ?? NewSchedule(),
+                Schedule = cycle.Schedule ?? DateNightPolicy.NewSchedule(),
                 FlyerReminderCounts = cycle.FlyerReminderCounts ??
                     new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
             };
@@ -290,7 +262,7 @@ public class DateNightCycleService
             TestCycleId, draw, DateTime.UtcNow, DateTime.UtcNow.AddYears(10), "Active",
             new Dictionary<string, Dictionary<int, string>>(StringComparer.OrdinalIgnoreCase),
             new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase),
-            null, null, NewSchedule());
+            null, null, DateNightPolicy.NewSchedule());
 
         SaveCycle(cycle, isTest: true);
         Log.Information("[DateNight] Test cycle drawn — {Count} movies (dry run, no real Mom/Dad impact)", draw.Count);
@@ -310,13 +282,13 @@ public class DateNightCycleService
             Log.Warning("[DateNight] No eligible movies — cycle for week of {Monday} not issued", monday);
             return null;
         }
-        var deadline = WeeklyDeadlineUtc(monday);
+        var deadline = DateNightPolicy.WeeklyDeadlineUtc(monday);
 
         var cycle = new WeeklyCycle(
             monday.ToString("yyyy-MM-dd"), draw, DateTime.UtcNow, deadline, "Active",
             new Dictionary<string, Dictionary<int, string>>(StringComparer.OrdinalIgnoreCase),
             new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase),
-            null, null, NewSchedule(),
+            null, null, DateNightPolicy.NewSchedule(),
             new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase));
 
         SaveCycle(cycle);
@@ -453,7 +425,7 @@ public class DateNightCycleService
         var availability = _availability.GetAvailability();
         var lists = GetLists();
         var testLists = isTest ? GetLists(isTest: true) : null;
-        var coolingOffCutoff = DateTime.UtcNow - CoolingOff;
+        var coolingOffCutoff = DateTime.UtcNow - DateNightPolicy.CoolingOff;
 
         return pool.OfType<JsonObject>()
             .Where(m => (int?)m["id"] is int && IsEligible(m))
@@ -490,14 +462,14 @@ public class DateNightCycleService
     /// an admin reading the panel, even though both are "no date night this week" to Mom and Dad.</summary>
     private WeeklyCycle Resolve(WeeklyCycle cycle, bool isTest = false)
     {
-        if (!EveryoneVoted(cycle))
+        if (!DateNightPolicy.EveryoneVoted(cycle))
         {
             Log.Information("[DateNight] Cycle {CycleId} cancelled — voting incomplete by the deadline", cycle.CycleId);
             return cycle with { Status = "Cancelled", ResolvedUtc = DateTime.UtcNow };
         }
 
         var mutual = cycle.MovieIds
-            .Where(id => HouseholdOwners.Names.Where(IsAudience)
+            .Where(id => HouseholdOwners.Names.Where(DateNightPolicy.IsAudience)
                 .All(p => cycle.Votes.TryGetValue(p, out var v) && v.TryGetValue(id, out var vote) && vote == "Up"))
             .ToList();
 
@@ -527,36 +499,18 @@ public class DateNightCycleService
             // The first completed voter may already have proposed dates while
             // voting was still Active. Preserve that handshake as the movie
             // winner resolves instead of resetting it.
-            Schedule = cycle.Schedule ?? NewSchedule()
+            Schedule = cycle.Schedule ?? DateNightPolicy.NewSchedule()
         };
     }
-
-    private static ScheduleState NewSchedule() =>
-        new("AwaitingProposal", null, [], null, null, [], null);
-
-    /// <summary>Whether every audience member has voted on every one of this week's drawn
-    /// movies — shared by <see cref="Resolve"/> (to decide Resolved vs. Cancelled) and
-    /// <see cref="CastVoteAsync"/> (to decide whether a just-cast vote was the last one
-    /// needed to resolve immediately).</summary>
-    private static bool EveryoneVoted(WeeklyCycle cycle) =>
-        HouseholdOwners.Names
-            .Where(IsAudience)
-            .All(p => cycle.Votes.TryGetValue(p, out var votes)
-                      && cycle.MovieIds.All(votes.ContainsKey));
-
-    private static bool IsAudience(string person) =>
-        HouseholdOwners.Names.Any(n =>
-            !string.Equals(n, "Paul", StringComparison.OrdinalIgnoreCase) &&
-            string.Equals(n, person, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>Records one person's vote on one of this week's drawn movies. Side effects
     /// on the permanent lists fire immediately — not deferred to resolution — since a
     /// never-show or disagreement is true regardless of how the rest of the week plays out.</summary>
     public async Task<WeeklyCycle> CastVoteAsync(string person, int movieId, string vote, bool isTest = false, CancellationToken ct = default)
     {
-        if (!IsAudience(person))
+        if (!DateNightPolicy.IsAudience(person))
             throw new InvalidOperationException("Only Mom and Dad vote.");
-        if (!ValidVotes.Contains(vote))
+        if (!DateNightPolicy.IsValidVote(vote))
             throw new ArgumentException($"Unrecognized vote '{vote}'.", nameof(vote));
 
         await _lock.WaitAsync(ct);
@@ -610,7 +564,7 @@ public class DateNightCycleService
             // Resolve the instant the last vote comes in, rather than waiting for
             // Sunday — the deadline (AdvanceAsync) only ever needs to run Resolve
             // itself for a cycle where voting never finished.
-            if (EveryoneVoted(cycle))
+            if (DateNightPolicy.EveryoneVoted(cycle))
             {
                 cycle = Resolve(cycle, isTest);
                 SaveCycle(cycle, isTest);
@@ -624,47 +578,6 @@ public class DateNightCycleService
         }
     }
 
-    /// <summary>Whether the flyer is owed to this person today — active week, they
-    /// still owe either movie votes or their initial time proposal, it has not already
-    /// been shown today (Hawaii date), and they have received fewer than three daily
-    /// prompts. The flyer remains manually reachable after the gentle prompts stop.</summary>
-    public static bool IsFlyerOwedToday(string person, WeeklyCycle cycle)
-    {
-        if (cycle.Status != "Active") return false;
-
-        var votes = cycle.Votes.TryGetValue(person, out var v) ? v : null;
-        var ballotComplete = votes is not null && cycle.MovieIds.All(votes.ContainsKey);
-        var stillNeedsInitialTimes = ballotComplete && cycle.Schedule?.Status == "AwaitingProposal";
-        if (ballotComplete && !stillNeedsInitialTimes) return false;
-
-        var reminderCount = cycle.FlyerReminderCounts is not null &&
-                            cycle.FlyerReminderCounts.TryGetValue(person, out var count)
-            ? count
-            : 0;
-        if (reminderCount >= MaxFlyerReminderCount) return false;
-
-        if (!cycle.LastFlyerShownUtc.TryGetValue(person, out var last)) return true;
-        return HawaiiDate(last) != HawaiiDate(DateTime.UtcNow);
-    }
-
-    /// <summary>The responder to a schedule proposal gets one gentle prompt per
-    /// Hawaii day until they approve, counter, or cancel. Proposal changes replace
-    /// the reminder map, so the new state can surface immediately.</summary>
-    public bool IsScheduleReminderOwedToday(string person, WeeklyCycle cycle)
-    {
-        var schedule = cycle.Schedule;
-        if (cycle.Status != "Resolved" || schedule?.Status != "AwaitingApproval") return false;
-        if (string.Equals(schedule.ProposedBy, person, StringComparison.OrdinalIgnoreCase)) return false;
-
-        if (schedule.LastReminderShownUtc is null ||
-            !schedule.LastReminderShownUtc.TryGetValue(person, out var last))
-            return true;
-        return HawaiiDate(last) != HawaiiDate(DateTime.UtcNow);
-    }
-
-    private static DateOnly HawaiiDate(DateTime utc) =>
-        DateOnly.FromDateTime(new DateTimeOffset(DateTime.SpecifyKind(utc, DateTimeKind.Utc)).ToOffset(HawaiiOffset).Date);
-
     public async Task RecordFlyerShownAsync(string person, bool isTest = false, CancellationToken ct = default)
     {
         await _lock.WaitAsync(ct);
@@ -675,7 +588,7 @@ public class DateNightCycleService
 
             var now = DateTime.UtcNow;
             var alreadyShownToday = cycle.LastFlyerShownUtc.TryGetValue(person, out var last) &&
-                                    HawaiiDate(last) == HawaiiDate(now);
+                                    DateNightPolicy.HawaiiDate(last) == DateNightPolicy.HawaiiDate(now);
             var shown = new Dictionary<string, DateTime>(cycle.LastFlyerShownUtc, StringComparer.OrdinalIgnoreCase)
             {
                 [person] = now
@@ -686,7 +599,7 @@ public class DateNightCycleService
             if (!alreadyShownToday)
             {
                 reminderCounts.TryGetValue(person, out var previousCount);
-                reminderCounts[person] = Math.Min(MaxFlyerReminderCount, previousCount + 1);
+                reminderCounts[person] = Math.Min(DateNightPolicy.MaxFlyerReminderCount, previousCount + 1);
             }
 
             SaveCycle(cycle with
@@ -701,62 +614,6 @@ public class DateNightCycleService
         }
     }
 
-    /// <summary>Earliest allowed slot time — "after 12pm" per spec.</summary>
-    private static readonly TimeOnly EarliestSlotTime = new(12, 0);
-
-    /// <summary>Latest allowed slot time — "before 12am" per spec, on the same
-    /// 30-minute grid as everything else.</summary>
-    private static readonly TimeOnly LatestSlotTime = new(23, 30);
-
-    /// <summary>Validates a proposed slot list against the shape the scheduling form
-    /// is supposed to produce — enforced here too, not just in the UI, so a stray API
-    /// call can't exceed it. Initial proposals may contain combinations across the
-    /// displayed dates; every time is on a 30-minute boundary within
-    /// [noon, 11:30pm] and every resulting slot must still be in the future.</summary>
-    private static void ValidateSlots(List<ProposedSlot> slots)
-    {
-        if (slots is not { Count: > 0 })
-            throw new ArgumentException("At least one slot must be proposed.", nameof(slots));
-
-        var distinctDays = slots.Select(s => s.Date).Distinct().Count();
-        if (distinctDays > 7)
-            throw new ArgumentException("At most 7 days may be proposed.", nameof(slots));
-
-        foreach (var slot in slots)
-        {
-            if (!DateOnly.TryParse(slot.Date, out var date))
-                throw new ArgumentException($"Invalid date '{slot.Date}'.", nameof(slots));
-            if (!TimeOnly.TryParse(slot.Time, out var time) || time.Minute % 30 != 0)
-                throw new ArgumentException($"Invalid time '{slot.Time}' — must be on a 30-minute boundary.", nameof(slots));
-            if (time < EarliestSlotTime || time > LatestSlotTime)
-                throw new ArgumentException($"Time '{slot.Time}' is outside the noon–11:30pm window.", nameof(slots));
-            if (ToUtc(date, time) <= DateTime.UtcNow)
-                throw new ArgumentException($"Slot '{slot.Date} {slot.Time}' must be in the future.", nameof(slots));
-        }
-    }
-
-    /// <summary>A real cycle owns exactly one Hawaii calendar week, Monday through
-    /// Sunday. Keeping every proposal inside that range prevents an old week's
-    /// negotiation from creating a second Date Night in the following week. The
-    /// isolated dry run has no calendar week and intentionally keeps its rolling
-    /// seven-day test window.</summary>
-    private static void ValidateSlotsForCycle(WeeklyCycle cycle, List<ProposedSlot> slots, bool isTest)
-    {
-        if (isTest) return;
-        if (!DateOnly.TryParse(cycle.CycleId, out var monday))
-            throw new InvalidOperationException("This Date Night cycle has an invalid calendar week.");
-
-        var sunday = monday.AddDays(6);
-        foreach (var slot in slots)
-        {
-            var date = DateOnly.Parse(slot.Date);
-            if (date < monday || date > sunday)
-                throw new ArgumentException(
-                    $"Slot '{slot.Date} {slot.Time}' must fall within this Date Night week ({monday:MMM d}–{sunday:MMM d}).",
-                    nameof(slots));
-        }
-    }
-
     /// <summary>The schedule handshake's propose step — used both for the first
     /// proposal (either person, whoever gets there first) and for a counter-proposal
     /// (only whoever's turn it is to respond may counter; the current proposer just
@@ -764,20 +621,20 @@ public class DateNightCycleService
     /// Cancel end it.</summary>
     public async Task<WeeklyCycle> ProposeScheduleAsync(string person, List<ProposedSlot> slots, bool isTest = false, CancellationToken ct = default)
     {
-        if (!IsAudience(person))
+        if (!DateNightPolicy.IsAudience(person))
             throw new InvalidOperationException("Only Mom and Dad schedule.");
-        ValidateSlots(slots);
+        DateNightPolicy.ValidateSlots(slots, DateTime.UtcNow);
 
         await _lock.WaitAsync(ct);
         try
         {
             var cycle = await GetCycleForMutationAsync(isTest, ct)
                 ?? throw new InvalidOperationException("No active week to schedule.");
-            ValidateSlotsForCycle(cycle, slots, isTest);
+            DateNightPolicy.ValidateSlotsForCycle(cycle, slots, isTest);
             if (cycle.Status is not ("Active" or "Resolved"))
                 throw new InvalidOperationException("This week's date night is no longer accepting proposals.");
 
-            var schedule = cycle.Schedule ?? NewSchedule();
+            var schedule = cycle.Schedule ?? DateNightPolicy.NewSchedule();
             var isFirstProposal = schedule.Status == "AwaitingProposal";
             var isCounterProposal = schedule.Status == "AwaitingApproval" &&
                 !string.Equals(schedule.ProposedBy, person, StringComparison.OrdinalIgnoreCase);
@@ -820,7 +677,7 @@ public class DateNightCycleService
     /// downloads before this point, per spec.</summary>
     public async Task<WeeklyCycle> ApproveScheduleAsync(string person, ProposedSlot slot, bool isTest = false, CancellationToken ct = default)
     {
-        if (!IsAudience(person))
+        if (!DateNightPolicy.IsAudience(person))
             throw new InvalidOperationException("Only Mom and Dad schedule.");
 
         WeeklyCycle cycle;
@@ -988,7 +845,7 @@ public class DateNightCycleService
     /// shouldn't leave a rogue download running against the pool's late-download design).</summary>
     public async Task<WeeklyCycle> CancelScheduleAsync(string person, bool isTest = false, CancellationToken ct = default)
     {
-        if (!IsAudience(person))
+        if (!DateNightPolicy.IsAudience(person))
             throw new InvalidOperationException("Only Mom and Dad schedule.");
 
         WeeklyCycle cycle;
@@ -1044,7 +901,7 @@ public class DateNightCycleService
     /// the frontend pops the "your turn" / "cancelled" modal again on the next load.</summary>
     public async Task<WeeklyCycle> AcknowledgeScheduleAsync(string person, bool isTest = false, CancellationToken ct = default)
     {
-        if (!IsAudience(person))
+        if (!DateNightPolicy.IsAudience(person))
             throw new InvalidOperationException("Only Mom and Dad schedule.");
 
         await _lock.WaitAsync(ct);
@@ -1080,7 +937,7 @@ public class DateNightCycleService
     }
 
     private static DateTime ParseSlotToUtc(ProposedSlot slot) =>
-        ToUtc(DateOnly.Parse(slot.Date), TimeOnly.Parse(slot.Time));
+        DateNightPolicy.ToUtc(DateOnly.Parse(slot.Date), TimeOnly.Parse(slot.Time));
 
     /// <summary>Polled every 30-60s app-wide. The popup is eligible from ten
     /// minutes before showtime through the one-hour grace window, unless playback
@@ -1396,13 +1253,13 @@ public class DateNightCycleService
     /// than tracking it per person.</summary>
     public void SetSkip(string person, string scope)
     {
-        if (!IsAudience(person))
+        if (!DateNightPolicy.IsAudience(person))
             throw new InvalidOperationException("Only Mom and Dad can skip.");
 
-        var now = NowHawaii;
+        var now = DateNightPolicy.NowHawaii(DateTime.UtcNow);
         DateTime until = scope.Equals("month", StringComparison.OrdinalIgnoreCase)
-            ? ToUtc(new DateOnly(now.Year, now.Month, 1).AddMonths(1), TimeOnly.MinValue)
-            : ToUtc(MondayOf(now).AddDays(7), TimeOnly.MinValue);
+            ? DateNightPolicy.ToUtc(new DateOnly(now.Year, now.Month, 1).AddMonths(1), TimeOnly.MinValue)
+            : DateNightPolicy.ToUtc(DateNightPolicy.MondayOf(now).AddDays(7), TimeOnly.MinValue);
 
         _db.SetState(SkipStateKey, JsonSerializer.Serialize(new SkipState(until, person, DateTime.UtcNow), JsonOptions));
         Log.Information("[DateNight] {Person} skipped this {Scope}, resuming {Until}", person, scope, until);
@@ -1420,8 +1277,8 @@ public class DateNightCycleService
         await _lock.WaitAsync(ct);
         try
         {
-            var now = NowHawaii;
-            return await IssueAsync(MondayOf(now), ct);
+            var now = DateNightPolicy.NowHawaii(DateTime.UtcNow);
+            return await IssueAsync(DateNightPolicy.MondayOf(now), ct);
         }
         finally
         {

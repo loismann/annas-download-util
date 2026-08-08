@@ -134,6 +134,17 @@
               "node_modules/anychart/dist/js/anychart-core.min.js",
               "node_modules/anychart/dist/js/anychart-graph.min.js"
             ]
+          },
+          "configurations": {
+            "coverage": {
+              "codeCoverage": true,
+              "codeCoverageExclude": [
+                "src/**/*.spec.ts",
+                "src/environments/**",
+                "src/main.ts",
+                "src/**/version.ts"
+              ]
+            }
           }
         }
       }

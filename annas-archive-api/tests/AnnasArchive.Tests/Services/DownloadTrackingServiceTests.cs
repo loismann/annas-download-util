@@ -268,7 +268,7 @@ public class DownloadTrackingServiceTests : IDisposable
     #region Concurrency Tests
 
     [Fact]
-    public void ConcurrentAccess_ShouldBeThreadSafe()
+    public async Task ConcurrentAccess_ShouldBeThreadSafe()
     {
         // Arrange
         const int threadCount = 5;
@@ -284,7 +284,7 @@ public class DownloadTrackingServiceTests : IDisposable
             }));
         }
 
-        Task.WaitAll(tasks.ToArray());
+        await Task.WhenAll(tasks);
         var (downloadsLeft, _) = _service.GetDownloadStatus();
 
         // Assert - All downloads should be recorded
@@ -292,7 +292,7 @@ public class DownloadTrackingServiceTests : IDisposable
     }
 
     [Fact]
-    public void ConcurrentAccess_MultipleReadsAndWrites_ShouldBeConsistent()
+    public async Task ConcurrentAccess_MultipleReadsAndWrites_ShouldBeConsistent()
     {
         // Arrange
         var tasks = new List<Task>();
@@ -311,7 +311,7 @@ public class DownloadTrackingServiceTests : IDisposable
         }
 
         // Should not throw any exceptions
-        Task.WaitAll(tasks.ToArray());
+        await Task.WhenAll(tasks);
 
         // Assert - Should complete without error
         var (downloadsLeft, _) = _service.GetDownloadStatus();

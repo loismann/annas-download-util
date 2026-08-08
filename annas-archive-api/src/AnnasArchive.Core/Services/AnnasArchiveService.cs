@@ -189,7 +189,10 @@ public class AnnasArchiveService
             }
         });
 
-        var finalResults = results.Where(r => r != null).ToList()!;
+        // `OfType` rather than `Where(r => r != null)` + a `!` suppression: it
+        // narrows the element type for real, instead of asserting a nullability the
+        // compiler cannot check.
+        var finalResults = results.OfType<BookDto>().ToList();
         _cache.Set(cacheKey, finalResults, SearchCacheDuration);
         return finalResults;
     }

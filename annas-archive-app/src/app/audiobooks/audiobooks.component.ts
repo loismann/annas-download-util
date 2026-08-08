@@ -24,9 +24,9 @@ import { TileSizeControlsComponent } from '../components/shared/tile-size-contro
 import { ActivatedRoute } from '@angular/router';
 import { matchesOwnerAndFavorites, toggleInSet } from '../shared/owner-filters';
 import { HOUSEHOLD_OWNERS } from '../constants/owners';
+import { TileSize, formatBytes, matchesSearchTerm } from '../shared/media-grid';
 
 type SortOrder = 'title' | 'author' | 'recent';
-type TileSize = 'small' | 'medium' | 'large';
 
 const PLACEHOLDER_COVER = '/assets/placeholder.jpg';
 /** The household roster, from the one place that declares it. */
@@ -64,12 +64,6 @@ const PROGRESS_STATES = new Set(['Downloading', 'Paused', 'Processing', 'Importi
 
 function requestStateLabel(state: string): string {
   return REQUEST_STATE_LABELS[state] ?? state;
-}
-
-function formatBytes(bytes: number | undefined): string | undefined {
-  if (!bytes || bytes <= 0) return undefined;
-  const gb = bytes / 1_000_000_000;
-  return gb >= 1 ? `${gb.toFixed(1)} GB` : `${Math.round(bytes / 1_000_000)} MB`;
 }
 
 function genresOf(item: AudiobookItem): string[] {
@@ -368,11 +362,7 @@ export class AudiobooksComponent implements OnInit, OnDestroy {
   }
 
   private matchesFilters(item: AudiobookItem): boolean {
-    const term = this.searchTerm.trim().toLowerCase();
-    if (term) {
-      const haystack = `${titleOf(item)} ${authorOf(item) ?? ''} ${narratorOf(item) ?? ''} ${seriesOf(item) ?? ''}`.toLowerCase();
-      if (!haystack.includes(term)) return false;
-    }
+    if (!matchesSearchTerm(this.searchTerm, titleOf(item), authorOf(item), narratorOf(item), seriesOf(item))) return false;
 
     if (this.selectedGenre && !genresOf(item).includes(this.selectedGenre)) return false;
 

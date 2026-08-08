@@ -81,10 +81,7 @@ public static class AiSectionSummaryEndpoints
             // Not cached - detect boundaries with SSE progress
             Log.Information("🔍 Detecting chunk boundaries for chapter {ChapterId}...", chapterId);
 
-            // Set up SSE
-            context.Response.Headers["Content-Type"] = "text/event-stream";
-            context.Response.Headers["Cache-Control"] = "no-cache";
-            context.Response.Headers["Connection"] = "keep-alive";
+            ServerSentEventsHelper.BeginStream(context.Response);
 
             // Check token limit
             if (TokenLimitHelpers.IsTokenLimitExceeded(cfg, tokenUsage, context))

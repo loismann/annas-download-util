@@ -100,6 +100,33 @@ npm run test:e2e     # Playwright, interactive test selection
 cleans up on exit (including on Ctrl+C). It needs `E2E_ACCESS_CODE` exported
 in your shell.
 
+### Test coverage
+
+Neither side collects coverage on a normal test run — it is slower and nothing
+gates on it. Both are opt-in:
+
+```bash
+# Backend, from annas-archive-api/
+dotnet test --collect:"XPlat Code Coverage" --settings coverlet.runsettings
+
+# Frontend, from annas-archive-app/
+npm run test:coverage
+```
+
+The backend writes cobertura XML to `tests/AnnasArchive.Tests/TestResults/<guid>/`;
+the frontend writes an HTML report to `annas-archive-app/coverage/`. For a readable
+backend report:
+
+```bash
+dotnet tool install -g dotnet-reportgenerator-globaltool
+reportgenerator -reports:'tests/**/coverage.cobertura.xml' -targetdir:coverage -reporttypes:Html
+```
+
+Read the backend number with care: `coverlet.runsettings` measures both
+`AnnasArchive.Api` and `AnnasArchive.Core`, but large parts of the API project are
+endpoint plumbing and service wiring that the suite reaches only incidentally. A
+low figure there is a map of what is untested, not a target to chase.
+
 ## Documentation
 
 - [DOCS/features/DATE_NIGHT.md](DOCS/features/DATE_NIGHT.md) — the weekly movie-picker feature

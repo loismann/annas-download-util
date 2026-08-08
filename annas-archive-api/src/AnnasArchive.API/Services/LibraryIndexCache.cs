@@ -349,8 +349,10 @@ public class LibraryIndexCache : MetaIndexCache<LibraryBookDto>
                         return;
 
                     metaLookup.TryAdd(meta.FileName, true);
-                    var coverUrl = LibraryHelpers.NormalizeLibraryCoverUrl(meta.CoverUrl, baseUrl)
-                        ?? LibraryHelpers.FindLocalCoverUrl(libraryRoot, meta.FileName, baseUrl);
+                    // An absent base URL means "emit relative", which is what both
+                    // helpers already do with an empty string — see NormalizeUrls.
+                    var coverUrl = LibraryHelpers.NormalizeLibraryCoverUrl(meta.CoverUrl, baseUrl ?? string.Empty)
+                        ?? LibraryHelpers.FindLocalCoverUrl(libraryRoot, meta.FileName, baseUrl ?? string.Empty);
 
                     var p = overlays.GetValueOrDefault(meta.FileName);
                     var genres = meta.Genres ?? Array.Empty<string>();

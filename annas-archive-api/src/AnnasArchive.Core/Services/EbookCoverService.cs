@@ -166,7 +166,9 @@ public class EbookCoverService : IEbookCoverService
                 }
 
                 // Get reference metadata from existing cover or another entry
-                ZipEntry referenceEntry = existingCoverEntry ?? inputZipFile.Cast<ZipEntry>().FirstOrDefault(e => e.IsFile && e.Size > 0);
+                // Nullable: an EPUB with no non-empty entry to copy metadata from is
+                // degenerate but possible, and the two reads below already fall back.
+                ZipEntry? referenceEntry = existingCoverEntry ?? inputZipFile.Cast<ZipEntry>().FirstOrDefault(e => e.IsFile && e.Size > 0);
 
                 // Extract metadata to replicate
                 int hostSystem = referenceEntry?.HostSystem ?? (int)HostSystemID.Msdos;

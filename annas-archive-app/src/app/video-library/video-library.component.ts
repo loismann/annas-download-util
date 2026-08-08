@@ -22,6 +22,7 @@ import { VideoPlayerDialogComponent, VideoPlayerDialogData } from '../components
 import { AuthService } from '../services/auth.service';
 import { LoggerService } from '../services/logger.service';
 import { TileSizeControlsComponent } from '../components/shared/tile-size-controls/tile-size-controls.component';
+import { TileSize, matchesSearchTerm } from '../shared/media-grid';
 
 @Component({
   selector: 'app-video-library',
@@ -61,7 +62,7 @@ export class VideoLibraryComponent implements OnInit, OnDestroy {
   minPersonalRating = 0;
   sortOrder: 'title' | 'channel' | 'duration' | 'rating' | 'date' = 'date';
   sortDirection: 'down' | 'up' = 'down';
-  tileSize: 'small' | 'medium' | 'large' = 'medium';
+  tileSize: TileSize = 'medium';
   sidebarCollapsed = false;
   bulkEditMode = false;
   selectedVideosForBulk = new Set<string>();
@@ -248,7 +249,6 @@ export class VideoLibraryComponent implements OnInit, OnDestroy {
   }
 
   private filterVideosInternal(): VideoDto[] {
-    const term = this.searchTerm.trim().toLowerCase();
     const genre = this.selectedGenre.toLowerCase();
 
     return this.videos.filter(video => {
@@ -260,14 +260,9 @@ export class VideoLibraryComponent implements OnInit, OnDestroy {
         }
       }
 
-      const haystack = [
-        video.title,
-        video.channel,
-        video.primaryGenre ?? '',
-        ...(video.tags ?? [])
-      ].join(' ').toLowerCase();
-
-      if (term && !haystack.includes(term)) {
+      if (!matchesSearchTerm(
+        this.searchTerm, video.title, video.channel, video.primaryGenre, ...(video.tags ?? [])
+      )) {
         return false;
       }
 

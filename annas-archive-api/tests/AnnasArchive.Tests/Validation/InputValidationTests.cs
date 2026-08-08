@@ -8,7 +8,7 @@ namespace AnnasArchive.Tests.Validation;
 public class InputValidationTests
 {
     // This regex matches the validation logic in Program.cs
-    private static bool IsValidMd5(string md5) =>
+    private static bool IsValidMd5(string? md5) =>
         !string.IsNullOrWhiteSpace(md5) &&
         Regex.IsMatch(md5, "^[a-f0-9]{32}$", RegexOptions.IgnoreCase);
 
@@ -35,7 +35,7 @@ public class InputValidationTests
     [InlineData("abc123def456789012345678901234a!", false)] // special character
     [InlineData("abc123def456789012345678901234a ", false)] // space
     [InlineData("abc123-def45-67890-12345-678901234ab", false)] // hyphens
-    public void IsValidMd5_WithInvalidMd5_ShouldReturnFalse(string md5, bool expected)
+    public void IsValidMd5_WithInvalidMd5_ShouldReturnFalse(string? md5, bool expected)
     {
         // Act
         var result = IsValidMd5(md5);
@@ -61,7 +61,7 @@ public class InputValidationTests
     [Theory]
     [InlineData("", false)] // empty
     [InlineData(null, false)] // null
-    public void ValidateTitle_WithInvalidTitle_ShouldFail(string title, bool expected)
+    public void ValidateTitle_WithInvalidTitle_ShouldFail(string? title, bool expected)
     {
         // Arrange
         var isValid = !string.IsNullOrWhiteSpace(title) && title.Length <= 500;
@@ -98,7 +98,7 @@ public class InputValidationTests
     [InlineData("", false)]
     [InlineData(null, false)]
     [InlineData("   ", false)]
-    public void ValidateDropboxPath_WithInvalidPath_ShouldFail(string path, bool expected)
+    public void ValidateDropboxPath_WithInvalidPath_ShouldFail(string? path, bool expected)
     {
         // Arrange
         var isValid = !string.IsNullOrWhiteSpace(path);
@@ -151,7 +151,7 @@ public class InputValidationTests
     [InlineData("", false)]
     [InlineData(null, false)]
     [InlineData("   ", false)]
-    public void ValidateSearchQuery_WithInvalidQuery_ShouldFail(string query, bool expected)
+    public void ValidateSearchQuery_WithInvalidQuery_ShouldFail(string? query, bool expected)
     {
         // Arrange
         var isValid = !string.IsNullOrWhiteSpace(query);

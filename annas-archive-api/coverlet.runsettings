@@ -1,4 +1,10 @@
 <?xml version="1.0" encoding="utf-8" ?>
+<!--
+  Backend coverage settings. Nothing runs this automatically: there is no CI here
+  and the repo commits no shell scripts, so it is invoked by hand. The exact
+  commands are in README.md under "Test coverage" (they cannot live in an XML
+  comment, which may not contain a double hyphen, and every dotnet flag has one).
+-->
 <RunSettings>
   <DataCollectionRunSettings>
     <DataCollectors>
@@ -32,7 +38,14 @@
           </ExcludeByFile>
 
           <Include>
-            <!-- Only measure our core business logic -->
+            <!--
+              Both shipped assemblies. This said [AnnasArchive.Core]* alone, which
+              sounds like "our business logic" but is not: Core is ~4.8k lines and
+              the API project is ~46k. Measuring only Core reports a coverage number
+              for under a tenth of the code and silently omits every service,
+              endpoint and helper — the parts most worth knowing about.
+            -->
+            [AnnasArchive.Api]*
             [AnnasArchive.Core]*
           </Include>
 

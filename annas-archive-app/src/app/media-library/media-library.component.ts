@@ -29,6 +29,7 @@ import { AuthService } from '../services/auth.service';
 import { TileSizeControlsComponent } from '../components/shared/tile-size-controls/tile-size-controls.component';
 import { matchesOwnerAndFavorites, toggleInSet } from '../shared/owner-filters';
 import { HOUSEHOLD_OWNERS } from '../constants/owners';
+import { TileSize, formatBytes, matchesSearchTerm } from '../shared/media-grid';
 
 interface LibraryTile {
   result: MediaLookupResult;
@@ -49,7 +50,6 @@ interface DownloadProgress {
 }
 
 type SortOrder = 'title' | 'year' | 'recent';
-type TileSize = 'small' | 'medium' | 'large';
 
 const PLACEHOLDER_POSTER = '/assets/placeholder.jpg';
 const QUEUE_POLL_MS = 10000;
@@ -83,19 +83,6 @@ function addedTimestamp(result: MediaLookupResult): number {
 function sizeOnDiskOf(result: MediaLookupResult): number {
   const seriesStats = result['statistics'] as { sizeOnDisk?: number } | undefined;
   return seriesStats?.sizeOnDisk ?? (result['sizeOnDisk'] as number | undefined) ?? 0;
-}
-
-function formatBytes(bytes: number): string | undefined {
-  if (!bytes || bytes <= 0) return undefined;
-
-  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-  let size = bytes;
-  let unitIndex = 0;
-  while (size >= 1024 && unitIndex < units.length - 1) {
-    size /= 1024;
-    unitIndex++;
-  }
-  return `${size.toFixed(1)} ${units[unitIndex]}`;
 }
 
 /**
@@ -329,8 +316,7 @@ export class MediaLibraryComponent implements OnInit, OnDestroy {
   }
 
   private matchesFilters(result: MediaLookupResult): boolean {
-    const term = this.searchTerm.trim().toLowerCase();
-    if (term && !(result.title || '').toLowerCase().includes(term)) return false;
+    if (!matchesSearchTerm(this.searchTerm, result.title)) return false;
 
     if (this.selectedGenre && !genresOf(result).includes(this.selectedGenre)) return false;
 

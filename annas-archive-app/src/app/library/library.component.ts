@@ -95,6 +95,44 @@ export class LibraryComponent implements OnInit, OnDestroy {
   /** Cached items per row - recalculated on resize */
   private cachedItemsPerRow = 6;
 
+  /**
+   * Memoisation for the two getters the template binds.
+   *
+   * Angular re-evaluates a template-bound getter on *every* change-detection
+   * cycle, and this component runs six timers besides reacting to scroll and
+   * input. `availableLetters` is the expensive one: the A–Z rail reads it once
+   * per letter inside an `*ngFor` over 27 letters, and each read scans the whole
+   * library. At a few thousand books that is tens of thousands of `letterOf`
+   * calls between one mouse move and the next, for a rail of 27 characters that
+   * almost never changes.
+   *
+   * Both are pure functions of their keys, and `this.books` is only ever
+   * reassigned — never mutated in place — so the array reference is a sound
+   * cache key. Book *objects* are mutated in place (a rating, a favourite), but
+   * neither getter reads a field that changes that way.
+   */
+  private rowsCache?: { books: LibraryBook[]; perRow: number; rows: LibraryBook[][] };
+  private lettersCache?: { books: LibraryBook[]; sortOrder: string; letters: string[] };
+
+  /**
+   * Who is signed in, resolved once instead of per card per cycle.
+   *
+   * These were bound straight onto every `<app-book-card>` as
+   * `authService.isAdmin()` and `authService.getOwnerName()`. Both read
+   * `localStorage` synchronously — and `getOwnerName()` calls `isAdmin()` and
+   * `getName()`, so it is two reads on its own. Multiplied by the cards on
+   * screen and by every change-detection cycle, that was on the order of a
+   * hundred synchronous storage reads per cycle to answer a question whose
+   * answer cannot change without a new sign-in.
+   */
+  isAdmin = false;
+  currentOwnerName: 'Paul' | 'Mom' | 'Dad' | null = null;
+
+  private refreshIdentity(): void {
+    this.isAdmin = this.authService.isAdmin();
+    this.currentOwnerName = this.authService.getOwnerName();
+  }
+
   constructor(
     private libraryApi: LibraryApiService,
     private dialog: MatDialog,
@@ -137,7 +175,15 @@ export class LibraryComponent implements OnInit, OnDestroy {
 
   /** Group filtered books into rows for virtual scrolling */
   get bookRows(): LibraryBook[][] {
-    return LibraryGridLayout.toRows(this.filteredBooks, this.cachedItemsPerRow);
+    const books = this.filteredBooks;
+    const perRow = this.cachedItemsPerRow;
+    const cached = this.rowsCache;
+    if (cached && cached.books === books && cached.perRow === perRow) {
+      return cached.rows;
+    }
+    const rows = LibraryGridLayout.toRows(books, perRow);
+    this.rowsCache = { books, perRow, rows };
+    return rows;
   }
 
   /** Track rows by first book's filename for efficient rendering */
@@ -151,11 +197,16 @@ export class LibraryComponent implements OnInit, OnDestroy {
       this.sidebarCollapsed = true;
     }
 
+    this.refreshIdentity();
+    this.authService.isAuthenticated$.pipe(
+      takeUntil(this.destroy$)
+    ).subscribe(() => this.refreshIdentity());
+
     // Default to showing the current session's own books — Mom sees Mom's,
     // Dad sees Dad's, and the admin (Paul) account sees Paul's, same as
     // everyone else rather than an unfiltered view. Still just a normal
     // toggle after this — anyone can clear/change it from here.
-    const ownerName = this.authService.getOwnerName();
+    const ownerName = this.currentOwnerName;
     if (ownerName) {
       this.selectedOwnerTags.add(ownerToBookTag(ownerName));
     }
@@ -304,7 +355,15 @@ export class LibraryComponent implements OnInit, OnDestroy {
   }
 
   get availableLetters(): string[] {
-    return LibraryGridLayout.availableLetters(this.filteredBooks, this.sortOrder);
+    const books = this.filteredBooks;
+    const sortOrder = this.sortOrder;
+    const cached = this.lettersCache;
+    if (cached && cached.books === books && cached.sortOrder === sortOrder) {
+      return cached.letters;
+    }
+    const letters = LibraryGridLayout.availableLetters(books, sortOrder);
+    this.lettersCache = { books, sortOrder, letters };
+    return letters;
   }
 
   get alphabetIndex(): string[] {

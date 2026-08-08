@@ -285,7 +285,7 @@ public class TokenUsageServiceTests : IDisposable
     }
 
     [Fact]
-    public void ConcurrentAccess_SingleUser_ShouldBeThreadSafe()
+    public async Task ConcurrentAccess_SingleUser_ShouldBeThreadSafe()
     {
         // Arrange
         const int iterations = 100;
@@ -305,7 +305,7 @@ public class TokenUsageServiceTests : IDisposable
             }));
         }
 
-        Task.WaitAll(tasks.ToArray());
+        await Task.WhenAll(tasks);
         var totals = _service.GetTotals(userId);
 
         // Assert - Should have exact total (no race conditions)
@@ -316,7 +316,7 @@ public class TokenUsageServiceTests : IDisposable
     }
 
     [Fact]
-    public void ConcurrentAccess_MultipleUsers_ShouldBeThreadSafe()
+    public async Task ConcurrentAccess_MultipleUsers_ShouldBeThreadSafe()
     {
         // Arrange
         const int iterations = 50;
@@ -335,7 +335,7 @@ public class TokenUsageServiceTests : IDisposable
             }));
         }
 
-        Task.WaitAll(tasks.ToArray());
+        await Task.WhenAll(tasks);
 
         // Assert - Each user should have exact totals
         foreach (var userId in users)

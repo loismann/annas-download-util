@@ -406,7 +406,7 @@ public static class DateNightEndpoints
         var cycle = isTest ? cycles.PeekTestCycle() : await cycles.GetCurrentCycleAsync();
         var skip = cycles.GetSkip();
         var lists = cycles.GetLists(isTest);
-        var coolingCutoff = DateTime.UtcNow - DateNightCycleService.CoolingOff;
+        var coolingCutoff = DateTime.UtcNow - DateNightPolicy.CoolingOff;
 
         // Watched movies have already lost their date-night-pool tag (that's what
         // MarkWatchedAsync does), so they won't be in poolMovies — allTitlesById
@@ -526,8 +526,8 @@ public static class DateNightEndpoints
         return Results.Ok(new CycleView(
             cycle.CycleId, cycle.Status, cycle.DeadlineUtc, moviesView, myVotes,
             cycle.ResolvedMovieId, resolvedTitle, cycle.Schedule,
-            DateNightCycleService.IsFlyerOwedToday(person!, cycle),
-            cycles.IsScheduleReminderOwedToday(person!, cycle), false));
+            DateNightPolicy.IsFlyerOwedToday(person!, cycle, DateTime.UtcNow),
+            DateNightPolicy.IsScheduleReminderOwedToday(person!, cycle, DateTime.UtcNow), false));
     }
 
     private static readonly IResult NotAudienceResult =

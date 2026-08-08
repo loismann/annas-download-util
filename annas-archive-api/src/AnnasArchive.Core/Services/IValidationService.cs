@@ -1,3 +1,5 @@
+using System.Diagnostics.CodeAnalysis;
+
 namespace AnnasArchive.Core.Services;
 
 /// <summary>
@@ -11,9 +13,10 @@ public interface IValidationService
     bool IsValidMd5(string md5);
 
     /// <summary>
-    /// Validates Dropbox path format
+    /// Validates Dropbox path format. A null path is invalid, so callers that
+    /// pass this check may treat the path as non-null.
     /// </summary>
-    bool IsValidDropboxPath(string? path);
+    bool IsValidDropboxPath([NotNullWhen(true)] string? path);
 
     /// <summary>
     /// Validates chapter ID (must be non-negative)
@@ -26,12 +29,14 @@ public interface IValidationService
     bool IsValidTextLength(string? text, int maxLength = 1_000_000);
 
     /// <summary>
-    /// Validates search query length constraints
+    /// Validates search query length constraints. A null query is invalid, so
+    /// callers that pass this check may treat the query as non-null.
     /// </summary>
-    bool IsValidSearchQuery(string? query, int minLength = 1, int maxLength = 500);
+    bool IsValidSearchQuery([NotNullWhen(true)] string? query, int minLength = 1, int maxLength = 500);
 
     /// <summary>
-    /// Validates title length
+    /// Validates title length. Deliberately *not* <c>[NotNullWhen(true)]</c>: an
+    /// absent title is valid here, because this guards optional fields.
     /// </summary>
     bool IsValidTitle(string? title, int maxLength = 500);
 }

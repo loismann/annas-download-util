@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics.CodeAnalysis;
 using System.Text.RegularExpressions;
 
 namespace AnnasArchive.Core.Services;
@@ -18,7 +19,7 @@ public class ValidationService : IValidationService
     /// <summary>
     /// Validates Dropbox path format
     /// </summary>
-    public bool IsValidDropboxPath(string? path)
+    public bool IsValidDropboxPath([NotNullWhen(true)] string? path)
     {
         if (string.IsNullOrWhiteSpace(path))
             return false;
@@ -62,7 +63,7 @@ public class ValidationService : IValidationService
     /// <summary>
     /// Validates search query length constraints
     /// </summary>
-    public bool IsValidSearchQuery(string? query, int minLength = 1, int maxLength = 500)
+    public bool IsValidSearchQuery([NotNullWhen(true)] string? query, int minLength = 1, int maxLength = 500)
     {
         if (string.IsNullOrWhiteSpace(query))
             return false;

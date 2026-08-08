@@ -388,7 +388,7 @@ public static class EpubChapterCache
             }
             catch (EpubContentException ex)
             {
-                var missingPath = ExtractMissingEpubPath(ex.Message);
+                var missingPath = EpubZipPaths.ExtractMissingEpubPath(ex.Message);
                 if (string.IsNullOrWhiteSpace(missingPath) || added.Contains(missingPath))
                 {
                     if (!coverFallbackApplied)
@@ -430,8 +430,8 @@ public static class EpubChapterCache
         {
             try
             {
-                var opfText = ReadTextFromBytes(opfBytes);
-                var opfDir = NormalizeZipDir(Path.GetDirectoryName(opfPath) ?? string.Empty);
+                var opfText = EpubZipPaths.ReadTextFromBytes(opfBytes);
+                var opfDir = EpubZipPaths.NormalizeZipDir(Path.GetDirectoryName(opfPath) ?? string.Empty);
                 var doc = XDocument.Parse(opfText);
 
                 bookTitle = doc.Descendants()
@@ -449,7 +449,7 @@ public static class EpubChapterCache
                     .Where(item => !string.IsNullOrWhiteSpace(item.Id) && !string.IsNullOrWhiteSpace(item.Href))
                     .ToDictionary(
                         item => item.Id!,
-                        item => NormalizeZipPath(ResolveOpfHref(opfDir, item.Href!)),
+                        item => EpubZipPaths.NormalizeZipPath(EpubZipPaths.ResolveOpfHref(opfDir, item.Href!)),
                         StringComparer.OrdinalIgnoreCase);
 
                 var spine = doc.Descendants()
@@ -458,7 +458,7 @@ public static class EpubChapterCache
                     .Where(idref => !string.IsNullOrWhiteSpace(idref))
                     .Select(idref => items.TryGetValue(idref!, out var href) ? href : null)
                     .Where(href => !string.IsNullOrWhiteSpace(href))
-                    .Select(href => FindEntry(entries, href!))
+                    .Select(href => EpubZipPaths.FindEntry(entries, href!))
                     .OfType<string>()
                     .Distinct(StringComparer.OrdinalIgnoreCase)
                     .ToList();
@@ -478,7 +478,7 @@ public static class EpubChapterCache
         if (orderedHtml.Count == 0)
         {
             orderedHtml = entries.Keys
-                .Where(IsHtmlEntry)
+                .Where(EpubZipPaths.IsHtmlEntry)
                 .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
                 .ToList();
         }
@@ -490,10 +490,10 @@ public static class EpubChapterCache
             if (!entries.TryGetValue(path, out var data))
                 continue;
 
-            var html = ReadTextFromBytes(data);
+            var html = EpubZipPaths.ReadTextFromBytes(data);
             var text = HtmlToPlainText(html);
             var words = CountWords(text);
-            var title = ExtractTitleFromHtml(html) ?? Path.GetFileNameWithoutExtension(path);
+            var title = EpubZipPaths.ExtractTitleFromHtml(html) ?? Path.GetFileNameWithoutExtension(path);
             chapters.Add(new FlatChapter(index++, title, 0, text, words));
         }
 
@@ -521,8 +521,8 @@ public static class EpubChapterCache
             while ((entry = zipInput.GetNextEntry()) != null)
             {
                 if (!entry.IsFile) continue;
-                var name = NormalizeZipPath(entry.Name);
-                if (!IsHtmlEntry(name) && !name.EndsWith(".opf", StringComparison.OrdinalIgnoreCase))
+                var name = EpubZipPaths.NormalizeZipPath(entry.Name);
+                if (!EpubZipPaths.IsHtmlEntry(name) && !name.EndsWith(".opf", StringComparison.OrdinalIgnoreCase))
                     continue;
 
                 using var buffer = new MemoryStream();
@@ -544,78 +544,6 @@ public static class EpubChapterCache
             Log.Information("[epub] Failed to read zip entries for tolerant fallback ({Label}): {ErrorMessage}", label, ex.Message);
             return false;
         }
-    }
-
-    private static string NormalizeZipPath(string path)
-    {
-        if (string.IsNullOrWhiteSpace(path))
-            return string.Empty;
-
-        var normalized = path.Replace('\\', '/').TrimStart('/');
-        var fragmentIndex = normalized.IndexOf('#');
-        if (fragmentIndex >= 0)
-            normalized = normalized[..fragmentIndex];
-        return normalized;
-    }
-
-    private static string NormalizeZipDir(string path)
-    {
-        var normalized = NormalizeZipPath(path);
-        return string.IsNullOrWhiteSpace(normalized) ? string.Empty : normalized.TrimEnd('/');
-    }
-
-    private static string ResolveOpfHref(string opfDir, string href)
-    {
-        var decoded = Uri.UnescapeDataString(href);
-        decoded = decoded.Replace('\\', '/');
-        if (string.IsNullOrWhiteSpace(opfDir))
-            return decoded;
-        return $"{opfDir}/{decoded}";
-    }
-
-    private static string? FindEntry(Dictionary<string, byte[]> entries, string href)
-    {
-        var normalized = NormalizeZipPath(href);
-        if (entries.ContainsKey(normalized))
-            return normalized;
-
-        var match = entries.Keys.FirstOrDefault(key =>
-            key.EndsWith("/" + normalized, StringComparison.OrdinalIgnoreCase) ||
-            key.EndsWith(normalized, StringComparison.OrdinalIgnoreCase));
-        return match;
-    }
-
-    private static bool IsHtmlEntry(string path)
-    {
-        return path.EndsWith(".xhtml", StringComparison.OrdinalIgnoreCase)
-            || path.EndsWith(".html", StringComparison.OrdinalIgnoreCase)
-            || path.EndsWith(".htm", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static string ReadTextFromBytes(byte[] data)
-    {
-        using var stream = new MemoryStream(data);
-        using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
-        return reader.ReadToEnd();
-    }
-
-    private static string? ExtractTitleFromHtml(string html)
-    {
-        if (string.IsNullOrWhiteSpace(html))
-            return null;
-
-        foreach (var tag in new[] { "title", "h1", "h2" })
-        {
-            var match = Regex.Match(html, $@"<{tag}[^>]*>(?<t>.*?)</{tag}>", RegexOptions.IgnoreCase | RegexOptions.Singleline);
-            if (match.Success)
-            {
-                var title = WebUtility.HtmlDecode(match.Groups["t"].Value).Trim();
-                if (!string.IsNullOrWhiteSpace(title))
-                    return title;
-            }
-        }
-
-        return null;
     }
 
     private static byte[]? TryRepairZip(byte[] sourceBytes)
@@ -707,27 +635,6 @@ public static class EpubChapterCache
         return updated;
     }
 
-    private static string? ExtractMissingEpubPath(string message)
-    {
-        if (string.IsNullOrWhiteSpace(message))
-            return null;
-
-        var patterns = new[]
-        {
-            "file\\s+[\"“”'](?<path>[^\"“”']+)[\"“”']\\s+was not found",
-            "file\\s+(?<path>[^\\s]+)\\s+was not found"
-        };
-
-        foreach (var pattern in patterns)
-        {
-            var match = Regex.Match(message, pattern, RegexOptions.IgnoreCase);
-            if (match.Success)
-                return match.Groups["path"].Value;
-        }
-
-        var fallback = Regex.Match(message, @"(?<path>OEBPS/[^""\s]+)", RegexOptions.IgnoreCase);
-        return fallback.Success ? fallback.Groups["path"].Value : null;
-    }
 
     private static byte[] EnsureZipEntry(byte[] sourceBytes, string entryPath)
     {

@@ -220,9 +220,7 @@ Then add a 'Definitions:' section. BE EXTREMELY THOROUGH with definitions - incl
         if (cached != null)
         {
             Log.Information("📦 Returning cached chapter summary for {RequestDropboxPath} chapter {RequestChapterId}", request.DropboxPath, request.ChapterId);
-            context.Response.ContentType = "text/event-stream";
-            context.Response.Headers.Append("Cache-Control", "no-cache");
-            context.Response.Headers.Append("Connection", "keep-alive");
+            ServerSentEventsHelper.BeginStream(context.Response);
 
             static long ToLong(object? value)
             {
@@ -287,10 +285,7 @@ Then add a 'Definitions:' section. BE EXTREMELY THOROUGH with definitions - incl
                 return;
             }
 
-            // Set up SSE headers
-            context.Response.Headers.Append("Content-Type", "text/event-stream");
-            context.Response.Headers.Append("Cache-Control", "no-cache");
-            context.Response.Headers.Append("Connection", "keep-alive");
+            ServerSentEventsHelper.BeginStream(context.Response);
 
             // Load chapter content using helper
             var content = await AiSummaryHelpers.LoadChapterContentAsync(dropbox, request.DropboxPath, request.ChapterId);

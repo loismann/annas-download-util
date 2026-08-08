@@ -119,9 +119,17 @@ public static class LibraryMetadataRules
 
     /// <summary>Writes only when nothing useful is there yet. "Nothing useful"
     /// includes a present-but-blank string and a present-but-empty array, which is
-    /// what enrichment actually produces when a lookup comes back empty.</summary>
-    public static void SetIfMissing(Dictionary<string, object?> meta, string key, object value)
+    /// what enrichment actually produces when a lookup comes back empty.
+    ///
+    /// A null <paramref name="value"/> is nothing useful either, so it is dropped
+    /// rather than written. Extractors hand over whatever the file happened to
+    /// contain — an EPUB with no author yields a null — and storing that null would
+    /// replace "we have not looked yet" with "we looked and there is nothing",
+    /// which is what stops a later enrichment pass from filling the field in.</summary>
+    public static void SetIfMissing(Dictionary<string, object?> meta, string key, object? value)
     {
+        if (value is null) return;
+
         if (!meta.TryGetValue(key, out var current) || current == null ||
             (current is string str && string.IsNullOrWhiteSpace(str)) ||
             (current is string[] arr && arr.Length == 0))

@@ -251,14 +251,18 @@ public static class LibraryCoverEndpoints
     {
         Log.Information("[library-cover-bytes] === START === Received request for {fileName}", fileName);
 
-        if (update == null || string.IsNullOrWhiteSpace(update.ImageBase64))
+        // Bound to a local at the guard rather than re-read from the record: a
+        // property cannot carry the compiler's "not null" narrowing across
+        // statements, so every later use would need its own null check.
+        var imageBase64 = update?.ImageBase64;
+        if (string.IsNullOrWhiteSpace(imageBase64))
         {
             Log.Information("[library-cover-bytes] ❌ Missing imageBase64 data");
             return ApiResponse.BadRequest("imageBase64 is required.");
         }
 
         Log.Information("[library-cover-bytes] Received base64 data: {Length} chars, MimeType: {MimeType}",
-            update.ImageBase64?.Length ?? 0, update.MimeType ?? "null");
+            imageBase64.Length, update!.MimeType ?? "null");
 
         var safeFileName = Path.GetFileName(fileName);
         if (!string.Equals(fileName, safeFileName, StringComparison.Ordinal))
@@ -274,7 +278,7 @@ public static class LibraryCoverEndpoints
         try
         {
             // Remove data URL prefix if present (e.g., "data:image/png;base64,")
-            var base64Data = update.ImageBase64;
+            var base64Data = imageBase64;
             var commaIndex = base64Data.IndexOf(',');
             if (commaIndex >= 0)
             {

@@ -1,3 +1,55 @@
+# ─── Image pinning ────────────────────────────────────────────────────────
+# Not every image is pinned, and that is deliberate.
+#
+# Pinned by digest: gluetun and the *arr stack (sonarr, radarr, prowlarr,
+# qbittorrent, sabnzbd). A bad gluetun update is the worst failure in this file
+# — the tunnel drops and its own firewall silently blocks traffic rather than
+# leaking, so the symptom is "downloads stopped" with nothing obviously broken.
+# The *arr containers share config schemas with each other and with their
+# on-disk databases, so a surprise major upgrade on one is a migration the
+# others have not had.
+#
+# Left on :latest: autoheal, seq, jellyfin, plex, audiobookshelf. These fail
+# visibly and independently, so automatic patching is worth more than
+# reproducibility. plex and jellyfin also publish no usable version tags —
+# only :latest and date stamps — so pinning them means digest-chasing with no
+# readable version to reason about.
+#
+# listenarr, valkey and immich-postgres were already pinned for their own
+# reasons (a canary build, and an image Immich requires exactly).
+#
+# To refresh a digest without docker installed:
+#   TOKEN=$(curl -s "https://auth.docker.io/token?service=registry.docker.io&scope=repository:linuxserver/sonarr:pull" | jq -r .token)
+#   curl -sI -H "Authorization: Bearer $TOKEN" \
+#        -H "Accept: application/vnd.docker.distribution.manifest.list.v2+json" \
+#        https://registry-1.docker.io/v2/linuxserver/sonarr/manifests/latest \
+#     | grep -i docker-content-digest
+
+# ─── Shared defaults ──────────────────────────────────────────────────────
+# Extension fields. Docker Compose ignores any top-level key beginning with
+# `x-`, so these exist purely to be referenced by the services below.
+
+# Every service in this file wants the same restart policy: come back after a
+# crash or a NAS reboot, but stay down when I stop it deliberately. Declared
+# once so changing it is one edit rather than nineteen, and so a policy that is
+# meant to be uniform cannot drift on a single service without it being obvious.
+x-service-defaults: &service-defaults
+  restart: unless-stopped
+
+# The trio every LinuxServer.io image needs to write files as the right owner.
+# 1000:1000 is the NAS user that owns the media shares — a mismatch here is the
+# usual cause of "the container started but cannot write to its own volume".
+#
+# Merged inside `environment:` rather than at the service level, because YAML
+# merge keys are shallow: a service that declared its own `environment` would
+# replace this block wholesale rather than adding to it, silently dropping
+# PUID/PGID/TZ. Merging one level down is what lets qbittorrent and listenarr
+# add a variable without losing these.
+x-linuxserver-env: &linuxserver-env
+  PUID: "1000"
+  PGID: "1000"
+  TZ: "Etc/UTC"
+
 services:
   # Outbound VPN gateway to PIA. Unlike the first version of this setup,
   # annas-archive and seq are NOT network-namespaced into this container
@@ -9,13 +61,13 @@ services:
   # (queries an internal health server that actually verifies the tunnel is
   # up, not just that the process is running) — no need to define one here.
   gluetun:
-    image: qmcgaw/gluetun:latest
+    image: qmcgaw/gluetun:latest@sha256:e3272b29a4bc177b389fbdcb54cf9716ccbfc30f04d8b7a35b0a5be9cdb58461
     container_name: gluetun
     cap_add:
       - NET_ADMIN
     devices:
       - /dev/net/tun:/dev/net/tun
-    restart: unless-stopped
+    <<: *service-defaults
     # Watched by the autoheal container below — if the built-in healthcheck
     # (which fails when the VPN tunnel actually drops, not just on process
     # crash) goes unhealthy, autoheal restarts this container, Gluetun
@@ -50,7 +102,7 @@ services:
   autoheal:
     image: willfarrell/autoheal:latest
     container_name: autoheal
-    restart: unless-stopped
+    <<: *service-defaults
     environment:
       - AUTOHEAL_CONTAINER_LABEL=autoheal
       - AUTOHEAL_INTERVAL=10
@@ -64,7 +116,7 @@ services:
       args:
         BUILD_TIMESTAMP: "${BUILD_TIMESTAMP:-unknown}"
     container_name: annas-archive
-    restart: unless-stopped
+    <<: *service-defaults
     # Bound to loopback only — never exposed on the LAN. Reachable exclusively
     # via `tailscale serve`, which proxies from the tailnet to 127.0.0.1:8080.
     ports:
@@ -133,19 +185,18 @@ services:
       # Immich manages that tree (library/, thumbs/, encoded-video/ ...) and an
       # unexpected folder inside it invites trouble during storage migrations.
       - PhotoPrint__OutputRoot=/data/print-ready
-      # Logged-in cvs.com session, captured on a Mac with a real browser
-      # (scripts/capture-cvs-session.sh) and pushed here by
-      # scripts/push-cvs-session.sh. Lives on the persistent state mount so a
-      # rebuild does not sign the automation out. Absent = the CVS leg reports
-      # "not signed in" rather than trying and failing halfway.
-      # A logged-in cvs.com session, captured on a Mac by scripts/cvs-login.sh.
+      # A logged-in cvs.com session. Sign in with your everyday Chrome, export
+      # the cvs.com cookies, and run scripts/cvs-session-import.sh — it converts
+      # them and pushes the result here.
       #
       # There is no password to store: CVS moved to passkey / emailed-code sign
       # in, and neither can run unattended — a passkey needs an authenticator,
-      # and scraping the emailed code would mean giving the server access to
-      # Paul's mailbox. So a human signs in once and the resulting session is
-      # what the automation carries. Lives on the persistent state mount so a
-      # rebuild does not sign it out.
+      # and scraping the emailed code would mean giving the server access to a
+      # mailbox. So a human signs in once and the automation carries the result.
+      #
+      # Lives on the persistent state mount so a rebuild does not sign it out.
+      # Absent = the CVS leg reports "not signed in" rather than trying and
+      # failing halfway.
       - PhotoPrint__Cvs__SessionStatePath=/app/state/cvs-session.json
       - Jellyfin__BaseUrl=http://jellyfin:8096
       - Jellyfin__ApiKey=${JELLYFIN_API_KEY:-}
@@ -234,14 +285,14 @@ services:
       # Print-ready photo renders, on the media array rather than the container
       # filesystem — a 16x20 at 300dpi is a large file and a rebuild must not
       # discard an order that is mid-flight.
-      - /home/pferrer/Media/PhotoPrints:/data/print-ready
+      - ${MEDIA_ROOT}/PhotoPrints:/data/print-ready
       # Read-write access for AudiobookEnrichmentService's renames — the one
       # deliberate exception to this container never touching the arr-stack's
       # managed media files directly. Points at the *staging* copy, not the
       # live Audiobookshelf-scanned folder (see the audiobookshelf service
       # below) — raw/messy audiobooks get sorted out here first, then moved
       # into audiobooks once clean and ready to be scanned.
-      - /home/pferrer/Media/_audiobook_staging:/audiobooks
+      - ${MEDIA_ROOT}/_audiobook_staging:/audiobooks
       # Secrets — never baked into the image. This mounts the same
       # appsettings.json used for local dev, synced over from the Mac.
       - ./annas-archive-api/src/AnnasArchive.API/appsettings.json:/app/appsettings.json:ro
@@ -264,7 +315,7 @@ services:
   seq:
     image: datalust/seq:latest
     container_name: annas-seq
-    restart: unless-stopped
+    <<: *service-defaults
     environment:
       - ACCEPT_EULA=Y
       # Loopback-bound, Tailscale-only — same trust model as the main app —
@@ -285,13 +336,13 @@ services:
   # live toggle here) — if this tunnel is down, qBittorrent has no network at
   # all, which is the correct kill-switch behavior for torrent traffic.
   gluetun-torrent:
-    image: qmcgaw/gluetun:latest
+    image: qmcgaw/gluetun:latest@sha256:e3272b29a4bc177b389fbdcb54cf9716ccbfc30f04d8b7a35b0a5be9cdb58461
     container_name: gluetun-torrent
     cap_add:
       - NET_ADMIN
     devices:
       - /dev/net/tun:/dev/net/tun
-    restart: unless-stopped
+    <<: *service-defaults
     labels:
       - autoheal=true
     environment:
@@ -313,24 +364,22 @@ services:
   # stack to gluetun-torrent's — not just an HTTP proxy — so every byte in
   # or out (including peer connections) is forced through the VPN tunnel.
   qbittorrent:
-    image: linuxserver/qbittorrent:latest
+    image: linuxserver/qbittorrent:latest@sha256:b024436f8ca665d16d9a997d26fd27fdf867ee5566ba09f32764e7b2976d3e02
     container_name: qbittorrent
-    restart: unless-stopped
+    <<: *service-defaults
     network_mode: "service:gluetun-torrent"
     depends_on:
       - gluetun-torrent
     environment:
-      - PUID=1000
-      - PGID=1000
-      - TZ=Etc/UTC
-      - WEBUI_PORT=8090
+      <<: *linuxserver-env
+      WEBUI_PORT: "8090"
     volumes:
       - ../data/qbittorrent:/config
       # Same host path Sonarr/Radarr mount below, at the same internal
       # path (/data) in every container — required so completed downloads
       # can be hardlinked into the library instead of copied across
       # filesystems.
-      - /home/pferrer/Media:/data
+      - ${MEDIA_ROOT}:/data
 
   # Usenet download client — the Usenet equivalent of qBittorrent above.
   # Deliberately NOT routed through gluetun-torrent: the Usenet provider
@@ -338,13 +387,11 @@ services:
   # paying for), and unlike BitTorrent there's no peer swarm exposing your
   # IP, so the usual reason to VPN-wrap this traffic doesn't apply.
   sabnzbd:
-    image: linuxserver/sabnzbd:latest
+    image: linuxserver/sabnzbd:latest@sha256:4307a4ef4a1687c6f7dfa36fc745c1fc10b78db9916b64970b9ff682539dd03b
     container_name: sabnzbd
-    restart: unless-stopped
+    <<: *service-defaults
     environment:
-      - PUID=1000
-      - PGID=1000
-      - TZ=Etc/UTC
+      <<: *linuxserver-env
     ports:
       - "127.0.0.1:8091:8080"
     volumes:
@@ -352,7 +399,7 @@ services:
       # Same host path as qBittorrent/Sonarr/Radarr, same internal mount
       # point — so Sonarr/Radarr can hardlink completed grabs from either
       # download client into the library the same way.
-      - /home/pferrer/Media:/data
+      - ${MEDIA_ROOT}:/data
 
   # Indexer manager — configure both torrent trackers and paid Usenet
   # indexers here once; it pushes them to both Sonarr and Radarr
@@ -361,13 +408,11 @@ services:
   # torrenting, so it stays out of the VPN's scope on purpose (same "only
   # route what needs it" reasoning as the Anna's Archive proxy).
   prowlarr:
-    image: linuxserver/prowlarr:latest
+    image: linuxserver/prowlarr:latest@sha256:1295cff29d10b486c0d8324d1559a552140a5932bf8b3d87e398654414f63f92
     container_name: prowlarr
-    restart: unless-stopped
+    <<: *service-defaults
     environment:
-      - PUID=1000
-      - PGID=1000
-      - TZ=Etc/UTC
+      <<: *linuxserver-env
     ports:
       - "127.0.0.1:9696:9696"
     volumes:
@@ -384,17 +429,15 @@ services:
   listenarr:
     image: ghcr.io/listenarrs/listenarr:canary-1.2.2@sha256:7aa44d67b649cd401507b763733f93e90ea4f12e2001e2bc67e31199366bb3a9
     container_name: listenarr
-    restart: unless-stopped
+    <<: *service-defaults
     environment:
-      - PUID=1000
-      - PGID=1000
-      - UMASK=002
-      - TZ=Etc/UTC
+      <<: *linuxserver-env
+      UMASK: "002"
     ports:
       - "127.0.0.1:4545:4545"
     volumes:
       - ../data/listenarr:/app/config
-      - /home/pferrer/Media:/data
+      - ${MEDIA_ROOT}:/data
     healthcheck:
       # The pinned image has Python but no curl/wget. /system/ready is the
       # unauthenticated lightweight probe published by Listenarr's v1 API.
@@ -408,33 +451,29 @@ services:
   # matching releases to qBittorrent (via gluetun-torrent, see setup notes),
   # then organize finished downloads into /data/TV.
   sonarr:
-    image: linuxserver/sonarr:latest
+    image: linuxserver/sonarr:latest@sha256:24acea2956a0ccb11f103877d9f4f8576600fb34bff34820ed749c2256dab89f
     container_name: sonarr
-    restart: unless-stopped
+    <<: *service-defaults
     environment:
-      - PUID=1000
-      - PGID=1000
-      - TZ=Etc/UTC
+      <<: *linuxserver-env
     ports:
       - "127.0.0.1:8989:8989"
     volumes:
       - ../data/sonarr:/config
-      - /home/pferrer/Media:/data
+      - ${MEDIA_ROOT}:/data
 
   # Movie acquisition — same role as Sonarr, for /data/Movies.
   radarr:
-    image: linuxserver/radarr:latest
+    image: linuxserver/radarr:latest@sha256:a45b5ab0f850f39edb4cc9c95bbd967b52ddc3d4574a4dfb45561177db6c88f4
     container_name: radarr
-    restart: unless-stopped
+    <<: *service-defaults
     environment:
-      - PUID=1000
-      - PGID=1000
-      - TZ=Etc/UTC
+      <<: *linuxserver-env
     ports:
       - "127.0.0.1:7878:7878"
     volumes:
       - ../data/radarr:/config
-      - /home/pferrer/Media:/data
+      - ${MEDIA_ROOT}:/data
 
   # REMOVED — Recyclarr applied TRaSH-Guides quality profiles to Sonarr/Radarr
   # on a daily schedule. It did its one useful job (creating the custom formats
@@ -455,17 +494,15 @@ services:
   jellyfin:
     image: jellyfin/jellyfin:latest
     container_name: jellyfin
-    restart: unless-stopped
+    <<: *service-defaults
     environment:
-      - PUID=1000
-      - PGID=1000
-      - TZ=Etc/UTC
+      <<: *linuxserver-env
     ports:
       - "127.0.0.1:8096:8096"
     volumes:
       - ../data/jellyfin/config:/config
       - ../data/jellyfin/cache:/cache
-      - /home/pferrer/Media:/data
+      - ${MEDIA_ROOT}:/data
     # Passes the host's Intel Quick Sync iGPU through so Jellyfin can hardware-
     # transcode instead of falling back to CPU-only software x264 — needed for
     # every file that isn't already browser-native (AC3/DTS audio, non-H.264
@@ -490,7 +527,7 @@ services:
   jellyfin-proxy:
     image: nginx:alpine
     container_name: jellyfin-proxy
-    restart: unless-stopped
+    <<: *service-defaults
     depends_on:
       - jellyfin
     environment:
@@ -523,15 +560,13 @@ services:
   plex:
     image: plexinc/pms-docker:latest
     container_name: plex
-    restart: unless-stopped
+    <<: *service-defaults
     network_mode: host
     environment:
-      - PUID=1000
-      - PGID=1000
-      - TZ=Etc/UTC
+      <<: *linuxserver-env
     volumes:
       - ../data/plex/config:/config
-      - /home/pferrer/Media:/data
+      - ${MEDIA_ROOT}:/data
     # Same Intel Quick Sync passthrough as Jellyfin, for hardware transcoding.
     # Requires Plex Pass to actually take effect — harmless if not, Plex just
     # falls back to software transcoding.
@@ -541,7 +576,7 @@ services:
   # Audiobook library — catalogs Media/audiobooks (author/series/book folder
   # parsing, M4B/ID3 chapter metadata, cover art), serves raw audio bytes.
   # annas-archive-api talks to it purely as an HTTP API client (same as
-  # Sonarr/Radarr/Jellyfin) — it never touches /home/pferrer/Media directly,
+  # Sonarr/Radarr/Jellyfin) — it never touches ${MEDIA_ROOT} directly,
   # so unlike those, this only mounts its own scoped library subfolder.
   #
   # Deliberately points at audiobooks, NOT _audiobook_staging (see the
@@ -551,7 +586,7 @@ services:
   audiobookshelf:
     image: ghcr.io/advplyr/audiobookshelf:latest
     container_name: audiobookshelf
-    restart: unless-stopped
+    <<: *service-defaults
     # NOTE: unlike the linuxserver.io images above, this image does not use
     # PUID/PGID — uncomment if file permissions against the NAS-transferred
     # content require it:
@@ -561,7 +596,7 @@ services:
     volumes:
       - ../data/audiobookshelf/config:/config
       - ../data/audiobookshelf/metadata:/metadata
-      - /home/pferrer/Media/audiobooks:/audiobooks
+      - ${MEDIA_ROOT}/audiobooks:/audiobooks
 
   # ─── Immich — the household photo library ────────────────────────────────
   # Two feeds fill it (see DOCS/features/google-photos-cvs-print-automation-spec.md
@@ -582,7 +617,7 @@ services:
   immich-server:
     image: ghcr.io/immich-app/immich-server:${IMMICH_VERSION:-release}
     container_name: immich-server
-    restart: unless-stopped
+    <<: *service-defaults
     # Loopback only, same as everything else here — reached over the tailnet
     # via `tailscale serve`, never published to the LAN.
     ports:
@@ -596,7 +631,7 @@ services:
       # Non-default service names, so these two cannot be left implicit.
       - IMMICH_MACHINE_LEARNING_URL=http://immich-ml:3003
     volumes:
-      - ${IMMICH_UPLOAD_LOCATION:-/home/pferrer/Media/Photos}:/data
+      - ${IMMICH_UPLOAD_LOCATION:-${MEDIA_ROOT}/Photos}:/data
       - /etc/localtime:/etc/localtime:ro
     depends_on:
       - immich-redis
@@ -610,7 +645,7 @@ services:
   immich-ml:
     image: ghcr.io/immich-app/immich-machine-learning:${IMMICH_VERSION:-release}
     container_name: immich-ml
-    restart: unless-stopped
+    <<: *service-defaults
     volumes:
       - ../data/immich/model-cache:/cache
     healthcheck:
@@ -619,7 +654,7 @@ services:
   immich-redis:
     image: docker.io/valkey/valkey:9@sha256:8e8d64b405ce18f41b8e5ee20aa4687a8ed0022d1298f2ce31cdcf3a76e09411
     container_name: immich-redis
-    restart: unless-stopped
+    <<: *service-defaults
     healthcheck:
       test: redis-cli ping || exit 1
 
@@ -629,7 +664,7 @@ services:
   immich-postgres:
     image: ghcr.io/immich-app/postgres:14-vectorchord0.4.3-pgvectors0.2.0@sha256:bcf63357191b76a916ae5eb93464d65c07511da41e3bf7a8416db519b40b1c23
     container_name: immich-postgres
-    restart: unless-stopped
+    <<: *service-defaults
     environment:
       - POSTGRES_USER=${IMMICH_DB_USERNAME:-immich}
       - POSTGRES_PASSWORD=${IMMICH_DB_PASSWORD}

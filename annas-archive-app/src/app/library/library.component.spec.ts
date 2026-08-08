@@ -30,7 +30,11 @@ describe('LibraryComponent', () => {
     ]);
 
     mockDialog = jasmine.createSpyObj('MatDialog', ['open']);
-    mockAuthService = jasmine.createSpyObj('AuthService', ['isAdmin', 'getOwnerName']);
+    // `isAuthenticated$` is a property, not a method: the component resolves the
+    // signed-in identity once and then refreshes it on that stream, rather than
+    // asking `localStorage` again for every card on every change-detection cycle.
+    mockAuthService = jasmine.createSpyObj(
+      'AuthService', ['isAdmin', 'getOwnerName'], { isAuthenticated$: of(true) });
     mockAuthService.getOwnerName.and.returnValue('Paul');
 
     // Default mock returns
@@ -1120,6 +1124,110 @@ describe('LibraryComponent', () => {
         expect(book.dadsKindleState).toBe('success');
         expect(book.personalRating).toBe(4);
       });
+    });
+  });
+
+  /**
+   * `bookRows` and `availableLetters` are bound in the template, so Angular calls
+   * them on every change-detection cycle — and the A–Z rail reads
+   * `availableLetters` once per letter, so it ran 27 times a cycle, each time
+   * scanning the whole library.
+   *
+   * These tests pin the memoisation, and specifically that it *invalidates*.
+   * A cache that never recomputes is a far worse bug than the cost it saves:
+   * the grid would keep rendering a stale book list.
+   */
+  describe('Template getter memoisation', () => {
+    const bookNamed = (title: string): LibraryBook =>
+      ({ title, fileName: `${title}.epub`, authors: [title] }) as unknown as LibraryBook;
+
+    it('returns the identical rows array while the book list is unchanged', () => {
+      component.books = [bookNamed('Alpha'), bookNamed('Beta')];
+
+      expect(component.bookRows).toBe(component.bookRows);
+    });
+
+    it('recomputes rows when the book list is replaced', () => {
+      component.books = [bookNamed('Alpha')];
+      const first = component.bookRows;
+
+      component.books = [bookNamed('Alpha'), bookNamed('Beta')];
+
+      expect(component.bookRows).not.toBe(first);
+      expect(component.bookRows.flat().length).toBe(2);
+    });
+
+    /**
+     * Row width is the other input. Changing tile size while the same books are
+     * loaded must re-chunk them — this is the case a books-only cache key misses.
+     */
+    it('recomputes rows when the tile size changes the row width', () => {
+      component.books = Array.from({ length: 8 }, (_, i) => bookNamed(`Book${i}`));
+      component.tileSize = 'medium';
+      component.recalculateLayout();
+      expect(component.bookRows.length).toBe(2); // 6 per row
+
+      component.tileSize = 'small';
+      component.recalculateLayout();
+
+      expect(component.bookRows.length).toBe(1); // 8 per row
+    });
+
+    it('returns the identical letters array while books and sort order are unchanged', () => {
+      component.books = [bookNamed('Alpha'), bookNamed('Beta')];
+
+      expect(component.availableLetters).toBe(component.availableLetters);
+    });
+
+    it('recomputes letters when the book list is replaced', () => {
+      component.books = [bookNamed('Alpha')];
+      expect(component.availableLetters).toEqual(['A']);
+
+      component.books = [bookNamed('Alpha'), bookNamed('Zulu')];
+
+      expect(component.availableLetters).toEqual(['A', 'Z']);
+    });
+
+    /**
+     * Sorting by author files books under a different letter than sorting by
+     * title, so the rail must change even though the book list did not.
+     */
+    it('recomputes letters when the sort order changes which field files them', () => {
+      component.books = [
+        { title: 'Dune', fileName: 'dune.epub', authors: ['Frank Herbert'] } as unknown as LibraryBook
+      ];
+      component.sortOrder = 'title';
+      expect(component.availableLetters).toEqual(['D']);
+
+      component.sortOrder = 'author';
+
+      expect(component.availableLetters).toEqual(['F']);
+    });
+  });
+
+  /**
+   * Both of these used to be called from the template once per card per cycle,
+   * and both read `localStorage` synchronously.
+   */
+  describe('Signed-in identity', () => {
+    it('resolves the identity without the template having to ask per card', () => {
+      mockAuthService.isAdmin.and.returnValue(true);
+      mockAuthService.getOwnerName.and.returnValue('Mom');
+
+      fixture.detectChanges();
+
+      expect(component.isAdmin).toBe(true);
+      expect(component.currentOwnerName).toBe('Mom');
+    });
+
+    it('does not re-read the auth service once change detection runs again', () => {
+      fixture.detectChanges();
+      const callsAfterInit = mockAuthService.getOwnerName.calls.count();
+
+      fixture.detectChanges();
+      fixture.detectChanges();
+
+      expect(mockAuthService.getOwnerName.calls.count()).toBe(callsAfterInit);
     });
   });
 });

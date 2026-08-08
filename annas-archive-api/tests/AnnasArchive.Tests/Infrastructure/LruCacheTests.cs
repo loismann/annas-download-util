@@ -300,7 +300,7 @@ public class LruCacheTests
     }
 
     [Fact]
-    public void Cache_IsThreadSafe()
+    public async Task Cache_IsThreadSafe()
     {
         var cache = new LruCache<int, int>(100);
         var tasks = new List<Task>();
@@ -331,7 +331,7 @@ public class LruCacheTests
         }
 
         // Should complete without deadlock or exception
-        Task.WaitAll(tasks.ToArray());
+        await Task.WhenAll(tasks);
 
         // Cache should be in a consistent state
         cache.Count.Should().BeLessThanOrEqualTo(100);

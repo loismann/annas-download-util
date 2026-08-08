@@ -43,6 +43,10 @@ import {
 import { AiApiService } from '../services/ai-api.service';
 import { LibraryApiService } from '../services/library-api.service';
 import { VocabularyService, VocabularyWord } from '../services/vocabulary.service';
+import {
+  KnownWordLimit, MaxSectionWords, chapterPrompt, knownWordsFor, mergeVocabulary,
+  parseVocabulary, sectionText, selectionPrompt, splitDefinitions, summaryWithoutDefinitions
+} from './vocabulary-extraction';
 import { AuthService } from '../services/auth.service';
 import { LoggerService } from '../services/logger.service';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
@@ -397,86 +401,22 @@ export class BookReaderComponent implements OnInit, OnDestroy {
     this.logger.log('parseSummaryOnce called with:', summary.substring(0, 200));
 
     // Find "Definitions:" in a flexible way (no dependency on preceding newline)
-    const defRegex = /definitions?\s*:/i;
-    const match = defRegex.exec(summary);
-
-    if (match) {
-      this.logger.log('Found definitions section at index:', match.index);
-      const defIndex = match.index;
-      this.analysisText = summary.substring(0, defIndex).trim();
-      const definitionsSection = summary.substring(defIndex + match[0].length).trim();
-      this.logger.log('Definitions section:', definitionsSection.substring(0, 200));
-      this.vocabularyWords = this.parseVocabulary(definitionsSection);
-    } else {
-      this.logger.log('No definitions section found');
-      this.analysisText = summary.trim();
-      this.vocabularyWords = [];
-    }
+    const { analysis, definitions } = splitDefinitions(summary);
+    this.analysisText = analysis;
+    this.vocabularyWords = definitions ? this.parseVocabulary(definitions) : [];
 
     this.formattedAnalysis = this.formatAnalysis(this.analysisText ?? '');
   }
 
   private parseVocabulary(definitionsText: string): VocabularyWord[] {
-    const words: VocabularyWord[] = [];
-    const added = new Set<string>();
-
-    // Match patterns like:
-    // - **Term**: Definition
-    // - Term: Definition
-    // **Term**: Definition
-    // 1. Term: Definition (numbered)
-    const lines = definitionsText.split('\n');
-    this.logger.log(`Parsing ${lines.length} lines for vocabulary`);
-
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed) continue;
-
-      // Remove leading dash, bullet points, asterisks, numbers with dots/parens, and whitespace
-      let cleaned = trimmed
-        // Remove dash/bullet/asterisk. A lone '*' is a bullet, but '**' opens a
-        // bold term — stripping one of the pair leaves '*term**', which no longer
-        // matches the bold pattern below and ends up keeping the stray asterisk.
-        .replace(/^(?:[-•]|\*(?!\*))\s*/, '')
-        .replace(/^\d+[\.)]\s*/, '') // Remove "1." or "1)"
-        .trim();
-
-      // Match patterns:
-      // 1. **term**: definition
-      // 2. term: definition
-      const match = cleaned.match(/^\*\*(.+?)\*\*:\s*(.+)$/) ||
-                    cleaned.match(/^([^:]+?):\s*(.+)$/);
-
-      if (match) {
-        // Remove any remaining asterisks from term
-        const term = match[1].trim().replace(/\*\*/g, '');
-        const definition = match[2].trim();
-        const normalized = this.vocabularyService.normalizeForMatch(term);
-
-        this.logger.log(`Found vocab: "${term}" -> "${definition.substring(0, 50)}..."`);
-
-        // Only add if not already known and has valid content
-        if (normalized && definition && !this.vocabularyService.isKnown(normalized) && !added.has(normalized)) {
-          words.push({ term, definition });
-          added.add(normalized);
-        } else if (this.vocabularyService.isKnown(normalized)) {
-          this.logger.log(`Skipping known word: "${term}"`);
-        }
-      }
-    }
-
-    this.logger.log(`Total vocabulary words parsed: ${words.length}`);
-    return words;
+    return parseVocabulary(
+      definitionsText,
+      term => this.vocabularyService.normalizeForMatch(term),
+      normalized => this.vocabularyService.isKnown(normalized));
   }
 
   getSummaryWithoutDefinitions(summary: string): string {
-    const defRegex = /definitions?\s*:/i;
-    const match = defRegex.exec(summary);
-
-    if (match) {
-      return summary.substring(0, match.index).trim();
-    }
-    return summary.trim();
+    return summaryWithoutDefinitions(summary);
   }
 
   formatSectionSummaryAsHtml(summary: string): SafeHtml {
@@ -1799,28 +1739,11 @@ export class BookReaderComponent implements OnInit, OnDestroy {
 
     this.loadingSelectionVocab = true;
 
-    // Determine selection type
-    const wordCount = text.split(/\s+/).length;
-    const isSingleWord = wordCount === 1;
+    this.logger.log(`🔤 Creating vocab from selection: ${text.trim().split(/\s+/).length} word(s)`);
 
-    this.logger.log(`🔤 Creating vocab from selection: ${isSingleWord ? 'single word' : `${wordCount} words`}`);
-
-    const allKnownWords = this.vocabularyService.getKnownWordsForPrompt();
-    const knownWords = allKnownWords.slice(-100);
-
-    // Build context-aware instruction
-    let contextInstruction = '';
-    if (isSingleWord) {
-      contextInstruction = `SINGLE WORD MODE: Create exactly ONE flashcard for the word "${text}". Include etymology, definition, usage examples, and any specialized meanings in this context.`;
-    } else {
-      contextInstruction = `PHRASE/PASSAGE MODE: Analyze this selection and create flashcards for the KEY CONCEPTS or DIFFICULT TERMS (not every word). Create 1-5 cards depending on complexity. Focus on:
-- Main philosophical/technical concepts being discussed
-- Specialized terminology that needs explanation
-- Foreign phrases or archaic language
-- Historical/cultural references
-
-DO NOT create a card for every word. Only create cards for terms that add educational value.`;
-    }
+    const knownWords = knownWordsFor(
+      this.vocabularyService.getKnownWordsForPrompt(), KnownWordLimit.selection);
+    const contextInstruction = selectionPrompt(text);
 
     const flashcardPayload = {
       term: text,
@@ -1905,16 +1828,9 @@ DO NOT create a card for every word. Only create cards for terms that add educat
     this.logger.log('📚 Generating vocabulary for entire chapter');
     this.loadingChapterVocab = true;
 
-    const allKnownWords = this.vocabularyService.getKnownWordsForPrompt();
-    const knownWords = allKnownWords.slice(-200); // Use more known words for chapter-level
-
-    const contextInstruction = `CHAPTER-LEVEL VOCABULARY: Analyze this entire chapter and identify 10-20 of the most important, challenging, or specialized terms that a reader should understand. Focus on:
-- Key philosophical, technical, or domain-specific concepts
-- Specialized terminology crucial to understanding the chapter
-- Difficult or archaic language
-- Important historical or cultural references
-
-DO NOT include common words. Only create flashcards for terms that significantly enhance comprehension of the chapter's main ideas.`;
+    const knownWords = knownWordsFor(
+      this.vocabularyService.getKnownWordsForPrompt(), KnownWordLimit.chapter);
+    const contextInstruction = chapterPrompt();
 
     const flashcardPayload = {
       term: this.chapterContent.content, // Send full chapter text
@@ -1931,20 +1847,12 @@ DO NOT include common words. Only create flashcards for terms that significantly
         next: cards => {
           this.logger.log(`✅ Generated ${cards.length} chapter-level vocabulary card(s)`);
 
-          // Merge new cards with existing vocab (avoid duplicates)
-          const existingTerms = new Set(this.vocabularyWords.map(v => v.term.toLowerCase()));
-          const newCards = cards.filter(card => !existingTerms.has(card.term.toLowerCase()));
-
-          if (newCards.length === 0) {
-            this.logger.log('ℹ️ All generated chapter vocab cards already exist');
-          } else {
-            const newVocabWords = newCards.map(card => ({
-              term: card.term,
-              definition: card.definition
-            }));
-            this.vocabularyWords = [...this.vocabularyWords, ...newVocabWords];
-            this.logger.log(`➕ Added ${newCards.length} new chapter vocab terms to display`);
-          }
+          const merged = mergeVocabulary(this.vocabularyWords, cards);
+          const addedCount = merged.length - this.vocabularyWords.length;
+          this.vocabularyWords = merged;
+          this.logger.log(addedCount === 0
+            ? 'ℹ️ All generated chapter vocab cards already exist'
+            : `➕ Added ${addedCount} new chapter vocab terms to display`);
 
           this.loadingChapterVocab = false;
           this.refreshTokenUsage();
@@ -2272,23 +2180,16 @@ DO NOT include common words. Only create flashcards for terms that significantly
     if (!this.selectedBookPath || !this.chapterContent || !this.chunkBoundaries) return;
     if (sectionIndex < 0 || sectionIndex >= this.chunkBoundaries.chunks.length) return;
 
-    // Extract section text from chapter content
     const chunk = this.chunkBoundaries.chunks[sectionIndex];
-    const words = this.chapterContent.content.split(/\s+/);
-    const sectionWords = words.slice(chunk.start, chunk.start + chunk.wordCount);
+    const text = sectionText(this.chapterContent.content, chunk, MaxSectionWords);
 
-    // Limit to max 1000 words to avoid overwhelming the API
-    const limitedWords = sectionWords.slice(0, 1000);
-    const sectionText = limitedWords.join(' ');
+    this.logger.log(`🔤 Generating vocabulary cards for section ${sectionIndex}...`);
 
-    this.logger.log(`🔤 Generating vocabulary cards for section ${sectionIndex} (${limitedWords.length} words)...`);
-
-    // Get known words to exclude from vocabulary
-    const allKnownWords = this.vocabularyService.getKnownWordsForPrompt();
-    const knownWords = allKnownWords.slice(-100); // Limit to 100 most recent
+    const knownWords = knownWordsFor(
+      this.vocabularyService.getKnownWordsForPrompt(), KnownWordLimit.selection);
 
     const flashcardPayload = {
-      term: sectionText,
+      term: text,
       dropboxPath: this.selectedBookPath,
       bookTitle: this.selectedBook?.title ?? undefined,
       knownWords: knownWords,

@@ -56,7 +56,7 @@ export interface BookBulkEditDialogResult {
     GenreChipsEditorComponent
   ],
   templateUrl: './bulk-edit-dialog.component.html',
-  styleUrls: ['./bulk-edit-dialog.component.scss']
+  styleUrl: './bulk-edit-dialog.component.scss'
 })
 export class BulkEditDialogComponent {
   authorsInput = '';

@@ -1,4 +1,4 @@
-import { Component, EventEmitter, Input, Output, OnDestroy, OnChanges, SimpleChanges, ElementRef, ViewChild, AfterViewInit } from '@angular/core';
+import { ChangeDetectionStrategy, ChangeDetectorRef, Component, EventEmitter, Input, Output, OnDestroy, OnChanges, SimpleChanges, ElementRef, ViewChild, AfterViewInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MatCardModule } from '@angular/material/card';
 import { MatButtonModule } from '@angular/material/button';
@@ -34,7 +34,18 @@ export interface LibraryBook extends ApiLibraryBook {
     MatCheckboxModule
   ],
   templateUrl: './book-card.component.html',
-  styleUrls: ['./book-card.component.css']
+  styleUrl: './book-card.component.scss',
+  /**
+   * Safe only because `LibraryComponent` now replaces a changed book with a new
+   * object instead of mutating it — see its `patchBook`. Under in-place mutation
+   * the `book` input stays referentially identical, and this card would never
+   * re-render: no Kindle spinner, no rating stars filling in, no favourite toggle.
+   *
+   * The other hazard is `imageLoaded`, which a *static* IntersectionObserver sets
+   * on instances it reaches directly. No input changes and no event fires, so
+   * nothing marks the card dirty; `loadImage` calls `markForCheck` for that reason.
+   */
+  changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class BookCardComponent implements AfterViewInit, OnChanges, OnDestroy {
   @Input() book!: LibraryBook;
@@ -76,6 +87,8 @@ export class BookCardComponent implements AfterViewInit, OnChanges, OnDestroy {
   /** Shared IntersectionObserver for all book cards (more efficient than per-card observers) */
   private static observer: IntersectionObserver | null = null;
   private static observedElements = new Map<HTMLElement, BookCardComponent>();
+
+  constructor(private readonly cdr: ChangeDetectorRef) {}
 
   private static getOrCreateObserver(): IntersectionObserver {
     if (!BookCardComponent.observer) {
@@ -120,6 +133,7 @@ export class BookCardComponent implements AfterViewInit, OnChanges, OnDestroy {
     this.observedFileName = this.book?.fileName ?? null;
     this.imageLoaded = false;
     this.registerForLazyLoad();
+    this.cdr.markForCheck();
   }
 
   ngOnDestroy(): void {
@@ -134,6 +148,7 @@ export class BookCardComponent implements AfterViewInit, OnChanges, OnDestroy {
     const element = this.coverImageRef?.nativeElement;
     if (!this.book?.coverUrl || !element) {
       this.imageLoaded = true; // Show placeholder immediately
+      this.cdr.markForCheck();
       return;
     }
 
@@ -146,9 +161,15 @@ export class BookCardComponent implements AfterViewInit, OnChanges, OnDestroy {
     observer.observe(element);
   }
 
-  /** Load the actual image (called by IntersectionObserver) */
+  /**
+   * Called by the shared IntersectionObserver, which is outside this component's
+   * own change detection: it neither changes an input nor fires an output, so
+   * under OnPush nothing would mark the card dirty and every cover would stay a
+   * placeholder for good.
+   */
   private loadImage(): void {
     this.imageLoaded = true;
+    this.cdr.markForCheck();
   }
 
   /** Get the current image source - placeholder until visible */

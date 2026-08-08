@@ -40,7 +40,7 @@ interface SeasonGroup {
     MatDialogModule
   ],
   templateUrl: './series-detail.component.html',
-  styleUrl: './series-detail.component.css'
+  styleUrl: './series-detail.component.scss'
 })
 export class SeriesDetailComponent implements OnInit {
   series: MediaLookupResult | null = null;

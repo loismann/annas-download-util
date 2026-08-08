@@ -85,7 +85,7 @@ import {
     VocabularyPanelComponent
   ],
   templateUrl: './book-reader.component.html',
-  styleUrls: ['./book-reader.component.css']
+  styleUrl: './book-reader.component.scss'
 })
 export class BookReaderComponent implements OnInit, OnDestroy {
   private destroy$ = new Subject<void>();

@@ -73,7 +73,7 @@ import {
     SearchResultsComponent,
   ],
   templateUrl: './book-search.component.html',
-  styleUrls: ['./book-search.component.css'],
+  styleUrl: './book-search.component.scss',
   // Component-scoped, not root: the lookup queue owns setTimeout handles and
   // must be torn down with the page, not shared across it.
   providers: [BookCoverLookupService, BookDescriptionLookupService],

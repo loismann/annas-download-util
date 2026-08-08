@@ -62,7 +62,7 @@ export interface VideoEditDialogResult {
     GenreChipsEditorComponent
   ],
   templateUrl: './video-edit-dialog.component.html',
-  styleUrls: ['./video-edit-dialog.component.css']
+  styleUrl: './video-edit-dialog.component.scss'
 })
 export class VideoEditDialogComponent implements OnDestroy {
   private destroy$ = new Subject<void>();

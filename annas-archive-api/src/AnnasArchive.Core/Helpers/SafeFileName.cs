@@ -123,4 +123,52 @@ public static class SafeFileName
 
         return string.IsNullOrWhiteSpace(name) ? fallback : name;
     }
+
+    /// <summary>
+    /// A safe path segment for a folder a human will browse — an audiobook's
+    /// <c>Author/Title (Year)</c>, say.
+    ///
+    /// Identical hardening to <see cref="ForUserInput"/>, and differs from it in exactly
+    /// one respect: an invalid character collapses to a **space** rather than an
+    /// underscore, and runs of spaces collapse to one. In a media library the result is
+    /// read by a person and by Audiobookshelf's own scanner, and
+    /// <c>Nineteen Eighty_Four_ A Novel</c> is materially worse than
+    /// <c>Nineteen Eighty Four A Novel</c> for both.
+    ///
+    /// The input is external — a catalogue lookup or a model's answer — so the traversal
+    /// and control-character handling is not decoration. This exists so that reasoning
+    /// lives in one place instead of being re-derived by every caller that wants
+    /// readable output.
+    /// </summary>
+    public static string ForReadablePathSegment(
+        string? input,
+        int maxLength = DefaultNameLength,
+        string fallback = "untitled")
+    {
+        if (string.IsNullOrWhiteSpace(input))
+            return fallback;
+
+        // Substitute *before* delegating. Doing it afterwards cannot work: ForUserInput
+        // has already turned every invalid character into '_', and at that point an
+        // underscore this class introduced is indistinguishable from one the title
+        // genuinely contains.
+        var spaced = new string(input.Select(c => InvalidChars.Contains(c) ? ' ' : c).ToArray());
+        var collapsed = string.Join(' ', spaced.Split(' ', StringSplitOptions.RemoveEmptyEntries));
+
+        var hardened = ForUserInput(collapsed, maxLength, fallback);
+        if (hardened == fallback)
+            return fallback;
+
+        // ForUserInput neutralises ".." to "_", which is kept deliberately — it marks
+        // that something was removed. Only the spacing needs settling again, since
+        // truncation can leave a trailing space or dot that some filesystems strip,
+        // making the name we return differ from the name on disk.
+        var tidied = string.Join(' ', hardened.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+            .TrimEnd('.', ' ');
+
+        // Nothing readable left means nothing useful was there: "..." survives
+        // neutralisation as a bare "_", which is a legal folder name but tells a person
+        // browsing the library less than "untitled" does.
+        return tidied.Any(char.IsLetterOrDigit) ? tidied : fallback;
+    }
 }

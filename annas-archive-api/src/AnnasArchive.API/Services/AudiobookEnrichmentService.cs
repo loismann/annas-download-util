@@ -50,7 +50,6 @@ public sealed record AudiobookScanSummary(
 public class AudiobookEnrichmentService : BackgroundService
 {
     private static readonly string[] AudioExtensions = { ".mp3", ".m4a", ".m4b", ".flac", ".ogg", ".wav", ".aac", ".wma" };
-    private static readonly char[] InvalidPathChars = { '/', '\\', ':', '*', '?', '"', '<', '>', '|' };
     private const string SidecarFileName = ".audiobook-enrichment.json";
     private const string DuplicateReviewFolderName = "_DuplicatesReview";
 
@@ -808,12 +807,12 @@ Confidence rubric — use the actual scale, don't default to round numbers:
 
     private static string ComputeTargetPath(AudiobookMatch match, string root)
     {
-        var titleSegment = SanitizePathSegment(match.Year is int y ? $"{match.Title} ({y})" : match.Title);
+        var titleSegment = SafeFileName.ForReadablePathSegment(match.Year is int y ? $"{match.Title} ({y})" : match.Title);
 
         if (string.IsNullOrWhiteSpace(match.Author))
             return Path.Combine(root, titleSegment);
 
-        var authorSegment = SanitizePathSegment(match.Author);
+        var authorSegment = SafeFileName.ForReadablePathSegment(match.Author);
         return Path.Combine(root, authorSegment, titleSegment);
     }
 
@@ -826,15 +825,8 @@ Confidence rubric — use the actual scale, don't default to round numbers:
         var relative = Path.GetRelativePath(root, folderPath);
         var sanitizedParts = relative
             .Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries)
-            .Select(SanitizePathSegment);
+            .Select(p => SafeFileName.ForReadablePathSegment(p));
         return Path.Combine(new[] { root, DuplicateReviewFolderName }.Concat(sanitizedParts).ToArray());
-    }
-
-    private static string SanitizePathSegment(string value)
-    {
-        var cleaned = new string(value.Select(ch => InvalidPathChars.Contains(ch) ? ' ' : ch).ToArray());
-        cleaned = string.Join(' ', cleaned.Split(' ', StringSplitOptions.RemoveEmptyEntries));
-        return cleaned.TrimEnd('.', ' ');
     }
 
     // ── Sidecar persistence ──────────────────────────────────────────────

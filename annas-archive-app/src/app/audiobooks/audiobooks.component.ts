@@ -142,7 +142,7 @@ function formatDuration(seconds: number | undefined): string | undefined {
     TileSizeControlsComponent,
   ],
   templateUrl: './audiobooks.component.html',
-  styleUrl: './audiobooks.component.css'
+  styleUrl: './audiobooks.component.scss'
 })
 export class AudiobooksComponent implements OnInit, OnDestroy {
   loading = false;

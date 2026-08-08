@@ -24,7 +24,7 @@ export interface UploadResult {
     MatProgressBarModule
   ],
   templateUrl: './file-upload-dialog.component.html',
-  styleUrls: ['./file-upload-dialog.component.scss']
+  styleUrl: './file-upload-dialog.component.scss'
 })
 export class FileUploadDialogComponent implements OnInit {
   supportedFormats: string[] = [];

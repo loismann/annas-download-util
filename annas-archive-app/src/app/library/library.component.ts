@@ -49,7 +49,7 @@ import { BOOK_OWNER_TAGS, bookTagToOwner, ownerToBookTag } from '../constants/ow
     TileSizeControlsComponent,
   ],
   templateUrl: './library.component.html',
-  styleUrls: ['./library.component.css']
+  styleUrl: './library.component.scss'
 })
 export class LibraryComponent implements OnInit, OnDestroy {
   private destroy$ = new Subject<void>();
@@ -131,6 +131,34 @@ export class LibraryComponent implements OnInit, OnDestroy {
   private refreshIdentity(): void {
     this.isAdmin = this.authService.isAdmin();
     this.currentOwnerName = this.authService.getOwnerName();
+  }
+
+  /**
+   * Replaces one book with a patched copy, rebuilding `books` around it.
+   *
+   * Every per-book update goes through here rather than assigning to the object.
+   * Two reasons, one of them load-bearing:
+   *
+   * - `bookRows` is memoised on the `books` array reference, so a mutation that
+   *   leaves the array identical is invisible to it.
+   * - `BookCardComponent` can only be `OnPush` if a changed book arrives as a new
+   *   object. Mutating in place leaves `@Input() book` referentially identical, and
+   *   the card never re-renders — which is exactly how the Kindle spinner, the
+   *   rating stars and the favourite toggle would silently stop working.
+   *
+   * Keyed on `fileName`, not object identity: the callers are async, and a
+   * subscribe callback captures the book as it was when the request went out. By
+   * the time it fires, that object has usually already been replaced by this
+   * method, so `===` against it would match nothing.
+   */
+  private patchBook(fileName: string | undefined, changes: Partial<LibraryBook>): void {
+    if (!fileName) return;
+    this.books = this.books.map(b => (b.fileName === fileName ? { ...b, ...changes } : b));
+  }
+
+  /** The current state of a book, which a captured reference may no longer hold. */
+  private currentBook(fileName: string | undefined): LibraryBook | undefined {
+    return fileName ? this.books.find(b => b.fileName === fileName) : undefined;
   }
 
   constructor(
@@ -533,7 +561,7 @@ export class LibraryComponent implements OnInit, OnDestroy {
       // The favorite toggle inside the dialog applies immediately (its own API call),
       // not deferred to Save — sync whatever it ended up at back onto the book here,
       // since dialogData.favoritedBy is a separate object once the dialog reassigns it.
-      book.favoritedBy = dialogData.favoritedBy;
+      this.patchBook(book.fileName, { favoritedBy: dialogData.favoritedBy });
 
       if (result?.deleted) {
         this.books = this.books.filter(b => b !== book);
@@ -542,16 +570,13 @@ export class LibraryComponent implements OnInit, OnDestroy {
       }
 
       if (result && book.fileName) {
-        // Update local book object
-        book.primaryGenre = result.primaryGenre ?? book.primaryGenre;
-        book.tags = result.tags ?? book.tags;
-        book.series = result.series ?? book.series;
-        if (result.title) {
-          book.title = result.title;
-        }
-        if (result.authors) {
-          book.authors = result.authors;
-        }
+        this.patchBook(book.fileName, {
+          primaryGenre: result.primaryGenre ?? book.primaryGenre,
+          tags: result.tags ?? book.tags,
+          series: result.series ?? book.series,
+          ...(result.title ? { title: result.title } : {}),
+          ...(result.authors ? { authors: result.authors } : {})
+        });
 
         // Rebuild genre list for filter dropdown
         this.genres = this.buildGenreList(this.books);
@@ -585,31 +610,20 @@ export class LibraryComponent implements OnInit, OnDestroy {
   sendToKindle(book: LibraryBook, target: 'dad' | 'mom'): void {
     if (!book.fileName) return;
     if (!this.canSendToKindle(book)) return;
-    if (target === 'dad' && book.dadsKindleState === 'sending') return;
-    if (target === 'mom' && book.momsKindleState === 'sending') return;
+    const stateField = target === 'dad' ? 'dadsKindleState' : 'momsKindleState';
+    if (this.currentBook(book.fileName)?.[stateField] === 'sending') return;
 
-    if (target === 'dad') {
-      book.dadsKindleState = 'sending';
-    } else {
-      book.momsKindleState = 'sending';
-    }
+    const fileName = book.fileName;
+    this.patchBook(fileName, { [stateField]: 'sending' });
 
-    this.libraryApi.sendLibraryToKindle(book.fileName, book.title, target).pipe(takeUntil(this.destroy$)).subscribe({
+    this.libraryApi.sendLibraryToKindle(fileName, book.title, target).pipe(takeUntil(this.destroy$)).subscribe({
       next: (resp) => {
         const success = resp?.success ?? true;
-        if (target === 'dad') {
-          book.dadsKindleState = success ? 'success' : 'error';
-        } else {
-          book.momsKindleState = success ? 'success' : 'error';
-        }
+        this.patchBook(fileName, { [stateField]: success ? 'success' : 'error' });
       },
       error: (err) => {
         this.logger.error('[library] send-to-kindle failed', err);
-        if (target === 'dad') {
-          book.dadsKindleState = 'error';
-        } else {
-          book.momsKindleState = 'error';
-        }
+        this.patchBook(fileName, { [stateField]: 'error' });
       }
     });
   }
@@ -617,17 +631,18 @@ export class LibraryComponent implements OnInit, OnDestroy {
   sendToDropbox(book: LibraryBook): void {
     if (!book.fileName) return;
     if (!this.canSendToKindle(book)) return;
-    if (book.dropboxState === 'sending') return;
+    if (this.currentBook(book.fileName)?.dropboxState === 'sending') return;
 
-    book.dropboxState = 'sending';
-    this.libraryApi.sendLibraryToKindle(book.fileName, book.title, 'dad', true).pipe(takeUntil(this.destroy$)).subscribe({
+    const fileName = book.fileName;
+    this.patchBook(fileName, { dropboxState: 'sending' });
+    this.libraryApi.sendLibraryToKindle(fileName, book.title, 'dad', true).pipe(takeUntil(this.destroy$)).subscribe({
       next: (resp) => {
         const success = resp?.success ?? true;
-        book.dropboxState = success ? 'success' : 'error';
+        this.patchBook(fileName, { dropboxState: success ? 'success' : 'error' });
       },
       error: (err) => {
         this.logger.error('[library] send-to-dropbox failed', err);
-        book.dropboxState = 'error';
+        this.patchBook(fileName, { dropboxState: 'error' });
       }
     });
   }
@@ -661,11 +676,11 @@ export class LibraryComponent implements OnInit, OnDestroy {
 
   setPersonalRating(book: LibraryBook, rating: number): void {
     if (!book.fileName) return;
-    const current = book.personalRating ?? 0;
+    const current = this.currentBook(book.fileName)?.personalRating ?? 0;
     const nextRating = rating === 1 && current === 1 ? 0 : rating;
     if (nextRating === current) return;
 
-    book.personalRating = nextRating;
+    this.patchBook(book.fileName, { personalRating: nextRating });
     this.libraryApi.updateLibraryBookRatings(book.fileName, {
       personalRating: nextRating
     }).pipe(takeUntil(this.destroy$)).subscribe({
@@ -687,25 +702,25 @@ export class LibraryComponent implements OnInit, OnDestroy {
     const ownerName = this.authService.getOwnerName();
     if (!ownerName) return;
 
-    const wasFavorited = (book.favoritedBy ?? []).includes(ownerName);
+    const fileName = book.fileName;
+    const before = this.currentBook(fileName)?.favoritedBy ?? [];
+    const wasFavorited = before.includes(ownerName);
     const newValue = !wasFavorited;
 
-    // Optimistic update
-    book.favoritedBy = newValue
-      ? [...(book.favoritedBy ?? []), ownerName]
-      : (book.favoritedBy ?? []).filter(o => o !== ownerName);
+    // Optimistic update, reverted below if the server disagrees.
+    this.patchBook(fileName, {
+      favoritedBy: newValue ? [...before, ownerName] : before.filter(o => o !== ownerName)
+    });
 
-    this.libraryApi.setLibraryBookFavorite(book.fileName, newValue).pipe(takeUntil(this.destroy$)).subscribe({
+    this.libraryApi.setLibraryBookFavorite(fileName, newValue).pipe(takeUntil(this.destroy$)).subscribe({
       next: (resp) => {
-        book.favoritedBy = resp.favoritedBy;
-        this.logger.log('[library] Updated favorite:', book.fileName, newValue);
+        this.patchBook(fileName, { favoritedBy: resp.favoritedBy });
+        this.logger.log('[library] Updated favorite:', fileName, newValue);
       },
       error: (err) => {
         this.logger.error('[library] Failed to update favorite:', err);
-        // Revert on error
-        book.favoritedBy = wasFavorited
-          ? [...(book.favoritedBy ?? []), ownerName]
-          : (book.favoritedBy ?? []).filter(o => o !== ownerName);
+        // Back to exactly what was there before the optimistic write.
+        this.patchBook(fileName, { favoritedBy: before });
       }
     });
   }
@@ -775,14 +790,16 @@ export class LibraryComponent implements OnInit, OnDestroy {
     const timestamp = new Date().getTime();
     if (resp?.coverUrl) {
       const separator = resp.coverUrl.includes('?') ? '&' : '?';
-      book.coverUrl = `${resp.coverUrl}${separator}t=${timestamp}`;
-      this.logger.log('[library] ✓ Updated book.coverUrl to:', book.coverUrl);
+      const coverUrl = `${resp.coverUrl}${separator}t=${timestamp}`;
+      this.patchBook(book.fileName, { coverUrl });
+      this.logger.log('[library] ✓ Updated book.coverUrl to:', coverUrl);
       this.logger.log('[library] === COVER UPDATE SUCCESS ===');
     } else if (resp?.success) {
       this.logger.warn('[library] Backend returned success=true but no coverUrl');
       const separator = requestedCoverUrl.includes('?') ? '&' : '?';
-      book.coverUrl = `${requestedCoverUrl}${separator}t=${timestamp}`;
-      this.logger.log('[library] Using requested URL as fallback:', book.coverUrl);
+      const coverUrl = `${requestedCoverUrl}${separator}t=${timestamp}`;
+      this.patchBook(book.fileName, { coverUrl });
+      this.logger.log('[library] Using requested URL as fallback:', coverUrl);
       this.logger.log('[library] === COVER UPDATE PARTIAL SUCCESS ===');
     } else {
       this.logger.error('[library] ✗ Backend response missing both coverUrl and success flag!');
@@ -960,10 +977,12 @@ export class LibraryComponent implements OnInit, OnDestroy {
       for (const book of selectedBooks) {
         const applied = LibraryBulkEdit.applyTo(book, result, this.ownerTags);
 
-        book.authors = applied.authors ?? book.authors;
-        book.primaryGenre = applied.primaryGenre;
-        book.tags = applied.tags;
-        book.series = applied.series;
+        this.patchBook(book.fileName, {
+          authors: applied.authors ?? book.authors,
+          primaryGenre: applied.primaryGenre,
+          tags: applied.tags,
+          series: applied.series
+        });
 
         // Update on backend
         this.libraryApi.updateLibraryBookMetadata(
@@ -1053,8 +1072,12 @@ export class LibraryComponent implements OnInit, OnDestroy {
     for (const book of selectedBooks) {
       try {
         const resp = await this.libraryApi.setLibraryBookFavorite(book.fileName, true).toPromise();
-        // Update local state
-        book.favoritedBy = resp?.favoritedBy ?? [...(book.favoritedBy ?? []), ownerName];
+        // Re-read rather than trusting the captured `book`: this loop awaits, so
+        // an earlier iteration has already replaced the array.
+        const existing = this.currentBook(book.fileName)?.favoritedBy ?? [];
+        this.patchBook(book.fileName, {
+          favoritedBy: resp?.favoritedBy ?? [...existing, ownerName]
+        });
         successCount++;
         this.logger.log('[library] Favorited book:', book.fileName);
       } catch (err) {

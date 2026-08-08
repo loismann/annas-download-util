@@ -26,7 +26,7 @@ export type DeleteCacheDialogResult = 'cancel' | 'delete';
     MatProgressSpinnerModule
   ],
   templateUrl: './delete-cache-dialog.component.html',
-  styleUrls: ['./delete-cache-dialog.component.scss']
+  styleUrl: './delete-cache-dialog.component.scss'
 })
 export class DeleteCacheDialogComponent {
   exporting = false;

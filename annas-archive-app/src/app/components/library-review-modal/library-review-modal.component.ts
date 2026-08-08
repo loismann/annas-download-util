@@ -40,7 +40,7 @@ const PREFETCH_CONCURRENCY = 3;
     MatProgressSpinnerModule
   ],
   templateUrl: './library-review-modal.component.html',
-  styleUrls: ['./library-review-modal.component.scss']
+  styleUrl: './library-review-modal.component.scss'
 })
 export class LibraryReviewModalComponent implements OnInit, OnDestroy {
   private destroy$ = new Subject<void>();

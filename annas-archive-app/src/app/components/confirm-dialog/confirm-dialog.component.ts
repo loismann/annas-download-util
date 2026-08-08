@@ -22,7 +22,7 @@ export interface ConfirmDialogData {
     MatIconModule
   ],
   templateUrl: './confirm-dialog.component.html',
-  styleUrls: ['./confirm-dialog.component.scss']
+  styleUrl: './confirm-dialog.component.scss'
 })
 export class ConfirmDialogComponent {
   constructor(

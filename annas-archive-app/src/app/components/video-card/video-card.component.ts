@@ -17,7 +17,7 @@ import { VideoDto } from '../../services/video-library-api.service';
     MatCheckboxModule
   ],
   templateUrl: './video-card.component.html',
-  styleUrls: ['./video-card.component.css']
+  styleUrl: './video-card.component.scss'
 })
 export class VideoCardComponent {
   @Input() video!: VideoDto;

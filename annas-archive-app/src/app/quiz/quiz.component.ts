@@ -46,7 +46,7 @@ interface ConfettiPiece {
   standalone: true,
   imports: [CommonModule, FormsModule, MatButtonModule],
   templateUrl: './quiz.component.html',
-  styleUrls: ['./quiz.component.css']
+  styleUrl: './quiz.component.scss'
 })
 export class QuizComponent implements OnInit, OnDestroy {
   index: QuizIndex | null = null;

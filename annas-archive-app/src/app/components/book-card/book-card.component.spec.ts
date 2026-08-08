@@ -4,6 +4,21 @@ import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 
 describe('BookCardComponent', () => {
   let component: BookCardComponent;
+  /**
+   * The card is OnPush. Assigning an @Input straight onto the instance — which is
+   * what a test does — does not mark the view dirty the way a real host binding
+   * would, so `detectChanges()` alone renders nothing. Production does not need
+   * this: `LibraryComponent` binds `[book]` in a template and hands over a new
+   * object each time (see its `patchBook`), which marks the card dirty for real.
+   */
+  /**
+   * The card is OnPush, so an input has to arrive the way Angular delivers one —
+   * `setInput` marks the component's own view dirty and runs `ngOnChanges`.
+   * Assigning straight onto the instance does neither, and `detectChanges()` then
+   * renders nothing. Production is unaffected: `LibraryComponent` binds `[book]`
+   * in a template and hands over a new object each time (see its `patchBook`).
+   */
+  const setInput = (name: string, value: unknown) => fixture.componentRef.setInput(name, value);
   let fixture: ComponentFixture<BookCardComponent>;
 
   const mockBook: LibraryBook = {
@@ -26,7 +41,7 @@ describe('BookCardComponent', () => {
 
     fixture = TestBed.createComponent(BookCardComponent);
     component = fixture.componentInstance;
-    component.book = { ...mockBook };
+    setInput('book', { ...mockBook });
     fixture.detectChanges();
   });
 
@@ -57,43 +72,43 @@ describe('BookCardComponent', () => {
     });
 
     it('should display NA for missing goodreads rating', () => {
-      component.book = { ...mockBook, goodreadsRating: null };
+      setInput('book', { ...mockBook, goodreadsRating: null });
       fixture.detectChanges();
       const goodreadsEl = fixture.nativeElement.querySelector('.goodreads-value');
       expect(goodreadsEl.textContent.trim()).toBe('NA');
     });
 
     it('should apply small tile size class', () => {
-      component.tileSize = 'small';
+      setInput('tileSize', 'small');
       fixture.detectChanges();
       const card = fixture.nativeElement.querySelector('.library-card');
       expect(card.classList.contains('library-card-small')).toBe(true);
     });
 
     it('should apply large tile size class', () => {
-      component.tileSize = 'large';
+      setInput('tileSize', 'large');
       fixture.detectChanges();
       const card = fixture.nativeElement.querySelector('.library-card');
       expect(card.classList.contains('library-card-large')).toBe(true);
     });
 
     it('should show bulk edit checkbox when bulkEditMode is true', () => {
-      component.bulkEditMode = true;
+      setInput('bulkEditMode', true);
       fixture.detectChanges();
       const checkbox = fixture.nativeElement.querySelector('.bulk-edit-checkbox-wrapper');
       expect(checkbox).toBeTruthy();
     });
 
     it('should hide bulk edit checkbox when bulkEditMode is false', () => {
-      component.bulkEditMode = false;
+      setInput('bulkEditMode', false);
       fixture.detectChanges();
       const checkbox = fixture.nativeElement.querySelector('.bulk-edit-checkbox-wrapper');
       expect(checkbox).toBeFalsy();
     });
 
     it('should apply bulk-edit-selected class when selected in bulk mode', () => {
-      component.bulkEditMode = true;
-      component.isSelected = true;
+      setInput('bulkEditMode', true);
+      setInput('isSelected', true);
       fixture.detectChanges();
       const card = fixture.nativeElement.querySelector('.library-card');
       expect(card.classList.contains('bulk-edit-selected')).toBe(true);
@@ -119,7 +134,7 @@ describe('BookCardComponent', () => {
     });
 
     it('should emit sendToKindle for dad when dad button clicked', () => {
-      component.canSendToKindle = true;
+      setInput('canSendToKindle', true);
       fixture.detectChanges();
       spyOn(component.sendToKindle, 'emit');
       const buttons = fixture.nativeElement.querySelectorAll('.card-actions button');
@@ -131,7 +146,7 @@ describe('BookCardComponent', () => {
     });
 
     it('should emit sendToKindle for mom when mom button clicked', () => {
-      component.canSendToKindle = true;
+      setInput('canSendToKindle', true);
       fixture.detectChanges();
       spyOn(component.sendToKindle, 'emit');
       const buttons = fixture.nativeElement.querySelectorAll('.card-actions button');
@@ -143,7 +158,7 @@ describe('BookCardComponent', () => {
     });
 
     it('should emit selectionToggle when checkbox is clicked', () => {
-      component.bulkEditMode = true;
+      setInput('bulkEditMode', true);
       fixture.detectChanges();
       spyOn(component.selectionToggle, 'emit');
       const checkbox = fixture.nativeElement.querySelector('mat-checkbox');
@@ -154,21 +169,21 @@ describe('BookCardComponent', () => {
 
   describe('Star rating display', () => {
     it('should fill correct number of stars based on personalRating', () => {
-      component.book = { ...mockBook, personalRating: 3 };
+      setInput('book', { ...mockBook, personalRating: 3 });
       fixture.detectChanges();
       const filledStars = fixture.nativeElement.querySelectorAll('.star-button.filled');
       expect(filledStars.length).toBe(3);
     });
 
     it('should show no filled stars when personalRating is 0', () => {
-      component.book = { ...mockBook, personalRating: 0 };
+      setInput('book', { ...mockBook, personalRating: 0 });
       fixture.detectChanges();
       const filledStars = fixture.nativeElement.querySelectorAll('.star-button.filled');
       expect(filledStars.length).toBe(0);
     });
 
     it('should show all filled stars when personalRating is 5', () => {
-      component.book = { ...mockBook, personalRating: 5 };
+      setInput('book', { ...mockBook, personalRating: 5 });
       fixture.detectChanges();
       const filledStars = fixture.nativeElement.querySelectorAll('.star-button.filled');
       expect(filledStars.length).toBe(5);
@@ -177,7 +192,7 @@ describe('BookCardComponent', () => {
 
   describe('Kindle button states', () => {
     it('should disable kindle button when canSendToKindle is false', () => {
-      component.canSendToKindle = false;
+      setInput('canSendToKindle', false);
       fixture.detectChanges();
       const buttons = fixture.nativeElement.querySelectorAll('.card-actions button');
       expect(buttons[0].disabled).toBe(true);
@@ -185,24 +200,24 @@ describe('BookCardComponent', () => {
     });
 
     it('should show Sending state when dadsKindleState is sending', () => {
-      component.book = { ...mockBook, dadsKindleState: 'sending' };
-      component.canSendToKindle = true;
+      setInput('book', { ...mockBook, dadsKindleState: 'sending' });
+      setInput('canSendToKindle', true);
       fixture.detectChanges();
       const buttons = fixture.nativeElement.querySelectorAll('.card-actions button');
       expect(buttons[0].textContent).toContain('Sending');
     });
 
     it('should show Sent state when dadsKindleState is success', () => {
-      component.book = { ...mockBook, dadsKindleState: 'success' };
-      component.canSendToKindle = true;
+      setInput('book', { ...mockBook, dadsKindleState: 'success' });
+      setInput('canSendToKindle', true);
       fixture.detectChanges();
       const buttons = fixture.nativeElement.querySelectorAll('.card-actions button');
       expect(buttons[0].textContent).toContain('Sent');
     });
 
     it('should show Retry state when dadsKindleState is error', () => {
-      component.book = { ...mockBook, dadsKindleState: 'error' };
-      component.canSendToKindle = true;
+      setInput('book', { ...mockBook, dadsKindleState: 'error' });
+      setInput('canSendToKindle', true);
       fixture.detectChanges();
       const buttons = fixture.nativeElement.querySelectorAll('.card-actions button');
       expect(buttons[0].textContent).toContain('Retry');
@@ -211,8 +226,11 @@ describe('BookCardComponent', () => {
 
   describe('Cover error handling', () => {
     it('should set placeholder on cover error', () => {
-      // Simulate image being loaded (IntersectionObserver triggered)
+      // Simulate image being loaded (IntersectionObserver triggered). `imageLoaded`
+      // is internal state, not an input, so under OnPush the view has to be marked
+      // dirty explicitly — which is exactly what `loadImage` does in production.
       component.imageLoaded = true;
+      fixture.componentRef.changeDetectorRef.markForCheck();
       fixture.detectChanges();
 
       const img = fixture.nativeElement.querySelector('.cover') as HTMLImageElement;
@@ -231,6 +249,11 @@ describe('BookCardComponent', () => {
 
       spyOn(component.coverError, 'emit');
       const img = fixture.nativeElement.querySelector('.cover') as HTMLImageElement;
+      // Point the element at the cover the card currently considers correct. The
+      // handler deliberately ignores an error whose src no longer matches — that is
+      // the recycled-card guard — so the test has to be explicit about which case
+      // it is exercising rather than relying on when the binding last flushed.
+      img.src = component.currentCoverUrl;
       const errorEvent = new Event('error');
       Object.defineProperty(errorEvent, 'target', { value: img });
 
@@ -254,14 +277,14 @@ describe('BookCardComponent', () => {
 
   describe('Author display', () => {
     it('should display multiple authors joined by comma', () => {
-      component.book = { ...mockBook, authors: ['Author One', 'Author Two'] };
+      setInput('book', { ...mockBook, authors: ['Author One', 'Author Two'] });
       fixture.detectChanges();
       const authorEl = fixture.nativeElement.querySelector('.author');
       expect(authorEl.textContent).toContain('Author One, Author Two');
     });
 
     it('should apply author-missing class when no authors', () => {
-      component.book = { ...mockBook, authors: [] };
+      setInput('book', { ...mockBook, authors: [] });
       fixture.detectChanges();
       const authorEl = fixture.nativeElement.querySelector('.author');
       expect(authorEl.classList.contains('author-missing')).toBe(true);
@@ -278,8 +301,8 @@ describe('BookCardComponent', () => {
     });
 
     it('should show empty heart when the current owner has not favorited it', () => {
-      component.currentOwnerName = 'Paul';
-      component.book = { ...mockBook, favoritedBy: [] };
+      setInput('currentOwnerName', 'Paul');
+      setInput('book', { ...mockBook, favoritedBy: [] });
       fixture.detectChanges();
       const favoriteBtn = fixture.nativeElement.querySelector('.favorite-btn');
       expect(favoriteBtn.textContent).toContain('favorite_border');
@@ -287,8 +310,8 @@ describe('BookCardComponent', () => {
     });
 
     it('should show filled heart when the current owner has favorited it', () => {
-      component.currentOwnerName = 'Paul';
-      component.book = { ...mockBook, favoritedBy: ['Paul'] };
+      setInput('currentOwnerName', 'Paul');
+      setInput('book', { ...mockBook, favoritedBy: ['Paul'] });
       fixture.detectChanges();
       const favoriteBtn = fixture.nativeElement.querySelector('.favorite-btn');
       expect(favoriteBtn.textContent).toContain('favorite');
@@ -296,16 +319,16 @@ describe('BookCardComponent', () => {
     });
 
     it('should not show someone else\'s favorite as the current owner\'s', () => {
-      component.currentOwnerName = 'Paul';
-      component.book = { ...mockBook, favoritedBy: ['Mom'] };
+      setInput('currentOwnerName', 'Paul');
+      setInput('book', { ...mockBook, favoritedBy: ['Mom'] });
       fixture.detectChanges();
       const favoriteBtn = fixture.nativeElement.querySelector('.favorite-btn');
       expect(favoriteBtn.classList.contains('favorited')).toBe(false);
     });
 
     it('should show no favorite when nobody is logged in', () => {
-      component.currentOwnerName = null;
-      component.book = { ...mockBook, favoritedBy: ['Paul'] };
+      setInput('currentOwnerName', null);
+      setInput('book', { ...mockBook, favoritedBy: ['Paul'] });
       fixture.detectChanges();
       const favoriteBtn = fixture.nativeElement.querySelector('.favorite-btn');
       expect(favoriteBtn.classList.contains('favorited')).toBe(false);

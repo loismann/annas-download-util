@@ -23,7 +23,7 @@ import { LoggerService } from '../services/logger.service';
     MatCardModule,
   ],
   templateUrl: './login.component.html',
-  styleUrls: ['./login.component.css'],
+  styleUrl: './login.component.scss',
 })
 export class LoginComponent {
   code = '';

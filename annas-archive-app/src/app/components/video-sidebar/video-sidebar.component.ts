@@ -20,7 +20,7 @@ import { MatIconModule } from '@angular/material/icon';
     MatIconModule
   ],
   templateUrl: './video-sidebar.component.html',
-  styleUrls: ['./video-sidebar.component.css']
+  styleUrl: './video-sidebar.component.scss'
 })
 export class VideoSidebarComponent {
   @Input() genres: string[] = [];

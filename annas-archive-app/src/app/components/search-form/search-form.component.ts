@@ -50,7 +50,7 @@ export interface SearchFormSubmitEvent {
     VpnToggleComponent
   ],
   templateUrl: './search-form.component.html',
-  styleUrls: ['./search-form.component.css']
+  styleUrl: './search-form.component.scss'
 })
 export class SearchFormComponent implements OnDestroy {
   @Input() loading = false;

@@ -23,7 +23,7 @@ export interface VideoPlayerDialogData {
     MatProgressSpinnerModule
   ],
   templateUrl: './video-player-dialog.component.html',
-  styleUrls: ['./video-player-dialog.component.css']
+  styleUrl: './video-player-dialog.component.scss'
 })
 export class VideoPlayerDialogComponent implements AfterViewInit, OnDestroy {
   @ViewChild('videoPlayer') videoPlayerRef!: ElementRef<HTMLVideoElement>;

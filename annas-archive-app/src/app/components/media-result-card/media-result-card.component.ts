@@ -12,7 +12,7 @@ export type MediaAddState = 'idle' | 'adding' | 'added' | 'error';
   standalone: true,
   imports: [CommonModule, MatCardModule, MatButtonModule, MatIconModule],
   templateUrl: './media-result-card.component.html',
-  styleUrl: './media-result-card.component.css'
+  styleUrl: './media-result-card.component.scss'
 })
 export class MediaResultCardComponent {
   @Input() result!: MediaLookupResult;

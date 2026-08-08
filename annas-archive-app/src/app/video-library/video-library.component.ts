@@ -44,7 +44,7 @@ import { TileSize, matchesSearchTerm } from '../shared/media-grid';
     TileSizeControlsComponent,
   ],
   templateUrl: './video-library.component.html',
-  styleUrls: ['./video-library.component.css']
+  styleUrl: './video-library.component.scss'
 })
 export class VideoLibraryComponent implements OnInit, OnDestroy {
   private destroy$ = new Subject<void>();

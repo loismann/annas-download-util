@@ -22,7 +22,7 @@ export interface CharacterGraphModalData {
   standalone: true,
   imports: [CommonModule, MatDialogModule, MatButtonModule, MatIconModule, MatProgressSpinnerModule],
   templateUrl: './character-graph-modal.component.html',
-  styleUrls: ['./character-graph-modal.component.scss']
+  styleUrl: './character-graph-modal.component.scss'
 })
 export class CharacterGraphModalComponent implements OnInit, AfterViewInit, OnDestroy {
   loading = true;

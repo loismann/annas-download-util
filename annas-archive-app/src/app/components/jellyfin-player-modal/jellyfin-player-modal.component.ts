@@ -73,7 +73,7 @@ export interface JellyfinPlayerModalData {
   standalone: true,
   imports: [CommonModule, MatDialogModule, MatButtonModule, MatFormFieldModule, MatSelectModule],
   templateUrl: './jellyfin-player-modal.component.html',
-  styleUrl: './jellyfin-player-modal.component.css'
+  styleUrl: './jellyfin-player-modal.component.scss'
 })
 export class JellyfinPlayerModalComponent implements AfterViewInit, OnDestroy {
   @ViewChild('videoEl') videoElRef?: ElementRef<HTMLVideoElement>;

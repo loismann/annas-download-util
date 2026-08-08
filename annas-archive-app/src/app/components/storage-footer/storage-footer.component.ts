@@ -17,7 +17,7 @@ const REFRESH_MS = 10 * 60 * 1000;
   standalone: true,
   imports: [CommonModule],
   templateUrl: './storage-footer.component.html',
-  styleUrl: './storage-footer.component.css'
+  styleUrl: './storage-footer.component.scss'
 })
 export class StorageFooterComponent implements OnInit, OnDestroy {
   /** Matches the sidebar to the Date Night pages' black background. */

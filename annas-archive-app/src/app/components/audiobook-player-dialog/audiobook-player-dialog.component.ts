@@ -55,7 +55,7 @@ function formatTime(seconds: number): string {
     MatFormFieldModule
   ],
   templateUrl: './audiobook-player-dialog.component.html',
-  styleUrl: './audiobook-player-dialog.component.css'
+  styleUrl: './audiobook-player-dialog.component.scss'
 })
 export class AudiobookPlayerDialogComponent implements OnInit, AfterViewInit, OnDestroy {
   @ViewChild('audioEl') audioElRef!: ElementRef<HTMLAudioElement>;

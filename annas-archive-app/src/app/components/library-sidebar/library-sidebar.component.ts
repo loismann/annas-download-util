@@ -30,7 +30,7 @@ export interface AdminFilters {
     MatIconModule
   ],
   templateUrl: './library-sidebar.component.html',
-  styleUrls: ['./library-sidebar.component.css']
+  styleUrl: './library-sidebar.component.scss'
 })
 export class LibrarySidebarComponent {
   // Filter inputs

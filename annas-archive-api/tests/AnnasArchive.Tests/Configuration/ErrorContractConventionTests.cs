@@ -351,7 +351,7 @@ public class ErrorContractConventionTests
         foreach (var (name, raw) in ApiSources())
         {
             // The one place that is supposed to build the body.
-            if (name.EndsWith("ApiResponseHelper.cs")) continue;
+            if (name.EndsWith("ApiResponse.cs")) continue;
 
             var text = WithoutComments(raw);
 

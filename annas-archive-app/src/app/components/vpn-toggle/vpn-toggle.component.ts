@@ -19,7 +19,7 @@ import { LoggerService } from '../../services/logger.service';
   standalone: true,
   imports: [CommonModule, FormsModule, MatSlideToggleModule, MatFormFieldModule, MatSelectModule],
   templateUrl: './vpn-toggle.component.html',
-  styleUrl: './vpn-toggle.component.css'
+  styleUrl: './vpn-toggle.component.scss'
 })
 export class VpnToggleComponent implements OnInit {
   // Off by default (matches the backend's default) until the real value

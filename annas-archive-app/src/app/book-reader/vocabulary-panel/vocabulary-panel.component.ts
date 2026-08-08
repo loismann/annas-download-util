@@ -54,7 +54,7 @@ import { ReaderTextUtilsService } from '../services';
     MatTooltipModule
   ],
   templateUrl: './vocabulary-panel.component.html',
-  styleUrls: ['./vocabulary-panel.component.css']
+  styleUrl: './vocabulary-panel.component.scss'
 })
 export class VocabularyPanelComponent implements OnInit, OnChanges, OnDestroy {
   /** Whether the vocabulary modal is showing. The reader owns the button that opens it. */

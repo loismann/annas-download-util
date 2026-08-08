@@ -43,7 +43,7 @@ const PAGE_SIZE = 100;
     MatCheckboxModule
   ],
   templateUrl: './photo-prints.component.html',
-  styleUrl: './photo-prints.component.css'
+  styleUrl: './photo-prints.component.scss'
 })
 export class PhotoPrintsComponent implements OnInit {
   status: PhotoPrintStatus | null = null;

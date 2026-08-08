@@ -20,7 +20,7 @@ export type RemoveFromReaderDialogResult = 'cancel' | 'remove';
     MatIconModule
   ],
   templateUrl: './remove-from-reader-dialog.component.html',
-  styleUrls: ['./remove-from-reader-dialog.component.scss']
+  styleUrl: './remove-from-reader-dialog.component.scss'
 })
 export class RemoveFromReaderDialogComponent {
   constructor(

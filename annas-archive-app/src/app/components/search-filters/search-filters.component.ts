@@ -11,7 +11,7 @@ export type DownloadWarningLevel = 'none' | 'yellow' | 'orange' | 'red';
   standalone: true,
   imports: [CommonModule],
   templateUrl: './search-filters.component.html',
-  styleUrls: ['./search-filters.component.css']
+  styleUrl: './search-filters.component.scss'
 })
 export class SearchFiltersComponent {
   @Input() downloadsLeft: number | null = null;

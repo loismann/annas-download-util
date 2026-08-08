@@ -17,7 +17,7 @@ import { DropboxEpubChapter } from '../../models/dropbox-epub.model';
     MatTooltipModule
   ],
   templateUrl: './chapter-list.component.html',
-  styleUrls: ['./chapter-list.component.css']
+  styleUrl: './chapter-list.component.scss'
 })
 export class ChapterListComponent {
   @Input() chapters: DropboxEpubChapter[] = [];

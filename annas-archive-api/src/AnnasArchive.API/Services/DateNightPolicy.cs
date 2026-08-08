@@ -80,8 +80,10 @@ public static class DateNightPolicy
     /// <summary>Mom and Dad watch; Paul runs the thing. Written as "a household
     /// member who is not Paul" rather than a literal pair so adding a fourth person
     /// does not silently exclude them.</summary>
-    public static bool IsAudience(string person) =>
-        HouseholdOwners.Names.Any(n =>
+    /// <remarks>Accepts null because callers hand over an unresolved identity
+    /// directly; nobody is not audience, which is the same answer as a stranger.</remarks>
+    public static bool IsAudience(string? person) =>
+        person is not null && HouseholdOwners.Names.Any(n =>
             !string.Equals(n, "Paul", StringComparison.OrdinalIgnoreCase) &&
             string.Equals(n, person, StringComparison.OrdinalIgnoreCase));
 

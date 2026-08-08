@@ -72,7 +72,7 @@ export interface BookEditDialogResult {
     GenreChipsEditorComponent
   ],
   templateUrl: './book-edit-dialog.component.html',
-  styleUrls: ['./book-edit-dialog.component.scss']
+  styleUrl: './book-edit-dialog.component.scss'
 })
 export class BookEditDialogComponent implements OnInit, OnDestroy {
   private destroy$ = new Subject<void>();

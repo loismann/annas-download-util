@@ -23,59 +23,21 @@ public sealed class SpotifyConversationService : ISpotifyConversationService
     private readonly ISpotifyCommandParser _parser;
     private readonly ISpotifyService _spotify;
     private readonly ISpotifyInventoryService _inventory;
-    private readonly ISpotifyInventoryJobService? _inventoryJobs;
-    private readonly ISpotifyCurrentUser? _currentUser;
-    private readonly ISpotifyKnownMusicService? _knownMusic;
-    private readonly ISpotifyDiscoveryService? _discovery;
-    private readonly ISpotifyPlanService? _plans;
+    private readonly ISpotifyInventoryJobService _inventoryJobs;
+    private readonly ISpotifyCurrentUser _currentUser;
+    private readonly ISpotifyKnownMusicService _knownMusic;
+    private readonly ISpotifyDiscoveryService _discovery;
+    private readonly ISpotifyPlanService _plans;
 
-    public SpotifyConversationService(
-        ISpotifyCommandParser parser, ISpotifyService spotify, ISpotifyInventoryService inventory)
-    {
-        _parser = parser;
-        _spotify = spotify;
-        _inventory = inventory;
-    }
-
-    public SpotifyConversationService(
-        ISpotifyCommandParser parser,
-        ISpotifyService spotify,
-        ISpotifyInventoryService inventory,
-        ISpotifyInventoryJobService inventoryJobs,
-        ISpotifyCurrentUser currentUser) : this(parser, spotify, inventory)
-    {
-        _inventoryJobs = inventoryJobs;
-        _currentUser = currentUser;
-    }
-
-    public SpotifyConversationService(
-        ISpotifyCommandParser parser,
-        ISpotifyService spotify,
-        ISpotifyInventoryService inventory,
-        ISpotifyInventoryJobService inventoryJobs,
-        ISpotifyCurrentUser currentUser,
-        ISpotifyKnownMusicService knownMusic)
-        : this(parser, spotify, inventory, inventoryJobs, currentUser)
-    {
-        _knownMusic = knownMusic;
-    }
-
-    public SpotifyConversationService(
-        ISpotifyCommandParser parser,
-        ISpotifyService spotify,
-        ISpotifyInventoryService inventory,
-        ISpotifyInventoryJobService inventoryJobs,
-        ISpotifyCurrentUser currentUser,
-        ISpotifyKnownMusicService knownMusic,
-        ISpotifyDiscoveryService discovery)
-        : this(parser, spotify, inventory, inventoryJobs, currentUser, knownMusic)
-    {
-        _discovery = discovery;
-    }
-
-    // NOTE: this constructor chain has reached six overloads. It works because DI
-    // picks the greediest one it can satisfy and tests use the shorter ones, but it
-    // is the wrong shape now — see REFACTORING_TODO.md.
+    /// <summary>
+    /// One constructor, every dependency required.
+    ///
+    /// This was a chain of five overloads. DI picks the greediest one it can satisfy,
+    /// which meant a missing registration did not fail at startup — it quietly selected
+    /// a shorter constructor, left fields null, and the feature reported itself
+    /// "not available in this environment" at runtime. That message existed only to
+    /// describe a half-built object; production always had all eight.
+    /// </summary>
     public SpotifyConversationService(
         ISpotifyCommandParser parser,
         ISpotifyService spotify,
@@ -85,8 +47,14 @@ public sealed class SpotifyConversationService : ISpotifyConversationService
         ISpotifyKnownMusicService knownMusic,
         ISpotifyDiscoveryService discovery,
         ISpotifyPlanService plans)
-        : this(parser, spotify, inventory, inventoryJobs, currentUser, knownMusic, discovery)
     {
+        _parser = parser;
+        _spotify = spotify;
+        _inventory = inventory;
+        _inventoryJobs = inventoryJobs;
+        _currentUser = currentUser;
+        _knownMusic = knownMusic;
+        _discovery = discovery;
         _plans = plans;
     }
 
@@ -98,7 +66,7 @@ public sealed class SpotifyConversationService : ISpotifyConversationService
             ? null
             : "An editable music-discovery draft is active. The user's new words may refine that draft. No Spotify content is included here.";
         var command = await _parser.ParseAsync(
-            request.Message, parserContext, _currentUser?.GetRequiredOwnerKey(), token);
+            request.Message, parserContext, _currentUser.GetRequiredOwnerKey(), token);
 
         // A playlist the user picked from a disambiguation card wins over anything
         // re-derived from their words — they already answered that question.
@@ -217,9 +185,7 @@ public sealed class SpotifyConversationService : ISpotifyConversationService
 
     private async Task<SpotifyConversationResponse> RecentContextsAsync(CancellationToken token)
     {
-        var contexts = _knownMusic != null
-            ? await _knownMusic.GetRecentContextsAsync(token)
-            : await _spotify.GetRecentPlaylistContextsAsync(token);
+        var contexts = await _knownMusic.GetRecentContextsAsync(token);
         var playlists = await _spotify.GetUserPlaylistsAsync(token);
 
         // Spotify's recently-played payload carries the playlist URI but not its
@@ -317,7 +283,7 @@ public sealed class SpotifyConversationService : ISpotifyConversationService
     private SpotifyConversationResponse CompareDraftAsync(
         SpotifyValidatedCommand command, string? draftId)
     {
-        var draft = !string.IsNullOrWhiteSpace(draftId) ? _discovery?.Get(draftId) : null;
+        var draft = !string.IsNullOrWhiteSpace(draftId) ? _discovery.Get(draftId) : null;
         if (draft == null)
             return Respond(command, "Start a music-discovery draft first so I have candidates to compare.", null);
         var unfamiliar = draft.Candidates.Count(candidate => candidate.ProbablyUnfamiliar);
@@ -380,11 +346,9 @@ public sealed class SpotifyConversationService : ISpotifyConversationService
     private async Task<SpotifyConversationResponse> AnalyzeLibraryAsync(
         SpotifyValidatedCommand command, CancellationToken token)
     {
-        IReadOnlyList<SpotifyPlaylistContents> library;
-        if (_inventoryJobs != null && _currentUser != null)
+        var ownerKey = _currentUser.GetRequiredOwnerKey();
+        var status = _inventoryJobs.GetStatus(ownerKey);
         {
-            var ownerKey = _currentUser.GetRequiredOwnerKey();
-            var status = _inventoryJobs.GetStatus(ownerKey);
             if (status.LastInventoryAt == null ||
                 status.LastInventoryAt < DateTimeOffset.UtcNow.AddMinutes(-15) ||
                 status.State is SpotifyInventoryJobState.Queued or SpotifyInventoryJobState.Running)
@@ -395,16 +359,10 @@ public sealed class SpotifyConversationService : ISpotifyConversationService
                     "I started a read-only inventory refresh. Progress is shown above; I have not changed Spotify.",
                     status);
             }
-            library = _inventory.LoadCachedLibrary(ownerKey);
-        }
-        else
-        {
-            library = await ReadLibraryAsync(token);
         }
 
-        var recent = _knownMusic != null
-            ? await _knownMusic.GetRecentContextsAsync(token)
-            : await _spotify.GetRecentPlaylistContextsAsync(token);
+        var library = _inventory.LoadCachedLibrary(ownerKey);
+        var recent = await _knownMusic.GetRecentContextsAsync(token);
         var analysis = SpotifyAnalysis.Analyze(library, recentContexts: recent);
 
         return Respond(command, DescribeAnalysis(analysis), analysis);
@@ -454,11 +412,8 @@ public sealed class SpotifyConversationService : ISpotifyConversationService
             ? "artists"
             : "tracks";
 
-        var top = _knownMusic != null
-            ? await _knownMusic.GetTopItemsAsync(
-                kind, command.Arguments.TimeRange ?? "medium_term", command.Arguments.Limit ?? 20, token)
-            : await _spotify.GetTopItemsAsync(
-                kind, command.Arguments.TimeRange ?? "medium_term", command.Arguments.Limit ?? 20, token);
+        var top = await _knownMusic.GetTopItemsAsync(
+            kind, command.Arguments.TimeRange ?? "medium_term", command.Arguments.Limit ?? 20, token);
 
         var window = top.TimeRange switch
         {
@@ -484,8 +439,6 @@ public sealed class SpotifyConversationService : ISpotifyConversationService
     private async Task<SpotifyConversationResponse> PlanCreateAsync(
         SpotifyValidatedCommand command, string? draftId, CancellationToken token)
     {
-        if (_plans is null || _currentUser is null)
-            return Respond(command, "Change plans are not available in this environment.", null);
 
         if (string.IsNullOrWhiteSpace(draftId))
             return Respond(command, "Start a music-discovery draft first, then I can create it.", null);
@@ -500,10 +453,8 @@ public sealed class SpotifyConversationService : ISpotifyConversationService
     private async Task<SpotifyConversationResponse> PlanAddItemsAsync(
         SpotifyValidatedCommand command, string? draftId, CancellationToken token)
     {
-        if (_plans is null || _currentUser is null)
-            return Respond(command, "Change plans are not available in this environment.", null);
 
-        var draft = string.IsNullOrWhiteSpace(draftId) ? null : _discovery?.Get(draftId);
+        var draft = string.IsNullOrWhiteSpace(draftId) ? null : _discovery.Get(draftId);
         if (draft is null)
             return Respond(command, "Start a music-discovery draft first so I know what to add.", null);
 
@@ -523,8 +474,6 @@ public sealed class SpotifyConversationService : ISpotifyConversationService
     private async Task<SpotifyConversationResponse> PlanRenameAsync(
         SpotifyValidatedCommand command, CancellationToken token)
     {
-        if (_plans is null || _currentUser is null)
-            return Respond(command, "Change plans are not available in this environment.", null);
 
         return await BuildAndDescribeAsync(command, new SpotifyBuildPlanRequest(
             SpotifyPlanAction.RenamePlaylist,
@@ -541,8 +490,6 @@ public sealed class SpotifyConversationService : ISpotifyConversationService
     private async Task<SpotifyConversationResponse> PlanRemoveItemsAsync(
         SpotifyValidatedCommand command, SpotifyConversationRequest request, CancellationToken token)
     {
-        if (_plans is null || _currentUser is null)
-            return Respond(command, "Change plans are not available in this environment.", null);
 
         var (resolution, playlists) = await ResolveAsync(command, request.PlaylistId, token);
         if (resolution.Kind != SpotifyPlaylistMatchKind.Resolved)
@@ -578,8 +525,6 @@ public sealed class SpotifyConversationService : ISpotifyConversationService
     private async Task<SpotifyConversationResponse> PlanMergeAsync(
         SpotifyValidatedCommand command, CancellationToken token)
     {
-        if (_plans is null || _currentUser is null)
-            return Respond(command, "Change plans are not available in this environment.", null);
 
         var names = SpotifyActionCatalog.NamedPlaylists(command.Arguments);
 
@@ -601,8 +546,6 @@ public sealed class SpotifyConversationService : ISpotifyConversationService
     private async Task<SpotifyConversationResponse> PlanLibraryRemovalAsync(
         SpotifyValidatedCommand command, CancellationToken token)
     {
-        if (_plans is null || _currentUser is null)
-            return Respond(command, "Change plans are not available in this environment.", null);
 
         var names = SpotifyActionCatalog.NamedPlaylists(command.Arguments);
 
@@ -647,7 +590,7 @@ public sealed class SpotifyConversationService : ISpotifyConversationService
     private async Task<SpotifyConversationResponse> BuildAndDescribeAsync(
         SpotifyValidatedCommand command, SpotifyBuildPlanRequest request, CancellationToken token)
     {
-        var result = await _plans!.BuildAsync(_currentUser!.GetRequiredOwnerKey(), request, token);
+        var result = await _plans.BuildAsync(_currentUser.GetRequiredOwnerKey(), request, token);
 
         if (result.Refused)
             return Respond(command, result.Refusal!, null);

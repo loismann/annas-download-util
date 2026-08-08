@@ -28,7 +28,7 @@ interface SeasonChoice {
   standalone: true,
   imports: [CommonModule, FormsModule, MatDialogModule, MatButtonModule, MatCheckboxModule],
   templateUrl: './season-picker-modal.component.html',
-  styleUrl: './season-picker-modal.component.css'
+  styleUrl: './season-picker-modal.component.scss'
 })
 export class SeasonPickerModalComponent {
   choices: SeasonChoice[];

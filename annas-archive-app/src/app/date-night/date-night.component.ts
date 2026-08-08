@@ -15,6 +15,10 @@ import {
   DateNightScheduleModalComponent, DateNightScheduleModalData
 } from '../components/date-night-schedule-modal/date-night-schedule-modal.component';
 import { formatCountdown, formatHawaiiSlot, hawaiiSlotToUtcIso, secondsUntil } from './countdown.util';
+import {
+  canRetryDownload, canStartMovie, downloadStatusLabel, myVotesComplete, otherPerson,
+  otherVotesComplete, resolvedMovie, shouldOpenScheduleModal, showtimePassed
+} from './date-night-view';
 
 /**
  * The Date Night page — where Mom and Dad pick movies and settle on a night.
@@ -783,7 +787,7 @@ export class DateNightComponent implements OnInit, OnDestroy {
    * week's resolved pick — CycleView.movies already carries every drawn
    * movie's metadata, so no separate backend lookup is needed. */
   resolvedMovie(c: CycleView): CycleMovieView | undefined {
-    return c.movies.find(m => m.movieId === c.resolvedMovieId);
+    return resolvedMovie(c);
   }
 
   onPosterError(event: Event): void {
@@ -793,32 +797,18 @@ export class DateNightComponent implements OnInit, OnDestroy {
   /** Auto-opens a daily "your turn" reminder for an unanswered proposal, or
    * the one-time "called off" notice for the person who didn't cancel. */
   private maybeOpenScheduleModal(c: CycleView): void {
-    if (c.status !== 'Resolved') return;
-    const s = c.schedule;
-    if (!s || !this.myName) return;
-    if (s.status === 'AwaitingApproval' && c.shouldShowScheduleReminderToday) {
-      this.openScheduleModal();
-      return;
-    }
-    if (s.status === 'Cancelled' &&
-        s.cancelledBy !== this.myName &&
-        !s.acknowledgedBy.includes(this.myName))
-      this.openScheduleModal();
+    if (shouldOpenScheduleModal(c, this.myName)) this.openScheduleModal();
   }
 
   /** Whether every one of this week's movies has my vote recorded. */
   myVotesComplete(c: CycleView): boolean {
-    return c.movies.every(m => c.myVotes[m.movieId] != null);
+    return myVotesComplete(c);
   }
 
   /** Whether the other person has voted on everything too — never exposes
    *  *what* they voted, only whether they've finished. */
   otherVotesComplete(c: CycleView): boolean {
-    return c.movies.every(m => this.otherVoteFor(m) != null);
-  }
-
-  private otherVoteFor(m: CycleMovieView): string | undefined {
-    return this.myName === 'Mom' ? m.dadVote : m.momVote;
+    return otherVotesComplete(c, this.myName);
   }
 
   openFlyer(): void {
@@ -840,7 +830,7 @@ export class DateNightComponent implements OnInit, OnDestroy {
   }
 
   otherPerson(): string {
-    return this.myName === 'Mom' ? 'Dad' : 'Mom';
+    return otherPerson(this.myName);
   }
 
   formatSlot(slot: ProposedSlot): string {
@@ -865,15 +855,11 @@ export class DateNightComponent implements OnInit, OnDestroy {
   }
 
   showtimePassed(slot?: ProposedSlot): boolean {
-    if (!slot) return false;
-    return new Date(hawaiiSlotToUtcIso(slot)).getTime() < Date.now();
+    return showtimePassed(slot, Date.now());
   }
 
   canStartMovie(slot?: ProposedSlot): boolean {
-    if (!slot) return false;
-    const showtime = new Date(hawaiiSlotToUtcIso(slot)).getTime();
-    const now = Date.now();
-    return now >= showtime && now <= showtime + 60 * 60 * 1000;
+    return canStartMovie(slot, Date.now());
   }
 
   startMovie(movie: CycleMovieView): void {
@@ -893,19 +879,11 @@ export class DateNightComponent implements OnInit, OnDestroy {
   }
 
   downloadStatusLabel(c: CycleView): string | null {
-    if (this.resolvedMovie(c)?.hasFile) return 'Downloaded and ready to play';
-    switch (c.schedule?.downloadStatus) {
-      case 'Searching': return 'Searching Radarr for a release…';
-      case 'Requested': return 'Sent to Radarr — downloading now';
-      case 'Monitoring': return 'Radarr is monitoring it; no acceptable release was available yet';
-      case 'Failed': return 'Radarr could not start this download';
-      default: return c.schedule?.status === 'Locked' ? 'Waiting to start the Radarr download' : null;
-    }
+    return downloadStatusLabel(c);
   }
 
   canRetryDownload(c: CycleView): boolean {
-    if (this.resolvedMovie(c)?.hasFile || c.schedule?.status !== 'Locked') return false;
-    return c.schedule.downloadStatus !== 'Searching' && c.schedule.downloadStatus !== 'Requested';
+    return canRetryDownload(c);
   }
 
   retryDownload(): void {

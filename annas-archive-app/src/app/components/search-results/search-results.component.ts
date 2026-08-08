@@ -71,7 +71,7 @@ function parseFileSizeKb(fileSize: string): number {
     MatMenuModule
   ],
   templateUrl: './search-results.component.html',
-  styleUrls: ['./search-results.component.css']
+  styleUrl: './search-results.component.scss'
 })
 export class SearchResultsComponent {
   @Input() groups: DisplayGroup[] = [];

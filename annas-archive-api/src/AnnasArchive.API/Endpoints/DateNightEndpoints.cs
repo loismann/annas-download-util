@@ -241,7 +241,7 @@ public static class DateNightEndpoints
             // one-sheets. Enough to fill a long scrolling marquee without the
             // same poster coming round again too soon.
             posters = pool
-                .Select(PosterUrl)
+                .Select(DateNightViews.PosterUrl)
                 .Where(u => !string.IsNullOrWhiteSpace(u))
                 .OrderBy(_ => Random.Shared.Next())
                 .Take(24)
@@ -332,7 +332,7 @@ public static class DateNightEndpoints
                     m["title"]?.ToString() ?? "",
                     (int?)m["year"],
                     m["overview"]?.ToString(),
-                    PosterUrl(m),
+                    DateNightViews.PosterUrl(m),
                     (bool?)m["hasFile"] ?? false,
                     (bool?)m["monitored"] ?? false,
                     a?.IsAvailable,
@@ -364,39 +364,6 @@ public static class DateNightEndpoints
     /// this week's drawn movie ids against already-fetched pool metadata (no second
     /// Radarr call) and attaches the already-prepared AI pitch. This rendering path
     /// is deliberately cache-only; cycle issuance maintains a five-movie reserve.</summary>
-    private static List<CycleMovieView> ResolveCycleMovies(
-        WeeklyCycle cycle, List<JsonObject> poolMovies, DateNightSummaryService summaries)
-    {
-        var byId = poolMovies
-            .Where(m => (int?)m["id"] is int)
-            .ToDictionary(m => (int)m["id"]!);
-
-        var result = new List<CycleMovieView>();
-        foreach (var id in cycle.MovieIds)
-        {
-            byId.TryGetValue(id, out var movie);
-            cycle.Votes.TryGetValue("Mom", out var momVotes);
-            cycle.Votes.TryGetValue("Dad", out var dadVotes);
-            string? momVote = null, dadVote = null;
-            momVotes?.TryGetValue(id, out momVote);
-            dadVotes?.TryGetValue(id, out dadVote);
-
-            var title = movie?["title"]?.ToString() ?? $"#{id}";
-            var overview = movie?["overview"]?.ToString();
-            var year = movie is null ? null : (int?)movie["year"];
-            var tmdbId = movie is null ? null : (int?)movie["tmdbId"];
-            var genre = movie is null ? null : GenreLine(movie);
-            var hasFile = movie is not null && ((bool?)movie["hasFile"] ?? false);
-            var monitored = movie is not null && ((bool?)movie["monitored"] ?? false);
-            var summary = summaries.GetCachedSummary(id);
-
-            result.Add(new CycleMovieView(
-                id, title, movie is null ? null : PosterUrl(movie), tmdbId, overview, summary,
-                year, genre, hasFile, monitored, momVote, dadVote));
-        }
-        return result;
-    }
-
     private static async Task<CycleAdminView> BuildCycleAdminViewAsync(
         DateNightCycleService cycles, DateNightSummaryService summaries, List<JsonObject> poolMovies,
         Dictionary<int, string> allTitlesById, bool isTest)
@@ -412,31 +379,15 @@ public static class DateNightEndpoints
         // MarkWatchedAsync does), so they won't be in poolMovies — allTitlesById
         // covers every Radarr movie, tagged or not, so a recovered movie still shows
         // a real title instead of a bare "#412".
-        var recoverable = lists
-            .Where(kv => kv.Value.NeverShowAgain || kv.Value.Watched ||
-                         (kv.Value.LastDisagreedUtc is DateTime d && d > coolingCutoff))
-            .Select(kv =>
-            {
-                var (id, entry) = (kv.Key, kv.Value);
-                var title = allTitlesById.TryGetValue(id, out var t) ? t : $"#{id}";
-                if (entry.NeverShowAgain)
-                    return new RecoverableMovie(id, title, "Never show again", entry.NeverShowAgainUtc ?? DateTime.UtcNow);
-                if (entry.Watched)
-                    return new RecoverableMovie(id, title, "Watched — retired from pool", entry.WatchedUtc ?? DateTime.UtcNow);
-                return new RecoverableMovie(id, title, "Disagreed — cooling off", entry.LastDisagreedUtc!.Value);
-            })
-            .OrderByDescending(r => r.Since)
-            .ToList();
-
-        // Skip only ever applies to the real cycle — the dry run never shows "Skipped".
-        var noCycleStatus = !isTest && skip.SkipUntilUtc > DateTime.UtcNow ? "Skipped" : "None";
+        var recoverable = DateNightViews.RecoverableMovies(lists, allTitlesById, coolingCutoff);
+        var noCycleStatus = DateNightViews.NoCycleStatus(skip, isTest, DateTime.UtcNow);
 
         return new CycleAdminView(
             cycle?.CycleId,
             cycle?.Status ?? noCycleStatus,
             cycle?.DeadlineUtc,
             cycle?.ResolvedUtc,
-            cycle is null ? [] : ResolveCycleMovies(cycle, poolMovies, summaries),
+            cycle is null ? [] : DateNightViews.ResolveCycleMovies(cycle, poolMovies, summaries.GetCachedSummary),
             cycle?.ResolvedMovieId,
             cycle?.Schedule,
             skip,
@@ -450,17 +401,12 @@ public static class DateNightEndpoints
     /// <summary>Whether this person should even be allowed to touch the weekly cycle —
     /// same audience rule as the announcement, so Paul can't accidentally vote and Mom/Dad
     /// can't skip on his behalf.</summary>
-    private static bool IsAudience(string? person) =>
-        person is not null && HouseholdOwners.Names.Any(n =>
-            !string.Equals(n, "Paul", StringComparison.OrdinalIgnoreCase) &&
-            string.Equals(n, person, StringComparison.OrdinalIgnoreCase));
-
     private static readonly IResult FeatureDarkResult =
         Results.Json(new { error = "Date Night is not live yet." }, statusCode: StatusCodes.Status404NotFound);
 
     private static IResult? AudienceActionGate(DateNightCycleService cycles, string? person, bool isTest)
     {
-        if (!IsAudience(person)) return NotAudienceResult;
+        if (!DateNightPolicy.IsAudience(person)) return NotAudienceResult;
         return !isTest && !cycles.IsLive() ? FeatureDarkResult : null;
     }
 
@@ -497,7 +443,7 @@ public static class DateNightEndpoints
         HttpContext context, DateNightAvailabilityService availability, DateNightCycleService cycles, DateNightSummaryService summaries)
     {
         var (person, isTest) = ResolveDateNightContext(context);
-        if (!IsAudience(person))
+        if (!DateNightPolicy.IsAudience(person))
             return Results.Ok(new CycleView(null, "None", null, [], new(), null, null, null, false, false, false));
         if (!isTest && !cycles.IsLive())
             return Results.Ok(new CycleView(null, "None", null, [], new(), null, null, null, false, false, false));
@@ -513,7 +459,7 @@ public static class DateNightEndpoints
         }
 
         var poolMovies = await availability.GetPoolMoviesAsync();
-        var moviesView = ResolveCycleMovies(cycle, poolMovies, summaries);
+        var moviesView = DateNightViews.ResolveCycleMovies(cycle, poolMovies, summaries.GetCachedSummary);
         var myVotes = cycle.Votes.TryGetValue(person!, out var votes) ? votes : new Dictionary<int, string>();
         // Finished Watching removes the winner's Date Night pool tag, so it is no
         // longer present in poolMovies. Prefer the title persisted at conclusion;
@@ -556,7 +502,7 @@ public static class DateNightEndpoints
     {
         // No test-cycle equivalent — skip is a real, household-wide concept.
         var (person, isTest) = ResolveDateNightContext(context);
-        if (!IsAudience(person)) return NotAudienceResult;
+        if (!DateNightPolicy.IsAudience(person)) return NotAudienceResult;
         if (isTest) return ApiResponse.Conflict("Skip is disabled in the isolated dry run.");
         if (!cycles.IsLive()) return FeatureDarkResult;
 
@@ -672,7 +618,7 @@ public static class DateNightEndpoints
     private static async Task<IResult> HandleShowtimeCheck(HttpContext context, DateNightCycleService cycles)
     {
         var (person, isTest) = ResolveDateNightContext(context);
-        if (!IsAudience(person) || (!isTest && !cycles.IsLive()))
+        if (!DateNightPolicy.IsAudience(person) || (!isTest && !cycles.IsLive()))
             return Results.Ok(new ShowtimeStatus(false, null, null));
         return Results.Ok(await cycles.GetShowtimeStatusAsync(isTest));
     }
@@ -800,23 +746,4 @@ public static class DateNightEndpoints
     /// e.g. "Action · Comedy". Radarr returns this natively (this app's own household
     /// genre tagging deliberately lives under the separate "customGenres" key to avoid
     /// colliding with it — see MediaLibraryEndpoints).</summary>
-    private static string? GenreLine(JsonObject movie)
-    {
-        var genres = (movie["genres"] as JsonArray)?
-            .Select(g => g?.ToString())
-            .Where(g => !string.IsNullOrWhiteSpace(g))
-            .Take(2)
-            .ToList();
-        return genres is { Count: > 0 } ? string.Join(" · ", genres) : null;
-    }
-
-    /// <summary>Radarr serves posters from its own host; the remote (TMDB) URL is the
-    /// one that works from a browser without proxying through Radarr's API key.</summary>
-    private static string? PosterUrl(JsonObject movie)
-    {
-        var images = movie["images"] as JsonArray;
-        var poster = images?.OfType<JsonObject>()
-            .FirstOrDefault(i => string.Equals(i["coverType"]?.ToString(), "poster", StringComparison.OrdinalIgnoreCase));
-        return poster?["remoteUrl"]?.ToString() ?? poster?["url"]?.ToString();
-    }
 }

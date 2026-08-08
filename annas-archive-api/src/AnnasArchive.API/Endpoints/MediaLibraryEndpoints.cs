@@ -130,7 +130,7 @@ public static class MediaLibraryEndpoints
         return app;
     }
 
-    private static readonly HashSet<string> ValidOwners = new(StringComparer.OrdinalIgnoreCase) { "Paul", "Mom", "Dad" };
+
 
     private static async Task<IResult> HandleGetDownloadedTv(ISonarrService sonarr, IMediaMetadataService metadata)
     {
@@ -390,7 +390,7 @@ public static class MediaLibraryEndpoints
                 return ApiResponse.NotFound("Jellyfin hasn't matched this movie yet — it may still be scanning.");
 
             var accessToken = context.Request.Query["access_token"].ToString();
-            return Results.Text(RewriteHlsPlaylist(result.PlaylistText, result.ItemId, accessToken), "application/vnd.apple.mpegurl");
+            return Results.Text(MediaLibraryRules.RewriteHlsPlaylist(result.PlaylistText, result.ItemId, accessToken), "application/vnd.apple.mpegurl");
         }
         catch (HttpRequestException ex)
         {
@@ -413,7 +413,7 @@ public static class MediaLibraryEndpoints
                 return ApiResponse.NotFound("Jellyfin hasn't matched this episode yet — it may still be scanning.");
 
             var accessToken = context.Request.Query["access_token"].ToString();
-            return Results.Text(RewriteHlsPlaylist(result.PlaylistText, result.ItemId, accessToken), "application/vnd.apple.mpegurl");
+            return Results.Text(MediaLibraryRules.RewriteHlsPlaylist(result.PlaylistText, result.ItemId, accessToken), "application/vnd.apple.mpegurl");
         }
         catch (HttpRequestException ex)
         {
@@ -455,7 +455,7 @@ public static class MediaLibraryEndpoints
                 }
                 var accessToken = context.Request.Query["access_token"].ToString();
                 context.Response.ContentType = "application/vnd.apple.mpegurl";
-                await context.Response.WriteAsync(RewriteHlsPlaylist(text, itemId, accessToken), context.RequestAborted);
+                await context.Response.WriteAsync(MediaLibraryRules.RewriteHlsPlaylist(text, itemId, accessToken), context.RequestAborted);
                 return;
             }
 
@@ -481,23 +481,6 @@ public static class MediaLibraryEndpoints
     /// can't reach. Carries the same ?access_token= the browser used to reach this
     /// endpoint, so every follow-up request still passes .RequireAuthorization()
     /// like every other media route.</summary>
-    private static string RewriteHlsPlaylist(string playlistText, string itemId, string accessToken)
-    {
-        var lines = playlistText.Split('\n');
-        for (var i = 0; i < lines.Length; i++)
-        {
-            var line = lines[i].TrimEnd('\r');
-            if (line.Length == 0 || line.StartsWith('#'))
-            {
-                lines[i] = line;
-                continue;
-            }
-            var sep = line.Contains('?') ? '&' : '?';
-            lines[i] = $"/api/media/hls/{itemId}/{line}{sep}access_token={Uri.EscapeDataString(accessToken)}";
-        }
-        return string.Join('\n', lines);
-    }
-
     private static async Task<IResult> HandleSaveMovieProgress(
         [FromBody] SaveMovieProgressRequest request, HttpContext context, IJellyfinService jellyfin)
     {
@@ -649,7 +632,7 @@ public static class MediaLibraryEndpoints
 
     private static IResult HandleSetTvMetadata([FromRoute] int seriesId, [FromBody] SetMediaMetadataRequest request, IMediaMetadataService metadata)
     {
-        var validated = ValidateMetadata(request);
+        var validated = MediaLibraryRules.ValidateMetadata(request);
         if (validated is null)
             return ApiResponse.BadRequest("owners may only contain Paul, Mom, Dad");
 
@@ -669,7 +652,7 @@ public static class MediaLibraryEndpoints
 
     private static IResult HandleSetMovieMetadata([FromRoute] int movieId, [FromBody] SetMediaMetadataRequest request, IMediaMetadataService metadata)
     {
-        var validated = ValidateMetadata(request);
+        var validated = MediaLibraryRules.ValidateMetadata(request);
         if (validated is null)
             return ApiResponse.BadRequest("owners may only contain Paul, Mom, Dad");
 
@@ -786,26 +769,6 @@ public static class MediaLibraryEndpoints
             Log.Warning("[MediaLibrary] Sonarr grab release failed: {Message}", ex.Message);
             return Results.Json(new { error = "Sonarr rejected the grab request" }, statusCode: StatusCodes.Status502BadGateway);
         }
-    }
-
-    private static MediaItemMetadata? ValidateMetadata(SetMediaMetadataRequest request)
-    {
-        var owners = (request.Owners ?? new List<string>())
-            .Select(o => o.Trim())
-            .Where(o => o.Length > 0)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-        if (owners.Any(o => !ValidOwners.Contains(o)))
-            return null;
-
-        var genres = (request.Genres ?? new List<string>())
-            .Select(g => g.Trim())
-            .Where(g => g.Length > 0)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-        return new MediaItemMetadata(owners, genres);
     }
 
     /// <summary>Merges each item's recorded owners/genres (if any) into its raw

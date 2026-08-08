@@ -1,3 +1,4 @@
+using Moq;
 using AnnasArchive.API.Models;
 using AnnasArchive.API.Services;
 using AnnasArchive.API.Services.Spotify;
@@ -230,9 +231,8 @@ public class SpotifyConversationServiceTests
     public async Task ExplainsWhatItCanAndCannotDoWithoutCallingSpotify()
     {
         var spotify = new FakeSpotify();
-        var service = new SpotifyConversationService(
-            new FakeParser(SpotifyReadAction.ExplainCapability, new SpotifyCommandArguments()),
-            spotify, new SpotifyInventoryService(spotify));
+        var service = BuildService(
+            new FakeParser(SpotifyReadAction.ExplainCapability, new SpotifyCommandArguments()), spotify);
 
         var response = await service.HandleAsync(new SpotifyConversationRequest("what can you do"));
 
@@ -259,7 +259,7 @@ public class SpotifyConversationServiceTests
         var spotify = new FakeSpotify();
         var parser = new FakeParser(SpotifyReadAction.Unknown, new SpotifyCommandArguments(),
             clarification: "Did you mean the artist or the playlist?");
-        var service = new SpotifyConversationService(parser, spotify, new SpotifyInventoryService(spotify));
+        var service = BuildService(parser, spotify);
 
         var response = await service.HandleAsync(new SpotifyConversationRequest("Chill"));
 
@@ -433,7 +433,7 @@ public class SpotifyConversationServiceTests
         // tests), so passing transcript here is what would leak — hence null.
         var parser = new RecordingParser();
         var spotify = new FakeSpotify().WithPlaylists(Owned("secret-id", "Lucy + Laura", 3));
-        var service = new SpotifyConversationService(parser, spotify, new SpotifyInventoryService(spotify));
+        var service = BuildService(parser, spotify);
 
         await service.HandleAsync(new SpotifyConversationRequest("show my playlists"));
 
@@ -466,8 +466,7 @@ public class SpotifyConversationServiceTests
     {
         var spotify = new FakeSpotify();
         configure?.Invoke(spotify);
-        return new SpotifyConversationService(
-            new FakeParser(action, arguments), spotify, new SpotifyInventoryService(spotify));
+        return BuildService(new FakeParser(action, arguments), spotify);
     }
 
     private static SpotifyPlaylistDto Owned(string id, string name, int? count) =>
@@ -494,6 +493,103 @@ public class SpotifyConversationServiceTests
 
     private static SpotifyPlaylistItemsPageDto Unavailable(string id) =>
         new(id, [], 0, 0, 50, false, SpotifyContentsAccess.Unavailable);
+
+    /// <summary>
+    /// Builds the service with every dependency supplied. The constructor takes all
+    /// eight because a shorter one let a missing DI registration pass silently; these
+    /// tests only care about three of them, so the rest are Moq defaults.
+    /// </summary>
+    private static SpotifyConversationService BuildService(
+        ISpotifyCommandParser parser, ISpotifyService spotify) =>
+        new(parser,
+            spotify,
+            new CachedInventory(spotify),
+            FreshInventoryJobs(),
+            Mock.Of<ISpotifyCurrentUser>(x => x.GetRequiredOwnerKey() == "paul"),
+            new KnownMusicFromSpotify(spotify),
+            Mock.Of<ISpotifyDiscoveryService>(),
+            Mock.Of<ISpotifyPlanService>());
+
+    /// <summary>
+    /// Reports a completed inventory from a moment ago, so analysis proceeds on cached
+    /// contents instead of queueing a scan. These tests are about what the analysis
+    /// *says*, not about the job that feeds it.
+    /// </summary>
+    private static ISpotifyInventoryJobService FreshInventoryJobs()
+    {
+        var status = new SpotifyInventoryStatusDto(
+            null, SpotifyInventoryJobState.Complete, 0, 0, 0, 0, 0,
+            null, null, null, DateTimeOffset.UtcNow);
+
+        var jobs = new Mock<ISpotifyInventoryJobService>();
+        jobs.Setup(j => j.GetStatus(It.IsAny<string>())).Returns(status);
+        jobs.Setup(j => j.Start(It.IsAny<string>())).Returns(status);
+        return jobs.Object;
+    }
+
+    /// <summary>
+    /// The real in-memory inventory, plus a cache that actually holds something.
+    ///
+    /// <c>AnalyzeLibraryAsync</c> reads the *cached* library — production always has a
+    /// SQLite-backed store behind it — but the one-argument test harness has no store,
+    /// so <c>LoadCachedLibrary</c> would return nothing and every analysis assertion
+    /// would be about an empty library. This serves the cache from the same fake the
+    /// rest of the test uses.
+    /// </summary>
+    private sealed class CachedInventory(ISpotifyService spotify) : ISpotifyInventoryService
+    {
+        private readonly SpotifyInventoryService _inner = new(spotify);
+
+        public Task<IReadOnlyList<SpotifyPlaylistDto>> GetPlaylistsAsync(
+            bool forceRefresh = false, CancellationToken token = default) =>
+            _inner.GetPlaylistsAsync(forceRefresh, token);
+
+        public Task<SpotifyPlaylistContents> GetContentsAsync(
+            SpotifyPlaylistDto playlist, CancellationToken token = default) =>
+            _inner.GetContentsAsync(playlist, token);
+
+        public Task<IReadOnlyList<SpotifyPlaylistContents>> GetAllContentsAsync(
+            IReadOnlyList<SpotifyPlaylistDto> playlists, CancellationToken token = default) =>
+            _inner.GetAllContentsAsync(playlists, token);
+
+        public Task<IReadOnlyList<SpotifyPlaylistContents>> RefreshForOwnerAsync(
+            string ownerKey,
+            Action<int, int, SpotifyPlaylistContents>? progress = null,
+            CancellationToken token = default) =>
+            _inner.RefreshForOwnerAsync(ownerKey, progress, token);
+
+        public IReadOnlyList<SpotifyPlaylistContents> LoadCachedLibrary(string ownerKey)
+        {
+            var playlists = _inner.GetPlaylistsAsync().GetAwaiter().GetResult();
+            return _inner.GetAllContentsAsync(playlists).GetAwaiter().GetResult();
+        }
+    }
+
+    /// <summary>
+    /// Serves recent contexts and top items straight from the fake Spotify.
+    ///
+    /// The conversation service used to fall back to <c>ISpotifyService</c> when no
+    /// known-music service was injected, and these tests relied on that fallback. The
+    /// fallback is gone — every dependency is required now — so the double does the
+    /// same delegation explicitly, keeping the tests about what the *response says*
+    /// rather than about which collaborator produced the numbers.
+    /// </summary>
+    private sealed class KnownMusicFromSpotify(ISpotifyService spotify) : ISpotifyKnownMusicService
+    {
+        public Task<SpotifyKnownMusicReport> GetAsync(CancellationToken token = default) =>
+            throw new NotSupportedException("Not exercised by these tests.");
+
+        public Task<SpotifyTopItemsDto> GetTopItemsAsync(
+            string kind, string window, int limit = 20, CancellationToken token = default) =>
+            spotify.GetTopItemsAsync(kind, window, limit, token);
+
+        public Task<IReadOnlyList<SpotifyRecentPlaylistContextDto>> GetRecentContextsAsync(
+            CancellationToken token = default) =>
+            spotify.GetRecentPlaylistContextsAsync(token);
+
+        public SpotifyKnownMusicOverrideResult ApplyOverride(SpotifyKnownMusicOverrideRequest request) =>
+            throw new NotSupportedException("Not exercised by these tests.");
+    }
 
     private sealed class FakeParser(
         SpotifyReadAction action, SpotifyCommandArguments arguments, string? clarification = null)

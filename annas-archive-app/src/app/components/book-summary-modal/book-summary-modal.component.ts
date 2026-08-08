@@ -18,7 +18,7 @@ export interface BookSummaryModalData {
   standalone: true,
   imports: [CommonModule, MatDialogModule, MatButtonModule],
   templateUrl: './book-summary-modal.component.html',
-  styleUrl: './book-summary-modal.component.css'
+  styleUrl: './book-summary-modal.component.scss'
 })
 export class BookSummaryModalComponent {
   constructor(

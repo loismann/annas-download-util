@@ -9,6 +9,14 @@ import { LibraryBook } from '../components/book-card/book-card.component';
 
 describe('LibraryComponent', () => {
   let component: LibraryComponent;
+  /**
+   * The component replaces a changed book with a new object rather than mutating
+   * it — the prerequisite for `BookCardComponent` being OnPush. A reference the
+   * test captured before the call is therefore the *old* state by design, so
+   * assertions have to look the book up again.
+   */
+  const current = (book: { fileName?: string }) =>
+    component.books.find(b => b.fileName === book.fileName)!;
   let fixture: ComponentFixture<LibraryComponent>;
   let mockLibraryApiService: jasmine.SpyObj<LibraryApiService>;
   let mockDialog: jasmine.SpyObj<MatDialog>;
@@ -136,8 +144,8 @@ describe('LibraryComponent', () => {
         );
 
         // Book's coverUrl should be updated with cache-busting timestamp
-        expect(testBook.coverUrl).toContain(newCoverUrl);
-        expect(testBook.coverUrl).toContain('?t=');
+        expect(current(testBook).coverUrl).toContain(newCoverUrl);
+        expect(current(testBook).coverUrl).toContain('?t=');
         done();
       }, 150);
     });
@@ -266,7 +274,7 @@ describe('LibraryComponent', () => {
       // Assert - Error should be logged, but component should not crash
       setTimeout(() => {
         expect(console.error).toHaveBeenCalled();
-        expect(testBook.coverUrl).toBe('http://example.com/old-cover.jpg'); // Unchanged
+        expect(current(testBook).coverUrl).toBe('http://example.com/old-cover.jpg'); // Unchanged
         done();
       }, 150);
     });
@@ -333,9 +341,9 @@ describe('LibraryComponent', () => {
 
       // Assert - Should use & instead of ? for timestamp (after blob fetch fails and falls back to URL method)
       setTimeout(() => {
-        expect(testBook.coverUrl).toContain(newCoverUrl);
-        expect(testBook.coverUrl).toContain('&t=');
-        expect(testBook.coverUrl).not.toContain('?t=');
+        expect(current(testBook).coverUrl).toContain(newCoverUrl);
+        expect(current(testBook).coverUrl).toContain('&t=');
+        expect(current(testBook).coverUrl).not.toContain('?t=');
         done();
       }, 150);
     });
@@ -830,19 +838,19 @@ describe('LibraryComponent', () => {
         component.sendToKindle(book2, 'dad');
 
         // Both books should be in sending state
-        expect(book1.dadsKindleState).toBe('sending');
-        expect(book2.dadsKindleState).toBe('sending');
+        expect(current(book1).dadsKindleState).toBe('sending');
+        expect(current(book2).dadsKindleState).toBe('sending');
 
         // Complete book2 first
         response2$.next({ success: true });
         response2$.complete();
-        expect(book2.dadsKindleState).toBe('success');
-        expect(book1.dadsKindleState).toBe('sending'); // book1 still sending
+        expect(current(book2).dadsKindleState).toBe('success');
+        expect(current(book1).dadsKindleState).toBe('sending'); // book1 still sending
 
         // Then complete book1
         response1$.next({ success: true });
         response1$.complete();
-        expect(book1.dadsKindleState).toBe('success');
+        expect(current(book1).dadsKindleState).toBe('success');
       });
     });
 
@@ -865,19 +873,19 @@ describe('LibraryComponent', () => {
         component.sendToKindle(book, 'mom');
 
         // Both targets should be in sending state
-        expect(book.dadsKindleState).toBe('sending');
-        expect(book.momsKindleState).toBe('sending');
+        expect(current(book).dadsKindleState).toBe('sending');
+        expect(current(book).momsKindleState).toBe('sending');
 
         // Complete mom first
         momResponse$.next({ success: true });
         momResponse$.complete();
-        expect(book.momsKindleState).toBe('success');
-        expect(book.dadsKindleState).toBe('sending');
+        expect(current(book).momsKindleState).toBe('success');
+        expect(current(book).dadsKindleState).toBe('sending');
 
         // Then dad
         dadResponse$.next({ success: true });
         dadResponse$.complete();
-        expect(book.dadsKindleState).toBe('success');
+        expect(current(book).dadsKindleState).toBe('success');
       });
     });
 
@@ -889,13 +897,13 @@ describe('LibraryComponent', () => {
 
         // Rapidly change ratings
         component.setPersonalRating(book, 3);
-        expect(book.personalRating).toBe(3);
+        expect(current(book).personalRating).toBe(3);
 
         component.setPersonalRating(book, 5);
-        expect(book.personalRating).toBe(5);
+        expect(current(book).personalRating).toBe(5);
 
         component.setPersonalRating(book, 1);
-        expect(book.personalRating).toBe(1);
+        expect(current(book).personalRating).toBe(1);
 
         // All three calls should have been made
         expect(mockLibraryApiService.updateLibraryBookRatings).toHaveBeenCalledTimes(3);
@@ -918,7 +926,7 @@ describe('LibraryComponent', () => {
 
         component.setPersonalRating(book, 1);
 
-        expect(book.personalRating).toBe(0);
+        expect(current(book).personalRating).toBe(0);
         expect(mockLibraryApiService.updateLibraryBookRatings).toHaveBeenCalledWith(
           'test-book.epub',
           { personalRating: 0 }
@@ -942,15 +950,15 @@ describe('LibraryComponent', () => {
         component.bulkSend('kindle-dad');
 
         // First book should be processed immediately
-        expect(book1.dadsKindleState).toBe('success');
+        expect(current(book1).dadsKindleState).toBe('success');
 
         // Wait for delay between first and second book (2000ms)
         tick(2000);
-        expect(book2.dadsKindleState).toBe('success');
+        expect(current(book2).dadsKindleState).toBe('success');
 
         // Wait for delay between second and third book
         tick(2000);
-        expect(book3.dadsKindleState).toBe('success');
+        expect(current(book3).dadsKindleState).toBe('success');
 
         // Bulk edit mode should be exited
         expect(component.bulkEditMode).toBe(false);
@@ -987,12 +995,12 @@ describe('LibraryComponent', () => {
 
         // book1 fails
         response1$.error(new Error('Network error'));
-        expect(book1.dadsKindleState).toBe('error');
+        expect(current(book1).dadsKindleState).toBe('error');
 
         // book2 succeeds
         response2$.next({ success: true });
         response2$.complete();
-        expect(book2.dadsKindleState).toBe('success');
+        expect(current(book2).dadsKindleState).toBe('success');
       });
 
       it('should handle API returning success=false', () => {
@@ -1002,7 +1010,7 @@ describe('LibraryComponent', () => {
 
         component.sendToKindle(book, 'dad');
 
-        expect(book.dadsKindleState).toBe('error');
+        expect(current(book).dadsKindleState).toBe('error');
       });
     });
 
@@ -1017,7 +1025,7 @@ describe('LibraryComponent', () => {
 
         // Start send for book1
         component.sendToKindle(book1, 'dad');
-        expect(book1.dadsKindleState).toBe('sending');
+        expect(current(book1).dadsKindleState).toBe('sending');
 
         // Simulate book1 being removed from list (e.g., deleted via dialog)
         component.books = [book2];
@@ -1026,8 +1034,12 @@ describe('LibraryComponent', () => {
         response$.next({ success: true });
         response$.complete();
 
-        // book1 reference should still be updated even if removed from list
-        expect(book1.dadsKindleState).toBe('success');
+        // Updates are applied to the list, not to a captured object, so a book that
+        // has since been removed simply is not updated. That is the point: the old
+        // behaviour wrote 'success' onto an orphaned object nothing was rendering,
+        // and a deleted book must not reappear in the list to receive it.
+        expect(component.books.map(b => b.fileName)).toEqual(['book2.epub']);
+        expect(current(book2).dadsKindleState).toBe('idle');
       });
     });
 
@@ -1109,8 +1121,8 @@ describe('LibraryComponent', () => {
         component.sendToKindle(book, 'dad');
         component.setPersonalRating(book, 4);
 
-        expect(book.dadsKindleState).toBe('sending');
-        expect(book.personalRating).toBe(4); // Optimistically updated
+        expect(current(book).dadsKindleState).toBe('sending');
+        expect(current(book).personalRating).toBe(4); // Optimistically updated
 
         // Complete rating first
         ratingResponse$.next(book as unknown as ServiceLibraryBook);
@@ -1121,8 +1133,8 @@ describe('LibraryComponent', () => {
         kindleResponse$.complete();
 
         // Both should reflect final state
-        expect(book.dadsKindleState).toBe('success');
-        expect(book.personalRating).toBe(4);
+        expect(current(book).dadsKindleState).toBe('success');
+        expect(current(book).personalRating).toBe(4);
       });
     });
   });
@@ -1228,6 +1240,76 @@ describe('LibraryComponent', () => {
       fixture.detectChanges();
 
       expect(mockAuthService.getOwnerName.calls.count()).toBe(callsAfterInit);
+    });
+  });
+
+  /**
+   * The contract `BookCardComponent`'s OnPush depends on. Without these, someone can
+   * reintroduce `book.dadsKindleState = 'sending'` and every existing test still
+   * passes — they all look the book up by name, which a mutated object satisfies
+   * just as well — while the Kindle spinner, the rating stars and the favourite
+   * toggle quietly stop re-rendering.
+   */
+  describe('Immutable book updates (the OnPush contract)', () => {
+    const bookNamed = (fileName: string): LibraryBook =>
+      ({ fileName, title: fileName, authors: ['A'], format: 'EPUB', dadsKindleState: 'idle' }) as unknown as LibraryBook;
+
+    it('replaces the changed book with a new object rather than mutating it', () => {
+      const book = bookNamed('a.epub');
+      component.books = [book];
+      mockLibraryApiService.sendLibraryToKindle.and.returnValue(new Subject<{ success: boolean }>().asObservable());
+
+      component.sendToKindle(book, 'dad');
+
+      expect(component.books[0]).not.toBe(book);
+      expect(component.books[0].dadsKindleState).toBe('sending');
+      expect(book.dadsKindleState).toBe('idle'); // the original is untouched
+    });
+
+    it('replaces the books array, so anything memoised on it recomputes', () => {
+      const book = bookNamed('a.epub');
+      const before = component.books = [book];
+      mockLibraryApiService.sendLibraryToKindle.and.returnValue(new Subject<{ success: boolean }>().asObservable());
+
+      component.sendToKindle(book, 'dad');
+
+      expect(component.books).not.toBe(before);
+    });
+
+    /** Only the edited book is rebuilt; the rest keep their identity so the grid
+     *  does not re-render every card for a one-book change. */
+    it('leaves the other books referentially identical', () => {
+      const [a, b] = [bookNamed('a.epub'), bookNamed('b.epub')];
+      component.books = [a, b];
+      mockLibraryApiService.sendLibraryToKindle.and.returnValue(new Subject<{ success: boolean }>().asObservable());
+
+      component.sendToKindle(a, 'dad');
+
+      expect(component.books[1]).toBe(b);
+    });
+
+    it('replaces the object for a rating change too', () => {
+      const book = bookNamed('a.epub');
+      component.books = [book];
+      mockLibraryApiService.updateLibraryBookRatings.and.returnValue(
+        of(book as unknown as ServiceLibraryBook));
+
+      component.setPersonalRating(book, 4);
+
+      expect(component.books[0]).not.toBe(book);
+      expect(component.books[0].personalRating).toBe(4);
+    });
+
+    it('replaces the object for a favourite toggle too', () => {
+      const book = bookNamed('a.epub');
+      component.books = [book];
+      mockLibraryApiService.setLibraryBookFavorite = jasmine.createSpy()
+        .and.returnValue(new Subject().asObservable());
+
+      component.onFavoriteToggle(book);
+
+      expect(component.books[0]).not.toBe(book);
+      expect(component.books[0].favoritedBy).toEqual(['Paul']);
     });
   });
 });

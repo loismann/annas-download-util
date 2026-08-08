@@ -29,6 +29,10 @@ import { AuthService } from '../services/auth.service';
 import { TileSizeControlsComponent } from '../components/shared/tile-size-controls/tile-size-controls.component';
 import { matchesOwnerAndFavorites, toggleInSet } from '../shared/owner-filters';
 import { HOUSEHOLD_OWNERS } from '../constants/owners';
+import {
+  PLACEHOLDER_POSTER, UNASSIGNED, addedTimestamp, compareMedia, genresOf, mergeBulkResult,
+  ownerLabel, posterUrlFor
+} from './media-library-view';
 import { TileSize, formatBytes, matchesSearchTerm } from '../shared/media-grid';
 
 interface LibraryTile {
@@ -51,31 +55,11 @@ interface DownloadProgress {
 
 type SortOrder = 'title' | 'year' | 'recent';
 
-const PLACEHOLDER_POSTER = '/assets/placeholder.jpg';
 const QUEUE_POLL_MS = 10000;
 /** The household roster, from the one place that declares it. The ebook library
  * stores the same three people as "Paul's Books" tags; TV/movies store the bare
  * names, so this uses HOUSEHOLD_OWNERS directly rather than the book-tag form. */
 const OWNERS = [...HOUSEHOLD_OWNERS];
-const UNASSIGNED = 'Unassigned';
-
-/** Sonarr/Radarr's images array isn't guaranteed poster-first — it can lead
- * with a banner or fanart/background image instead, which is why picking
- * images[0] blindly (the original bug here) crops oddly when forced into a
- * portrait frame. Same fix as MediaResultCardComponent.posterUrl. */
-function posterUrlFor(result: MediaLookupResult): string {
-  const poster = result.images?.find((i: { coverType: string }) => i.coverType === 'poster');
-  return poster?.remoteUrl || poster?.url || PLACEHOLDER_POSTER;
-}
-
-function genresOf(result: MediaLookupResult): string[] {
-  return result.customGenres ?? [];
-}
-
-function addedTimestamp(result: MediaLookupResult): number {
-  return Date.parse((result['added'] as string) ?? '') || 0;
-}
-
 /** Radarr reports a movie's file size as a top-level `sizeOnDisk`; Sonarr
  * reports a series' *total* across all downloaded episode files as
  * `statistics.sizeOnDisk` — both ride along untouched via the raw-passthrough
@@ -115,7 +99,7 @@ function sizeOnDiskOf(result: MediaLookupResult): number {
     TileSizeControlsComponent,
   ],
   templateUrl: './media-library.component.html',
-  styleUrl: './media-library.component.css'
+  styleUrl: './media-library.component.scss'
 })
 export class MediaLibraryComponent implements OnInit, OnDestroy {
   /** false = TV, true = Movies — defaults to Movies (see ngOnInit). */
@@ -324,15 +308,7 @@ export class MediaLibraryComponent implements OnInit, OnDestroy {
   }
 
   private compare(a: MediaLookupResult, b: MediaLookupResult): number {
-    switch (this.sortOrder) {
-      case 'title':
-        return (a.title || '').localeCompare(b.title || '');
-      case 'year':
-        return (b.year || 0) - (a.year || 0);
-      case 'recent':
-      default:
-        return addedTimestamp(b) - addedTimestamp(a);
-    }
+    return compareMedia(a, b, this.sortOrder);
   }
 
   toggleOwnerFilter(owner: string): void {
@@ -456,15 +432,7 @@ export class MediaLibraryComponent implements OnInit, OnDestroy {
     item: MediaLookupResult,
     result: MediaBulkEditDialogResult
   ): { owners: string[]; genres: string[] } {
-    const merge = (existing: string[] | undefined, incoming: string[]): string[] => {
-      if (incoming.length === 0) return existing ?? [];
-      if (result.mode === 'replace') return incoming;
-      return Array.from(new Set([...(existing ?? []), ...incoming]));
-    };
-    return {
-      owners: merge(item.owners, result.owners),
-      genres: merge(item.customGenres, result.genres)
-    };
+    return mergeBulkResult(item, result);
   }
 
   private applyBulkToTv(result: MediaBulkEditDialogResult): void {
@@ -516,7 +484,7 @@ export class MediaLibraryComponent implements OnInit, OnDestroy {
   }
 
   ownerLabel(result: MediaLookupResult): string {
-    return result.owners && result.owners.length > 0 ? result.owners.join(', ') : UNASSIGNED;
+    return ownerLabel(result);
   }
 
   playMovie(movie: MediaLookupResult): void {

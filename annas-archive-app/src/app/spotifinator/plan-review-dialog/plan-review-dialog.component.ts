@@ -29,7 +29,7 @@ import { SpotifyPlan } from '../spotifinator.models';
     CommonModule, MatDialogModule, MatButtonModule, MatIconModule, MatProgressSpinnerModule
   ],
   templateUrl: './plan-review-dialog.component.html',
-  styleUrls: ['./plan-review-dialog.component.scss']
+  styleUrl: './plan-review-dialog.component.scss'
 })
 export class PlanReviewDialogComponent {
   plan: SpotifyPlan;

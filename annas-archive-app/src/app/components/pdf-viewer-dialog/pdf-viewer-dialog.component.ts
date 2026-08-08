@@ -27,7 +27,7 @@ const LAST_PAGE_STORAGE_PREFIX = 'pdf-viewer-last-page:';
     NgxExtendedPdfViewerModule
   ],
   templateUrl: './pdf-viewer-dialog.component.html',
-  styleUrls: ['./pdf-viewer-dialog.component.css']
+  styleUrl: './pdf-viewer-dialog.component.scss'
 })
 export class PdfViewerDialogComponent implements OnInit {
   @ViewChild('pdfContainer') containerRef!: ElementRef<HTMLDivElement>;

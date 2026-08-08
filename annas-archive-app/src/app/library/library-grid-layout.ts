@@ -31,7 +31,7 @@ export const LibraryGridLayout = {
   /**
    * Row height in pixels. Virtual scrolling needs a fixed number up front —
    * it cannot measure rows it has not rendered — so these are constants that
-   * must stay in step with the tile sizes in `library.component.css`.
+   * must stay in step with the tile sizes in `library.component.scss`.
    */
   rowHeight(tileSize: TileSize): number {
     switch (tileSize) {

@@ -97,7 +97,7 @@ async function runWithConcurrencyLimit<T, R>(
     MediaResultCardComponent
   ],
   templateUrl: './media-search.component.html',
-  styleUrl: './media-search.component.css'
+  styleUrl: './media-search.component.scss'
 })
 export class MediaSearchComponent implements OnDestroy {
   searchTerm = '';

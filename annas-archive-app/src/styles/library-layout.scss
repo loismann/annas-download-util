@@ -52,8 +52,18 @@
   font-size: 0.85rem;
 }
 
-/* Desktop: the filter FAB and its scrim exist only for the phone bottom sheet. */
-.mobile-sidebar-toggle,
+/* Desktop: the filter FAB and its scrim exist only for the phone bottom sheet.
+
+   The FAB is matched as `button.mobile-sidebar-toggle`, not by class alone, and
+   that is load-bearing. It is a `<button mat-icon-button>`, and Angular
+   Material declares MatIconButton with ViewEncapsulation.None — so
+   `.mat-mdc-icon-button { display: inline-block }` is injected into <head> when
+   the module loads, i.e. after this stylesheet. At equal specificity the later
+   rule wins, so a bare `.mobile-sidebar-toggle` here loses and the FAB shows up
+   on desktop. Adding the element selector makes this (0,1,1) and settles it on
+   specificity instead of source order. The same applies to the `display: flex`
+   below, which would otherwise silently degrade to Material's inline-block. */
+button.mobile-sidebar-toggle,
 .sidebar-backdrop {
   display: none;
 }
@@ -72,7 +82,7 @@
     gap: 12px;
   }
 
-  .mobile-sidebar-toggle {
+  button.mobile-sidebar-toggle {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -90,7 +100,7 @@
     border-radius: 50%;
   }
 
-  .mobile-sidebar-toggle:hover {
+  button.mobile-sidebar-toggle:hover {
     background: #303f9f;
   }
 

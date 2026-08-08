@@ -12,15 +12,7 @@
   position: relative;
 }
 
-/* Mobile sidebar toggle button (hidden on desktop) */
-.mobile-sidebar-toggle {
-  display: none;
-}
-
-/* Mobile-only scrim behind the filter sheet (hidden on desktop) */
-.sidebar-backdrop {
-  display: none;
-}
+/* The filter FAB and its scrim are styled entirely by styles/library-layout.scss. */
 
 .library-layout {
   display: grid;
@@ -803,41 +795,15 @@
     padding: 12px 12px 8px;
   }
 
-  /* Filter FAB: sits above the storage footer + iOS home indicator */
-  .mobile-sidebar-toggle {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    position: fixed;
-    bottom: calc(52px + env(safe-area-inset-bottom));
-    right: 16px;
-    z-index: 1200;
-    background: #3f51b5;
-    color: white;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-    width: 56px;
-    height: 56px;
-    border-radius: 50%;
-  }
-
-  .mobile-sidebar-toggle:hover {
-    background: #303f9f;
-  }
-
   .library-layout {
     grid-template-columns: 1fr;
     gap: 12px;
   }
 
-  /* Filters become a bottom sheet over the grid instead of pushing it down */
-  .sidebar-backdrop {
-    display: block;
-    position: fixed;
-    inset: 0;
-    background: rgba(15, 23, 42, 0.45);
-    z-index: 1150;
-  }
-
+  /* Filters become a bottom sheet over the grid instead of pushing it down.
+     The FAB and the scrim behind it come from styles/library-layout.scss; only
+     the sheet itself is local, because this page names it .sidebar-container
+     rather than the shared .library-sidebar. */
   .sidebar-container {
     display: block;
     position: fixed;

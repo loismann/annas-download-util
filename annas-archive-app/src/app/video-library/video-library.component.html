@@ -1,9 +1,9 @@
 <div class="video-library-wrapper">
-  <!-- Mobile sidebar collapse toggle button -->
+  <!-- Mobile filter FAB (hidden on desktop) -->
   <button class="mobile-sidebar-toggle"
           mat-icon-button
           (click)="toggleSidebar()"
-          [attr.aria-label]="sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'">
+          [attr.aria-label]="sidebarCollapsed ? 'Show filters' : 'Hide filters'">
     <mat-icon>{{ sidebarCollapsed ? 'filter_list' : 'close' }}</mat-icon>
   </button>
 

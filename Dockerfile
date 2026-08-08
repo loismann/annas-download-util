@@ -91,15 +91,33 @@ EXPOSE 8080
 #
 # The port is 8080, above 1024, so no privileged bind is needed.
 #
-# NOTE for the first deploy after this change: the existing ../data/* directories
-# on the NAS were created by a root container and are still root-owned. They need
-#   sudo chown -R 1000:1000 ../data
-# once, or the app starts and then cannot write its own database.
+# NOTE for the first deploy after this change. Files this container created while
+# it ran as root are still root-owned and need handing over once. Do NOT do that
+# with a blanket `chown -R ../data`: that directory also holds immich/, plex/ and
+# audiobookshelf/, which belong to other containers that run as root and would
+# break. Only this service's own mounts, and only the entries actually owned by
+# root:
+#
+#   for p in library epub-cache ai-cache youtube logs state; do
+#     sudo find ../data/$p \( -user 0 -o -group 0 \) -exec chown 1000:1000 {} +
+#   done
+#   sudo find ~/Media/PhotoPrints ~/Media/_audiobook_staging \
+#     \( -user 0 -o -group 0 \) -exec chown 1000:1000 {} +
+#
+# The two Media paths matter most: unlike ../data/* (which is 0777 throughout and
+# would survive regardless) they are 0755 root:root, so a non-root container
+# cannot write photo-print renders or rename audiobooks at all.
 # Named "annas", not "app": the .NET 8 runtime images already ship a non-root
 # `app` user, at UID 1654 — which does not match the bind mounts, and whose
 # existence would make `groupadd app` fail the build outright.
+#
+# The home directory is created deliberately. Without one, Chromium reports
+# "Fontconfig error: No writable cache directories" and falls back to unhinted
+# font rendering — which matters here, because the CVS checkout leg screenshots
+# the order review page for a human to approve. Anything else that expects a
+# writable HOME (caches, profile scratch) gets one too, at no real cost.
 RUN groupadd --gid 1000 annas \
-    && useradd --uid 1000 --gid 1000 --no-create-home --shell /usr/sbin/nologin annas \
+    && useradd --uid 1000 --gid 1000 --create-home --shell /usr/sbin/nologin annas \
     && chown -R annas:annas /app
 USER annas
 

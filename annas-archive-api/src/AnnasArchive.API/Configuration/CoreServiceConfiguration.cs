@@ -88,6 +88,16 @@ public static class CoreServiceConfiguration
         services.AddSingleton<Data.AudiobookRequestStore>();
         services.AddSingleton<AudiobookRequestTokenStore>();
 
+        // ─── Ebook Reader II (DOCS/features/EBOOK_READER_II.md) ───
+        // Shares nothing with the existing reader: its own tables, its own text
+        // root, its own namespace. Singletons because ContentHashCache is only
+        // useful if the memoised hashes outlive a request.
+        services.AddSingleton<Reader2.Domain.ILibraryBookSource, Reader2.Domain.LibraryBookSource>();
+        services.AddSingleton<Reader2.Domain.ContentHashCache>();
+        services.AddSingleton<Reader2.Storage.ChapterTextStore>();
+        services.AddSingleton<Reader2.Storage.IArtifactStore, Reader2.Storage.SqliteArtifactStore>();
+        services.AddSingleton<Reader2.Domain.IBookRegistry, Reader2.Domain.BookRegistry>();
+
         // Library services - LibraryIndexCache warms on startup via IHostedService
         services.AddSingleton<LibraryIndexCache>();
         services.AddHostedService(sp => sp.GetRequiredService<LibraryIndexCache>());

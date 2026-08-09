@@ -159,6 +159,89 @@ public class AppDatabase
                 FOREIGN KEY (listenarr_id) REFERENCES audiobook_request(listenarr_id)
                     ON DELETE CASCADE
             );
+
+            -- ─── Ebook Reader II (DOCS/features/EBOOK_READER_II.md §7.1) ───
+            -- Wholly separate from Reader I, which keeps its state in ai-cache
+            -- files. The r2_ prefix makes retirement of either side a clean drop.
+
+            CREATE TABLE IF NOT EXISTS r2_book (
+                book_id        TEXT PRIMARY KEY,   -- 16 hex of SHA-256(file bytes)
+                file_name      TEXT NOT NULL,
+                title          TEXT NOT NULL,
+                authors_json   TEXT NOT NULL,
+                lens_key       TEXT NOT NULL,
+                added_at       TEXT NOT NULL,
+                last_opened_at TEXT
+            );
+            CREATE INDEX IF NOT EXISTS ix_r2_book_file ON r2_book(file_name);
+
+            -- chapter/ordinal/subkey use -1/'' sentinels rather than NULL because
+            -- SQLite treats NULLs as DISTINCT in a UNIQUE constraint: a nullable
+            -- chapter would silently admit duplicate book-scoped rows.
+            CREATE TABLE IF NOT EXISTS r2_artifact (
+                id                INTEGER PRIMARY KEY AUTOINCREMENT,
+                book_id           TEXT    NOT NULL REFERENCES r2_book(book_id) ON DELETE CASCADE,
+                lens_key          TEXT    NOT NULL,
+                kind              TEXT    NOT NULL,
+                chapter           INTEGER NOT NULL DEFAULT -1,
+                ordinal           INTEGER NOT NULL DEFAULT -1,
+                subkey            TEXT    NOT NULL DEFAULT '',
+                schema_version    INTEGER NOT NULL,
+                prompt_version    INTEGER NOT NULL,
+                model             TEXT    NOT NULL,
+                content_json      TEXT    NOT NULL,
+                prompt_tokens     INTEGER NOT NULL DEFAULT 0,
+                completion_tokens INTEGER NOT NULL DEFAULT 0,
+                created_at        TEXT    NOT NULL,
+                UNIQUE(book_id, lens_key, kind, chapter, ordinal, subkey)
+            );
+            CREATE INDEX IF NOT EXISTS ix_r2_artifact_lookup
+                ON r2_artifact(book_id, lens_key, kind, chapter);
+
+            -- No FK to r2_book on purpose: a term the reader knows must survive
+            -- un-enrolling the book they first met it in.
+            CREATE TABLE IF NOT EXISTS r2_vocabulary (
+                user_id            TEXT NOT NULL,
+                term_norm          TEXT NOT NULL,
+                term_display       TEXT NOT NULL,
+                state              TEXT NOT NULL,   -- known | studying
+                definition         TEXT,
+                first_seen_book_id TEXT,
+                updated_at         TEXT NOT NULL,
+                PRIMARY KEY (user_id, term_norm)
+            );
+
+            CREATE TABLE IF NOT EXISTS r2_reading_position (
+                book_id     TEXT    NOT NULL REFERENCES r2_book(book_id) ON DELETE CASCADE,
+                user_id     TEXT    NOT NULL,
+                chapter     INTEGER NOT NULL,
+                word_offset INTEGER NOT NULL DEFAULT 0,
+                updated_at  TEXT    NOT NULL,
+                PRIMARY KEY (book_id, user_id)
+            );
+
+            -- Its own table rather than riding reading position: a reader has many
+            -- bookmarks and exactly one position.
+            CREATE TABLE IF NOT EXISTS r2_bookmark (
+                id          TEXT    PRIMARY KEY,
+                book_id     TEXT    NOT NULL REFERENCES r2_book(book_id) ON DELETE CASCADE,
+                user_id     TEXT    NOT NULL,
+                chapter     INTEGER NOT NULL,
+                word_offset INTEGER NOT NULL,
+                label       TEXT,
+                created_at  TEXT    NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS ix_r2_bookmark_book_user
+                ON r2_bookmark(book_id, user_id);
+
+            CREATE TABLE IF NOT EXISTS r2_reading_preferences (
+                user_id     TEXT PRIMARY KEY,
+                font_family TEXT    NOT NULL,
+                font_size   INTEGER NOT NULL,
+                theme       TEXT    NOT NULL,
+                split_ratio REAL    NOT NULL,
+                updated_at  TEXT    NOT NULL
+            );
             """;
         cmd.ExecuteNonQuery();
         EnsureColumn(conn, "spotify_inventory_meta", "full_inventory_at", "TEXT");
@@ -170,10 +253,23 @@ public class AppDatabase
         EnsureColumn(conn, "audiobook_request_user", "dismissed_at", "TEXT");
     }
 
+    /// <summary>
+    /// Opens a connection with foreign keys enforced.
+    ///
+    /// <para>SQLite defaults <c>foreign_keys</c> to <b>off</b>, and the setting is
+    /// per-connection rather than stored with the database — so without this every
+    /// <c>ON DELETE CASCADE</c> in the schema above is decorative, and deleting a
+    /// parent row silently orphans its children instead of removing them.</para>
+    /// </summary>
     public SqliteConnection OpenConnection()
     {
         var conn = new SqliteConnection($"Data Source={_dbPath}");
         conn.Open();
+
+        using var pragma = conn.CreateCommand();
+        pragma.CommandText = "PRAGMA foreign_keys = ON;";
+        pragma.ExecuteNonQuery();
+
         return conn;
     }
 

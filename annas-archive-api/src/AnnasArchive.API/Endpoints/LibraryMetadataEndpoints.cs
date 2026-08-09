@@ -131,7 +131,7 @@ public static class LibraryMetadataEndpoints
         }
         catch (Exception ex)
         {
-            Log.Warning("[library] Failed to update favorite for {SafeFileName}: {Message}", safeFileName, ex.Message);
+            Log.Warning(ex, "[library] Failed to update favorite for {SafeFileName}", safeFileName);
             return Results.Problem("Failed to update favorite.");
         }
     }
@@ -258,7 +258,7 @@ public static class LibraryMetadataEndpoints
         }
         catch (Exception ex)
         {
-            Log.Warning("[library] Failed to update reader flag for {SafeFileName}: {Message}", safeFileName, ex.Message);
+            Log.Warning(ex, "[library] Failed to update reader flag for {SafeFileName}", safeFileName);
             return Results.Problem("Failed to update reader flag.");
         }
     }
@@ -369,7 +369,7 @@ public static class LibraryMetadataEndpoints
                 }
                 catch (Exception ex)
                 {
-                    Log.Warning("[library-summary] Failed to save summary: {Message}", ex.Message);
+                    Log.Warning(ex, "[library-summary] Failed to save summary");
                 }
             }
 
@@ -377,7 +377,7 @@ public static class LibraryMetadataEndpoints
         }
         catch (Exception ex)
         {
-            Log.Warning("[library-summary] Error for {SafeFileName}: {Message}", safeFileName, ex.Message);
+            Log.Warning(ex, "[library-summary] Error for {SafeFileName}", safeFileName);
             return Results.Problem("Failed to get summary.");
         }
     }

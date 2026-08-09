@@ -1,4 +1,5 @@
 import { CommonModule } from '@angular/common';
+import { Subject, takeUntil } from 'rxjs';
 import { Component, OnDestroy, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
@@ -121,13 +122,26 @@ export class AudiobookSearchComponent implements OnInit, OnDestroy {
     this.loadStatus();
   }
 
+  /**
+   * Ends in-flight *reads* when the component goes.
+   *
+   * Their response handlers restart polling and countdown timers, so a read
+   * that resolved after destroy used to start a timer on a dead component that
+   * nothing would ever clear. Writes are deliberately NOT routed through this:
+   * unsubscribing an HttpClient call aborts the request, which would mean
+   * navigating away cancelled the user's action.
+   */
+  private readonly destroy$ = new Subject<void>();
+
   ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
     this.stopPolling();
   }
 
   loadStatus(): void {
     this.statusLoading = true;
-    this.api.getStatus().subscribe({
+    this.api.getStatus().pipe(takeUntil(this.destroy$)).subscribe({
       next: status => {
         this.status = status;
         this.statusLoading = false;
@@ -537,7 +551,7 @@ export class AudiobookSearchComponent implements OnInit, OnDestroy {
   private refreshRequestStatus(entry: AudiobookResultEntry): void {
     const listenarrId = entry.result?.listenarrId;
     if (!listenarrId) return;
-    this.api.getRequestStatus(listenarrId).subscribe({
+    this.api.getRequestStatus(listenarrId).pipe(takeUntil(this.destroy$)).subscribe({
       next: status => {
         this.requestStatuses[entry.key] = status;
         if (status.state === 'InLibrary' && entry.result) {

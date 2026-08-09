@@ -14,8 +14,8 @@
   justify-content: space-between;
   align-items: flex-start;
   padding: 16px;
-  background: #1a1a1a;
-  border-bottom: 1px solid #333;
+  background: var(--surface-inverse);
+  border-bottom: 1px solid var(--slate-800);
 }
 
 .video-info {
@@ -27,7 +27,7 @@
   margin: 0;
   font-size: 1.1rem;
   font-weight: 600;
-  color: #fff;
+  color: var(--text-inverse);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -35,7 +35,7 @@
 
 .video-channel {
   font-size: 0.85rem;
-  color: #aaa;
+  color: var(--text-subtle);
   margin-top: 4px;
   display: block;
 }
@@ -47,11 +47,11 @@
 }
 
 .header-actions button {
-  color: #aaa;
+  color: var(--text-subtle);
 }
 
 .header-actions button:hover {
-  color: #fff;
+  color: var(--text-inverse);
 }
 
 .youtube-btn:hover {
@@ -85,8 +85,8 @@
   align-items: center;
   justify-content: center;
   gap: 16px;
-  background: rgba(0, 0, 0, 0.85);
-  color: #fff;
+  background: rgba(var(--black-rgb), 0.85);
+  color: var(--text-inverse);
   z-index: 10;
 }
 
@@ -94,7 +94,7 @@
   font-size: 48px;
   width: 48px;
   height: 48px;
-  color: #ef4444;
+  color: var(--red-500);
 }
 
 .error-overlay span {
@@ -106,22 +106,22 @@
   display: flex;
   align-items: center;
   padding: 8px 16px;
-  background: #1a1a1a;
-  border-top: 1px solid #333;
+  background: var(--surface-inverse);
+  border-top: 1px solid var(--slate-800);
 }
 
 .video-controls button {
-  color: #aaa;
+  color: var(--text-subtle);
 }
 
 .video-controls button:hover {
-  color: #fff;
+  color: var(--text-inverse);
 }
 
 .hint-text {
   margin-left: auto;
   font-size: 0.75rem;
-  color: #666;
+  color: var(--text-muted);
 }
 
 @media (max-width: 768px) {

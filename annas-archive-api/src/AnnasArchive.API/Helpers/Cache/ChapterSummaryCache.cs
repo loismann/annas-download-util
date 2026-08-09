@@ -56,7 +56,7 @@ public static class ChapterSummaryCache
         }
         catch (Exception ex)
         {
-            Log.Warning("Failed to load chapter summary from {Path}: {ErrorMessage}", path, ex.Message);
+            Log.Warning(ex, "Failed to load chapter summary from {Path}", path);
             return null;
         }
     }
@@ -73,7 +73,7 @@ public static class ChapterSummaryCache
         }
         catch (Exception ex)
         {
-            Log.Warning("Failed to load ultra chapter summary from {Path}: {ErrorMessage}", path, ex.Message);
+            Log.Warning(ex, "Failed to load ultra chapter summary from {Path}", path);
             return null;
         }
     }
@@ -137,7 +137,7 @@ public static class ChapterSummaryCache
                 }
                 catch (Exception ex)
                 {
-                    Log.Warning("Failed to load summary from {FilePath}: {ErrorMessage}", file, ex.Message);
+                    Log.Warning(ex, "Failed to load summary from {FilePath}", file);
                 }
             }
         }

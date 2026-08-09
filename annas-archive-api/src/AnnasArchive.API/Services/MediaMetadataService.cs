@@ -235,7 +235,7 @@ public class MediaMetadataService : IMediaMetadataService
         }
         catch (Exception ex)
         {
-            Log.Warning("[MediaMetadata] Failed to load media metadata state: {Message}", ex.Message);
+            Log.Warning(ex, "[MediaMetadata] Failed to load media metadata state");
             return new Dictionary<string, MediaItemMetadata>();
         }
     }
@@ -253,7 +253,7 @@ public class MediaMetadataService : IMediaMetadataService
         }
         catch (Exception ex)
         {
-            Log.Warning("[MediaMetadata] Failed to save media metadata state: {Message}", ex.Message);
+            Log.Warning(ex, "[MediaMetadata] Failed to save media metadata state");
             throw;
         }
     }

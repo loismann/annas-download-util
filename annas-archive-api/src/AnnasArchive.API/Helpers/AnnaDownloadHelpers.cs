@@ -46,6 +46,58 @@ public static class AnnaDownloadHelpers
     };
 
     /// <summary>
+    /// The current quota counters, in the shape every download response carries.
+    /// </summary>
+    public static AccountFastDownloadInfoDto CurrentCounters(IDownloadTrackingService downloadTracking)
+    {
+        var (downloadsLeft, downloadsPerDay) = downloadTracking.GetDownloadStatus();
+        return new AccountFastDownloadInfoDto(downloadsLeft, downloadsPerDay);
+    }
+
+    /// <summary>
+    /// Fetches the book, or the response to send instead.
+    ///
+    /// The two "send to device" endpoints had this same 27-line prologue —
+    /// member key, download, two failure branches — copied between them. On
+    /// failure <paramref name="error"/> is the finished response and everything
+    /// else is null; on success it is the other way round.
+    ///
+    /// Both failure bodies still carry the quota counters despite being non-2xx:
+    /// a failed attempt can have consumed a slot, and the counter has to stay
+    /// truthful. The browser reads it off the error.
+    /// </summary>
+    public static async Task<(HttpResponseMessage? response, string? fileName, AccountFastDownloadInfoDto? accountInfo, IResult? error)>
+        DownloadForSendAsync(
+            string md5,
+            string? title,
+            AnnasArchiveDownloads anna,
+            IConfiguration cfg,
+            IDownloadTrackingService downloadTracking)
+    {
+        var memberKey = cfg["Anna:MemberKey"]
+            ?? throw new InvalidOperationException("Missing Anna:MemberKey.");
+
+        var (resp, fileName, acctInfo, errorMessage, failure) =
+            await DownloadBookFromAnnasArchiveAsync(md5, title, anna, memberKey);
+
+        if (errorMessage != null)
+        {
+            return (null, null, null, Results.Json(
+                new { success = false, message = errorMessage, accountFastInfo = CurrentCounters(downloadTracking) },
+                statusCode: StatusCodeFor(failure)));
+        }
+
+        if (resp == null || fileName == null)
+        {
+            return (null, null, null, Results.Json(
+                new { success = false, message = "Failed to download book.", accountFastInfo = CurrentCounters(downloadTracking) },
+                statusCode: StatusCodes.Status502BadGateway));
+        }
+
+        return (resp, fileName, acctInfo, null);
+    }
+
+    /// <summary>
     /// Downloads a book from Anna's Archive using member credentials.
     /// </summary>
     /// <param name="md5">The MD5 hash of the book</param>

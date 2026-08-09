@@ -17,7 +17,7 @@
   aspect-ratio: 16 / 9;
   border-radius: 8px;
   overflow: hidden;
-  background: #1a1a1a;
+  background: var(--surface-inverse);
 }
 
 .video-thumbnail {
@@ -30,7 +30,7 @@
   position: absolute;
   bottom: 8px;
   right: 8px;
-  background: rgba(0, 0, 0, 0.8);
+  background: rgba(var(--black-rgb), 0.8);
   color: white;
   font-size: 0.8rem;
   font-weight: 500;
@@ -39,7 +39,7 @@
 }
 
 .video-info {
-  background: #f8fafc;
+  background: var(--surface-page);
   border-radius: 8px;
   padding: 12px;
 }
@@ -52,12 +52,12 @@
 }
 
 .info-label {
-  color: #64748b;
+  color: var(--text-muted);
 }
 
 .info-value {
   font-weight: 600;
-  color: #1f2937;
+  color: var(--text-strong);
 }
 
 .action-buttons {
@@ -91,18 +91,18 @@
 .description-section h4 {
   margin: 16px 0 8px;
   font-size: 0.9rem;
-  color: #475569;
+  color: var(--text-body);
 }
 
 .description-text {
   font-size: 0.85rem;
-  color: #64748b;
+  color: var(--text-muted);
   line-height: 1.5;
   max-height: 120px;
   overflow-y: auto;
   margin: 0;
   padding: 8px;
-  background: #f8fafc;
+  background: var(--surface-page);
   border-radius: 6px;
 }
 

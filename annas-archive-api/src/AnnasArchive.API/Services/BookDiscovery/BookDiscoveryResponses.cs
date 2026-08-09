@@ -118,7 +118,7 @@ public static class BookDiscoveryResponses
             // Both previews are logged because the difference between them is
             // the only way to tell a model that answered badly from a fence
             // strip that ate part of a good answer.
-            Log.Warning("❌ AI book-search JSON parse failed: {ExMessage}", ex.Message);
+            Log.Warning(ex, "❌ AI book-search JSON parse failed");
             Log.Warning("❌ AI book-search raw preview: {RawPreview}", Preview(rawText));
             Log.Warning("❌ AI book-search cleaned preview: {CleanPreview}", Preview(cleaned));
             return null;
@@ -333,7 +333,7 @@ public static class BookDiscoveryResponses
 
     private static void LogParseFailure(string what, JsonException ex, string rawText)
     {
-        Log.Warning("⚠️ Failed to parse {What} JSON: {ExMessage}", what, ex.Message);
+        Log.Warning(ex, "⚠️ Failed to parse {What} JSON", what);
         Log.Information("Raw text: {RawText}", rawText);
     }
 }

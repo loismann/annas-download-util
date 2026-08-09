@@ -93,7 +93,7 @@ public class DescriptionFetcherService : IDescriptionFetcherService
         }
         catch (Exception ex)
         {
-            Log.Warning("[DescriptionFetcher] Google Books lookup failed: {Message}", ex.Message);
+            Log.Warning(ex, "[DescriptionFetcher] Google Books lookup failed");
             return new DescriptionFetchResult(null, null);
         }
     }
@@ -110,7 +110,7 @@ public class DescriptionFetcherService : IDescriptionFetcherService
         }
         catch (Exception ex)
         {
-            Log.Warning("[DescriptionFetcher] Open Library lookup failed: {Message}", ex.Message);
+            Log.Warning(ex, "[DescriptionFetcher] Open Library lookup failed");
             return new DescriptionFetchResult(null, null);
         }
     }
@@ -135,7 +135,7 @@ public class DescriptionFetcherService : IDescriptionFetcherService
         }
         catch (Exception ex)
         {
-            Log.Warning("[DescriptionFetcher] AI generation failed: {Message}", ex.Message);
+            Log.Warning(ex, "[DescriptionFetcher] AI generation failed");
             return new DescriptionFetchResult(null, null);
         }
     }

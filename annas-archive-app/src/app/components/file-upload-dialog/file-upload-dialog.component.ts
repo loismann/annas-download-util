@@ -1,4 +1,5 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, DestroyRef, OnInit, inject } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { MatDialogRef, MatDialogModule } from '@angular/material/dialog';
 import { MatButtonModule } from '@angular/material/button';
@@ -27,6 +28,14 @@ export interface UploadResult {
   styleUrl: './file-upload-dialog.component.scss'
 })
 export class FileUploadDialogComponent implements OnInit {
+  /**
+   * Ends in-flight reads when the component is destroyed.
+   *
+   * Reads only: unsubscribing an HttpClient call aborts the request, so routing
+   * a write through this would mean navigating away cancels the user's action.
+   */
+  private readonly destroyRef = inject(DestroyRef);
+
   supportedFormats: string[] = [];
   maxFileSizeMb = 500;
   uploadQueue: UploadResult[] = [];
@@ -43,7 +52,7 @@ export class FileUploadDialogComponent implements OnInit {
   }
 
   private loadSupportedFormats(): void {
-    this.libraryApi.getSupportedFormats().subscribe({
+    this.libraryApi.getSupportedFormats().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (response: LibrarySupportedFormatsResponse) => {
         this.supportedFormats = response.formats;
         this.maxFileSizeMb = response.maxFileSizeMb;

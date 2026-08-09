@@ -71,7 +71,7 @@ public static class LibraryBookDeletionHelper
             }
             catch (Exception ex)
             {
-                Log.Warning("[LibraryBookDeletion] Failed to delete cover {Cover}: {Message}", cover, ex.Message);
+                Log.Warning(ex, "[LibraryBookDeletion] Failed to delete cover {Cover}", cover);
             }
         }
 

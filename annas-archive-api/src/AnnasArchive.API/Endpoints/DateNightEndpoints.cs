@@ -252,7 +252,7 @@ public static class DateNightEndpoints
         {
             // Posters are decoration. A Radarr hiccup shouldn't stop the
             // announcement itself from appearing.
-            Log.Warning("[DateNight] Could not load announcement posters: {Message}", ex.Message);
+            Log.Warning(ex, "[DateNight] Could not load announcement posters");
         }
 
         return Results.Ok(new DateNightAnnouncement(true, posters, live));
@@ -298,7 +298,7 @@ public static class DateNightEndpoints
             }
             catch (Exception ex)
             {
-                Log.Warning("[DateNight] Could not fetch all movies for recoverable-title lookup: {Message}", ex.Message);
+                Log.Warning(ex, "[DateNight] Could not fetch all movies for recoverable-title lookup");
                 allTitlesById = new();
             }
 
@@ -312,7 +312,7 @@ public static class DateNightEndpoints
             {
                 // The pool table is the important part of this page; a cycle-side
                 // hiccup shouldn't take it down too.
-                Log.Warning("[DateNight] Could not build the cycle admin view: {Message}", ex.Message);
+                Log.Warning(ex, "[DateNight] Could not build the cycle admin view");
             }
             try
             {
@@ -320,7 +320,7 @@ public static class DateNightEndpoints
             }
             catch (Exception ex)
             {
-                Log.Warning("[DateNight] Could not build the dry-run admin view: {Message}", ex.Message);
+                Log.Warning(ex, "[DateNight] Could not build the dry-run admin view");
             }
 
             var items = movies.Select(m =>
@@ -355,7 +355,7 @@ public static class DateNightEndpoints
         }
         catch (HttpRequestException ex)
         {
-            Log.Warning("[DateNight] Pool fetch failed: {Message}", ex.Message);
+            Log.Warning(ex, "[DateNight] Pool fetch failed");
             return Results.Json(new { error = "Radarr is unavailable" }, statusCode: StatusCodes.Status503ServiceUnavailable);
         }
     }

@@ -222,7 +222,7 @@ public static class LibraryHelpers
         }
         catch (Exception ex)
         {
-            Log.Information("[AddTags] Error adding tags to {FileName}: {ExMessage}", fileName, ex.Message);
+            Log.Information(ex, "[AddTags] Error adding tags to {FileName}", fileName);
         }
     }
 }

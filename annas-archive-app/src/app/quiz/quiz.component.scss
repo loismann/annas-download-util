@@ -4,7 +4,7 @@
 
 .quiz-root {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, var(--violet-from) 0%, var(--violet-to) 100%);
   min-height: calc(100vh - 64px);
   padding: 20px;
   display: flex;
@@ -15,7 +15,7 @@
 .container {
   background: white;
   border-radius: 20px;
-  box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+  box-shadow: 0 20px 60px rgba(var(--black-rgb),0.3);
   max-width: 900px;
   width: 100%;
   padding: 40px;
@@ -24,7 +24,7 @@
 }
 
 h1 {
-  color: #667eea;
+  color: var(--violet-from);
   text-align: center;
   margin-bottom: 30px;
   font-size: 2.5em;
@@ -34,20 +34,20 @@ h1 {
 .screen.active { display: block; }
 
 .start-screen { text-align: center; }
-.start-screen p { font-size: 1.1em; color: #666; margin-bottom: 12px; }
-.start-screen label { display: block; font-size: 1.1em; color: #333; margin: 12px 0 8px; }
+.start-screen p { font-size: 1.1em; color: var(--slate-500); margin-bottom: 12px; }
+.start-screen label { display: block; font-size: 1.1em; color: var(--slate-800); margin: 12px 0 8px; }
 .start-screen input,
 .start-screen select {
   width: 220px;
   padding: 10px;
   font-size: 1.05em;
-  border: 2px solid #667eea;
+  border: 2px solid var(--violet-from);
   border-radius: 8px;
   margin-bottom: 10px;
 }
 
 .btn {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, var(--violet-from) 0%, var(--violet-to) 100%);
   color: white;
   border: none;
   padding: 12px 28px;
@@ -62,38 +62,38 @@ h1 {
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .btn-danger {
-  background: linear-gradient(135deg, #dc3545 0%, #a71d2a 100%);
+  background: linear-gradient(135deg, var(--bs-danger) 0%, #a71d2a 100%);
 }
 .btn-danger:hover { box-shadow: 0 10px 20px rgba(220,53,69,0.3); }
 
-.progress { text-align: center; color: #666; margin-bottom: 20px; font-size: 1.1em; }
+.progress { text-align: center; color: var(--slate-500); margin-bottom: 20px; font-size: 1.1em; }
 .question-box { background: #f8f9fa; padding: 25px; border-radius: 12px; margin-bottom: 25px; min-height: 200px; }
-.question-text { font-size: 1.2em; color: #333; line-height: 1.6; margin-bottom: 20px; }
+.question-text { font-size: 1.2em; color: var(--slate-800); line-height: 1.6; margin-bottom: 20px; }
 .mc-options { margin-top: 15px; }
 .mc-option { background: white; border: 2px solid #ddd; padding: 15px; margin-bottom: 10px; border-radius: 8px; cursor: pointer; transition: all 0.2s; position: relative; }
-.mc-option:hover { border-color: #667eea; background: #f0f4ff; }
-.mc-option.selected { border-color: #667eea; background: #e3e9ff; }
-.mc-option.selected::after { content: ' ✓'; color: #667eea; font-weight: bold; }
-.mc-option.correct { border-color: #28a745; background: #d4edda; }
-.mc-option.incorrect { border-color: #dc3545; background: #f8d7da; }
-.mc-option.show-correct { border-color: #28a745; background: #d4edda; }
+.mc-option:hover { border-color: var(--violet-from); background: var(--indigo-tint); }
+.mc-option.selected { border-color: var(--violet-from); background: #e3e9ff; }
+.mc-option.selected::after { content: ' ✓'; color: var(--violet-from); font-weight: bold; }
+.mc-option.correct { border-color: var(--bs-success); background: var(--bs-success-bg); }
+.mc-option.incorrect { border-color: var(--bs-danger); background: #f8d7da; }
+.mc-option.show-correct { border-color: var(--bs-success); background: var(--bs-success-bg); }
 
 .feedback { margin-top: 15px; padding: 15px; border-radius: 8px; font-size: 1.1em; font-weight: bold; }
-.feedback.correct { background: #d4edda; color: #155724; border: 2px solid #28a745; }
-.feedback.incorrect { background: #f8d7da; color: #721c24; border: 2px solid #dc3545; }
+.feedback.correct { background: var(--bs-success-bg); color: #155724; border: 2px solid var(--bs-success); }
+.feedback.incorrect { background: #f8d7da; color: #721c24; border: 2px solid var(--bs-danger); }
 
 .navigation { display: flex; justify-content: space-between; margin-top: 30px; }
 .results-screen { text-align: center; }
-.score-display { font-size: 3em; color: #667eea; margin: 30px 0; font-weight: bold; }
-.percentage { font-size: 1.5em; color: #666; margin-bottom: 30px; }
+.score-display { font-size: 3em; color: var(--violet-from); margin: 30px 0; font-weight: bold; }
+.percentage { font-size: 1.5em; color: var(--slate-500); margin-bottom: 30px; }
 .review-item { background: #f8f9fa; padding: 20px; border-radius: 12px; margin-bottom: 15px; text-align: left; }
-.review-item.correct { border-left: 5px solid #28a745; }
-.review-item.incorrect { border-left: 5px solid #dc3545; }
-.review-question { font-weight: bold; margin-bottom: 10px; color: #333; }
+.review-item.correct { border-left: 5px solid var(--bs-success); }
+.review-item.incorrect { border-left: 5px solid var(--bs-danger); }
+.review-question { font-weight: bold; margin-bottom: 10px; color: var(--slate-800); }
 .review-answer { margin: 5px 0; }
-.your-answer { color: #dc3545; }
-.correct-answer { color: #28a745; }
-.loading { text-align: center; color: #667eea; font-size: 1.2em; }
+.your-answer { color: var(--bs-danger); }
+.correct-answer { color: var(--bs-success); }
+.loading { text-align: center; color: var(--violet-from); font-size: 1.2em; }
 .answered { pointer-events: none; }
 
 .celebration-overlay {
@@ -115,7 +115,7 @@ h1 {
   color: #2d2a32;
   font-weight: 700;
   border-radius: 14px;
-  box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+  box-shadow: 0 10px 30px rgba(var(--black-rgb),0.25);
   letter-spacing: 0.5px;
   transform: translateY(-10px);
   animation: banner-pop 0.5s ease forwards;
@@ -151,14 +151,14 @@ h1 {
   padding: 12px;
   border: 1px dashed #bbb;
   border-radius: 10px;
-  background: #fafafa;
+  background: var(--mat-grey-50);
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
   align-items: center;
   justify-content: center;
   font-size: 0.95em;
-  color: #555;
+  color: var(--text-body);
 }
 .test-panel .btn { margin-top: 0; }
 

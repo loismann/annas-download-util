@@ -88,7 +88,7 @@ public static class LibraryKindleEndpoints
             }
             catch (Exception ex)
             {
-                Log.Warning("[library-send] Dropbox upload failed: {Message}", ex.Message);
+                Log.Warning(ex, "[library-send] Dropbox upload failed");
                 return Results.Json(
                     new { success = false, message = "Failed to upload file to Dropbox." },
                     statusCode: StatusCodes.Status502BadGateway);
@@ -115,7 +115,7 @@ public static class LibraryKindleEndpoints
             }
             catch (Exception ex)
             {
-                Log.Warning("[library-send] Email failed to {Target} ({KindleEmail}): {ErrorMessage}", target, kindleEmail, ex.Message);
+                Log.Warning(ex, "[library-send] Email failed to {Target} ({KindleEmail})", target, kindleEmail);
                 return Results.Json(
                     new { success = false, message = "Failed to send email to Kindle." },
                     statusCode: StatusCodes.Status502BadGateway);

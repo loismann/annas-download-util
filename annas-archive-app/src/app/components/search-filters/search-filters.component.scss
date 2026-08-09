@@ -16,7 +16,7 @@
 
 .download-counter .counter-main {
   font-size: 1rem;
-  color: #1976d2;
+  color: var(--mat-blue-700);
 }
 
 .download-counter.warning-yellow {
@@ -29,7 +29,7 @@
 }
 
 .download-counter.warning-orange {
-  background: #fff3e0;
+  background: var(--mat-orange-50);
   border-left-color: #ff9800;
 }
 
@@ -38,13 +38,13 @@
 }
 
 .download-counter.warning-red {
-  background: #ffebee;
-  border-left-color: #f44336;
+  background: var(--mat-red-50);
+  border-left-color: var(--mat-red-500);
   animation: pulse 2s ease-in-out infinite;
 }
 
 .download-counter.warning-red .counter-main {
-  color: #c62828;
+  color: var(--mat-red-800);
 }
 
 @keyframes pulse {

@@ -2,9 +2,9 @@
   display: block;
   height: calc(100dvh - 64px);
   padding: 36px 36px 28px;
-  background: radial-gradient(circle at 10% 20%, #eef2ff 0, #f8fafc 35%, #ffffff 70%);
+  background: radial-gradient(circle at 10% 20%, var(--indigo-50) 0, var(--surface-page) 35%, var(--surface-card) 70%);
   box-sizing: border-box;
-  color: #0f172a;
+  color: var(--text-heading);
 }
 
 .video-library-wrapper {
@@ -23,10 +23,10 @@
 
 .sidebar-container,
 .video-library-panel {
-  background: #ffffff;
-  border: 1px solid #e5e7eb;
+  background: var(--surface-card);
+  border: 1px solid var(--border);
   border-radius: 12px;
-  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.06);
+  box-shadow: 0 20px 40px rgba(var(--slate-900-rgb), 0.06);
   padding: 16px;
   display: flex;
   flex-direction: column;
@@ -138,20 +138,20 @@
   height: 56px;
   align-self: stretch;
   margin-top: 0;
-  border: 1px solid #cbd5f5;
+  border: 1px solid var(--lavender-200);
   border-left: none;
   border-radius: 0 10px 10px 0;
-  color: #3f51b5;
+  color: var(--brand);
   padding: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   line-height: 1;
-  background: #ffffff;
+  background: var(--surface-card);
 }
 
 .sort-direction-toggle:hover {
-  background: #eef2ff;
+  background: var(--indigo-50);
 }
 
 .sort-direction-toggle mat-icon {
@@ -179,7 +179,7 @@
   justify-content: center;
   align-items: center;
   min-height: 200px;
-  color: #666;
+  color: var(--text-muted);
 }
 
 .video-library-sorting-indicator {
@@ -188,11 +188,11 @@
   justify-content: center;
   gap: 8px;
   padding: 8px 16px;
-  background: rgba(63, 81, 181, 0.1);
+  background: rgba(var(--brand-rgb), 0.1);
   border-radius: 4px;
   margin: 8px auto;
   width: fit-content;
-  color: #3f51b5;
+  color: var(--brand);
   font-size: 14px;
 }
 
@@ -223,10 +223,10 @@
     max-height: 78dvh;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
-    background: #ffffff;
+    background: var(--surface-card);
     border: none;
     border-radius: 16px 16px 0 0;
-    box-shadow: 0 -8px 30px rgba(15, 23, 42, 0.3);
+    box-shadow: 0 -8px 30px rgba(var(--slate-900-rgb), 0.3);
     padding-bottom: env(safe-area-inset-bottom);
   }
 
@@ -257,10 +257,10 @@
 
 /* Download Panel */
 .video-download-panel {
-  background: #ffffff;
-  border: 1px solid #e5e7eb;
+  background: var(--surface-card);
+  border: 1px solid var(--border);
   border-radius: 12px;
-  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.06);
+  box-shadow: 0 20px 40px rgba(var(--slate-900-rgb), 0.06);
   padding: 16px;
   display: flex;
   flex-direction: column;

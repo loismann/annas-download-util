@@ -75,7 +75,7 @@ public static class AudiobookRequestEndpoints
         }
         catch (HttpRequestException ex)
         {
-            Log.Warning("[Listenarr] Read-only status check failed: {Message}", ex.Message);
+            Log.Warning(ex, "[Listenarr] Read-only status check failed");
             return Results.Json(new
             {
                 enabled = listenarr.IsEnabled,
@@ -88,7 +88,7 @@ public static class AudiobookRequestEndpoints
         }
         catch (TaskCanceledException ex)
         {
-            Log.Warning("[Listenarr] Read-only status check timed out: {Message}", ex.Message);
+            Log.Warning(ex, "[Listenarr] Read-only status check timed out");
             return Results.Json(new
             {
                 enabled = listenarr.IsEnabled,
@@ -130,13 +130,13 @@ public static class AudiobookRequestEndpoints
         }
         catch (HttpRequestException ex)
         {
-            Log.Warning("[Listenarr] Audiobook search failed for {Query}: {Message}", query, ex.Message);
+            Log.Warning(ex, "[Listenarr] Audiobook search failed for {Query}", query);
             return Results.Json(new { error = "Audiobook search is temporarily unavailable." },
                 statusCode: StatusCodes.Status503ServiceUnavailable);
         }
         catch (TaskCanceledException ex) when (!ct.IsCancellationRequested)
         {
-            Log.Warning("[Listenarr] Audiobook search timed out for {Query}: {Message}", query, ex.Message);
+            Log.Warning(ex, "[Listenarr] Audiobook search timed out for {Query}", query);
             return Results.Json(new { error = "Audiobook search timed out. Try again." },
                 statusCode: StatusCodes.Status504GatewayTimeout);
         }
@@ -179,13 +179,13 @@ public static class AudiobookRequestEndpoints
         }
         catch (HttpRequestException ex)
         {
-            Log.Warning("[Listenarr] Request preview failed for {Asin}: {Message}", asin, ex.Message);
+            Log.Warning(ex, "[Listenarr] Request preview failed for {Asin}", asin);
             return Results.Json(new { error = "Listenarr is temporarily unavailable." },
                 statusCode: StatusCodes.Status503ServiceUnavailable);
         }
         catch (TaskCanceledException ex) when (!ct.IsCancellationRequested)
         {
-            Log.Warning("[Listenarr] Request preview timed out for {Asin}: {Message}", asin, ex.Message);
+            Log.Warning(ex, "[Listenarr] Request preview timed out for {Asin}", asin);
             return Results.Json(new { error = "The request preview timed out. Try again." },
                 statusCode: StatusCodes.Status504GatewayTimeout);
         }
@@ -219,7 +219,7 @@ public static class AudiobookRequestEndpoints
         }
         catch (HttpRequestException ex)
         {
-            Log.Warning("[Listenarr] Request confirmation failed: {Message}", ex.Message);
+            Log.Warning(ex, "[Listenarr] Request confirmation failed");
             return Results.Json(new
             {
                 error = "Listenarr could not confirm the request. Search again to check whether it was added."
@@ -227,7 +227,7 @@ public static class AudiobookRequestEndpoints
         }
         catch (TaskCanceledException ex) when (!ct.IsCancellationRequested)
         {
-            Log.Warning("[Listenarr] Request confirmation timed out: {Message}", ex.Message);
+            Log.Warning(ex, "[Listenarr] Request confirmation timed out");
             return Results.Json(new
             {
                 error = "The request outcome is uncertain. Search again before retrying."
@@ -266,13 +266,13 @@ public static class AudiobookRequestEndpoints
         }
         catch (HttpRequestException ex)
         {
-            Log.Warning("[Listenarr] Series preview failed for {SeriesAsin}: {Message}", seriesAsin, ex.Message);
+            Log.Warning(ex, "[Listenarr] Series preview failed for {SeriesAsin}", seriesAsin);
             return Results.Json(new { error = "The series could not be loaded right now." },
                 statusCode: StatusCodes.Status503ServiceUnavailable);
         }
         catch (TaskCanceledException ex) when (!ct.IsCancellationRequested)
         {
-            Log.Warning("[Listenarr] Series preview timed out for {SeriesAsin}: {Message}", seriesAsin, ex.Message);
+            Log.Warning(ex, "[Listenarr] Series preview timed out for {SeriesAsin}", seriesAsin);
             return Results.Json(new { error = "The series preview timed out. Try again." },
                 statusCode: StatusCodes.Status504GatewayTimeout);
         }
@@ -315,7 +315,7 @@ public static class AudiobookRequestEndpoints
         }
         catch (HttpRequestException ex)
         {
-            Log.Warning("[Listenarr] Series confirmation failed: {Message}", ex.Message);
+            Log.Warning(ex, "[Listenarr] Series confirmation failed");
             return Results.Json(new
             {
                 error = "Some books may not have been added. Preview the series again to see the current state."
@@ -351,13 +351,13 @@ public static class AudiobookRequestEndpoints
         }
         catch (HttpRequestException ex)
         {
-            Log.Warning("[Listenarr] Release search failed for {ListenarrId}: {Message}", listenarrId, ex.Message);
+            Log.Warning(ex, "[Listenarr] Release search failed for {ListenarrId}", listenarrId);
             return Results.Json(new { error = "Release search is temporarily unavailable." },
                 statusCode: StatusCodes.Status503ServiceUnavailable);
         }
         catch (TaskCanceledException ex) when (!ct.IsCancellationRequested)
         {
-            Log.Warning("[Listenarr] Release search timed out for {ListenarrId}: {Message}", listenarrId, ex.Message);
+            Log.Warning(ex, "[Listenarr] Release search timed out for {ListenarrId}", listenarrId);
             return Results.Json(new { error = "Release search timed out. Try again." },
                 statusCode: StatusCodes.Status504GatewayTimeout);
         }
@@ -390,7 +390,7 @@ public static class AudiobookRequestEndpoints
         }
         catch (HttpRequestException ex)
         {
-            Log.Warning("[Listenarr] Release grab failed for {ListenarrId}: {Message}", listenarrId, ex.Message);
+            Log.Warning(ex, "[Listenarr] Release grab failed for {ListenarrId}", listenarrId);
             return Results.Json(new
             {
                 error = "The download outcome is uncertain. Check request progress before trying again."
@@ -398,7 +398,7 @@ public static class AudiobookRequestEndpoints
         }
         catch (TaskCanceledException ex) when (!ct.IsCancellationRequested)
         {
-            Log.Warning("[Listenarr] Release grab timed out for {ListenarrId}: {Message}", listenarrId, ex.Message);
+            Log.Warning(ex, "[Listenarr] Release grab timed out for {ListenarrId}", listenarrId);
             return Results.Json(new
             {
                 error = "The download outcome is uncertain. Check request progress before trying again."
@@ -429,13 +429,13 @@ public static class AudiobookRequestEndpoints
         }
         catch (HttpRequestException ex)
         {
-            Log.Warning("[Listenarr] Pending request list failed: {Message}", ex.Message);
+            Log.Warning(ex, "[Listenarr] Pending request list failed");
             return Results.Json(new { error = "Request progress is temporarily unavailable." },
                 statusCode: StatusCodes.Status503ServiceUnavailable);
         }
         catch (TaskCanceledException ex)
         {
-            Log.Warning("[Listenarr] Pending request list timed out: {Message}", ex.Message);
+            Log.Warning(ex, "[Listenarr] Pending request list timed out");
             return Results.Json(new { error = "Request progress is temporarily unavailable." },
                 statusCode: StatusCodes.Status504GatewayTimeout);
         }
@@ -487,7 +487,7 @@ public static class AudiobookRequestEndpoints
         }
         catch (HttpRequestException ex)
         {
-            Log.Warning("[Listenarr] Status refresh failed for {ListenarrId}: {Message}", listenarrId, ex.Message);
+            Log.Warning(ex, "[Listenarr] Status refresh failed for {ListenarrId}", listenarrId);
             return Results.Json(new { error = "Request progress is temporarily unavailable." },
                 statusCode: StatusCodes.Status503ServiceUnavailable);
         }
@@ -522,7 +522,7 @@ public static class AudiobookRequestEndpoints
         }
         catch (HttpRequestException ex)
         {
-            Log.Warning("[Listenarr] Cancellation failed for {ListenarrId}: {Message}", listenarrId, ex.Message);
+            Log.Warning(ex, "[Listenarr] Cancellation failed for {ListenarrId}", listenarrId);
             return Results.Json(new { error = "The cancellation outcome is uncertain. Refresh progress before retrying." },
                 statusCode: StatusCodes.Status503ServiceUnavailable);
         }
@@ -555,7 +555,7 @@ public static class AudiobookRequestEndpoints
         }
         catch (HttpRequestException ex)
         {
-            Log.Warning("[Listenarr] Request removal failed for {ListenarrId}: {Message}", listenarrId, ex.Message);
+            Log.Warning(ex, "[Listenarr] Request removal failed for {ListenarrId}", listenarrId);
             return Results.Json(new { error = "The request could not be removed. Refresh and try again." },
                 statusCode: StatusCodes.Status503ServiceUnavailable);
         }
@@ -589,7 +589,7 @@ public static class AudiobookRequestEndpoints
         }
         catch (HttpRequestException ex)
         {
-            Log.Warning("[Listenarr] Import retry failed for {ListenarrId}: {Message}", listenarrId, ex.Message);
+            Log.Warning(ex, "[Listenarr] Import retry failed for {ListenarrId}", listenarrId);
             return Results.Json(new { error = "Listenarr could not retry the import." },
                 statusCode: StatusCodes.Status503ServiceUnavailable);
         }

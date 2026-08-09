@@ -10,7 +10,7 @@
 
 .subtitle {
   margin: 0 0 16px;
-  color: #5f6368;
+  color: var(--google-grey-700);
   font-size: 0.85rem;
 }
 
@@ -29,11 +29,11 @@
 .notice.error {
   background: rgba(211, 47, 47, 0.08);
   border: 1px solid rgba(211, 47, 47, 0.25);
-  color: #b3261e;
+  color: var(--mat-error);
 }
 
 .notice code {
-  background: rgba(0, 0, 0, 0.06);
+  background: rgba(var(--black-rgb), 0.06);
   padding: 1px 5px;
   border-radius: 3px;
   font-size: 0.85em;
@@ -58,7 +58,7 @@
 .spacer { flex: 1 1 auto; }
 
 .photo-count {
-  color: #5f6368;
+  color: var(--google-grey-700);
   font-size: 0.82rem;
 }
 
@@ -109,7 +109,7 @@
   background: #eceff1;
 }
 
-.photo.selected { outline-color: #3f51b5; }
+.photo.selected { outline-color: var(--brand); }
 
 .photo.selected img { filter: brightness(0.82); }
 
@@ -120,8 +120,8 @@
   width: 22px;
   height: 22px;
   border-radius: 50%;
-  background: #3f51b5;
-  color: #fff;
+  background: var(--brand);
+  color: var(--text-inverse);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -138,12 +138,12 @@
   position: absolute;
   bottom: 5px;
   right: 5px;
-  color: #fff;
+  color: var(--text-inverse);
   font-size: 16px;
   width: 16px;
   height: 16px;
   /* The library is full of light images; a bare white glyph vanishes on them. */
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+  text-shadow: 0 1px 3px rgba(var(--black-rgb), 0.7);
 }
 
 .loading, .empty-state, .load-more {
@@ -152,17 +152,17 @@
   padding: 32px 0;
 }
 
-.empty-state { color: #5f6368; font-size: 0.9rem; }
+.empty-state { color: var(--google-grey-700); font-size: 0.9rem; }
 
 /* ─── Basket ────────────────────────────────────────────────────────── */
 
 .basket-pane {
   position: sticky;
   top: 12px;
-  border: 1px solid rgba(0, 0, 0, 0.1);
+  border: 1px solid rgba(var(--black-rgb), 0.1);
   border-radius: 8px;
   padding: 12px 14px;
-  background: rgba(0, 0, 0, 0.015);
+  background: rgba(var(--black-rgb), 0.015);
   max-height: calc(100vh - 32px);
   overflow-y: auto;
 }
@@ -180,7 +180,7 @@
 }
 
 .basket-empty {
-  color: #5f6368;
+  color: var(--google-grey-700);
   font-size: 0.85rem;
   margin: 12px 0;
 }
@@ -189,7 +189,7 @@
   display: flex;
   gap: 10px;
   padding: 10px 0;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.07);
+  border-bottom: 1px solid rgba(var(--black-rgb), 0.07);
 }
 
 .basket-item img {
@@ -208,7 +208,7 @@
 
 .basket-name {
   font-size: 0.78rem;
-  color: #5f6368;
+  color: var(--google-grey-700);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -255,7 +255,7 @@
   margin-bottom: 8px;
 }
 
-.total-row.over { color: #b3261e; }
+.total-row.over { color: var(--mat-error); }
 
 .total-row .limit {
   font-weight: 400;
@@ -267,7 +267,7 @@
 .hint {
   margin: 8px 0 0;
   font-size: 0.74rem;
-  color: #5f6368;
+  color: var(--google-grey-700);
   line-height: 1.35;
 }
 
@@ -300,5 +300,5 @@
 .result-note {
   margin: 4px 0 0;
   font-size: 0.75rem;
-  color: #5f6368;
+  color: var(--google-grey-700);
 }

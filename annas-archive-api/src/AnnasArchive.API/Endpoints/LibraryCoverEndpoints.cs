@@ -238,7 +238,7 @@ public static class LibraryCoverEndpoints
         }
         catch (Exception ex)
         {
-            Log.Warning("[library] Failed to update cover metadata for {SafeFileName}: {Message}", safeFileName, ex.Message);
+            Log.Warning(ex, "[library] Failed to update cover metadata for {SafeFileName}", safeFileName);
             return Results.Problem("Failed to update cover metadata.");
         }
     }
@@ -381,7 +381,7 @@ public static class LibraryCoverEndpoints
         }
         catch (Exception ex)
         {
-            Log.Information("[library-cover-bytes] ❌ Exception updating metadata: {Message}", ex.Message);
+            Log.Information(ex, "[library-cover-bytes] ❌ Exception updating metadata");
             Log.Information("[library-cover-bytes] Stack: {Stack}", ex.StackTrace);
             return Results.Problem("Failed to update cover metadata.");
         }

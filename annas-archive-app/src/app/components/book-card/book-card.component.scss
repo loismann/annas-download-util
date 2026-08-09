@@ -4,7 +4,7 @@
   padding: 0 !important;
   overflow: hidden;
   border-radius: 10px;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--border);
   height: 100%;
   position: relative;
   /* Width is controlled by parent flexbox - card fills available space */
@@ -23,18 +23,18 @@
   background: white;
   border-radius: 4px;
   padding: 4px;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  box-shadow: 0 2px 4px rgba(var(--black-rgb),0.1);
 }
 
 .library-card.bulk-edit-selected {
-  border: 3px solid #3f51b5;
-  box-shadow: 0 4px 12px rgba(63, 81, 181, 0.3);
+  border: 3px solid var(--brand);
+  box-shadow: 0 4px 12px rgba(var(--brand-rgb), 0.3);
 }
 
 .cover-frame {
   width: 100%;
   aspect-ratio: 2 / 3;
-  background: #f8fafc;
+  background: var(--surface-page);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -68,7 +68,7 @@
 }
 
 .library-card .author {
-  color: #666;
+  color: var(--text-muted);
   font-size: 0.8rem;
   margin-bottom: 0.3rem;
   display: -webkit-box;
@@ -85,7 +85,7 @@
 
 .library-card .meta {
   font-size: 0.75rem;
-  color: #444;
+  color: var(--slate-700);
 }
 
 .goodreads-row {
@@ -101,7 +101,7 @@
   background: transparent;
   padding: 0;
   cursor: pointer;
-  color: #94a3b8;
+  color: var(--text-subtle);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -115,22 +115,22 @@
 }
 
 .favorite-btn:hover {
-  color: #e11d48;
+  color: var(--rose-600);
 }
 
 .favorite-btn.favorited {
-  color: #e11d48;
+  color: var(--rose-600);
 }
 
 .goodreads {
   font-size: 0.78rem;
-  color: #475569;
+  color: var(--text-body);
 }
 
 .goodreads-value {
   margin-left: 6px;
   font-weight: 600;
-  color: #1f2937;
+  color: var(--text-strong);
 }
 
 .personal-stars {
@@ -148,7 +148,7 @@
   width: auto;
   border: none;
   background: transparent;
-  color: #cbd5f5;
+  color: var(--lavender-200);
   /* Adaptive star size using container query units */
   font-size: clamp(0.7rem, 4cqw, 1.3rem);
   padding: 0;
@@ -158,11 +158,11 @@
 }
 
 .star-button.filled {
-  color: #d97706;
+  color: var(--amber-600);
 }
 
 .star-button:hover {
-  color: #ea580c;
+  color: var(--orange-600);
 }
 
 .card-actions {

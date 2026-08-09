@@ -62,7 +62,7 @@
 .library-link { height: 48px; }
 
 .ai-hint {
-  color: #777;
+  color: var(--text-muted);
   font-size: 0.85rem;
   text-align: center;
 }
@@ -78,15 +78,15 @@
 }
 
 .loading { display: flex; justify-content: center; padding: 2rem; }
-.error { color: #f44336; margin-bottom: 1rem; }
-.empty-state { color: #777; text-align: center; padding: 2rem; }
+.error { color: var(--mat-red-500); margin-bottom: 1rem; }
+.empty-state { color: var(--slate-500); text-align: center; padding: 2rem; }
 
 .ai-summary {
   max-width: 900px;
   margin: 0 auto 1.25rem;
   text-align: center;
   line-height: 1.5;
-  color: #555;
+  color: var(--text-body);
 }
 
 .results-grid {
@@ -111,7 +111,7 @@
   aspect-ratio: 1 / 1;
   overflow: hidden;
   flex: 0 0 auto;
-  background: #ececec;
+  background: var(--slate-200);
 }
 
 .cover { width: 100%; height: 100%; object-fit: cover; display: block; }
@@ -120,14 +120,14 @@
 
 .title { font-weight: 500; font-size: 1rem; line-height: 1.3; }
 
-.meta { color: #777; font-size: 0.85rem; margin-top: 2px; }
+.meta { color: var(--slate-500); font-size: 0.85rem; margin-top: 2px; }
 .meta.sub { display: flex; flex-wrap: wrap; gap: 2px 10px; }
 
 .overview {
   margin-top: 0.5rem;
   font-size: 0.85rem;
   line-height: 1.4;
-  color: #555;
+  color: var(--text-body);
   font-style: italic;
   display: -webkit-box;
   -webkit-line-clamp: 3;
@@ -135,15 +135,15 @@
   overflow: hidden;
 }
 
-.state-label { margin-top: 0.5rem; font-size: 0.8rem; font-weight: 500; color: #777; }
-.state-label.owned { color: #4caf50; }
+.state-label { margin-top: 0.5rem; font-size: 0.8rem; font-weight: 500; color: var(--slate-500); }
+.state-label.owned { color: var(--mat-green-500); }
 .state-label.requested { color: #3f7fd6; }
 
-.note { margin-top: 0.5rem; font-size: 0.8rem; color: #777; line-height: 1.35; }
-.card-message { margin-top: 0.5rem; font-size: 0.8rem; color: #2e7d32; line-height: 1.35; }
-.card-error { margin-top: 0.5rem; font-size: 0.8rem; color: #f44336; line-height: 1.35; }
+.note { margin-top: 0.5rem; font-size: 0.8rem; color: var(--slate-500); line-height: 1.35; }
+.card-message { margin-top: 0.5rem; font-size: 0.8rem; color: var(--mat-green-800); line-height: 1.35; }
+.card-error { margin-top: 0.5rem; font-size: 0.8rem; color: var(--mat-red-500); line-height: 1.35; }
 
-.progress { margin-top: 0.65rem; border-top: 1px solid rgba(0, 0, 0, .09); padding-top: 0.6rem; }
+.progress { margin-top: 0.65rem; border-top: 1px solid rgba(var(--black-rgb), .09); padding-top: 0.6rem; }
 .progress-heading {
   display: flex;
   justify-content: space-between;
@@ -155,7 +155,7 @@
 
 /* Unresolved AI suggestions get no cover and a dashed edge, so a card with
    nothing behind it never reads as a requestable result. */
-.audiobook-card.unresolved { border: 1px dashed rgba(0, 0, 0, .2); box-shadow: none; }
+.audiobook-card.unresolved { border: 1px dashed rgba(var(--black-rgb), .2); box-shadow: none; }
 
 .chip {
   display: inline-block;
@@ -163,7 +163,7 @@
   padding: 3px 9px;
   border-radius: 999px;
   background: #f0f0f0;
-  color: #666;
+  color: var(--text-muted);
   font-size: 0.72rem;
   font-weight: 600;
 }

@@ -48,7 +48,7 @@ public class CoverLookupService : ICoverLookupService
         }
         catch (Exception ex)
         {
-            Log.Warning("[CoverLookup] Anna's Archive lookup failed: {Message}", ex.Message);
+            Log.Warning(ex, "[CoverLookup] Anna's Archive lookup failed");
         }
 
         // 1. Try Open Library first (usually higher quality covers)
@@ -63,7 +63,7 @@ public class CoverLookupService : ICoverLookupService
         }
         catch (Exception ex)
         {
-            Log.Warning("[CoverLookup] Open Library lookup failed: {Message}", ex.Message);
+            Log.Warning(ex, "[CoverLookup] Open Library lookup failed");
         }
 
         // 2. Try Google Books as fallback
@@ -78,7 +78,7 @@ public class CoverLookupService : ICoverLookupService
         }
         catch (Exception ex)
         {
-            Log.Warning("[CoverLookup] Google Books lookup failed: {Message}", ex.Message);
+            Log.Warning(ex, "[CoverLookup] Google Books lookup failed");
         }
 
         Log.Information("[CoverLookup] No cover found for '{Title}'", title);
@@ -158,7 +158,7 @@ public class CoverLookupService : ICoverLookupService
         }
         catch (Exception ex)
         {
-            Log.Warning("[CoverLookup] Failed to get candidates: {Message}", ex.Message);
+            Log.Warning(ex, "[CoverLookup] Failed to get candidates");
             return new List<string>();
         }
     }

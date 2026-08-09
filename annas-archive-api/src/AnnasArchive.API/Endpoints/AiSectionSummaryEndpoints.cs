@@ -118,7 +118,7 @@ public static class AiSectionSummaryEndpoints
                 }
                 catch (Exception ex)
                 {
-                    Log.Error("❌ Failed to index book: {ExMessage}", ex.Message);
+                    Log.Error(ex, "❌ Failed to index book");
                     await progress.ErrorAsync($"Failed to index book: {ex.Message}");
                     return;
                 }
@@ -160,7 +160,7 @@ public static class AiSectionSummaryEndpoints
         // simply stops, with no `error` event to render.
         catch (ArgumentException ex)
         {
-            Log.Error("❌ Invalid argument for chunk boundary detection: {Message}", ex.Message);
+            Log.Error(ex, "❌ Invalid argument for chunk boundary detection");
             await new SseProgress(context.Response).ErrorAsync($"Invalid parameter: {ex.ParamName ?? "unknown"}");
         }
         catch (Exception ex)
@@ -190,40 +190,30 @@ public static class AiSectionSummaryEndpoints
             // Load associated vocab if it exists
             var vocab = AiContentCache.LoadSectionVocab(dropboxPath, chapterId, sectionIndex);
 
-            // Filter out known AND study words from vocab
-            if (vocab != null && vocab.Count > 0)
+            // Drop words the reader already knows or is already studying.
+            //
+            // The predicate is pure and the outcome is reported once. It used to
+            // log a line per dropped word from inside the Where, plus four more
+            // around it — on a cache hit, which is the free path, so a single
+            // cached section could write dozens of lines saying nothing the
+            // count does not.
+            if (vocab is { Count: > 0 })
             {
-                Log.Information("🔍 [GET /api/ai/section-summary] Loading {VocabCount} vocab cards from cache", vocab.Count);
                 var knownWords = AiContentCache.LoadKnownWords();
                 var studyWords = AiContentCache.LoadStudyWordsWithBooks();
-                Log.Information("📚 [GET /api/ai/section-summary] Loaded {KnownWordsCount} known words and {StudyWordsCount} study words from server", knownWords.Count, studyWords.Count);
 
                 var beforeCount = vocab.Count;
-                var filteredVocab = vocab.Where(card =>
-                {
-                    var normalized = AiContentCache.NormalizeTerm(card.Term);
-                    var isKnown = knownWords.Contains(normalized);
-                    var isStudy = studyWords.ContainsKey(normalized);
-
-                    if (isKnown)
+                vocab = vocab
+                    .Where(card =>
                     {
-                        Log.Information("  🚫 Filtering out known word: '{CardTerm}' (normalized: '{Normalized}')", card.Term, normalized);
-                    }
-                    else if (isStudy)
-                    {
-                        Log.Information("  🚫 Filtering out study word: '{CardTerm}' (normalized: '{Normalized}')", card.Term, normalized);
-                    }
+                        var normalized = AiContentCache.NormalizeTerm(card.Term);
+                        return !knownWords.Contains(normalized) && !studyWords.ContainsKey(normalized);
+                    })
+                    .ToList();
 
-                    return !isKnown && !isStudy;
-                }).ToList();
-
-                var removedCount = beforeCount - filteredVocab.Count;
-                Log.Information("✅ [GET /api/ai/section-summary] Filtered vocab: {BeforeCount} cards → {FilteredVocabCount} cards (removed {RemovedCount} known/study words)", beforeCount, filteredVocab.Count, removedCount);
-                vocab = filteredVocab;
-            }
-            else
-            {
-                Log.Information("ℹ️ [GET /api/ai/section-summary] No vocab to filter (vocab={VocabCount})", vocab?.Count ?? 0);
+                Log.Information(
+                    "[GET /api/ai/section-summary] Vocab filtered: {BeforeCount} → {AfterCount} cards ({RemovedCount} already known or being studied)",
+                    beforeCount, vocab.Count, beforeCount - vocab.Count);
             }
 
             // Create new response with filtered vocab included
@@ -339,7 +329,7 @@ public static class AiSectionSummaryEndpoints
         }
         catch (Exception ex) when (ex is not ArgumentException)
         {
-            Log.Error("❌ Section summary generation failed: {ExMessage}", ex.Message);
+            Log.Error(ex, "❌ Section summary generation failed");
             Log.Information("   Stack trace: {ExStackTrace}", ex.StackTrace);
             return Results.Problem("Failed to generate section summary.");
         }

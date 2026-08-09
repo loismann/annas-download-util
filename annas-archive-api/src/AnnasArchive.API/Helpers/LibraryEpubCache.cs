@@ -67,7 +67,7 @@ static class LibraryEpubCache
         }
         catch (Exception ex)
         {
-            Log.Information("[library] Failed to read chapter {ChapterId} from {FilePath}: {ErrorMessage}", chapterId, filePath, ex.Message);
+            Log.Information(ex, "[library] Failed to read chapter {ChapterId} from {FilePath}", chapterId, filePath);
             return null;
         }
     }

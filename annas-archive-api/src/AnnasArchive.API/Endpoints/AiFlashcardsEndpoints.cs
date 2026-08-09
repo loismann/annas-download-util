@@ -77,59 +77,9 @@ public static class AiFlashcardsEndpoints
                 ? request.Term.Substring(0, maxInputLength) + "..."
                 : request.Term;
 
-            var systemPrompt = @"You are a vocabulary flashcard generator. Your job is to extract INDIVIDUAL WORDS or SHORT PHRASES from text and create a separate flashcard for EACH ONE.
+            var userPrompt = FlashcardPrompts.UserPrompt(
+                inputText, request.BookTitle, request.KnownWords, request.Context);
 
-CRITICAL: Extract MULTIPLE individual terms from the passage. DO NOT create a single flashcard with the entire passage. Each flashcard should be for ONE specific word or short phrase.
-
-Return ONLY valid JSON, no markdown or explanation.
-
-JSON Structure (ARRAY of flashcards):
-[
-  { ""term"": ""audacity"", ""definition"": ""bold or rude behavior"", ""etymology"": ""Latin audax (bold)"", ""usageExamples"": [""She had the audacity to criticize."", ""His audacity was shocking.""], ""notes"": """" },
-  { ""term"": ""rhizome"", ""definition"": ""(philosophy) a non-hierarchical network structure, as opposed to a tree-like hierarchy"", ""etymology"": ""Greek rhizoma (mass of roots)"", ""usageExamples"": [""Deleuze uses rhizome as a metaphor."", ""A rhizomatic structure has no center.""], ""notes"": ""Specific philosophical meaning by Deleuze & Guattari"" },
-  ...
-]
-
-What to extract (BE VERY SELECTIVE):
-- College-level or graduate-level vocabulary (words beyond typical high school reading)
-- Foreign words/phrases used in the text
-- Specialized academic, philosophical, or technical terms
-- Subject-specific jargon that requires domain knowledge
-- Neologisms or terms with specialized meaning in this work (e.g., philosophy terms that are also common English words but have specific meaning here)
-- Archaic or literary words rarely used in modern English
-- Historical/cultural references requiring background knowledge
-
-DO NOT extract:
-- Common words that high school students would know (e.g., ""said"", ""walked"", ""important"", ""although"", ""necessary"")
-- Basic academic words taught in high school (e.g., ""analyze"", ""demonstrate"", ""significant"")
-- Simple vocabulary regardless of context
-
-BE STRICT: Only select words that would genuinely challenge someone with a high school education or require specific domain knowledge.
-
-Rules:
-- Extract 3-10 individual terms from the passage (fewer is better than including common words)
-- Each term should be a SINGLE WORD or SHORT PHRASE (2-4 words max)
-- Definitions: 1-2 sentences, clear and concise (include subject-specific meaning if applicable)
-- Usage examples: 2 brief sentences showing the word in context
-- Etymology: Short phrase (""Unknown"" if unclear)
-- Notes: Include context if the word has a specific meaning in this discipline/work";
-
-            var knownWordsContext = request.KnownWords != null && request.KnownWords.Count > 0
-                ? $"\n\nEXCLUDE these words (user already knows them): {string.Join(", ", request.KnownWords)}"
-                : "";
-
-            // Add custom context instructions if provided (for intelligent selection handling)
-            var customInstructions = !string.IsNullOrWhiteSpace(request.Context)
-                ? $"\n\nSPECIAL INSTRUCTIONS:\n{request.Context}\n"
-                : "";
-
-            var userPrompt = $@"Extract vocabulary terms from this passage:
-
-""{inputText}""
-
-Context: {request.BookTitle ?? "Unknown book"}{knownWordsContext}{customInstructions}
-
-Return JSON array of flashcards for individual terms found in the passage.";
 
             var outcome = await chat.CompleteAsync(
                 new AiChatCall(
@@ -137,7 +87,7 @@ Return JSON array of flashcards for individual terms found in the passage.";
                     // gpt-4o rather than the configured deep model: vocabulary
                     // extraction is a recognition task, and this runs per passage.
                     Model: "gpt-4o",
-                    SystemPrompt: systemPrompt,
+                    SystemPrompt: FlashcardPrompts.SystemPrompt,
                     UserPrompt: userPrompt,
                     MaxCompletionTokens: cfg.GetValue<int>("AI:MaxCompletionTokens:LearnMore"),
                     Temperature: cfg.GetValue<double>("AI:Temperature:LearnMore")),
@@ -145,79 +95,93 @@ Return JSON array of flashcards for individual terms found in the passage.";
 
             if (!outcome.Succeeded) return outcome.Failure!;
 
-            var content = outcome.Text ?? "{}";
-
-            List<FlashcardItem> cardsParsed;
-            try
-            {
-                // Try to clean the content first - remove markdown code blocks if present
-                var cleanedContent = AiText.StripCodeFences(content);
-
-                // Try to extract JSON array from the content
-                var jsonMatch = Regex.Match(cleanedContent, @"\[[\s\S]*\]");
-                if (jsonMatch.Success)
-                {
-                    cleanedContent = jsonMatch.Value;
-                }
-
-                cardsParsed = JsonSerializer.Deserialize<List<FlashcardItem>>(cleanedContent, new JsonSerializerOptions
-                {
-                    PropertyNameCaseInsensitive = true
-                }) ?? throw new Exception("Invalid flashcard JSON array");
-
-                Log.Information("✅ Successfully parsed {CardsParsedCount} flashcards from AI response", cardsParsed.Count);
-            }
-            catch (Exception parseEx)
-            {
-                Log.Warning("⚠️ Failed to parse flashcards as array: {ParseExMessage}", parseEx.Message);
-                Log.Information("   AI response: {ContentSubstring}...", content.Substring(0, Math.Min(200, content.Length)));
-
-                try
-                {
-                    // Try parsing as a single object
-                    var single = JsonSerializer.Deserialize<FlashcardItem>(content, new JsonSerializerOptions
-                    {
-                        PropertyNameCaseInsensitive = true
-                    });
-                    if (single != null)
-                    {
-                        cardsParsed = new List<FlashcardItem> { single };
-                        Log.Information("✅ Parsed single flashcard");
-                    }
-                    else
-                        throw new Exception("Invalid flashcard JSON");
-                }
-                catch (Exception singleEx)
-                {
-                    Log.Warning("❌ Failed to parse flashcards: {SingleExMessage}", singleEx.Message);
-                    // Don't create a fallback card - return empty list
-                    // This prevents creating giant vocab cards with entire text
-                    cardsParsed = new List<FlashcardItem>();
-                    Log.Warning("⚠️ Returning empty flashcard list due to parsing failure");
-                }
-            }
+            var cardsParsed = ParseFlashcards(outcome.Text ?? "{}");
 
             if (shouldSave && !string.IsNullOrWhiteSpace(request.DropboxPath))
-            {
-                var list = flashcardService.LoadFlashcards(request.DropboxPath);
-                foreach (var card in cardsParsed)
-                {
-                    var existing = list.FindIndex(x => string.Equals(x.Term, card.Term, StringComparison.OrdinalIgnoreCase));
-                    if (existing >= 0)
-                        list[existing] = card;
-                    else
-                        list.Add(card);
-                }
+                MergeIntoLibrary(cardsParsed, request.DropboxPath, flashcardService);
 
-                flashcardService.SaveFlashcards(request.DropboxPath, list);
-            }
             return Results.Ok(new FlashcardResult(cardsParsed));
         }
         catch (Exception ex) when (ex is not ArgumentException)
         {
-            Log.Error("❌ Flashcard create failed: {ExMessage}", ex.Message);
+            Log.Error(ex, "❌ Flashcard create failed");
             return ApiResponse.InternalError("Failed to create flashcard.");
         }
+    }
+
+    private static readonly JsonSerializerOptions FlashcardJson = new() { PropertyNameCaseInsensitive = true };
+
+    /// <summary>
+    /// Reads the model's reply as flashcards, degrading rather than throwing.
+    ///
+    /// Three outcomes, in order of preference: the JSON array it was asked for,
+    /// a single object if it returned one card unwrapped, or nothing. Nothing is
+    /// deliberate — an earlier version fell back to a card containing the whole
+    /// passage, which is how the library filled up with giant unusable entries.
+    /// A failed extraction should cost the reader a click, not the library.
+    /// </summary>
+    private static List<FlashcardItem> ParseFlashcards(string content)
+    {
+        try
+        {
+            var cleaned = AiText.StripCodeFences(content);
+
+            // The model sometimes wraps the array in a sentence of explanation.
+            var jsonMatch = Regex.Match(cleaned, @"\[[\s\S]*\]");
+            if (jsonMatch.Success)
+                cleaned = jsonMatch.Value;
+
+            var cards = JsonSerializer.Deserialize<List<FlashcardItem>>(cleaned, FlashcardJson)
+                ?? throw new JsonException("Flashcard array deserialised to null");
+
+            Log.Information("Parsed {CardCount} flashcards from the model response", cards.Count);
+            return cards;
+        }
+        catch (Exception arrayEx)
+        {
+            Log.Warning(arrayEx, "Flashcards did not parse as an array; trying a single card. Response began: {Preview}",
+                content[..Math.Min(200, content.Length)]);
+        }
+
+        try
+        {
+            var single = JsonSerializer.Deserialize<FlashcardItem>(content, FlashcardJson);
+            if (single != null)
+            {
+                Log.Information("Parsed a single flashcard");
+                return [single];
+            }
+        }
+        catch (Exception singleEx)
+        {
+            Log.Warning(singleEx, "Flashcards did not parse as a single card either");
+        }
+
+        Log.Warning("Returning no flashcards: the model response could not be parsed");
+        return [];
+    }
+
+    /// <summary>
+    /// Adds the new cards to the book's saved set, replacing any card for a term
+    /// that is already there. Term match is case-insensitive.
+    /// </summary>
+    private static void MergeIntoLibrary(
+        List<FlashcardItem> cards,
+        string dropboxPath,
+        IFlashcardService flashcardService)
+    {
+        var list = flashcardService.LoadFlashcards(dropboxPath);
+
+        foreach (var card in cards)
+        {
+            var existing = list.FindIndex(x => string.Equals(x.Term, card.Term, StringComparison.OrdinalIgnoreCase));
+            if (existing >= 0)
+                list[existing] = card;
+            else
+                list.Add(card);
+        }
+
+        flashcardService.SaveFlashcards(dropboxPath, list);
     }
 
     private static IResult HandleClearFlashcards([FromQuery] string? path, IFlashcardService flashcardService)
@@ -234,7 +198,7 @@ Return JSON array of flashcards for individual terms found in the passage.";
         }
         catch (Exception ex) when (ex is not ArgumentException)
         {
-            Log.Error("❌ Failed to clear flashcards: {Message}", ex.Message);
+            Log.Error(ex, "❌ Failed to clear flashcards");
             return ApiResponse.InternalError("Failed to clear flashcards.");
         }
     }
@@ -255,7 +219,7 @@ Return JSON array of flashcards for individual terms found in the passage.";
         }
         catch (Exception ex) when (ex is not ArgumentException)
         {
-            Log.Error("❌ Failed to delete flashcard: {Message}", ex.Message);
+            Log.Error(ex, "❌ Failed to delete flashcard");
             return ApiResponse.InternalError("Failed to delete flashcard.");
         }
     }

@@ -49,7 +49,7 @@
 }
 
 .ai-toggle {
-  color: #3f51b5;
+  color: var(--brand);
 }
 
 /* Search button sits below Author now — full width to match both fields
@@ -66,13 +66,13 @@
 
 /* Disabled author dropdown styling */
 :host ::ng-deep .mat-mdc-form-field.mat-form-field-disabled .mat-mdc-text-field-wrapper {
-  background-color: #f5f5f5;
+  background-color: var(--mat-grey-100);
 }
 
 :host ::ng-deep .mat-mdc-form-field.mat-form-field-disabled .mdc-notched-outline__leading,
 :host ::ng-deep .mat-mdc-form-field.mat-form-field-disabled .mdc-notched-outline__notch,
 :host ::ng-deep .mat-mdc-form-field.mat-form-field-disabled .mdc-notched-outline__trailing {
-  border-color: #999 !important;
+  border-color: var(--slate-400) !important;
 }
 
 /* "More options" disclosure — collapsed by default on every screen size,
@@ -83,7 +83,7 @@
   align-items: center;
   justify-content: center;
   height: 40px;
-  color: #3f51b5;
+  color: var(--brand);
 }
 
 .form-extras {
@@ -131,15 +131,15 @@
 
 /* Health color classes - applied to entire .health-item */
 .health-item.health-green {
-  background-color: #4caf50;
-  border-color: #2e7d32;
+  background-color: var(--mat-green-500);
+  border-color: var(--mat-green-800);
   color: white;
 }
 
 .health-item.health-yellow {
   background-color: #fbc02d;
   border-color: #f9a825;
-  color: #333;
+  color: var(--text-strong);
 }
 
 .health-item.health-orange {
@@ -149,8 +149,8 @@
 }
 
 .health-item.health-red {
-  background-color: #f44336;
-  border-color: #c62828;
+  background-color: var(--mat-red-500);
+  border-color: var(--mat-red-800);
   color: white;
 }
 

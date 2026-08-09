@@ -18,7 +18,7 @@ public static class HealthCheckConfiguration
     public static IServiceCollection AddHealthCheckServices(this IServiceCollection services, IConfiguration? configuration = null)
     {
         // Skip health checks in test environment to avoid hanging on external HTTP calls
-        if (IsTestEnvironment(configuration))
+        if (TestEnvironment.IsTest(configuration))
         {
             services.AddHealthChecks(); // Add empty health checks
             return services;
@@ -132,22 +132,4 @@ public static class HealthCheckConfiguration
         await context.Response.WriteAsync(JsonSerializer.Serialize(response, options));
     }
 
-    /// <summary>
-    /// Checks if we're running in a test environment.
-    /// </summary>
-    private static bool IsTestEnvironment(IConfiguration? configuration)
-    {
-        // Check configuration flag
-        var isTestConfig = configuration?.GetValue<bool>("Testing:DisableHealthChecks") ?? false;
-
-        // Check environment variable
-        var isTestEnv = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Test";
-
-        // Check if running under test host
-        var isTestHost = AppDomain.CurrentDomain.GetAssemblies()
-            .Any(a => a.FullName?.Contains("testhost") == true ||
-                      a.FullName?.Contains("xunit") == true);
-
-        return isTestConfig || isTestEnv || isTestHost;
-    }
 }

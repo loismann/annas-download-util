@@ -249,6 +249,15 @@ public static class AiSummarizeEndpoints
                 return;
             }
 
+            // Pre-stream guard, not leftover ceremony.
+            //
+            // The sibling handlers dropped their own key checks when they moved
+            // to the shared AI clients, which raise a configuration failure
+            // themselves. This one stays because of what comes next: BeginStream
+            // commits the response with a 200 and SSE headers, and after that a
+            // missing key can only be reported as an `error` event inside a
+            // stream the client already believes succeeded. Checked here, it is
+            // an honest 500.
             var apiKey = cfg["OpenAI:ApiKey"] ?? Environment.GetEnvironmentVariable("OPENAI_API_KEY");
             if (string.IsNullOrWhiteSpace(apiKey))
             {

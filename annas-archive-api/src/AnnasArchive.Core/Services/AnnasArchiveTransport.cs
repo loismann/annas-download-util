@@ -75,7 +75,7 @@ public class AnnasArchiveTransport
                 }
                 catch (Exception ex)
                 {
-                    Log.Warning("[AnnasArchive] Playwright failed for {Domain}: {Message}", domain, ex.Message);
+                    Log.Warning(ex, "[AnnasArchive] Playwright failed for {Domain}", domain);
                     PerfLog.Record("AnnasArchive.DomainFetch", domainSw.Elapsed.TotalMilliseconds, false, ("Domain", domain), ("Error", ex.Message));
                 }
             }
@@ -190,7 +190,7 @@ public class AnnasArchiveTransport
             {
                 lastException = ex;
                 PerfLog.Record("AnnasArchive.DomainFetch", domainSw.Elapsed.TotalMilliseconds, false, ("Domain", domain), ("Via", "HttpClient"), ("Error", ex.Message));
-                Log.Warning("[AnnasArchive] Domain {Domain} failed: {Message}, trying next", domain, ex.Message);
+                Log.Warning(ex, "[AnnasArchive] Domain {Domain} failed, trying next", domain);
                 // continue to next domain
             }
         }

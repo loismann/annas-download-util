@@ -1,4 +1,5 @@
 import { Component, OnDestroy, OnInit } from '@angular/core';
+import { Subject, takeUntil } from 'rxjs';
 import { CommonModule } from '@angular/common';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatButtonModule } from '@angular/material/button';
@@ -707,7 +708,7 @@ export class DateNightComponent implements OnInit, OnDestroy {
     // preview=true asks for the poster's contents / the live flag without
     // consuming this person's one-time showing of the announcement dialog —
     // that dialog is triggered separately, app-wide, from AppComponent.
-    this.api.getAnnouncement(true).subscribe({
+    this.api.getAnnouncement(true).pipe(takeUntil(this.destroy$)).subscribe({
       next: a => {
         this.posters = a.posters;
         this.live = a.live;
@@ -721,13 +722,26 @@ export class DateNightComponent implements OnInit, OnDestroy {
     });
   }
 
+  /**
+   * Ends in-flight *reads* when the component goes.
+   *
+   * Their response handlers restart polling and countdown timers, so a read
+   * that resolved after destroy used to start a timer on a dead component that
+   * nothing would ever clear. Writes are deliberately NOT routed through this:
+   * unsubscribing an HttpClient call aborts the request, which would mean
+   * navigating away cancelled the user's action.
+   */
+  private readonly destroy$ = new Subject<void>();
+
   ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
     if (this.countdownTimer) clearInterval(this.countdownTimer);
     if (this.lockedStatusPollTimer) clearInterval(this.lockedStatusPollTimer);
   }
 
   private loadCycle(): void {
-    this.api.getCycle().subscribe({
+    this.api.getCycle().pipe(takeUntil(this.destroy$)).subscribe({
       next: c => {
         this.cycle = c;
         this.skipped = c.skipped;
@@ -767,7 +781,7 @@ export class DateNightComponent implements OnInit, OnDestroy {
     if (c.schedule?.status !== 'Locked') return;
 
     this.lockedStatusPollTimer = setInterval(() => {
-      this.api.getCycle().subscribe({
+      this.api.getCycle().pipe(takeUntil(this.destroy$)).subscribe({
         next: latest => {
           this.cycle = latest;
           if (latest.schedule?.status !== 'Locked') {

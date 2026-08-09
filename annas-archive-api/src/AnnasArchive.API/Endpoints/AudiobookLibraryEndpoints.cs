@@ -105,7 +105,7 @@ public static class AudiobookLibraryEndpoints
         }
         catch (Exception ex) when (IsUpstreamFailure(ex))
         {
-            Log.Warning("[Audiobooks] Audiobookshelf catalog fetch failed: {Message}", ex.Message);
+            Log.Warning(ex, "[Audiobooks] Audiobookshelf catalog fetch failed");
             return Results.Json(new { error = "Audiobookshelf is unavailable" }, statusCode: StatusCodes.Status502BadGateway);
         }
     }
@@ -126,7 +126,7 @@ public static class AudiobookLibraryEndpoints
         }
         catch (Exception ex) when (IsUpstreamFailure(ex))
         {
-            Log.Warning("[Audiobooks] Audiobookshelf item fetch failed for {Id}: {Message}", safeId, ex.Message);
+            Log.Warning(ex, "[Audiobooks] Audiobookshelf item fetch failed for {Id}", safeId);
             return Results.Json(new { error = "Audiobookshelf is unavailable" }, statusCode: StatusCodes.Status502BadGateway);
         }
     }
@@ -142,7 +142,7 @@ public static class AudiobookLibraryEndpoints
         }
         catch (Exception ex) when (IsUpstreamFailure(ex))
         {
-            Log.Warning("[Audiobooks] Audiobookshelf delete failed for {Id}: {Message}", safeId, ex.Message);
+            Log.Warning(ex, "[Audiobooks] Audiobookshelf delete failed for {Id}", safeId);
             return Results.Json(new { error = "Audiobookshelf rejected the delete request" }, statusCode: StatusCodes.Status502BadGateway);
         }
 
@@ -154,7 +154,7 @@ public static class AudiobookLibraryEndpoints
         if (overridePath is not null)
         {
             try { File.Delete(overridePath); }
-            catch (Exception ex) { Log.Warning("[Audiobooks] Failed to delete cover override for {Id}: {Message}", safeId, ex.Message); }
+            catch (Exception ex) { Log.Warning(ex, "[Audiobooks] Failed to delete cover override for {Id}", safeId); }
         }
 
         Log.Information("[Audiobooks] Deleted audiobook:{Id}", safeId);
@@ -182,7 +182,7 @@ public static class AudiobookLibraryEndpoints
         }
         catch (Exception ex)
         {
-            Log.Warning("[Audiobooks] Failed to save audiobook:{Id} metadata: {Message}", safeId, ex.Message);
+            Log.Warning(ex, "[Audiobooks] Failed to save audiobook:{Id} metadata", safeId);
             return Results.Json(new { error = "Failed to save — please try again." }, statusCode: StatusCodes.Status500InternalServerError);
         }
     }
@@ -207,7 +207,7 @@ public static class AudiobookLibraryEndpoints
         }
         catch (Exception ex)
         {
-            Log.Warning("[Audiobooks] Failed to save audiobook:{Id} favorite: {Message}", safeId, ex.Message);
+            Log.Warning(ex, "[Audiobooks] Failed to save audiobook:{Id} favorite", safeId);
             return Results.Json(new { error = "Failed to save — please try again." }, statusCode: StatusCodes.Status500InternalServerError);
         }
     }
@@ -230,7 +230,7 @@ public static class AudiobookLibraryEndpoints
         }
         catch (Exception ex)
         {
-            Log.Warning("[Audiobooks] Failed to save audiobook:{Id} progress: {Message}", safeId, ex.Message);
+            Log.Warning(ex, "[Audiobooks] Failed to save audiobook:{Id} progress", safeId);
             return Results.Json(new { error = "Failed to save — please try again." }, statusCode: StatusCodes.Status500InternalServerError);
         }
     }
@@ -279,7 +279,7 @@ public static class AudiobookLibraryEndpoints
         }
         catch (Exception ex) when (IsUpstreamFailure(ex))
         {
-            Log.Warning("[Audiobooks] Cover proxy failed for {Id}: {Message}", safeId, ex.Message);
+            Log.Warning(ex, "[Audiobooks] Cover proxy failed for {Id}", safeId);
             if (!context.Response.HasStarted)
                 context.Response.StatusCode = 502;
         }
@@ -323,7 +323,7 @@ public static class AudiobookLibraryEndpoints
         }
         catch (Exception ex)
         {
-            Log.Information("[Audiobooks] Failed to download cover for {Id}: {Message}", safeId, ex.Message);
+            Log.Information(ex, "[Audiobooks] Failed to download cover for {Id}", safeId);
             return Results.Problem("Failed to download cover image.");
         }
 
@@ -400,7 +400,7 @@ public static class AudiobookLibraryEndpoints
         }
         catch (Exception ex) when (IsUpstreamFailure(ex))
         {
-            Log.Warning("[Audiobooks] Stream proxy failed for {Id}/{Ino}: {Message}", safeId, safeIno, ex.Message);
+            Log.Warning(ex, "[Audiobooks] Stream proxy failed for {Id}/{Ino}", safeId, safeIno);
             if (!context.Response.HasStarted)
                 context.Response.StatusCode = 502;
         }

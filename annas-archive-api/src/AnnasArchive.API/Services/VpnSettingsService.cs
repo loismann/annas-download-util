@@ -155,7 +155,7 @@ public class VpnSettingsService : IVpnSettingsService
         }
         catch (Exception ex)
         {
-            Log.Warning("[VpnSettings] Failed to reconnect Gluetun to region {Region}: {Message}", region, ex.Message);
+            Log.Warning(ex, "[VpnSettings] Failed to reconnect Gluetun to region {Region}", region);
             throw;
         }
     }
@@ -170,7 +170,7 @@ public class VpnSettingsService : IVpnSettingsService
         }
         catch (Exception ex)
         {
-            Log.Warning("[VpnSettings] Failed to load persisted settings: {Message}", ex.Message);
+            Log.Warning(ex, "[VpnSettings] Failed to load persisted settings");
             return null;
         }
     }
@@ -185,7 +185,7 @@ public class VpnSettingsService : IVpnSettingsService
         }
         catch (Exception ex)
         {
-            Log.Warning("[VpnSettings] Failed to persist settings: {Message}", ex.Message);
+            Log.Warning(ex, "[VpnSettings] Failed to persist settings");
         }
     }
 }

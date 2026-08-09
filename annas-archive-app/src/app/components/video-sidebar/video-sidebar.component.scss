@@ -13,7 +13,7 @@
 
 .sidebar-header p {
   margin: 6px 0 0;
-  color: #64748b;
+  color: var(--text-muted);
   font-size: 0.85rem;
 }
 
@@ -22,24 +22,24 @@
   padding: 14px 20px;
   font-size: 1.1rem;
   font-weight: 700;
-  background: linear-gradient(135deg, #ec4899 0%, #db2777 100%);
-  color: #ffffff;
+  background: linear-gradient(135deg, var(--pink-500) 0%, var(--pink-600) 100%);
+  color: var(--text-inverse);
   border: none;
   border-radius: 10px;
   cursor: pointer;
   transition: all 0.2s ease;
-  box-shadow: 0 4px 14px rgba(236, 72, 153, 0.35);
+  box-shadow: 0 4px 14px rgba(var(--pink-500-rgb), 0.35);
 }
 
 .reset-view-btn:hover {
   transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(236, 72, 153, 0.45);
-  background: linear-gradient(135deg, #f472b6 0%, #ec4899 100%);
+  box-shadow: 0 6px 20px rgba(var(--pink-500-rgb), 0.45);
+  background: linear-gradient(135deg, var(--pink-400) 0%, var(--pink-500) 100%);
 }
 
 .reset-view-btn:active {
   transform: translateY(0);
-  box-shadow: 0 2px 8px rgba(236, 72, 153, 0.3);
+  box-shadow: 0 2px 8px rgba(var(--pink-500-rgb), 0.3);
 }
 
 .download-btn {
@@ -65,14 +65,14 @@
 
 .rating-filter {
   padding: 10px 12px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--border);
   border-radius: 10px;
-  background: #f8fafc;
+  background: var(--surface-page);
 }
 
 .rating-label {
   font-size: 0.85rem;
-  color: #475569;
+  color: var(--text-body);
   margin-bottom: 6px;
 }
 
@@ -84,24 +84,24 @@
 
 .rating-control input[type="range"] {
   flex: 1;
-  accent-color: #3f51b5;
+  accent-color: var(--brand);
 }
 
 .rating-value {
   min-width: 32px;
   text-align: right;
   font-weight: 600;
-  color: #1f2937;
+  color: var(--text-strong);
 }
 
 .sidebar-meta {
   margin-top: auto;
   padding-top: 12px;
-  border-top: 1px solid #e5e7eb;
+  border-top: 1px solid var(--border);
   display: flex;
   justify-content: space-between;
   font-size: 0.85rem;
-  color: #475569;
+  color: var(--text-body);
 }
 
 .meta-value {
@@ -111,7 +111,7 @@
 .bulk-edit-section {
   margin-top: 1rem;
   padding: 1rem;
-  background: #f8fafc;
+  background: var(--surface-page);
   border-radius: 8px;
 }
 
@@ -133,7 +133,7 @@
 
 .selection-counter {
   font-weight: 600;
-  color: #3f51b5;
+  color: var(--brand);
   font-size: 0.9rem;
   padding: 0.5rem 0;
   text-align: center;
@@ -163,14 +163,14 @@
 /* Download Mode Info */
 .download-mode-info {
   padding: 16px;
-  background: #f0f9ff;
+  background: var(--sky-50);
   border-radius: 8px;
-  border: 1px solid #bae6fd;
+  border: 1px solid var(--sky-200);
 }
 
 .download-mode-info p {
   margin: 0 0 8px 0;
-  color: #0369a1;
+  color: var(--sky-700);
   font-size: 0.9rem;
 }
 
@@ -180,5 +180,5 @@
 
 .download-mode-info .download-hint {
   font-size: 0.8rem;
-  color: #64748b;
+  color: var(--text-muted);
 }

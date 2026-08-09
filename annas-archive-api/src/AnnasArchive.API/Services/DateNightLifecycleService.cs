@@ -36,7 +36,7 @@ public sealed class DateNightLifecycleService(DateNightCycleService cycles) : Ba
             }
             catch (Exception ex)
             {
-                Log.Warning("[DateNight] Background showtime lifecycle check failed: {Message}", ex.Message);
+                Log.Warning(ex, "[DateNight] Background showtime lifecycle check failed");
             }
         }
         while (await timer.WaitForNextTickAsync(stoppingToken));

@@ -1,4 +1,5 @@
-import { Component, OnInit, OnDestroy } from '@angular/core';
+import { Component, DestroyRef, OnDestroy, OnInit, inject } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
@@ -102,6 +103,14 @@ function sizeOnDiskOf(result: MediaLookupResult): number {
   styleUrl: './media-library.component.scss'
 })
 export class MediaLibraryComponent implements OnInit, OnDestroy {
+  /**
+   * Ends in-flight reads when the component is destroyed.
+   *
+   * Reads only: unsubscribing an HttpClient call aborts the request, so routing
+   * a write through this would mean navigating away cancels the user's action.
+   */
+  private readonly destroyRef = inject(DestroyRef);
+
   /** false = TV, true = Movies — defaults to Movies (see ngOnInit). */
   showingMovies = true;
   loading = false;
@@ -179,7 +188,7 @@ export class MediaLibraryComponent implements OnInit, OnDestroy {
     this.error = null;
 
     if (this.showingMovies) {
-      this.api.getDownloadedMovies().subscribe({
+      this.api.getDownloadedMovies().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
         next: (movies) => {
           this.movieTiles = movies;
           this.loading = false;
@@ -187,7 +196,7 @@ export class MediaLibraryComponent implements OnInit, OnDestroy {
         error: (err) => this.handleLoadError(err)
       });
     } else {
-      this.api.getDownloadedTv().subscribe({
+      this.api.getDownloadedTv().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
         next: (series) => {
           this.tvTiles = series.map(result => ({
             result,
@@ -221,7 +230,7 @@ export class MediaLibraryComponent implements OnInit, OnDestroy {
    * Sonarr/Radarr's queue API provides directly, so it's derived from the
    * change in sizeleft between polls (bytes recovered / seconds elapsed). */
   private refreshDownloadProgress(): void {
-    this.searchApi.getQueue().subscribe({
+    this.searchApi.getQueue().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (queue) => {
         const now = Date.now();
         const nextProgress = new Map<number, DownloadProgress>();
@@ -498,7 +507,7 @@ export class MediaLibraryComponent implements OnInit, OnDestroy {
     this.error = null;
     this.resolvingMovieId = movie.tmdbId;
     const tmdbId = movie.tmdbId;
-    this.api.watchMovie(tmdbId).subscribe({
+    this.api.watchMovie(tmdbId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (resp) => {
         this.resolvingMovieId = null;
         this.dialog.open<JellyfinPlayerModalComponent, JellyfinPlayerModalData>(JellyfinPlayerModalComponent, {

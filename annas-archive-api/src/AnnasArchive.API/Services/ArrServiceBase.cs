@@ -111,8 +111,7 @@ public abstract class ArrServiceBase
         }
         catch (Exception ex)
         {
-            Log.Warning("[{Service}] Failed to clear queue items for {IdField} {Id}: {Message}",
-                ServiceName, idField, id, ex.Message);
+            Log.Warning(ex, "[{Service}] Failed to clear queue items for {IdField} {Id}", ServiceName, idField, id);
         }
     }
 

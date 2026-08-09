@@ -21,7 +21,7 @@
 }
 
 .authors {
-  color: #666;
+  color: var(--text-muted);
   margin: 0 0 8px;
 }
 
@@ -35,12 +35,12 @@
   margin: 0;
   line-height: 1.6;
   white-space: pre-wrap;
-  color: #333;
+  color: var(--text-strong);
 }
 
 .no-description {
   margin: 0;
-  color: #999;
+  color: var(--text-subtle);
   font-style: italic;
 }
 

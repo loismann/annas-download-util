@@ -43,7 +43,7 @@ public static class StartupValidation
     public static void ValidateConfiguration(IConfiguration configuration)
     {
         // Skip validation in test environment
-        if (IsTestEnvironment())
+        if (TestEnvironment.IsTest())
         {
             Log.Information("Skipping configuration validation in test environment");
             return;
@@ -120,19 +120,4 @@ public static class StartupValidation
         return builder;
     }
 
-    /// <summary>
-    /// Checks if we're running in a test environment.
-    /// </summary>
-    private static bool IsTestEnvironment()
-    {
-        // Check environment variable
-        var isTestEnv = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Test";
-
-        // Check if running under test host
-        var isTestHost = AppDomain.CurrentDomain.GetAssemblies()
-            .Any(a => a.FullName?.Contains("testhost") == true ||
-                      a.FullName?.Contains("xunit") == true);
-
-        return isTestEnv || isTestHost;
-    }
 }

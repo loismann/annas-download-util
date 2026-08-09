@@ -116,7 +116,7 @@ public static class AiCacheBase
         }
         catch (Exception ex)
         {
-            Log.Warning("Failed to delete AI cache: {ErrorMessage}", ex.Message);
+            Log.Warning(ex, "Failed to delete AI cache");
             return false;
         }
     }

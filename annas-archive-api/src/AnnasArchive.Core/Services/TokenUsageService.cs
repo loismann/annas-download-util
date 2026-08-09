@@ -88,7 +88,7 @@ public class TokenUsageService : ITokenUsageService
                 }
                 catch (Exception ex)
                 {
-                    Log.Warning("Failed to load usage for {FilePath}: {ErrorMessage}", file, ex.Message);
+                    Log.Warning(ex, "Failed to load usage for {FilePath}", file);
                 }
             }
 
@@ -143,7 +143,7 @@ public class TokenUsageService : ITokenUsageService
                         }
                         catch (Exception ex)
                         {
-                            Log.Warning("Failed to delete {FilePath}: {ErrorMessage}", file, ex.Message);
+                            Log.Warning(ex, "Failed to delete {FilePath}", file);
                         }
                     }
                 }
@@ -216,7 +216,7 @@ public class TokenUsageService : ITokenUsageService
         }
         catch (Exception ex)
         {
-            Log.Warning("Failed to save token usage for {UserId}: {ErrorMessage}", userId, ex.Message);
+            Log.Warning(ex, "Failed to save token usage for {UserId}", userId);
         }
     }
 

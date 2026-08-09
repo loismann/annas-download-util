@@ -44,7 +44,7 @@ public static class SectionSummaryCache
         }
         catch (Exception ex)
         {
-            Log.Warning("Failed to load chunk boundaries from {Path}: {ErrorMessage}", path, ex.Message);
+            Log.Warning(ex, "Failed to load chunk boundaries from {Path}", path);
             return null;
         }
     }
@@ -82,7 +82,7 @@ public static class SectionSummaryCache
         }
         catch (Exception ex)
         {
-            Log.Warning("Failed to load section summary from {Path}: {ErrorMessage}", path, ex.Message);
+            Log.Warning(ex, "Failed to load section summary from {Path}", path);
             return null;
         }
     }
@@ -126,7 +126,7 @@ public static class SectionSummaryCache
                 }
                 catch (Exception ex)
                 {
-                    Log.Warning("Failed to load section summary from {FilePath}: {ErrorMessage}", sectionFile, ex.Message);
+                    Log.Warning(ex, "Failed to load section summary from {FilePath}", sectionFile);
                 }
             }
         }
@@ -167,7 +167,7 @@ public static class SectionSummaryCache
         }
         catch (Exception ex)
         {
-            Log.Warning("Failed to load section vocab from {Path}: {ErrorMessage}", path, ex.Message);
+            Log.Warning(ex, "Failed to load section vocab from {Path}", path);
             return null;
         }
     }

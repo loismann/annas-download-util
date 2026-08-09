@@ -128,7 +128,7 @@ public class LibGenService
         }
         catch (Exception ex)
         {
-            Log.Warning("[LibGen Fiction] ERROR: {ErrorMessage}", ex.Message);
+            Log.Warning(ex, "[LibGen Fiction] ERROR");
             Log.Debug("[LibGen Fiction] Stack trace: {StackTrace}", ex.StackTrace);
             return Enumerable.Empty<BookDto>();
         }
@@ -205,7 +205,7 @@ public class LibGenService
         }
         catch (Exception ex)
         {
-            Log.Warning("[LibGen General] ERROR: {ErrorMessage}", ex.Message);
+            Log.Warning(ex, "[LibGen General] ERROR");
             Log.Debug("[LibGen General] Stack trace: {StackTrace}", ex.StackTrace);
             return Enumerable.Empty<BookDto>();
         }
@@ -519,7 +519,7 @@ public class LibGenService
             }
             catch (HttpRequestException ex)
             {
-                Log.Warning("[LibGen HTTP] HTTP error for {Domain}: {ErrorMessage}", domain, ex.Message);
+                Log.Warning(ex, "[LibGen HTTP] HTTP error for {Domain}", domain);
                 PerfLog.Record("LibGen.DomainFetch", domainSw.Elapsed.TotalMilliseconds, false, ("Domain", domain), ("Error", ex.Message));
             }
             catch (ArgumentException ex)
@@ -529,7 +529,7 @@ public class LibGenService
             }
             catch (Exception ex)
             {
-                Log.Warning("[LibGen HTTP] Unexpected error for {Domain}: {ExceptionType} - {ErrorMessage}", domain, ex.GetType().Name, ex.Message);
+                Log.Warning(ex, "[LibGen HTTP] Unexpected error for {Domain}: {ExceptionType}", domain, ex.GetType().Name);
                 PerfLog.Record("LibGen.DomainFetch", domainSw.Elapsed.TotalMilliseconds, false, ("Domain", domain), ("Error", ex.Message));
             }
         }

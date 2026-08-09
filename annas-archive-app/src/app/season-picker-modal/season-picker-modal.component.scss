@@ -17,13 +17,13 @@
 }
 
 .episode-count {
-  color: #777;
+  color: var(--text-muted);
   font-size: 0.85rem;
   margin-left: 4px;
 }
 
 .already-added-tag {
-  color: #4caf50;
+  color: var(--mat-green-500);
   font-size: 0.75rem;
   margin-left: 8px;
   font-weight: 500;

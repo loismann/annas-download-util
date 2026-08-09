@@ -73,7 +73,7 @@ public class DateNightSummaryService
             }
             catch (Exception ex)
             {
-                Log.Warning("[DateNight] Summary generation failed for '{Title}': {Message}", title, ex.Message);
+                Log.Warning(ex, "[DateNight] Summary generation failed for '{Title}'", title);
                 return null;
             }
 
@@ -156,7 +156,7 @@ public class DateNightSummaryService
         }
         catch (JsonException ex)
         {
-            Log.Warning("[DateNight] Summary cache unreadable, starting fresh: {Message}", ex.Message);
+            Log.Warning(ex, "[DateNight] Summary cache unreadable, starting fresh");
             return new();
         }
     }

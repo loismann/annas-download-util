@@ -99,7 +99,7 @@ public class EnrichmentStatsService : IEnrichmentStatsService
         }
         catch (Exception ex)
         {
-            Log.Warning("[EnrichmentStats] Failed to save stats: {Error}", ex.Message);
+            Log.Warning(ex, "[EnrichmentStats] Failed to save stats");
         }
     }
 
@@ -131,7 +131,7 @@ public class EnrichmentStatsService : IEnrichmentStatsService
         }
         catch (Exception ex)
         {
-            Log.Warning("[EnrichmentStats] Failed to load stats: {Error}", ex.Message);
+            Log.Warning(ex, "[EnrichmentStats] Failed to load stats");
         }
     }
 }

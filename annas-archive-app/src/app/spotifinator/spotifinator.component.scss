@@ -1,7 +1,7 @@
 :host {
   display: block;
   height: calc(100vh - 64px);
-  background: #f5f5f5;
+  background: var(--mat-grey-100);
 }
 
 @media (max-width: 599px) {
@@ -31,7 +31,7 @@
   }
 
   .spotify-icon {
-    background: linear-gradient(135deg, #1db954, #191414);
+    background: linear-gradient(135deg, var(--spotify-green), #191414);
     color: white;
     border-radius: 50%;
     width: 40px;
@@ -121,8 +121,8 @@
   padding: 0.45rem 0.6rem;
   border: 1px solid #d8d8d8;
   border-radius: 999px;
-  background: #fff;
-  color: #444;
+  background: var(--surface-card);
+  color: var(--slate-700);
   font: inherit;
   font-size: 0.83rem;
   cursor: pointer;
@@ -145,8 +145,8 @@
   }
 
   &.active {
-    border-color: rgba(29, 185, 84, 0.6);
-    background: #f0fbf4;
+    border-color: rgba(var(--spotify-green-rgb), 0.6);
+    background: var(--spot-green-50);
     color: #15722f;
     font-weight: 600;
   }
@@ -160,7 +160,7 @@
   overflow-y: auto;
   border: 1px solid #e3e3e3;
   border-radius: 12px;
-  background: #fff;
+  background: var(--surface-card);
 }
 
 .library-empty {
@@ -170,7 +170,7 @@
   justify-content: center;
   gap: 0.4rem;
   height: 100%;
-  color: #777;
+  color: var(--text-muted);
   text-align: center;
 
   mat-icon { width: 48px; height: 48px; font-size: 48px; opacity: 0.35; }
@@ -182,7 +182,7 @@
   display: flex;
   gap: 1rem;
   padding: 1.1rem;
-  background: linear-gradient(160deg, rgba(29, 185, 84, 0.16), transparent 70%);
+  background: linear-gradient(160deg, rgba(var(--spotify-green-rgb), 0.16), transparent 70%);
 }
 
 .library-cover {
@@ -191,7 +191,7 @@
   height: 128px;
   border-radius: 6px;
   object-fit: cover;
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.22);
+  box-shadow: 0 4px 18px rgba(var(--black-rgb), 0.22);
 }
 
 .library-cover-blank {
@@ -199,7 +199,7 @@
   align-items: center;
   justify-content: center;
   background: #e4e4e4;
-  color: #999;
+  color: var(--text-subtle);
 
   mat-icon { width: 48px; height: 48px; font-size: 48px; }
 }
@@ -224,10 +224,10 @@
   letter-spacing: 0.06em;
   font-size: 0.68rem;
   font-weight: 600;
-  color: #176c37;
+  color: var(--spot-green-700);
 }
 
-.library-meta { color: #555; font-size: 0.82rem; }
+.library-meta { color: var(--slate-600); font-size: 0.82rem; }
 
 .library-header-actions {
   display: flex;
@@ -241,7 +241,7 @@
 .library-note {
   margin: 1rem;
   padding: 0.75rem 0.85rem;
-  border-left: 3px solid #9a5b00;
+  border-left: 3px solid var(--spot-amber-700);
   background: rgba(154, 91, 0, 0.07);
   font-size: 0.86rem;
   line-height: 1.45;
@@ -265,11 +265,11 @@
   padding: 0.3rem 0.4rem;
   border-radius: 6px;
 
-  &:hover { background: rgba(0, 0, 0, 0.045); }
+  &:hover { background: rgba(var(--black-rgb), 0.045); }
 
   &.is-playing {
-    background: rgba(29, 185, 84, 0.1);
-    .track-name { color: #1a7f37; font-weight: 600; }
+    background: rgba(var(--spotify-green-rgb), 0.1);
+    .track-name { color: var(--github-green); font-weight: 600; }
   }
 
   // Local files and removed items can never play. Dimmed rather than hidden:
@@ -308,7 +308,7 @@
   &:disabled { opacity: 0.4; }
   mat-icon { flex: 0 0 auto; }
   .track-play-icon { display: none; }
-  .track-number { color: #777; font-size: 0.85rem; font-variant-numeric: tabular-nums; }
+  .track-number { color: var(--slate-500); font-size: 0.85rem; font-variant-numeric: tabular-nums; }
 }
 
 @media (hover: none) {
@@ -329,8 +329,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #ececec;
-  color: #aaa;
+  background: var(--slate-200);
+  color: var(--text-subtle);
 
   mat-icon { width: 20px; height: 20px; font-size: 20px; }
 }
@@ -352,7 +352,7 @@
 }
 
 .track-duration {
-  color: #777;
+  color: var(--text-muted);
   font-size: 0.8rem;
   font-variant-numeric: tabular-nums;
 }
@@ -369,7 +369,7 @@
 .playlist-rail {
   border: 1px solid #dedede;
   border-radius: 10px;
-  background: #fff;
+  background: var(--surface-card);
   padding: 0.75rem;
   min-height: 0;
   display: flex;
@@ -413,8 +413,8 @@
   &:hover { background: #f4f4f4; }
 
   &.active {
-    border-color: rgba(29, 185, 84, 0.55);
-    background: #f0fbf4;
+    border-color: rgba(var(--spotify-green-rgb), 0.55);
+    background: var(--spot-green-50);
   }
 }
 
@@ -430,8 +430,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #ececec;
-  color: #aaa;
+  background: var(--slate-200);
+  color: var(--text-subtle);
 
   mat-icon { width: 18px; height: 18px; font-size: 18px; }
 }
@@ -449,7 +449,7 @@
   }
 
   strong { font-size: 0.83rem; font-weight: 500; }
-  small { color: #777; font-size: 0.71rem; }
+  small { color: var(--slate-500); font-size: 0.71rem; }
 }
 
 // ─── Now playing ─────────────────────────────────────────────────────────────
@@ -465,8 +465,8 @@
   flex-wrap: wrap;
   row-gap: 0.35rem;
   padding: 0.55rem 1rem;
-  border-top: 1px solid #e0e0e0;
-  background: #fafafa;
+  border-top: 1px solid var(--mat-grey-300);
+  background: var(--mat-grey-50);
 
   // Nothing here may shrink: these are fixed-size glyphs, and a flex item that
   // gives up width does not scale its icon, it clips it.
@@ -504,7 +504,7 @@
 
   // Shuffle is the only one of the four with a state, so it is the only one that
   // needs to look different when it is on.
-  .shuffle-on { color: #1db954; }
+  .shuffle-on { color: var(--spotify-green); }
 }
 
 .now-copy {
@@ -522,7 +522,7 @@
   }
 
   strong { font-size: 0.86rem; }
-  span { color: #666; font-size: 0.76rem; }
+  span { color: var(--slate-500); font-size: 0.76rem; }
 }
 
 .now-progress {
@@ -538,12 +538,12 @@
 
 .now-progress-fill {
   height: 100%;
-  background: #1db954;
+  background: var(--spotify-green);
   transition: width 0.9s linear;
 }
 
 .now-time {
-  color: #666;
+  color: var(--text-muted);
   font-size: 0.75rem;
   font-variant-numeric: tabular-nums;
 }
@@ -554,7 +554,7 @@
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
-  color: #176c37;
+  color: var(--spot-green-700);
   font-size: 0.75rem;
   max-width: 160px;
   min-width: 0;
@@ -586,7 +586,7 @@
   overflow: hidden;
   border: 1px solid #e3e3e3;
   border-radius: 12px;
-  background: #fff;
+  background: var(--surface-card);
   padding: 0 0.9rem 0.9rem;
 }
 
@@ -595,11 +595,11 @@
   padding: 0.75rem;
   border: 1px solid #d7d7d7;
   border-radius: 10px;
-  background: #fafafa;
+  background: var(--mat-grey-50);
 
   &.connected {
-    border-color: rgba(29, 185, 84, 0.5);
-    background: rgba(29, 185, 84, 0.06);
+    border-color: rgba(var(--spotify-green-rgb), 0.5);
+    background: rgba(var(--spotify-green-rgb), 0.06);
   }
 
   &[open] .connection-chevron { transform: rotate(180deg); }
@@ -625,7 +625,7 @@
   strong { font-size: 0.85rem; }
 
   small {
-    color: #555;
+    color: var(--text-body);
     font-size: 0.72rem;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -638,14 +638,14 @@
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #b3261e;
+  background: var(--mat-error);
 
-  &.ok { background: #1db954; }
+  &.ok { background: var(--spotify-green); }
 }
 
 .connection-chevron {
   flex: 0 0 auto;
-  color: #777;
+  color: var(--text-muted);
   transition: transform 0.15s ease;
 }
 
@@ -670,7 +670,7 @@
 .connection-state {
   display: block;
   margin-top: 0.15rem;
-  color: #555;
+  color: var(--text-body);
   font-size: 0.8rem;
 }
 
@@ -686,7 +686,7 @@
   flex-direction: column;
   gap: 0.25rem;
   margin-top: 0.65rem;
-  color: #555;
+  color: var(--text-body);
   font-size: 0.75rem;
 }
 
@@ -704,13 +704,13 @@
   gap: 1rem;
   margin-top: 0.75rem;
   padding-top: 0.75rem;
-  border-top: 1px solid rgba(0, 0, 0, 0.1);
+  border-top: 1px solid rgba(var(--black-rgb), 0.1);
 }
 
 .saved-drafts-panel {
   border: 1px solid #dedede;
   border-radius: 10px;
-  background: #fff;
+  background: var(--surface-card);
   padding: 0.75rem;
 }
 
@@ -725,7 +725,7 @@
     padding: 0.1rem 0.35rem;
     border-radius: 999px;
     background: #e9f7ee;
-    color: #176c37;
+    color: var(--spot-green-700);
     text-align: center;
   }
 }
@@ -750,17 +750,17 @@
   cursor: pointer;
 
   &:hover, &.active {
-    border-color: rgba(29, 185, 84, 0.55);
-    background: #f0fbf4;
+    border-color: rgba(var(--spotify-green-rgb), 0.55);
+    background: var(--spot-green-50);
   }
 
   strong { font-size: 0.85rem; }
-  span { color: #666; font-size: 0.72rem; }
+  span { color: var(--slate-500); font-size: 0.72rem; }
 }
 
 .sidebar-empty {
   margin: 0.65rem 0 0;
-  color: #777;
+  color: var(--text-muted);
   font-size: 0.78rem;
 }
 
@@ -772,23 +772,23 @@
 
 .inventory-progress {
   margin-top: 0.35rem;
-  color: #555;
+  color: var(--text-body);
   font-size: 0.85rem;
 }
 
 .inventory-problem {
-  color: #b3261e;
+  color: var(--mat-error);
 }
 
 .analysis-note {
   margin-top: 0.75rem;
-  color: #555;
+  color: var(--text-body);
   font-size: 0.88rem;
 }
 
 .discovery-draft {
   margin: 0 -0.9rem;
-  border: 1px solid rgba(29, 185, 84, 0.45);
+  border: 1px solid rgba(var(--spotify-green-rgb), 0.45);
   border-radius: 11px 11px 8px 8px;
   background: #f5fff8;
   overflow: hidden;
@@ -822,14 +822,14 @@
 .draft-delete {
   color: #8a8f98;
 
-  &:hover:not([disabled]) { color: #b3261e; }
+  &:hover:not([disabled]) { color: var(--mat-error); }
 }
 
 .draft-saved {
   display: inline-flex;
   align-items: center;
   gap: 0.2rem;
-  color: #176c37;
+  color: var(--spot-green-700);
   font-size: 0.78rem;
 
   mat-icon { width: 18px; height: 18px; font-size: 18px; }
@@ -844,8 +844,8 @@
 .draft-candidates {
   max-height: 300px;
   overflow-y: auto;
-  border-top: 1px solid rgba(0, 0, 0, 0.08);
-  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  border-top: 1px solid rgba(var(--black-rgb), 0.08);
+  border-bottom: 1px solid rgba(var(--black-rgb), 0.08);
 }
 
 .draft-candidate {
@@ -854,12 +854,12 @@
   align-items: center;
   gap: 0.5rem;
   padding: 0.45rem 0.75rem;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  border-bottom: 1px solid rgba(var(--black-rgb), 0.06);
 }
 
-.draft-position { color: #666; text-align: center; }
+.draft-position { color: var(--slate-500); text-align: center; }
 .draft-candidate-copy { display: flex; flex-direction: column; min-width: 0; cursor: pointer; }
-.draft-candidate-copy span, .draft-candidate-copy small { color: #666; }
+.draft-candidate-copy span, .draft-candidate-copy small { color: var(--slate-500); }
 .draft-candidate-copy .unfamiliar { color: #16723a; font-weight: 600; }
 .draft-actions { display: flex; }
 
@@ -870,7 +870,7 @@
   margin-top: 0.35rem;
 
   button {
-    border: 1px solid rgba(29, 185, 84, 0.5);
+    border: 1px solid rgba(var(--spotify-green-rgb), 0.5);
     border-radius: 5px;
     background: white;
     color: #174c29;
@@ -882,7 +882,7 @@
 
 .connection-warning,
 .missing-scopes {
-  color: #9a5b00;
+  color: var(--spot-amber-700);
 }
 
 .connection-notice {
@@ -908,7 +908,7 @@
 
   &.user {
     align-self: flex-end;
-    background: #1976d2;
+    background: var(--mat-blue-700);
     color: white;
     border-bottom-right-radius: 4px;
   }
@@ -916,14 +916,14 @@
   &.assistant {
     align-self: flex-start;
     background: white;
-    border: 1px solid #e0e0e0;
+    border: 1px solid var(--mat-grey-300);
     border-bottom-left-radius: 4px;
   }
 
   &.error {
-    background: #ffebee;
+    background: var(--mat-red-50);
     border-color: #ef5350;
-    color: #c62828;
+    color: var(--mat-red-800);
   }
 }
 
@@ -942,7 +942,7 @@
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  color: #666;
+  color: var(--text-muted);
   font-style: italic;
 
   span {
@@ -954,7 +954,7 @@
 
 .results-container {
   margin-top: 0.75rem;
-  border-top: 1px solid #eee;
+  border-top: 1px solid var(--slate-100);
   padding-top: 0.75rem;
 }
 
@@ -972,7 +972,7 @@
   transition: background-color 0.15s ease;
 
   &:hover {
-    background-color: rgba(0, 0, 0, 0.04);
+    background-color: rgba(var(--black-rgb), 0.04);
   }
 }
 
@@ -990,7 +990,7 @@
 
 .track-meta {
   font-size: 0.8rem;
-  color: #666;
+  color: var(--text-muted);
 }
 
 // Single playlist card
@@ -1038,7 +1038,7 @@
 
   .playlist-tracks {
     font-size: 0.85rem;
-    color: #666;
+    color: var(--text-muted);
   }
 }
 
@@ -1047,7 +1047,7 @@
 .not-found-songs {
   margin-top: 0.75rem;
   padding: 0.5rem;
-  background: #fff3e0;
+  background: var(--mat-orange-50);
   border-radius: 4px;
   color: #e65100;
 
@@ -1063,7 +1063,7 @@
   gap: 0.75rem;
   align-items: center;
   padding-top: 1rem;
-  border-top: 1px solid #eee;
+  border-top: 1px solid var(--slate-100);
 
   .message-input {
     flex: 1;
@@ -1143,9 +1143,9 @@
   button { min-width: 0; padding: 0 0.55rem; line-height: 28px; font-size: 0.8rem; }
 }
 
-.plan-receipt-completed          { color: #1a7f37; }
-.plan-receipt-partiallycompleted { color: #9a5b00; }
-.plan-receipt-failed             { color: #b3261e; }
+.plan-receipt-completed          { color: var(--github-green); }
+.plan-receipt-partiallycompleted { color: var(--spot-amber-700); }
+.plan-receipt-failed             { color: var(--mat-error); }
 
 // Only rendered when something actually went wrong, and collapsed even then.
 .plan-trouble {
@@ -1157,7 +1157,7 @@
   p {
     margin: 0.4rem 0 0.3rem;
     padding-left: 0.6rem;
-    border-left: 3px solid #b3261e;
+    border-left: 3px solid var(--mat-error);
     line-height: 1.4;
   }
 
@@ -1166,7 +1166,7 @@
   // Skipped reads differently from failed on purpose: "we did not try this" is a
   // different fact from "this went wrong", and on a stalled merge it is the reason
   // the source playlists are still there.
-  .plan-step-succeeded { color: #1a7f37; }
-  .plan-step-failed    { color: #b3261e; }
+  .plan-step-succeeded { color: var(--github-green); }
+  .plan-step-failed    { color: var(--mat-error); }
   .plan-step-skipped   { opacity: 0.6; font-style: italic; }
 }

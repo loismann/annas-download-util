@@ -233,7 +233,7 @@ public static class LibraryBrowserEndpoints
         }
         catch (Exception ex)
         {
-            Log.Warning("[library] Failed to delete book {SafeFileName}: {Message}", safeFileName, ex.Message);
+            Log.Warning(ex, "[library] Failed to delete book {SafeFileName}", safeFileName);
             return Results.Problem("Failed to delete book.");
         }
     }

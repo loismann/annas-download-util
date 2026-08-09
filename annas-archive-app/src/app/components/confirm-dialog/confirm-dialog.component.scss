@@ -1,8 +1,8 @@
 .confirm-dialog {
-  background: #ffffff;
+  background: var(--surface-card);
   border-radius: 12px;
   padding: 32px;
-  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.15);
+  box-shadow: 0 20px 40px rgba(var(--slate-900-rgb), 0.15);
   text-align: center;
   display: flex;
   flex-direction: column;
@@ -19,7 +19,7 @@
   font-size: 20px;
   font-weight: 700;
   letter-spacing: -0.02em;
-  color: #0f172a;
+  color: var(--text-heading);
   word-wrap: break-word;
   overflow-wrap: break-word;
   max-width: 100%;
@@ -30,7 +30,7 @@
   margin: 0 0 32px 0;
   line-height: 1.6;
   white-space: pre-wrap;
-  color: #475569;
+  color: var(--text-body);
   font-size: 15px;
   word-wrap: break-word;
   overflow-wrap: break-word;
@@ -52,30 +52,30 @@
   }
 
   .cancel-button {
-    border-color: #cbd5e1;
-    color: #475569;
+    border-color: var(--border-strong);
+    color: var(--text-body);
 
     &:hover {
-      background: #f1f5f9;
-      border-color: #94a3b8;
+      background: var(--surface-sunken);
+      border-color: var(--slate-400);
     }
   }
 
   .danger-button {
-    background: #ef4444;
+    background: var(--red-500);
     color: white;
 
     &:hover {
-      background: #dc2626;
+      background: var(--red-600);
     }
   }
 
   .primary-button {
-    background: #3b82f6;
+    background: var(--blue-500);
     color: white;
 
     &:hover {
-      background: #2563eb;
+      background: var(--blue-600);
     }
   }
 }

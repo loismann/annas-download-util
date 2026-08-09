@@ -100,7 +100,7 @@ public class UserActivityService : IUserActivityService
         }
         catch (Exception ex)
         {
-            Log.Warning("[UserActivity] Failed to load persisted activity state: {Message}", ex.Message);
+            Log.Warning(ex, "[UserActivity] Failed to load persisted activity state");
             return new Dictionary<string, UserActivitySnapshot>();
         }
     }
@@ -113,7 +113,7 @@ public class UserActivityService : IUserActivityService
         }
         catch (Exception ex)
         {
-            Log.Warning("[UserActivity] Failed to persist activity state: {Message}", ex.Message);
+            Log.Warning(ex, "[UserActivity] Failed to persist activity state");
         }
     }
 }

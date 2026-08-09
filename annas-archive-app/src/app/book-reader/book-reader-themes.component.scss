@@ -1,0 +1,276 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   Book reader — the three reading themes
+
+   Light, sepia and dark, as applied by `ReaderAppearance`. Split out of
+   book-reader.component.scss, which is the largest stylesheet in the app and
+   went over the 32 kB per-component-style budget once colours were tokenised
+   (`var(--slate-600)` costs eleven bytes more than `#475569`).
+
+   Still a *component* stylesheet, listed in the component's `styleUrls`, not a
+   global partial. That is deliberate: nine of these rules use `::ng-deep` to
+   reach Material's select chrome, and `::ng-deep` has meaning only inside a
+   component stylesheet — moved to a global file it would survive as invalid
+   CSS, match nothing, and take the analysis pane's theming with it silently.
+   The budget is per file, so a second component stylesheet satisfies it without
+   changing encapsulation at all.
+
+   Order is not load-bearing. Every rule here carries at least two classes and
+   so outranks the single-class rules in the main stylesheet no matter which
+   file loads first; the only equal-specificity pairs were the
+   `.reader-wrapper.reader-fullscreen:has(.reader-theme-*)` backgrounds, which
+   were left behind for exactly that reason.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.reader-theme-light.text-window,
+.reader-theme-light.analysis-pane {
+  background: var(--surface-card);
+  color: var(--text-heading);
+  border-color: var(--border);
+}
+
+.reader-theme-sepia.text-window,
+.reader-theme-sepia.analysis-pane {
+  background: #f4e9d7;
+  color: #3b2f1f;
+  border-color: #e0d3bd;
+}
+
+.reader-theme-dark.text-window,
+.reader-theme-dark.analysis-pane {
+  background: var(--surface-inverse);
+  color: var(--slate-200);
+  border-color: var(--slate-800);
+}
+
+.analysis-pane.reader-theme-light .analysis-label {
+  color: var(--text-heading);
+}
+
+.analysis-pane.reader-theme-light ::ng-deep .analysis-mode-select .mat-mdc-select-trigger {
+  border: 1px solid var(--slate-600);
+  background: var(--surface-page);
+}
+
+.analysis-pane.reader-theme-light ::ng-deep .analysis-mode-select .mat-mdc-select-value,
+.analysis-pane.reader-theme-light ::ng-deep .analysis-mode-select .mat-mdc-select-arrow {
+  color: #0b172f !important;
+}
+
+.analysis-pane.reader-theme-sepia .analysis-label {
+  color: var(--sepia-ink);
+}
+
+.analysis-pane.reader-theme-sepia ::ng-deep .analysis-mode-select .mat-mdc-select-trigger {
+  border: 1px solid var(--sepia-rule);
+  background: var(--sepia-paper);
+}
+
+.analysis-pane.reader-theme-sepia ::ng-deep .analysis-mode-select .mat-mdc-select-value,
+.analysis-pane.reader-theme-sepia ::ng-deep .analysis-mode-select .mat-mdc-select-arrow {
+  color: var(--sepia-ink-deep) !important;
+}
+
+.analysis-pane.reader-theme-light .summary-btn {
+  border: 1px solid var(--slate-600);
+  background: var(--surface-page);
+  color: #1d3070;
+}
+
+.analysis-pane.reader-theme-sepia .summary-btn {
+  border: 1px solid var(--sepia-rule);
+  background: var(--sepia-paper);
+  color: var(--sepia-ink-deep);
+}
+
+.analysis-pane.reader-theme-dark .summary-btn {
+  border: 1px solid rgba(144, 180, 255, 0.85);
+  background: rgba(var(--white-rgb), 0.08);
+  color: var(--indigo-300);
+}
+
+.analysis-pane.reader-theme-dark ::ng-deep .analysis-mode-select .mat-mdc-select-trigger {
+  border: 1px solid rgba(144, 180, 255, 0.85);
+  background: rgba(var(--white-rgb), 0.08);
+}
+
+.analysis-pane.reader-theme-dark .analysis-label {
+  color: var(--slate-200);
+}
+
+.analysis-pane.reader-theme-light ::ng-deep .analysis-mode-panel {
+  background: var(--surface-card) !important;
+  color: var(--text-heading) !important;
+}
+
+.analysis-pane.reader-theme-sepia ::ng-deep .analysis-mode-panel {
+  background: #f9f1dd !important;
+  color: #3b2c1e !important;
+}
+
+.reader-theme-light .token-chip {
+  background: var(--slate-200);
+  color: var(--text-heading);
+}
+
+.reader-theme-sepia .token-chip {
+  background: #e8dcc3;
+  color: var(--sepia-ink);
+}
+
+.reader-theme-light .selection-btn {
+  color: #1d3070;
+}
+
+.reader-theme-sepia .selection-btn {
+  color: var(--sepia-ink-deep);
+}
+
+.reader-theme-light .vocab-card {
+  background: linear-gradient(135deg, var(--surface-sunken) 0%, var(--slate-200) 100%);
+  border: 1px solid var(--border-strong);
+}
+
+.reader-theme-sepia .vocab-card {
+  background: linear-gradient(135deg, #ede4d3 0%, #e0d3bd 100%);
+  border: 1px solid #d4c5aa;
+}
+
+.reader-theme-light .vocab-card:hover {
+  border-color: var(--slate-400);
+  box-shadow: 0 4px 12px rgba(var(--black-rgb), 0.1);
+}
+
+.reader-theme-sepia .vocab-card:hover {
+  border-color: #c4b59a;
+  box-shadow: 0 4px 12px rgba(var(--black-rgb), 0.15);
+}
+
+.reader-theme-light .vocab-term {
+  color: var(--blue-800);
+}
+
+.reader-theme-sepia .vocab-term {
+  color: var(--blue-600);
+}
+
+.reader-theme-light .vocab-definition {
+  color: var(--text-body);
+}
+
+.reader-theme-sepia .vocab-definition {
+  color: #57534e;
+}
+
+.reader-theme-light .full-chapter-summary {
+  border-color: var(--border-strong);
+  background: var(--surface-page);
+}
+
+.reader-theme-sepia .full-chapter-summary {
+  border-color: #d4c5aa;
+  background: #f3e8d2;
+}
+
+.reader-theme-light .full-summary-header h4 {
+  color: var(--text-heading);
+}
+
+.reader-theme-sepia .full-summary-header h4 {
+  color: var(--sepia-ink);
+}
+
+.reader-theme-light .token-meta {
+  color: var(--text-body);
+}
+
+.reader-theme-sepia .token-meta {
+  color: var(--sepia-muted);
+}
+
+.reader-theme-light .section-marker {
+  color: var(--text-strong);
+}
+
+.reader-theme-sepia .section-marker {
+  color: var(--sepia-ink);
+}
+
+.reader-theme-light .chapter-vocab-progress {
+  color: var(--text-body);
+}
+
+.reader-theme-sepia .chapter-vocab-progress {
+  color: var(--sepia-muted);
+}
+
+.reader-theme-light .dummy-summary-progress {
+  color: var(--text-body);
+}
+
+.reader-theme-sepia .dummy-summary-progress {
+  color: var(--sepia-muted);
+}
+
+.reader-theme-light .dummy-summary-container {
+  border-top-color: rgba(148, 163, 184, 0.6);
+}
+
+.reader-theme-sepia .dummy-summary-container {
+  border-top-color: rgba(120, 96, 72, 0.5);
+}
+
+.reader-theme-light .dummy-summary-header h4 {
+  color: var(--text-heading);
+}
+
+.reader-theme-sepia .dummy-summary-header h4 {
+  color: var(--sepia-ink);
+}
+
+.reader-theme-light .section-highlight {
+  background-color: rgba(59, 130, 246, 0.08);
+}
+
+.reader-theme-sepia .section-highlight {
+  background-color: rgba(139, 92, 46, 0.1);
+}
+
+.reader-theme-dark .section-highlight {
+  background-color: rgba(96, 165, 250, 0.12);
+}
+
+.reader-theme-light .section-dropdown {
+  background: var(--surface-page);
+  color: var(--text-heading);
+  border-color: var(--slate-600);
+}
+
+.reader-theme-sepia .section-dropdown {
+  background: var(--sepia-paper);
+  color: var(--sepia-ink-deep);
+  border-color: var(--sepia-rule);
+}
+
+.reader-theme-light .section-summary-header h4 {
+  color: var(--blue-800);
+}
+
+.reader-theme-sepia .section-summary-header h4 {
+  color: var(--blue-600);
+}
+
+.reader-theme-light .section-summary-body {
+  color: var(--text-body);
+}
+
+.reader-theme-sepia .section-summary-body {
+  color: #57534e;
+}
+
+.reader-theme-light .section-summary-prompt {
+  color: var(--text-muted);
+}
+
+.reader-theme-sepia .section-summary-prompt {
+  color: #78716c;
+}

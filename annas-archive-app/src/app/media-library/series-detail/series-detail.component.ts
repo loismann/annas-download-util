@@ -1,4 +1,5 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, DestroyRef, OnInit, inject } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute, Router } from '@angular/router';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
@@ -43,6 +44,14 @@ interface SeasonGroup {
   styleUrl: './series-detail.component.scss'
 })
 export class SeriesDetailComponent implements OnInit {
+  /**
+   * Ends in-flight reads when the component is destroyed.
+   *
+   * Reads only: unsubscribing an HttpClient call aborts the request, so routing
+   * a write through this would mean navigating away cancels the user's action.
+   */
+  private readonly destroyRef = inject(DestroyRef);
+
   series: MediaLookupResult | null = null;
   seasonGroups: SeasonGroup[] = [];
   loading = true;
@@ -74,7 +83,7 @@ export class SeriesDetailComponent implements OnInit {
     forkJoin({
       allSeries: this.api.getDownloadedTv(),
       episodes: this.api.getSeriesEpisodes(seriesId)
-    }).subscribe({
+    }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: ({ allSeries, episodes }) => {
         this.series = allSeries.find(s => s.id === seriesId) || null;
         if (!this.series) {
@@ -123,7 +132,7 @@ export class SeriesDetailComponent implements OnInit {
     const ep = episode.episodeNumber;
 
     this.resolvingEpisodeId = episode.id;
-    this.api.watchTv(tvdbId, season, ep).subscribe({
+    this.api.watchTv(tvdbId, season, ep).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (resp) => {
         this.resolvingEpisodeId = null;
         this.dialog.open<JellyfinPlayerModalComponent, JellyfinPlayerModalData>(JellyfinPlayerModalComponent, {

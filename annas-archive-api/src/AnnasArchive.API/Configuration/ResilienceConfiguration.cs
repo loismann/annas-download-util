@@ -2,6 +2,7 @@ using System.Net;
 using AnnasArchive.API.Constants;
 using Microsoft.Extensions.Http.Resilience;
 using Polly;
+using Polly.Retry;
 using Polly.Timeout;
 using Serilog;
 
@@ -31,15 +32,7 @@ public static class ResilienceConfiguration
                 UseJitter = true,
                 Delay = TimeSpan.FromSeconds(1),
                 ShouldHandle = args => ValueTask.FromResult(ShouldRetry(args.Outcome)),
-                OnRetry = args =>
-                {
-                    Log.Warning("[{ServiceName}] Retry attempt {AttemptNumber} after {Delay}ms. Reason: {Reason}",
-                        serviceName,
-                        args.AttemptNumber,
-                        args.RetryDelay.TotalMilliseconds,
-                        args.Outcome.Exception?.Message ?? args.Outcome.Result?.StatusCode.ToString() ?? "Unknown");
-                    return ValueTask.CompletedTask;
-                }
+                OnRetry = args => LogRetry(serviceName, args)
             });
 
             // Circuit breaker: Opens after 5 failures in 30 seconds, stays open for 30 seconds
@@ -90,15 +83,7 @@ public static class ResilienceConfiguration
                 UseJitter = true,
                 Delay = TimeSpan.FromSeconds(2),
                 ShouldHandle = args => ShouldRetryAiCallAsync(args.Outcome),
-                OnRetry = args =>
-                {
-                    Log.Warning("[{ServiceName}] Retry attempt {AttemptNumber} after {Delay}ms. Reason: {Reason}",
-                        serviceName,
-                        args.AttemptNumber,
-                        args.RetryDelay.TotalMilliseconds,
-                        args.Outcome.Exception?.Message ?? args.Outcome.Result?.StatusCode.ToString() ?? "Unknown");
-                    return ValueTask.CompletedTask;
-                }
+                OnRetry = args => LogRetry(serviceName, args)
             });
 
             // Circuit breaker with higher threshold for AI services
@@ -149,15 +134,7 @@ public static class ResilienceConfiguration
                 UseJitter = true,
                 Delay = TimeSpan.FromSeconds(1),
                 ShouldHandle = args => ValueTask.FromResult(ShouldRetry(args.Outcome)),
-                OnRetry = args =>
-                {
-                    Log.Warning("[{ServiceName}] Retry attempt {AttemptNumber} after {Delay}ms. Reason: {Reason}",
-                        serviceName,
-                        args.AttemptNumber,
-                        args.RetryDelay.TotalMilliseconds,
-                        args.Outcome.Exception?.Message ?? args.Outcome.Result?.StatusCode.ToString() ?? "Unknown");
-                    return ValueTask.CompletedTask;
-                }
+                OnRetry = args => LogRetry(serviceName, args)
             });
 
             resilienceBuilder.AddTimeout(HttpTimeouts.StandardApiTimeout);
@@ -183,6 +160,28 @@ public static class ResilienceConfiguration
         });
 
         return builder;
+    }
+
+    /// <summary>
+    /// The one retry line, shared by all three strategies that have one.
+    ///
+    /// The exception goes to Serilog as an exception rather than into the
+    /// template, so Seq records its type, stack and inner exceptions instead of
+    /// just the sentence. <c>Reason</c> therefore names the *kind* of failure —
+    /// the status code when the attempt produced a response, the exception type
+    /// when it threw — and does not repeat the message that is already attached.
+    /// </summary>
+    private static ValueTask LogRetry(string serviceName, OnRetryArguments<HttpResponseMessage> args)
+    {
+        Log.Warning(args.Outcome.Exception,
+            "[{ServiceName}] Retry attempt {AttemptNumber} after {Delay}ms. Reason: {Reason}",
+            serviceName,
+            args.AttemptNumber,
+            args.RetryDelay.TotalMilliseconds,
+            args.Outcome.Result?.StatusCode.ToString()
+                ?? args.Outcome.Exception?.GetType().Name
+                ?? "Unknown");
+        return ValueTask.CompletedTask;
     }
 
     /// <summary>

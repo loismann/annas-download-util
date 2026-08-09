@@ -40,7 +40,7 @@ public static class CharacterGraphCache
         }
         catch (Exception ex)
         {
-            Log.Warning("Failed to load character graph from {Path}: {ErrorMessage}", path, ex.Message);
+            Log.Warning(ex, "Failed to load character graph from {Path}", path);
             return null;
         }
     }

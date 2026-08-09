@@ -11,7 +11,7 @@
 }
 
 .error {
-  color: #f44336;
+  color: var(--mat-red-500);
   margin: 1rem 0;
 }
 
@@ -29,11 +29,11 @@ mat-expansion-panel {
   align-items: center;
   gap: 1rem;
   padding: 0.5rem 0;
-  border-bottom: 1px solid #e0e0e0;
+  border-bottom: 1px solid var(--mat-grey-300);
 }
 
 .ep-number {
-  color: #777;
+  color: var(--text-muted);
   width: 2.5rem;
   flex: 0 0 auto;
 }

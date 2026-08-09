@@ -78,7 +78,7 @@ public static class VocabularyCache
         }
         catch (Exception ex)
         {
-            Log.Warning("Failed to load known words from {Path}: {ErrorMessage}", path, ex.Message);
+            Log.Warning(ex, "Failed to load known words from {Path}", path);
             Log.Information("Deleting incompatible vocabulary file and starting fresh...");
             try
             {
@@ -87,7 +87,7 @@ public static class VocabularyCache
             }
             catch (Exception deleteEx)
             {
-                Log.Warning("Failed to delete old file: {ErrorMessage}", deleteEx.Message);
+                Log.Warning(deleteEx, "Failed to delete old file");
             }
             return new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
         }
@@ -146,7 +146,7 @@ public static class VocabularyCache
         }
         catch (Exception ex)
         {
-            Log.Warning("Failed to load study words from {Path}: {ErrorMessage}", path, ex.Message);
+            Log.Warning(ex, "Failed to load study words from {Path}", path);
             Log.Information("Deleting incompatible vocabulary file and starting fresh...");
             try
             {
@@ -155,7 +155,7 @@ public static class VocabularyCache
             }
             catch (Exception deleteEx)
             {
-                Log.Warning("Failed to delete old file: {ErrorMessage}", deleteEx.Message);
+                Log.Warning(deleteEx, "Failed to delete old file");
             }
             return new Dictionary<string, (string, List<string>)>(StringComparer.OrdinalIgnoreCase);
         }

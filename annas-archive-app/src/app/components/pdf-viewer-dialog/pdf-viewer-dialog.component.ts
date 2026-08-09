@@ -1,4 +1,5 @@
-import { Component, ElementRef, HostListener, Inject, OnInit, ViewChild } from '@angular/core';
+import { Component, DestroyRef, ElementRef, HostListener, Inject, OnInit, ViewChild, inject } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { MatDialogModule, MatDialogRef, MAT_DIALOG_DATA } from '@angular/material/dialog';
 import { MatButtonModule } from '@angular/material/button';
@@ -30,6 +31,14 @@ const LAST_PAGE_STORAGE_PREFIX = 'pdf-viewer-last-page:';
   styleUrl: './pdf-viewer-dialog.component.scss'
 })
 export class PdfViewerDialogComponent implements OnInit {
+  /**
+   * Ends in-flight reads when the component is destroyed.
+   *
+   * Reads only: unsubscribing an HttpClient call aborts the request, so routing
+   * a write through this would mean navigating away cancels the user's action.
+   */
+  private readonly destroyRef = inject(DestroyRef);
+
   @ViewChild('pdfContainer') containerRef!: ElementRef<HTMLDivElement>;
 
   isLoading = true;
@@ -54,7 +63,7 @@ export class PdfViewerDialogComponent implements OnInit {
       this.currentPage = storedPage;
     }
 
-    this.libraryApi.getLibraryBookFile(this.data.fileName).subscribe({
+    this.libraryApi.getLibraryBookFile(this.data.fileName).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: blob => {
         this.pdfSrc = blob;
         this.isLoading = false;

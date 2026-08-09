@@ -57,7 +57,7 @@ public static class AudiobookEnrichmentEndpoints
             }
             catch (Exception ex)
             {
-                Log.Warning("[AudiobookEnrichment] Background-triggered full scan failed: {Message}", ex.Message);
+                Log.Warning(ex, "[AudiobookEnrichment] Background-triggered full scan failed");
             }
         });
 

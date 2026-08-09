@@ -1,4 +1,5 @@
-import { Component, OnInit, OnDestroy } from '@angular/core';
+import { Component, DestroyRef, OnDestroy, OnInit, inject } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
 import { RouterOutlet, Router, NavigationEnd } from '@angular/router';
@@ -368,6 +369,14 @@ import { switchMap, filter, throttleTime, startWith } from 'rxjs/operators';
   `
 })
 export class AppComponent implements OnInit, OnDestroy {
+  /**
+   * Ends in-flight reads when the component is destroyed.
+   *
+   * Reads only: unsubscribing an HttpClient call aborts the request, so routing
+   * a write through this would mean navigating away cancels the user's action.
+   */
+  private readonly destroyRef = inject(DestroyRef);
+
   buildTime = '';
   userActivity: UserActivity[] = [];
 
@@ -582,7 +591,7 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   private fetchUserActivity(): void {
-    this.authService.getUserActivity().subscribe({
+    this.authService.getUserActivity().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (activity) => {
         this.userActivity = activity;
       },

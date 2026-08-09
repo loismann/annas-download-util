@@ -65,7 +65,7 @@ public sealed class OwnershipBackfillService(
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { return; }
             catch (Exception ex)
             {
-                Log.Warning("[Ownership] Backfill sweep failed: {Message}", ex.Message);
+                Log.Warning(ex, "[Ownership] Backfill sweep failed");
             }
 
             try { await Task.Delay(Interval, stoppingToken); }
@@ -167,7 +167,7 @@ public sealed class OwnershipBackfillService(
             }
             catch (Exception ex)
             {
-                Log.Information("[Ownership] Skipping {Type} — library unavailable: {Message}", type, ex.Message);
+                Log.Information(ex, "[Ownership] Skipping {Type} — library unavailable", type);
             }
         }
     }

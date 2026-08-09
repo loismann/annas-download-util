@@ -112,7 +112,7 @@ public class DownloadTrackingService : IDownloadTrackingService
             }
             catch (Exception ex)
             {
-                Log.Warning("Failed to initialize download tracking: {ErrorMessage}", ex.Message);
+                Log.Warning(ex, "Failed to initialize download tracking");
             }
         }
     }
@@ -147,7 +147,7 @@ public class DownloadTrackingService : IDownloadTrackingService
         }
         catch (Exception ex)
         {
-            Log.Warning("Failed to load download tracking data: {ErrorMessage}", ex.Message);
+            Log.Warning(ex, "Failed to load download tracking data");
             return new TrackingData
             {
                 Downloads = new List<DownloadRecord>()
@@ -172,7 +172,7 @@ public class DownloadTrackingService : IDownloadTrackingService
         }
         catch (Exception ex)
         {
-            Log.Warning("Failed to save download tracking data: {ErrorMessage}", ex.Message);
+            Log.Warning(ex, "Failed to save download tracking data");
         }
     }
 

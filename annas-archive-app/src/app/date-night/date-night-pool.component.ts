@@ -6,7 +6,7 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatButtonToggleModule } from '@angular/material/button-toggle';
 import { MatIconModule } from '@angular/material/icon';
-import { Subscription, interval, startWith, switchMap } from 'rxjs';
+import { Subject, Subscription, interval, startWith, switchMap, takeUntil } from 'rxjs';
 import {
   CycleAdminView,
   DateNightApiService,
@@ -409,7 +409,18 @@ export class DateNightPoolComponent implements OnInit, OnDestroy {
       });
   }
 
+  /**
+   * Ends every in-flight request when the component goes.
+   *
+   * `poll` was already unsubscribed here, but `refreshNow()` was not, and its
+   * response handler starts the one-second countdown interval. A refresh that
+   * resolved after destroy therefore started a timer that nothing would clear.
+   */
+  private readonly destroy$ = new Subject<void>();
+
   ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
     this.poll?.unsubscribe();
     if (this.testCountdownTimer) clearInterval(this.testCountdownTimer);
   }
@@ -460,7 +471,7 @@ export class DateNightPoolComponent implements OnInit, OnDestroy {
 
   /** Re-fetches immediately rather than waiting on the 15s pool-status poll. */
   private refreshNow(): void {
-    this.api.getPool().subscribe({
+    this.api.getPool().pipe(takeUntil(this.destroy$)).subscribe({
       next: data => {
         this.data = data;
         this.syncTestCountdown(data);

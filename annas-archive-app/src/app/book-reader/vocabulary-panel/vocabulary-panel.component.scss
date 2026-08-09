@@ -7,7 +7,7 @@
 .vocab-modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(var(--black-rgb), 0.5);
   display: flex;
   justify-content: center;
   align-items: center;
@@ -15,13 +15,13 @@
 }
 
 .vocab-modal {
-  background: #ffffff;
-  color: #0f172a;
+  background: var(--surface-card);
+  color: var(--text-heading);
   padding: 20px;
   border-radius: 12px;
   width: min(1560px, 92vw);
   max-height: 80vh;
-  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.15);
+  box-shadow: 0 20px 40px rgba(var(--slate-900-rgb), 0.15);
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -67,10 +67,10 @@
 }
 
 .vocab-modal ::ng-deep .mat-mdc-form-field-flex {
-  background: #ffffff;
-  color: #0f172a;
+  background: var(--surface-card);
+  color: var(--text-heading);
   border-radius: 8px;
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--border-strong);
   height: 52px;
   align-items: center;
 }
@@ -82,7 +82,7 @@
 .vocab-modal ::ng-deep .mat-mdc-select-value,
 .vocab-modal ::ng-deep .mat-mdc-form-field-label,
 .vocab-modal ::ng-deep .mat-mdc-select-arrow {
-  color: #0f172a !important;
+  color: var(--text-heading) !important;
 }
 
 .vocab-modal ::ng-deep .mdc-notched-outline__leading,
@@ -129,8 +129,8 @@
 }
 
 .vocab-modal-list {
-  background: #f8fafc;
-  border: 1px solid #e5e7eb;
+  background: var(--surface-page);
+  border: 1px solid var(--border);
   border-radius: 10px;
   padding: 12px;
   height: 100%;
@@ -139,7 +139,7 @@
 
 .vocab-modal-item {
   padding: 8px 6px;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid var(--border);
 }
 
 .vocab-modal-item:last-child {
@@ -159,7 +159,7 @@
   position: absolute;
   bottom: 8px;
   right: 8px;
-  color: #ef4444;
+  color: var(--red-500);
 }
 
 .vocab-flashcard-delete:hover {
@@ -168,17 +168,17 @@
 
 .vocab-term-line {
   font-weight: 600;
-  color: #3b82f6;
+  color: var(--blue-500);
   font-size: 16px;
 }
 
 .vocab-definition-line {
   font-size: 13px;
-  color: #64748b;
+  color: var(--text-muted);
 }
 
 .vocab-empty {
-  color: #94a3b8;
+  color: var(--text-subtle);
   padding: 8px 4px;
 }
 
@@ -200,7 +200,7 @@
   padding: 12px;
   max-height: 60vh;
   overflow: auto;
-  color: #e2e8f0;
+  color: var(--slate-200);
 }
 
 .learn-more-text {
@@ -283,8 +283,8 @@
 
 /* Study action buttons - primary (blue) - outline only */
 .vocab-study-actions .mat-mdc-stroked-button.mat-primary {
-  border-color: #3b82f6 !important;
-  color: #3b82f6 !important;
+  border-color: var(--blue-500) !important;
+  color: var(--blue-500) !important;
 }
 
 .vocab-study-actions .mat-mdc-stroked-button.mat-primary:hover:not([disabled]) {
@@ -293,8 +293,8 @@
 
 /* Study action buttons - accent (pink) - outline only */
 .vocab-study-actions .mat-mdc-stroked-button.mat-accent {
-  border-color: #f43f5e !important;
-  color: #f43f5e !important;
+  border-color: var(--rose-500) !important;
+  color: var(--rose-500) !important;
 }
 
 .vocab-study-actions .mat-mdc-stroked-button.mat-accent:hover:not([disabled]) {
@@ -310,8 +310,8 @@
 
 /* Primary button - blue outline only */
 .vocab-modal-actions .mat-mdc-stroked-button.mat-primary {
-  border-color: #3b82f6 !important;
-  color: #3b82f6 !important;
+  border-color: var(--blue-500) !important;
+  color: var(--blue-500) !important;
 }
 
 .vocab-modal-actions .mat-mdc-stroked-button.mat-primary:hover:not([disabled]) {
@@ -320,8 +320,8 @@
 
 /* Accent button - pink outline only */
 .vocab-modal-actions .mat-mdc-stroked-button.mat-accent {
-  border-color: #f43f5e !important;
-  color: #f43f5e !important;
+  border-color: var(--rose-500) !important;
+  color: var(--rose-500) !important;
 }
 
 .vocab-modal-actions .mat-mdc-stroked-button.mat-accent:hover:not([disabled]) {
@@ -330,8 +330,8 @@
 
 /* Warn button - red outline only */
 .vocab-modal-actions .mat-mdc-stroked-button.mat-warn {
-  border-color: #ef4444 !important;
-  color: #ef4444 !important;
+  border-color: var(--red-500) !important;
+  color: var(--red-500) !important;
 }
 
 .vocab-modal-actions .mat-mdc-stroked-button.mat-warn:hover:not([disabled]) {
@@ -340,8 +340,8 @@
 
 /* Clear flashcards button - orange outline only */
 .clear-flashcards-btn {
-  border-color: #f59e0b !important;
-  color: #f59e0b !important;
+  border-color: var(--amber-500) !important;
+  color: var(--amber-500) !important;
 }
 
 .clear-flashcards-btn:hover:not([disabled]) {
@@ -374,8 +374,8 @@
 }
 
 .vocab-modal-right .mat-mdc-stroked-button.mat-accent {
-  border-color: #f43f5e !important;
-  color: #f43f5e !important;
+  border-color: var(--rose-500) !important;
+  color: var(--rose-500) !important;
 }
 
 .vocab-modal-right .mat-mdc-stroked-button.mat-accent:hover:not([disabled]) {

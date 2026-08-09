@@ -393,7 +393,7 @@ public class DateNightCycleService
             try { await PrepareNextDrawAsync(isTest); }
             catch (Exception ex)
             {
-                Log.Warning("[DateNight] Background summary preparation failed: {Message}", ex.Message);
+                Log.Warning(ex, "[DateNight] Background summary preparation failed");
             }
         });
     }
@@ -769,7 +769,7 @@ public class DateNightCycleService
         }
         catch (Exception ex)
         {
-            Log.Warning("[DateNight] Triggering download for movie {MovieId} failed: {Message}", movieId, ex.Message);
+            Log.Warning(ex, "[DateNight] Triggering download for movie {MovieId} failed", movieId);
             return new DownloadAttempt("Failed", ex.Message);
         }
     }
@@ -875,7 +875,7 @@ public class DateNightCycleService
                 }
                 catch (Exception ex)
                 {
-                    Log.Warning("[DateNight] Could not unmonitor movie {MovieId} while cancelling: {Message}", movieId, ex.Message);
+                    Log.Warning(ex, "[DateNight] Could not unmonitor movie {MovieId} while cancelling", movieId);
                     throw new InvalidOperationException("Radarr could not cancel the movie download. Please try again.", ex);
                 }
             }
@@ -1079,7 +1079,7 @@ public class DateNightCycleService
             }
             catch (Exception ex)
             {
-                Log.Warning("[DateNight] Could not conclude showtime for movie {MovieId}: {Message}", movieId, ex.Message);
+                Log.Warning(ex, "[DateNight] Could not conclude showtime for movie {MovieId}", movieId);
                 // Leave it Locked so the next app-wide poll/page read retries
                 // cleanup. Never claim the showing is over while Radarr still
                 // says its movie is monitored.
@@ -1179,7 +1179,7 @@ public class DateNightCycleService
         }
         catch (JsonException ex)
         {
-            Log.Warning("[DateNight] Lists state unreadable, starting fresh: {Message}", ex.Message);
+            Log.Warning(ex, "[DateNight] Lists state unreadable, starting fresh");
             return new();
         }
     }
@@ -1366,7 +1366,7 @@ public class DateNightCycleService
         }
         catch (JsonException ex)
         {
-            Log.Warning("[DateNight] Cycle state unreadable, starting fresh: {Message}", ex.Message);
+            Log.Warning(ex, "[DateNight] Cycle state unreadable, starting fresh");
             return null;
         }
     }

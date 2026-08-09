@@ -103,7 +103,7 @@ public static class PhotoPrintEndpoints
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
         {
-            Log.Warning("[PhotoPrint] Immich browse failed: {Message}", ex.Message);
+            Log.Warning(ex, "[PhotoPrint] Immich browse failed");
             return Results.Json(new { error = "The photo library is temporarily unavailable." }, statusCode: 503);
         }
     }

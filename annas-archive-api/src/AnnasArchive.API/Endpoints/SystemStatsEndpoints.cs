@@ -57,7 +57,7 @@ public static class SystemStatsEndpoints
         }
         catch (Exception ex)
         {
-            Log.Warning("[SystemStats] Could not read disk space for {Path}: {Message}", libraryRoot, ex.Message);
+            Log.Warning(ex, "[SystemStats] Could not read disk space for {Path}", libraryRoot);
         }
 
         long booksBytes = 0;
@@ -71,7 +71,7 @@ public static class SystemStatsEndpoints
         }
         catch (Exception ex)
         {
-            Log.Warning("[SystemStats] Could not sum library file sizes: {Message}", ex.Message);
+            Log.Warning(ex, "[SystemStats] Could not sum library file sizes");
         }
 
         long moviesBytes = 0;
@@ -82,7 +82,7 @@ public static class SystemStatsEndpoints
         }
         catch (Exception ex)
         {
-            Log.Warning("[SystemStats] Could not fetch Radarr movie sizes: {Message}", ex.Message);
+            Log.Warning(ex, "[SystemStats] Could not fetch Radarr movie sizes");
         }
 
         long tvBytes = 0;
@@ -93,7 +93,7 @@ public static class SystemStatsEndpoints
         }
         catch (Exception ex)
         {
-            Log.Warning("[SystemStats] Could not fetch Sonarr series sizes: {Message}", ex.Message);
+            Log.Warning(ex, "[SystemStats] Could not fetch Sonarr series sizes");
         }
 
         // Audiobookshelf tracks its own library total, so this is one cheap call
@@ -106,7 +106,7 @@ public static class SystemStatsEndpoints
         }
         catch (Exception ex)
         {
-            Log.Warning("[SystemStats] Could not fetch Audiobookshelf library size: {Message}", ex.Message);
+            Log.Warning(ex, "[SystemStats] Could not fetch Audiobookshelf library size");
         }
 
         // Immich likewise reports its own usage; it already swallows its failures

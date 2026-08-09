@@ -62,8 +62,7 @@ public static class MediaOwnership
             // The acquisition itself already succeeded by the time we get here, so a
             // failed tag write must not turn a successful add into an error for the
             // caller. Loud in the log, invisible to the request.
-            Log.Warning("[Ownership] {Source} failed to tag {Type}:{Id} as {Member}: {Message}",
-                source, mediaType, id, member, ex.Message);
+            Log.Warning(ex, "[Ownership] {Source} failed to tag {Type}:{Id} as {Member}", source, mediaType, id, member);
             return false;
         }
     }

@@ -686,7 +686,7 @@ Confidence rubric — use the actual scale, don't default to round numbers:
         catch (Exception ex)
         {
             rateLimits.RecordResult("AI", success: false);
-            Log.Warning("[AudiobookEnrichment] AI fallback failed for '{Title}': {Message}", candidate.Title, ex.Message);
+            Log.Warning(ex, "[AudiobookEnrichment] AI fallback failed for '{Title}'", candidate.Title);
             return null;
         }
     }
@@ -861,7 +861,7 @@ Confidence rubric — use the actual scale, don't default to round numbers:
         }
         catch (Exception ex)
         {
-            Log.Warning("[AudiobookEnrichment] Failed to read sidecar {Path}: {Message}", sidecarPath, ex.Message);
+            Log.Warning(ex, "[AudiobookEnrichment] Failed to read sidecar {Path}", sidecarPath);
             return null;
         }
     }

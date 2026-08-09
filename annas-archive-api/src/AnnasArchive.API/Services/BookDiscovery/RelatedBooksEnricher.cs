@@ -95,7 +95,7 @@ public sealed class RelatedBooksEnricher(
         {
             // A failed catalogue search costs a longer series list, not the
             // answer — the model's own list is still worth returning.
-            Log.Warning("⚠️ Series expansion failed: {ExMessage}", ex.Message);
+            Log.Warning(ex, "⚠️ Series expansion failed");
         }
 
         return sameSeries;

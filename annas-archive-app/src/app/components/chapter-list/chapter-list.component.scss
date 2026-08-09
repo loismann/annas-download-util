@@ -13,7 +13,7 @@
 }
 
 .chapter-meta {
-  color: #6b7280;
+  color: var(--text-muted);
   font-size: 12px;
   margin-left: 6px;
 }
@@ -22,7 +22,7 @@
   font-size: 18px;
   width: 18px;
   height: 18px;
-  color: #10b981;
+  color: var(--emerald-500);
 }
 
 .dropdown-disabled {

@@ -64,7 +64,7 @@ public static class DropboxReaderEndpoints
         }
         catch (Exception ex) when (ex is not ArgumentException)
         {
-            Log.Error("❌ Failed to list Dropbox EPUBs: {ExMessage}", ex.Message);
+            Log.Error(ex, "❌ Failed to list Dropbox EPUBs");
             return ApiResponse.InternalError("Unable to list Dropbox files right now.");
         }
     }
@@ -120,7 +120,7 @@ public static class DropboxReaderEndpoints
         }
         catch (Exception ex) when (ex is not ArgumentException)
         {
-            Log.Error("❌ Failed to load EPUB: {ExMessage}", ex.Message);
+            Log.Error(ex, "❌ Failed to load EPUB");
             return ApiResponse.InternalError("Unable to read the EPUB file.");
         }
     }
@@ -172,7 +172,7 @@ public static class DropboxReaderEndpoints
         }
         catch (Exception ex) when (ex is not ArgumentException)
         {
-            Log.Error("❌ Failed to load EPUB: {ExMessage}", ex.Message);
+            Log.Error(ex, "❌ Failed to load EPUB");
             return ApiResponse.InternalError("Unable to read the EPUB file.");
         }
     }
@@ -197,7 +197,7 @@ public static class DropboxReaderEndpoints
         }
         catch (Exception ex) when (ex is not ArgumentException)
         {
-            Log.Error("❌ Failed to read cache status: {ExMessage}", ex.Message);
+            Log.Error(ex, "❌ Failed to read cache status");
             return ApiResponse.InternalError("Unable to fetch cache status.");
         }
     }
@@ -224,7 +224,7 @@ public static class DropboxReaderEndpoints
         }
         catch (Exception ex) when (ex is not ArgumentException)
         {
-            Log.Error("❌ Failed to start indexing: {ExMessage}", ex.Message);
+            Log.Error(ex, "❌ Failed to start indexing");
             return ApiResponse.InternalError("Unable to start indexing for this book.");
         }
     }
@@ -250,7 +250,7 @@ public static class DropboxReaderEndpoints
         }
         catch (Exception ex) when (ex is not ArgumentException)
         {
-            Log.Error("❌ Failed to delete cache: {ExMessage}", ex.Message);
+            Log.Error(ex, "❌ Failed to delete cache");
             return ApiResponse.InternalError("Unable to delete cache for this book.");
         }
     }
@@ -284,7 +284,7 @@ public static class DropboxReaderEndpoints
         }
         catch (Exception ex) when (ex is not ArgumentException)
         {
-            Log.Error("❌ Failed to search EPUB cache: {ExMessage}", ex.Message);
+            Log.Error(ex, "❌ Failed to search EPUB cache");
             return ApiResponse.InternalError("Unable to search this book right now.");
         }
     }

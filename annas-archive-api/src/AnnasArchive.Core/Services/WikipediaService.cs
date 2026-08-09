@@ -107,7 +107,7 @@ public class WikipediaService : IWikipediaService
         }
         catch (Exception ex)
         {
-            Log.Warning("[Wikipedia] Lookup failed for '{Title}': {Message}", title, ex.Message);
+            Log.Warning(ex, "[Wikipedia] Lookup failed for '{Title}'", title);
             CacheNegative(cacheKey);
             PerfLog.Record("Wikipedia.GetBookDescription", sw.Elapsed.TotalMilliseconds, false, ("Title", title), ("Error", ex.Message));
             return null;

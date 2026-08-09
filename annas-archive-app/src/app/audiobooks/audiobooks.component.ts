@@ -1,4 +1,5 @@
 import { Component, OnDestroy, OnInit } from '@angular/core';
+import { Subject, takeUntil } from 'rxjs';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MatFormFieldModule } from '@angular/material/form-field';
@@ -207,7 +208,19 @@ export class AudiobooksComponent implements OnInit, OnDestroy {
     this.loadPendingRequests();
   }
 
+  /**
+   * Ends every in-flight request when the component goes.
+   *
+   * Not just tidiness: `loadPendingRequests` restarts the poll timer from its
+   * own response handler, so a fetch that resolved after destroy used to start
+   * a fresh interval on a dead component — one nothing would ever clear, and
+   * another one for every visit back to the page.
+   */
+  private readonly destroy$ = new Subject<void>();
+
   ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
     this.stopRequestPolling();
   }
 
@@ -219,7 +232,7 @@ export class AudiobooksComponent implements OnInit, OnDestroy {
    * outage must not stop the playable library from rendering.
    */
   private loadPendingRequests(): void {
-    this.requestApi.listMyRequests().subscribe({
+    this.requestApi.listMyRequests().pipe(takeUntil(this.destroy$)).subscribe({
       next: (requests) => {
         this.pendingRequests = requests;
         this.syncRequestPolling();
@@ -323,7 +336,7 @@ export class AudiobooksComponent implements OnInit, OnDestroy {
     this.loading = true;
     this.error = null;
 
-    this.api.getCatalog().subscribe({
+    this.api.getCatalog().pipe(takeUntil(this.destroy$)).subscribe({
       next: (items) => {
         this.items = items;
         this.loading = false;
@@ -541,7 +554,7 @@ export class AudiobooksComponent implements OnInit, OnDestroy {
     // The catalog list endpoint only returns lightweight summary data
     // (counts, not the actual audioFiles/chapters arrays) — the player needs
     // the full item detail to know what to actually stream.
-    this.api.getItem(item.id).subscribe({
+    this.api.getItem(item.id).pipe(takeUntil(this.destroy$)).subscribe({
       next: (fullItem) => {
         // Preserve owners/customGenres/favorites from the list item, since
         // the detail endpoint's merge may not carry the exact same shape —

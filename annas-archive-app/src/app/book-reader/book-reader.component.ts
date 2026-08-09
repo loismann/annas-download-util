@@ -86,7 +86,10 @@ import {
     VocabularyPanelComponent
   ],
   templateUrl: './book-reader.component.html',
-  styleUrl: './book-reader.component.scss'
+  // Two component stylesheets, not one: the reading themes are split out so
+  // neither file exceeds the 32 kB per-component-style budget. Both are still
+  // component styles, so `::ng-deep` in the themes file keeps working.
+  styleUrls: ['./book-reader.component.scss', './book-reader-themes.component.scss']
 })
 export class BookReaderComponent implements OnInit, OnDestroy {
   private destroy$ = new Subject<void>();

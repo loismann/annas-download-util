@@ -1,5 +1,12 @@
 /* src/styles.scss */
 
+/* The app's colour palette, as :root custom properties. First because
+   everything else may reference it, and because Sass requires @use before any
+   other rule. Component stylesheets need no import of their own — custom
+   properties inherit through the DOM, so var() resolves across Angular's
+   emulated encapsulation. */
+@use 'styles/tokens';
+
 /* Date Night's 1950s movie-house design language — shared by the announcement,
    weekly flyer, scheduling handshake, waiting lobby and showtime countdown.
    Global because it's a theme used across many unrelated components; see that
@@ -155,7 +162,7 @@ button {
 
 /* Book Edit Dialog - darker backdrop and scroll blocking */
 .book-edit-dialog-backdrop {
-  background-color: rgba(0, 0, 0, 0.6) !important;
+  background-color: rgba(var(--black-rgb), 0.6) !important;
 }
 
 .book-edit-dialog-panel {
@@ -208,7 +215,7 @@ button {
 }
 
 .cdk-overlay-dark-backdrop {
-  background: rgba(0, 0, 0, 0.85) !important;
+  background: rgba(var(--black-rgb), 0.85) !important;
 }
 
 /* PDF Viewer Dialog - fullscreen-like dark backdrop */

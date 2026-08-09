@@ -114,7 +114,7 @@ public static class EpubChapterCache
         }
         catch (Exception ex)
         {
-            Log.Information("[epub] Quick index build failed for {Label}: {ErrorMessage}", source.Label, ex.Message);
+            Log.Information(ex, "[epub] Quick index build failed for {Label}", source.Label);
         }
 
         var fresh = await TryReadIndex(metaPath);
@@ -471,7 +471,7 @@ public static class EpubChapterCache
             }
             catch (Exception ex)
             {
-                Log.Information("[epub] Failed to parse OPF for tolerant fallback ({Label}): {ErrorMessage}", label, ex.Message);
+                Log.Information(ex, "[epub] Failed to parse OPF for tolerant fallback ({Label})", label);
             }
         }
 
@@ -541,7 +541,7 @@ public static class EpubChapterCache
         }
         catch (Exception ex)
         {
-            Log.Information("[epub] Failed to read zip entries for tolerant fallback ({Label}): {ErrorMessage}", label, ex.Message);
+            Log.Information(ex, "[epub] Failed to read zip entries for tolerant fallback ({Label})", label);
             return false;
         }
     }
@@ -609,7 +609,7 @@ public static class EpubChapterCache
         }
         catch (Exception ex)
         {
-            Log.Information("[epub] Zip repair failed: {ErrorMessage}", ex.Message);
+            Log.Information(ex, "[epub] Zip repair failed");
             return null;
         }
     }
@@ -652,7 +652,7 @@ public static class EpubChapterCache
         }
         catch (InvalidDataException ex)
         {
-            Log.Information("[epub] Invalid zip structure while adding '{EntryPath}': {ErrorMessage}", entryPath, ex.Message);
+            Log.Information(ex, "[epub] Invalid zip structure while adding '{EntryPath}'", entryPath);
             return sourceBytes;
         }
     }

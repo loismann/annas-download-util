@@ -62,7 +62,7 @@ public class GoogleBooksService : IGoogleBooksService
         }
         catch (Exception ex)
         {
-            Log.Debug("[GoogleBooks] Volume search for {Query} failed: {Message}", query, ex.Message);
+            Log.Debug(ex, "[GoogleBooks] Volume search for {Query} failed", query);
             return null;
         }
     }
@@ -164,7 +164,7 @@ public class GoogleBooksService : IGoogleBooksService
         }
         catch (Exception ex)
         {
-            Log.Warning("[GoogleBooks] Error: {ErrorMessage}", ex.Message);
+            Log.Warning(ex, "[GoogleBooks] Error");
             return null;
         }
     }

@@ -26,10 +26,10 @@
 
 .library-sidebar,
 .library-panel {
-  background: #ffffff;
-  border: 1px solid #e5e7eb;
+  background: var(--surface-card);
+  border: 1px solid var(--border);
   border-radius: 12px;
-  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.06);
+  box-shadow: 0 20px 40px rgba(var(--slate-900-rgb), 0.06);
   padding: 16px;
   display: flex;
   flex-direction: column;
@@ -48,7 +48,7 @@
 
 .sidebar-header p {
   margin: 6px 0 0;
-  color: #64748b;
+  color: var(--text-muted);
   font-size: 0.85rem;
 }
 
@@ -92,9 +92,9 @@ button.mobile-sidebar-toggle,
     bottom: calc(16px + env(safe-area-inset-bottom));
     right: 16px;
     z-index: 1200;
-    background: #3f51b5;
+    background: var(--brand);
     color: white;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 4px 12px rgba(var(--black-rgb), 0.3);
     width: 56px;
     height: 56px;
     border-radius: 50%;
@@ -108,7 +108,7 @@ button.mobile-sidebar-toggle,
     display: block;
     position: fixed;
     inset: 0;
-    background: rgba(15, 23, 42, 0.45);
+    background: rgba(var(--slate-900-rgb), 0.45);
     z-index: 1150;
   }
 
@@ -123,7 +123,7 @@ button.mobile-sidebar-toggle,
     -webkit-overflow-scrolling: touch;
     border: none;
     border-radius: 16px 16px 0 0;
-    box-shadow: 0 -8px 30px rgba(15, 23, 42, 0.3);
+    box-shadow: 0 -8px 30px rgba(var(--slate-900-rgb), 0.3);
     padding-bottom: calc(16px + env(safe-area-inset-bottom));
   }
 

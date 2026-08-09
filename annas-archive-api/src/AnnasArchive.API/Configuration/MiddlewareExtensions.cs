@@ -221,7 +221,7 @@ public static class MiddlewareExtensions
         // Nothing more can be sent to a torn-down connection, so just log and stop.
         if (context.Response.HasStarted)
         {
-            Log.Information("Request canceled after response had already started (client disconnected/aborted): {Message}", exception.Message);
+            Log.Information(exception, "Request canceled after response had already started (client disconnected/aborted)");
             return;
         }
 
@@ -365,15 +365,15 @@ public static class MiddlewareExtensions
         // Log the exception with appropriate level
         if (statusCode == HttpStatusCode.InternalServerError)
         {
-            Log.Error(exception, "Unhandled exception: {Message}", exception.Message);
+            Log.Error(exception, "Unhandled exception");
         }
         else if (statusCode == HttpStatusCode.BadGateway || statusCode == HttpStatusCode.ServiceUnavailable)
         {
-            Log.Warning(exception, "External service error: {Message}", exception.Message);
+            Log.Warning(exception, "External service error");
         }
         else
         {
-            Log.Information("Request failed with {StatusCode}: {Message}", (int)statusCode, exception.Message);
+            Log.Information(exception, "Request failed with {StatusCode}", (int)statusCode);
         }
 
         context.Response.StatusCode = (int)statusCode;

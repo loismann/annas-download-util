@@ -142,7 +142,7 @@ public static class MediaLibraryEndpoints
         }
         catch (HttpRequestException ex)
         {
-            Log.Warning("[MediaLibrary] Sonarr library fetch failed: {Message}", ex.Message);
+            Log.Warning(ex, "[MediaLibrary] Sonarr library fetch failed");
             return Results.Json(new { error = "Sonarr is unavailable" }, statusCode: StatusCodes.Status503ServiceUnavailable);
         }
     }
@@ -156,7 +156,7 @@ public static class MediaLibraryEndpoints
         }
         catch (HttpRequestException ex)
         {
-            Log.Warning("[MediaLibrary] Sonarr episodes fetch failed: {Message}", ex.Message);
+            Log.Warning(ex, "[MediaLibrary] Sonarr episodes fetch failed");
             return Results.Json(new { error = "Sonarr is unavailable" }, statusCode: StatusCodes.Status503ServiceUnavailable);
         }
     }
@@ -192,7 +192,7 @@ public static class MediaLibraryEndpoints
         }
         catch (HttpRequestException ex)
         {
-            Log.Warning("[MediaLibrary] Jellyfin lookup failed: {Message}", ex.Message);
+            Log.Warning(ex, "[MediaLibrary] Jellyfin lookup failed");
             return Results.Json(new { error = "Jellyfin is unavailable" }, statusCode: StatusCodes.Status503ServiceUnavailable);
         }
     }
@@ -225,7 +225,7 @@ public static class MediaLibraryEndpoints
         }
         catch (HttpRequestException ex)
         {
-            Log.Warning("[MediaLibrary] Jellyfin episode stream failed: {Message}", ex.Message);
+            Log.Warning(ex, "[MediaLibrary] Jellyfin episode stream failed");
             if (!context.Response.HasStarted)
                 context.Response.StatusCode = 502;
         }
@@ -273,7 +273,7 @@ public static class MediaLibraryEndpoints
         }
         catch (HttpRequestException ex)
         {
-            Log.Warning("[MediaLibrary] Jellyfin episode download failed: {Message}", ex.Message);
+            Log.Warning(ex, "[MediaLibrary] Jellyfin episode download failed");
             if (!context.Response.HasStarted)
                 context.Response.StatusCode = 502;
         }
@@ -304,7 +304,7 @@ public static class MediaLibraryEndpoints
         }
         catch (HttpRequestException ex)
         {
-            Log.Warning("[MediaLibrary] Radarr library fetch failed: {Message}", ex.Message);
+            Log.Warning(ex, "[MediaLibrary] Radarr library fetch failed");
             return Results.Json(new { error = "Radarr is unavailable" }, statusCode: StatusCodes.Status503ServiceUnavailable);
         }
     }
@@ -339,7 +339,7 @@ public static class MediaLibraryEndpoints
         }
         catch (HttpRequestException ex)
         {
-            Log.Warning("[MediaLibrary] Jellyfin lookup failed: {Message}", ex.Message);
+            Log.Warning(ex, "[MediaLibrary] Jellyfin lookup failed");
             return Results.Json(new { error = "Jellyfin is unavailable" }, statusCode: StatusCodes.Status503ServiceUnavailable);
         }
     }
@@ -371,7 +371,7 @@ public static class MediaLibraryEndpoints
         }
         catch (HttpRequestException ex)
         {
-            Log.Warning("[MediaLibrary] Jellyfin movie stream failed: {Message}", ex.Message);
+            Log.Warning(ex, "[MediaLibrary] Jellyfin movie stream failed");
             if (!context.Response.HasStarted)
                 context.Response.StatusCode = 502;
         }
@@ -394,7 +394,7 @@ public static class MediaLibraryEndpoints
         }
         catch (HttpRequestException ex)
         {
-            Log.Warning("[MediaLibrary] Jellyfin movie HLS master failed: {Message}", ex.Message);
+            Log.Warning(ex, "[MediaLibrary] Jellyfin movie HLS master failed");
             return Results.Json(new { error = "Jellyfin is unavailable" }, statusCode: StatusCodes.Status503ServiceUnavailable);
         }
     }
@@ -417,7 +417,7 @@ public static class MediaLibraryEndpoints
         }
         catch (HttpRequestException ex)
         {
-            Log.Warning("[MediaLibrary] Jellyfin episode HLS master failed: {Message}", ex.Message);
+            Log.Warning(ex, "[MediaLibrary] Jellyfin episode HLS master failed");
             return Results.Json(new { error = "Jellyfin is unavailable" }, statusCode: StatusCodes.Status503ServiceUnavailable);
         }
     }
@@ -468,7 +468,7 @@ public static class MediaLibraryEndpoints
         }
         catch (HttpRequestException ex)
         {
-            Log.Warning("[MediaLibrary] Jellyfin HLS resource proxy failed: {Message}", ex.Message);
+            Log.Warning(ex, "[MediaLibrary] Jellyfin HLS resource proxy failed");
             if (!context.Response.HasStarted)
                 context.Response.StatusCode = 502;
         }
@@ -540,7 +540,7 @@ public static class MediaLibraryEndpoints
         }
         catch (HttpRequestException ex)
         {
-            Log.Warning("[MediaLibrary] Jellyfin movie download failed: {Message}", ex.Message);
+            Log.Warning(ex, "[MediaLibrary] Jellyfin movie download failed");
             if (!context.Response.HasStarted)
                 context.Response.StatusCode = 502;
         }
@@ -594,7 +594,7 @@ public static class MediaLibraryEndpoints
         }
         catch (HttpRequestException ex)
         {
-            Log.Warning("[MediaLibrary] Sonarr delete series failed: {Message}", ex.Message);
+            Log.Warning(ex, "[MediaLibrary] Sonarr delete series failed");
             return Results.Json(new { error = "Sonarr rejected the delete request" }, statusCode: StatusCodes.Status502BadGateway);
         }
     }
@@ -609,7 +609,7 @@ public static class MediaLibraryEndpoints
         }
         catch (HttpRequestException ex)
         {
-            Log.Warning("[MediaLibrary] Sonarr delete season failed: {Message}", ex.Message);
+            Log.Warning(ex, "[MediaLibrary] Sonarr delete season failed");
             return Results.Json(new { error = "Sonarr rejected the delete request" }, statusCode: StatusCodes.Status502BadGateway);
         }
     }
@@ -625,7 +625,7 @@ public static class MediaLibraryEndpoints
         }
         catch (HttpRequestException ex)
         {
-            Log.Warning("[MediaLibrary] Radarr delete movie failed: {Message}", ex.Message);
+            Log.Warning(ex, "[MediaLibrary] Radarr delete movie failed");
             return Results.Json(new { error = "Radarr rejected the delete request" }, statusCode: StatusCodes.Status502BadGateway);
         }
     }
@@ -645,7 +645,7 @@ public static class MediaLibraryEndpoints
         }
         catch (Exception ex)
         {
-            Log.Warning("[MediaLibrary] Failed to save tv:{SeriesId} metadata: {Message}", seriesId, ex.Message);
+            Log.Warning(ex, "[MediaLibrary] Failed to save tv:{SeriesId} metadata", seriesId);
             return Results.Json(new { error = "Failed to save — please try again." }, statusCode: StatusCodes.Status500InternalServerError);
         }
     }
@@ -665,7 +665,7 @@ public static class MediaLibraryEndpoints
         }
         catch (Exception ex)
         {
-            Log.Warning("[MediaLibrary] Failed to save movie:{MovieId} metadata: {Message}", movieId, ex.Message);
+            Log.Warning(ex, "[MediaLibrary] Failed to save movie:{MovieId} metadata", movieId);
             return Results.Json(new { error = "Failed to save — please try again." }, statusCode: StatusCodes.Status500InternalServerError);
         }
     }
@@ -695,7 +695,7 @@ public static class MediaLibraryEndpoints
         }
         catch (Exception ex)
         {
-            Log.Warning("[MediaLibrary] Failed to save {Type}:{Id} favorite: {Message}", type, id, ex.Message);
+            Log.Warning(ex, "[MediaLibrary] Failed to save {Type}:{Id} favorite", type, id);
             return Results.Json(new { error = "Failed to save — please try again." }, statusCode: StatusCodes.Status500InternalServerError);
         }
     }
@@ -709,7 +709,7 @@ public static class MediaLibraryEndpoints
         }
         catch (HttpRequestException ex)
         {
-            Log.Warning("[MediaLibrary] Radarr release search failed: {Message}", ex.Message);
+            Log.Warning(ex, "[MediaLibrary] Radarr release search failed");
             return Results.Json(new { error = "Radarr is unavailable" }, statusCode: StatusCodes.Status503ServiceUnavailable);
         }
     }
@@ -732,7 +732,7 @@ public static class MediaLibraryEndpoints
         }
         catch (HttpRequestException ex)
         {
-            Log.Warning("[MediaLibrary] Radarr grab release failed: {Message}", ex.Message);
+            Log.Warning(ex, "[MediaLibrary] Radarr grab release failed");
             return Results.Json(new { error = "Radarr rejected the grab request" }, statusCode: StatusCodes.Status502BadGateway);
         }
     }
@@ -747,7 +747,7 @@ public static class MediaLibraryEndpoints
         }
         catch (HttpRequestException ex)
         {
-            Log.Warning("[MediaLibrary] Sonarr release search failed: {Message}", ex.Message);
+            Log.Warning(ex, "[MediaLibrary] Sonarr release search failed");
             return Results.Json(new { error = "Sonarr is unavailable" }, statusCode: StatusCodes.Status503ServiceUnavailable);
         }
     }
@@ -766,7 +766,7 @@ public static class MediaLibraryEndpoints
         }
         catch (HttpRequestException ex)
         {
-            Log.Warning("[MediaLibrary] Sonarr grab release failed: {Message}", ex.Message);
+            Log.Warning(ex, "[MediaLibrary] Sonarr grab release failed");
             return Results.Json(new { error = "Sonarr rejected the grab request" }, statusCode: StatusCodes.Status502BadGateway);
         }
     }

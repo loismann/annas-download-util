@@ -93,7 +93,7 @@ public sealed class ImmichService : IImmichService
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
         {
-            Log.Warning("[PhotoPrint] Immich is unreachable: {Message}", ex.Message);
+            Log.Warning(ex, "[PhotoPrint] Immich is unreachable");
             return false;
         }
     }
@@ -162,7 +162,7 @@ public sealed class ImmichService : IImmichService
         {
             // The storage panel degrades to 0 for this row rather than failing —
             // one unreachable service must not blank the whole panel.
-            Log.Warning("[PhotoPrint] Could not read Immich storage usage: {Message}", ex.Message);
+            Log.Warning(ex, "[PhotoPrint] Could not read Immich storage usage");
             return 0;
         }
     }

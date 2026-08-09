@@ -78,7 +78,7 @@ public class EbookCoverService : IEbookCoverService
         }
         catch (Exception ex)
         {
-            Log.Warning("[EbookCoverService] Failed to replace cover: {ErrorMessage}", ex.Message);
+            Log.Warning(ex, "[EbookCoverService] Failed to replace cover");
 
             // Reset stream position if possible
             if (ebookStream.CanSeek)
@@ -110,7 +110,7 @@ public class EbookCoverService : IEbookCoverService
         }
         catch (Exception ex)
         {
-            Log.Warning("[EbookCoverService] Failed to download cover: {ErrorMessage}", ex.Message);
+            Log.Warning(ex, "[EbookCoverService] Failed to download cover");
             return ebookStream;
         }
 
@@ -266,7 +266,7 @@ public class EbookCoverService : IEbookCoverService
         }
         catch (Exception ex)
         {
-            Log.Warning("[EbookCoverService] Failed to process EPUB: {ErrorMessage}", ex.Message);
+            Log.Warning(ex, "[EbookCoverService] Failed to process EPUB");
             Log.Debug("[EbookCoverService] Stack trace: {StackTrace}", ex.StackTrace);
 
             // Reset stream position if possible

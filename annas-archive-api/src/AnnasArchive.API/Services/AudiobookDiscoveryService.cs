@@ -79,8 +79,7 @@ public sealed class AudiobookDiscoveryService(
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException && !ct.IsCancellationRequested)
         {
-            Log.Warning(
-                "[Listenarr] AI candidate resolution failed for one suggestion: {Message}", ex.Message);
+            Log.Warning(ex, "[Listenarr] AI candidate resolution failed for one suggestion");
             return NotFound(candidate, "The catalog could not be searched for this suggestion. Try again.");
         }
 

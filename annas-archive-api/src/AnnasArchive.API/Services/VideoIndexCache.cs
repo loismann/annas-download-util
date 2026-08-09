@@ -200,7 +200,7 @@ public class VideoIndexCache : MetaIndexCache<VideoDto>
             }
             catch (Exception ex)
             {
-                Log.Debug("[VideoIndexCache] Skipping file {FilePath}: {Message}", filePath, ex.Message);
+                Log.Debug(ex, "[VideoIndexCache] Skipping file {FilePath}", filePath);
             }
         }
 

@@ -1,0 +1,240 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   Colour tokens
+
+   Every colour used three or more times in the app, defined once.
+
+   Before this file there were 1,048 raw hex literals across 60 stylesheets and
+   214 distinct values. They were not 214 decisions. 83% of them came from four
+   palettes pasted in side by side over time -- Tailwind (507 uses), a legacy
+   pure-grey ramp (206), Material/Bootstrap/Google (152), and the rest bespoke.
+   Two of those four survive below, on purpose: they really are in the app, and
+   hiding that behind role names would make the duplication harder to find, not
+   easier. Tailwind's `gray` ramp and the legacy pure-grey ramp have both since
+   been folded into slate — see the notes where each used to be.
+
+   Rules for this file
+   ───────────────────
+   * Tokens are named for what the colour IS, not what it is for. A value that
+     is body text in one component and a dark-theme background in another
+     cannot carry an honest role name, and 1,048 call sites is too many to
+     judge one at a time. A semantic layer (`--text-body: var(--slate-600)`)
+     belongs on top of this, not instead of it.
+   * Two ramps for one job is drift and gets merged; two ramps that look
+     different are a design decision, and that decision belongs to a person.
+     Tailwind's `gray` was drift and went quietly (62 sites, ΔE 2.5-6.0). The
+     legacy pure-grey ramp was the second kind -- ΔE 13-15, visibly neutral
+     where slate is blue -- and went too, but only once it was asked for
+     (107 sites). There is one neutral ramp now.
+   * A value earns a token at three uses. Below that there is no duplication
+     to remove and a token is indirection for its own sake; ~123 genuinely
+     one-off colours are still literal in component files, by design.
+   * Custom properties, not Sass variables: they need no per-file @use across
+     60 stylesheets, they cross Angular's emulated encapsulation, and they can
+     be re-pointed at runtime. Nothing here is used inside a Sass colour
+     function, which is what would have forced the other choice.
+
+   Pinned by styles/tokens.spec.ts -- every token below is asserted to resolve.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* ─── Brand ─────────────────────────────────────────────────────────────
+     The single most-repeated colour in the app. Named for its role rather than
+     its ramp position because it is Material Indigo 500 while the tints around
+     it are Tailwind indigo -- calling it `--indigo-500` would collide.
+     ────────────────────────────────────────────────────────────────── */
+  --brand:               #3f51b5;     /* 64 uses */
+
+  /* ─── Absolutes ───────────────────────────────────────────────────────── */
+  --white:               #ffffff;     /* 72 uses */
+
+  /* ─── Slate ramp (Tailwind) ─────────────────────────────────────────────
+     The app's primary neutral: page background, body copy, borders, headings.
+     ────────────────────────────────────────────────────────────────── */
+  --slate-50:            #f8fafc;     /* 42 uses */
+  --slate-100:           #f1f5f9;     /* 15 uses */
+  --slate-200:           #e2e8f0;     /* 67 uses */
+  --slate-300:           #cbd5e1;     /* 22 uses */
+  --slate-400:           #94a3b8;     /* 33 uses */
+  --slate-500:           #64748b;     /* 90 uses */
+  --slate-600:           #475569;     /* 61 uses */
+  --slate-700:           #334155;     /* 16 uses */
+  --slate-800:           #1e293b;     /* 31 uses */
+  --slate-900:           #0f172a;     /* 38 uses */
+
+  /* The Tailwind *gray* ramp used to sit here — a second vocabulary for the
+     same job, three RGB points from slate at the 200 step. It was merged into
+     the slate ramp above (62 call sites, ΔE 2.5–6.0, mostly borders and muted
+     text). Do not reintroduce it: `gray` and `slate` differ only by a hue the
+     app was never using deliberately. */
+
+  /* The pre-Tailwind pure-grey ramp used to sit here — `#666`, `#555`, `#333`
+     and friends, 107 sites across 22 components. Unlike the Tailwind `gray`
+     ramp above it, this was NOT drift: at ΔE 13-15 from slate it was visibly a
+     different neutral, and folding it in was a design decision rather than a
+     de-duplication. That decision was taken deliberately, and it is gone.
+
+     Mapped by lightness rather than by nearest colour, so the hierarchy each
+     component already had survived the move (`#666` was lighter than `#444`
+     before and still is). Two pairs collapsed on the way — `#666`/`#777` both
+     became `--slate-500`, `#999`/`#aaa` both `--slate-400` — because the slate
+     ramp is coarser than the ad-hoc greys were, and the ~7 L* gap between each
+     pair was incidental rather than a two-level hierarchy anyone designed.
+
+     One neutral ramp now. Do not add a second. */
+
+  /* ─── Status - red / danger ───────────────────────────────────────────── */
+  --red-50:              #fef2f2;     /* 9 uses */
+  --red-100:             #fee2e2;     /* 6 uses */
+  --red-200:             #fecaca;     /* 10 uses */
+  --red-400:             #f87171;     /* 3 uses */
+  --red-500:             #ef4444;     /* 10 uses */
+  --red-600:             #dc2626;     /* 9 uses */
+  --red-700:             #b91c1c;     /* 5 uses */
+  --red-800:             #991b1b;     /* 5 uses */
+
+  /* ─── Status - rose / pink ────────────────────────────────────────────── */
+  --rose-300:            #fda4af;     /* 3 uses */
+  --rose-500:            #f43f5e;     /* 6 uses */
+  --rose-600:            #e11d48;     /* 10 uses */
+  --pink-400:            #f472b6;     /* 5 uses */
+  --pink-500:            #ec4899;     /* 10 uses */
+  --pink-600:            #db2777;     /* 5 uses */
+
+  /* ─── Status - green ──────────────────────────────────────────────────── */
+  --green-500:           #22c55e;     /* 7 uses */
+  --emerald-500:         #10b981;     /* 3 uses */
+
+  /* ─── Status - amber / orange ─────────────────────────────────────────── */
+  --amber-100:           #fef3c7;     /* 4 uses */
+  --amber-400:           #fbbf24;     /* 4 uses */
+  --amber-500:           #f59e0b;     /* 3 uses */
+  --amber-600:           #d97706;     /* 6 uses */
+  --orange-600:          #ea580c;     /* 3 uses */
+
+  /* ─── Status - blue / sky ─────────────────────────────────────────────── */
+  --blue-400:            #60a5fa;     /* 3 uses */
+  --blue-500:            #3b82f6;     /* 15 uses */
+  --blue-600:            #2563eb;     /* 5 uses */
+  --blue-800:            #1e40af;     /* 3 uses */
+  --sky-50:              #f0f9ff;     /* 3 uses */
+  --sky-200:             #bae6fd;     /* 4 uses */
+  --sky-600:             #0284c7;     /* 3 uses */
+  --sky-700:             #0369a1;     /* 3 uses */
+
+  /* ─── Indigo tints (Tailwind) ───────────────────────────────────────────
+     Distinct from `--brand` above, which is the Material indigo.
+     ────────────────────────────────────────────────────────────────── */
+  --indigo-50:           #eef2ff;     /* 8 uses */
+  --indigo-300:          #a5b4fc;     /* 5 uses */
+  --indigo-600:          #4f46e5;     /* 5 uses */
+
+  /* ─── Material palette ──────────────────────────────────────────────────
+     Angular Material's own values, used where a component sits next to Material
+     chrome and had to match it.
+     ────────────────────────────────────────────────────────────────── */
+  --mat-red-50:          #ffebee;     /* 3 uses */
+  --mat-red-a100:        #ff8a80;     /* 4 uses */
+  --mat-red-500:         #f44336;     /* 9 uses */
+  --mat-red-800:         #c62828;     /* 5 uses */
+  --mat-error:           #b3261e;     /* 9 uses */
+  --mat-green-500:       #4caf50;     /* 8 uses */
+  --mat-green-800:       #2e7d32;     /* 3 uses */
+  --mat-blue-700:        #1976d2;     /* 4 uses */
+  --mat-purple-a200:     #7c4dff;     /* 3 uses */
+  --mat-orange-50:       #fff3e0;     /* 3 uses */
+  --mat-grey-50:         #fafafa;     /* 4 uses */
+  --mat-grey-100:        #f5f5f5;     /* 3 uses */
+  --mat-grey-300:        #e0e0e0;     /* 4 uses */
+  --google-grey-700:     #5f6368;     /* 8 uses */
+  --google-grey-800:     #3c4043;     /* 3 uses */
+
+  /* ─── Bootstrap palette ─────────────────────────────────────────────────
+     A third status vocabulary, overlapping the two above. Same story as the gray
+     ramp: kept honest here rather than silently merged.
+     ────────────────────────────────────────────────────────────────── */
+  --bs-danger:           #dc3545;     /* 5 uses */
+  --bs-success:          #28a745;     /* 5 uses */
+  --bs-success-bg:       #d4edda;     /* 3 uses */
+
+  /* ─── Vendor and one-off brands ───────────────────────────────────────── */
+  --spotify-green:       #1db954;     /* 4 uses */
+  --github-green:        #1a7f37;     /* 4 uses */
+
+  /* ─── Shared accents ────────────────────────────────────────────────────
+     `--lavender-200` is the panel border shared by ten library components.
+     The violet pair is the quiz / graph / related-books gradient.
+     ────────────────────────────────────────────────────────────────── */
+  --lavender-200:        #cbd5f5;     /* 13 uses */
+  --indigo-tint:         #f0f4ff;     /* 3 uses */
+  --violet-from:         #667eea;     /* 12 uses */
+  --violet-to:           #764ba2;     /* 5 uses */
+
+  /* ─── Book reader sepia theme ───────────────────────────────────────────
+     The sepia reading theme's own palette. Scoped to the reader, but repeated
+     enough inside it that changing the paper colour was a five-site edit.
+     ────────────────────────────────────────────────────────────────── */
+  --sepia-paper:         #efd8b4;     /* 3 uses */
+  --sepia-rule:          #8b6b3f;     /* 3 uses */
+  --sepia-muted:         #5f4c38;     /* 3 uses */
+  --sepia-ink:           #4b3b2c;     /* 5 uses */
+  --sepia-ink-deep:      #2d2014;     /* 4 uses */
+
+  /* ─── Spotifinator accents ────────────────────────────────────────────── */
+  --spot-green-50:       #f0fbf4;     /* 3 uses */
+  --spot-green-700:      #176c37;     /* 4 uses */
+  --spot-amber-700:      #9a5b00;     /* 3 uses */
+
+  /* ═══ Roles ═══════════════════════════════════════════════════════════
+     What a colour is FOR, on top of what it IS.
+
+     This layer was declined twice before it was built, both times for the same
+     reason: body text used to be painted by two different neutral ramps, so
+     `--text-body` could only ever have been half true. Once there was one ramp,
+     that objection went away and this became ordinary work.
+
+     Every role here resolves to a palette token above, so adopting one cannot
+     change a rendered colour — which is what made the 391-site migration
+     provable rather than a judgement call at each site. The role was chosen by
+     the CSS *property*, not by the token: `color: var(--slate-500)` is text in
+     77 of 77 places, `background: var(--slate-50)` is a page in 38 of 39. A
+     token alone cannot say — `--slate-900` is heading text in 24 places and a
+     dark surface in 10 — but the property can.
+
+     Not every use has a role, and that is not an oversight. `color:
+     var(--slate-700)` would be a sixth text weight, and `color:
+     var(--slate-300)` is text on a dark surface, a different axis the reader
+     handles with explicit theme classes. Those stay on the palette. The palette
+     is the escape hatch, and using it is allowed.
+     ═══════════════════════════════════════════════════════════════════ */
+
+  /* Text, darkest to lightest. */
+  --text-heading:        var(--slate-900);
+  --text-strong:         var(--slate-800);
+  --text-body:           var(--slate-600);
+  --text-muted:          var(--slate-500);
+  --text-subtle:         var(--slate-400);
+  --text-inverse:        var(--white);
+
+  /* Surfaces. `page` is the app background, `card` the panels that sit on it. */
+  --surface-page:        var(--slate-50);
+  --surface-card:        var(--white);
+  --surface-sunken:      var(--slate-100);
+  --surface-inverse:     var(--slate-900);
+
+  /* Borders. `strong` is for a divider that has to carry more weight. */
+  --border:              var(--slate-200);
+  --border-strong:       var(--slate-300);
+
+  /* ─── Channel triples ─────────────────────────────────────────────────
+     For rgba(). A brand change has to reach `rgba(63, 81, 181, .1)` as well as
+     `#3f51b5`, or it is still a multi-site edit. Relative colour syntax
+     (`rgb(from var(--brand) r g b / .1)`) would remove these, once the browser
+     floor allows it.
+     ────────────────────────────────────────────────────────────────── */
+  --black-rgb:           0, 0, 0;
+  --white-rgb:           255, 255, 255;
+  --slate-900-rgb:       15, 23, 42;
+  --brand-rgb:           63, 81, 181;
+  --pink-500-rgb:        236, 72, 153;
+  --spotify-green-rgb:   29, 185, 84;
+}

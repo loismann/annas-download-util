@@ -4,7 +4,7 @@
   padding: 0 !important;
   overflow: hidden;
   border-radius: 10px;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--border);
   height: 100%;
   position: relative;
   width: 100%;
@@ -21,18 +21,18 @@
   background: white;
   border-radius: 4px;
   padding: 4px;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  box-shadow: 0 2px 4px rgba(var(--black-rgb),0.1);
 }
 
 .video-card.bulk-edit-selected {
-  border: 3px solid #3f51b5;
-  box-shadow: 0 4px 12px rgba(63, 81, 181, 0.3);
+  border: 3px solid var(--brand);
+  box-shadow: 0 4px 12px rgba(var(--brand-rgb), 0.3);
 }
 
 .thumbnail-frame {
   width: 100%;
   aspect-ratio: 16 / 9;
-  background: #1a1a1a;
+  background: var(--surface-inverse);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -51,7 +51,7 @@
   position: absolute;
   bottom: 6px;
   right: 6px;
-  background: rgba(0, 0, 0, 0.8);
+  background: rgba(var(--black-rgb), 0.8);
   color: white;
   font-size: 0.75rem;
   font-weight: 500;
@@ -79,7 +79,7 @@
 }
 
 .video-card .channel {
-  color: #666;
+  color: var(--text-muted);
   font-size: 0.8rem;
   margin-bottom: 0.3rem;
   display: -webkit-box;
@@ -96,7 +96,7 @@
 
 .video-card .meta {
   font-size: 0.75rem;
-  color: #444;
+  color: var(--slate-700);
 }
 
 .actions-row {
@@ -116,7 +116,7 @@
   background: transparent;
   padding: 0;
   cursor: pointer;
-  color: #94a3b8;
+  color: var(--text-subtle);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -130,11 +130,11 @@
 }
 
 .bookmark-btn:hover {
-  color: #3f51b5;
+  color: var(--brand);
 }
 
 .bookmark-btn.bookmarked {
-  color: #3f51b5;
+  color: var(--brand);
 }
 
 .action-btn {
@@ -142,7 +142,7 @@
   background: transparent;
   padding: 0;
   cursor: pointer;
-  color: #64748b;
+  color: var(--text-muted);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -156,11 +156,11 @@
 }
 
 .action-btn:hover {
-  color: #3f51b5;
+  color: var(--brand);
 }
 
 .play-btn:hover {
-  color: #22c55e;
+  color: var(--green-500);
 }
 
 .personal-stars {
@@ -178,7 +178,7 @@
   width: auto;
   border: none;
   background: transparent;
-  color: #cbd5f5;
+  color: var(--lavender-200);
   font-size: clamp(0.7rem, 4cqw, 1.3rem);
   padding: 0;
   cursor: pointer;
@@ -187,11 +187,11 @@
 }
 
 .star-button.filled {
-  color: #d97706;
+  color: var(--amber-600);
 }
 
 .star-button:hover {
-  color: #ea580c;
+  color: var(--orange-600);
 }
 
 /* Container query adjustments */

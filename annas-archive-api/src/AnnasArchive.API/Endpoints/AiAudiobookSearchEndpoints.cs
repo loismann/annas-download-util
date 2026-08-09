@@ -114,19 +114,19 @@ public static class AiAudiobookSearchEndpoints
         }
         catch (HttpRequestException ex)
         {
-            Log.Warning("[Listenarr] AI discovery could not reach a dependency: {Message}", ex.Message);
+            Log.Warning(ex, "[Listenarr] AI discovery could not reach a dependency");
             return Results.Json(new { error = "Audiobook discovery is temporarily unavailable." },
                 statusCode: StatusCodes.Status503ServiceUnavailable);
         }
         catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)
         {
-            Log.Warning("[Listenarr] AI discovery timed out: {Message}", ex.Message);
+            Log.Warning(ex, "[Listenarr] AI discovery timed out");
             return Results.Json(new { error = "Audiobook discovery timed out. Try a shorter request." },
                 statusCode: StatusCodes.Status504GatewayTimeout);
         }
         catch (Exception ex)
         {
-            Log.Error("❌ AI audiobook discovery failed: {Message}", ex.Message);
+            Log.Error(ex, "❌ AI audiobook discovery failed");
             return ApiResponse.InternalError("Failed to run AI audiobook search.");
         }
     }
@@ -167,9 +167,7 @@ public static class AiAudiobookSearchEndpoints
         catch (JsonException ex)
         {
             // Length only, never the body: it contains the user's own words.
-            Log.Information(
-                "❌ AI audiobook-search JSON parse failed after {Length} characters: {Message}",
-                rawText.Length, ex.Message);
+            Log.Information(ex, "❌ AI audiobook-search JSON parse failed after {Length} characters", rawText.Length);
             return AiCompletion.Failed(ApiResponse.BadRequest("The assistant's answer could not be read. Try again or simplify the request."));
         }
 

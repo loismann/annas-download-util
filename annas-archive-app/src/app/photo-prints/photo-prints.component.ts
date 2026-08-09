@@ -1,4 +1,5 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, DestroyRef, OnInit, inject } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
@@ -46,6 +47,14 @@ const PAGE_SIZE = 100;
   styleUrl: './photo-prints.component.scss'
 })
 export class PhotoPrintsComponent implements OnInit {
+  /**
+   * Ends in-flight reads when the component is destroyed.
+   *
+   * Reads only: unsubscribing an HttpClient call aborts the request, so routing
+   * a write through this would mean navigating away cancels the user's action.
+   */
+  private readonly destroyRef = inject(DestroyRef);
+
   status: PhotoPrintStatus | null = null;
   sizes: PrintSizeOption[] = [];
 
@@ -78,7 +87,7 @@ export class PhotoPrintsComponent implements OnInit {
   ) {}
 
   ngOnInit(): void {
-    this.api.getStatus().subscribe({
+    this.api.getStatus().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (status) => {
         this.status = status;
         if (status.configured && status.reachable) this.loadPhotos();
@@ -89,7 +98,7 @@ export class PhotoPrintsComponent implements OnInit {
       }
     });
 
-    this.api.getSizes().subscribe({
+    this.api.getSizes().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (sizes) => (this.sizes = sizes),
       error: (err) => this.logger.error('[PhotoPrints] sizes failed', err)
     });
@@ -112,7 +121,7 @@ export class PhotoPrintsComponent implements OnInit {
       favoritesOnly: this.favoritesOnly,
       page: 1,
       size: PAGE_SIZE
-    }).subscribe({
+    }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (page) => {
         this.photos = page.items;
         this.totalPhotos = page.total;
@@ -135,7 +144,7 @@ export class PhotoPrintsComponent implements OnInit {
       favoritesOnly: this.favoritesOnly,
       page: this.nextPage,
       size: PAGE_SIZE
-    }).subscribe({
+    }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (page) => {
         this.photos = [...this.photos, ...page.items];
         this.nextPage = page.nextPage;

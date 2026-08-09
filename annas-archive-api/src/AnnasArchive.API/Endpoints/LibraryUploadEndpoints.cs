@@ -78,7 +78,7 @@ public static class LibraryUploadEndpoints
         }
         catch (Exception ex)
         {
-            Log.Warning("[LibraryUpload] Failed to read form data: {Error}", ex.Message);
+            Log.Warning(ex, "[LibraryUpload] Failed to read form data");
             return ApiResponse.BadRequest("Failed to read upload data.");
         }
 
@@ -162,7 +162,7 @@ public static class LibraryUploadEndpoints
         }
         catch (Exception ex)
         {
-            Log.Error("[LibraryUpload] Failed to save file {FileName}: {Error}", safeFileName, ex.Message);
+            Log.Error(ex, "[LibraryUpload] Failed to save file {FileName}", safeFileName);
             return Results.Problem("Failed to save the uploaded file.");
         }
 

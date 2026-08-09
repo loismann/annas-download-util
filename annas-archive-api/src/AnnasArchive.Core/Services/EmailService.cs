@@ -64,7 +64,7 @@ public class EmailService : IEmailService
         }
         catch (Exception ex)
         {
-            Log.Warning("[Email] Failed to send email to {RecipientEmail}: {ErrorMessage}", recipientEmail, ex.Message);
+            Log.Warning(ex, "[Email] Failed to send email to {RecipientEmail}", recipientEmail);
             throw;
         }
     }

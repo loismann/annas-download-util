@@ -1,3 +1,4 @@
+using AnnasArchive.Core.Models;
 using AnnasArchive.Core.Services;
 using Serilog;
 
@@ -9,6 +10,56 @@ namespace AnnasArchive.API.Helpers;
 /// </summary>
 public static class SendToTargetHelpers
 {
+    /// <summary>
+    /// One log line for a failed Dropbox upload, carrying whatever detail the
+    /// specific exception type happens to have.
+    ///
+    /// This existed as two ladders of four and five catch clauses whose bodies
+    /// were byte-identical — the type was being matched only to choose a log
+    /// message. Matching here instead lets each call site keep a single catch.
+    /// </summary>
+    /// <param name="logPrefix">Which endpoint is reporting, e.g. "send-to-boox".</param>
+    /// <param name="what">What failed, e.g. "upload" or "backup (non-critical)".</param>
+    public static void LogDropboxFailure(string logPrefix, string what, Exception ex)
+    {
+        switch (ex)
+        {
+            case Dropbox.Api.ApiException<Dropbox.Api.Files.UploadError> api:
+                Log.Warning(api, "[{LogPrefix}] Dropbox {What} failed | Details: {Details}",
+                    logPrefix, what, api.ErrorResponse?.ToString() ?? "N/A");
+                break;
+
+            case Dropbox.Api.HttpException http:
+                Log.Warning(http, "[{LogPrefix}] Dropbox {What} failed (HTTP {StatusCode}) | Uri: {Uri}",
+                    logPrefix, what, http.StatusCode, http.RequestUri);
+                break;
+
+            default:
+                Log.Warning(ex, "[{LogPrefix}] Dropbox {What} failed", logPrefix, what);
+                break;
+        }
+    }
+
+    /// <summary>
+    /// Records a completed download against the signed-in user and returns the
+    /// updated quota counters.
+    /// </summary>
+    public static AccountFastDownloadInfoDto RecordDownload(
+        HttpContext context,
+        IDownloadTrackingService downloadTracking,
+        string md5,
+        string logPrefix)
+    {
+        var userName = context.User?.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value
+            ?? context.User?.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value
+            ?? "unknown";
+
+        downloadTracking.RecordDownload(md5, userName);
+        Log.Information("[{LogPrefix}] Recorded download for user {UserName}, MD5: {Md5}", logPrefix, userName, md5);
+
+        return AnnaDownloadHelpers.CurrentCounters(downloadTracking);
+    }
+
     /// <summary>
     /// Attempts to replace the cover of an ebook with a new cover from a URL.
     /// Returns the modified stream if successful, or the original stream if cover replacement
@@ -73,8 +124,7 @@ public static class SendToTargetHelpers
         }
         catch (Exception ex)
         {
-            Log.Warning("[{LogPrefix}] Cover replacement failed for {FileName}: {Message}",
-                logPrefix, fileName, ex.Message);
+            Log.Warning(ex, "[{LogPrefix}] Cover replacement failed for {FileName}", logPrefix, fileName);
             return ebookStream;
         }
     }

@@ -181,7 +181,7 @@ Return ONLY this JSON array:
         }
         catch (Exception ex)
         {
-            Log.Information("Failed to parse chapter labels JSON: {ErrorMessage}", ex.Message);
+            Log.Information(ex, "Failed to parse chapter labels JSON");
             return null;
         }
     }

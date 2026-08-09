@@ -590,7 +590,7 @@ Return JSON with:
         }
         catch (Exception ex)
         {
-            Log.Warning("[LibraryWatcher] AI validation+enrichment failed for {FileName}: {Error}", fileName, ex.Message);
+            Log.Warning(ex, "[LibraryWatcher] AI validation+enrichment failed for {FileName}", fileName);
             return null;
         }
     }
@@ -674,7 +674,7 @@ Return JSON with:
         }
         catch (Exception ex)
         {
-            Log.Debug("[LibraryWatcher] Goodreads simple search failed: {Error}", ex.Message);
+            Log.Debug(ex, "[LibraryWatcher] Goodreads simple search failed");
             return null;
         }
     }

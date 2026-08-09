@@ -163,7 +163,7 @@ public sealed class AudiobookSeriesService(
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException)
         {
-            Log.Warning("[Listenarr] series member {Asin} could not be requested: {Message}", asin, ex.Message);
+            Log.Warning(ex, "[Listenarr] series member {Asin} could not be requested", asin);
             return new AudiobookSeriesRequestOutcome(
                 asin, asin, "failed", null, "Listenarr could not add this book. Try it on its own.");
         }

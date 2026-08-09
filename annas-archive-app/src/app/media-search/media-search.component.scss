@@ -47,7 +47,7 @@
 }
 
 .ai-hint {
-  color: #777;
+  color: var(--text-muted);
   font-size: 0.85rem;
   text-align: center;
 }
@@ -59,12 +59,12 @@
 }
 
 .error {
-  color: #f44336;
+  color: var(--mat-red-500);
   margin-bottom: 1rem;
 }
 
 .empty-state {
-  color: #777;
+  color: var(--text-muted);
   text-align: center;
   padding: 2rem;
 }

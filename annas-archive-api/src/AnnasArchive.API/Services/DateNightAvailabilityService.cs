@@ -130,7 +130,7 @@ public class DateNightAvailabilityService
         }
         catch (JsonException ex)
         {
-            Log.Warning("[DateNight] Availability state unreadable, starting fresh: {Message}", ex.Message);
+            Log.Warning(ex, "[DateNight] Availability state unreadable, starting fresh");
             return new();
         }
     }
@@ -221,8 +221,7 @@ public class DateNightAvailabilityService
                     // record at all means the next pass retries it, which is what we
                     // want. Writing a zero here would permanently mark a perfectly
                     // gettable movie as unobtainable.
-                    Log.Warning("[DateNight] Release search failed for '{Title}' ({Id}): {Message}",
-                        title, id, ex.Message);
+                    Log.Warning(ex, "[DateNight] Release search failed for '{Title}' ({Id})", title, id);
                 }
 
                 done++;
@@ -310,7 +309,7 @@ public class DateNightAvailabilityService
         }
         catch (JsonException ex)
         {
-            Log.Warning("[DateNight] Announcement state unreadable, starting fresh: {Message}", ex.Message);
+            Log.Warning(ex, "[DateNight] Announcement state unreadable, starting fresh");
             return new(StringComparer.OrdinalIgnoreCase);
         }
     }

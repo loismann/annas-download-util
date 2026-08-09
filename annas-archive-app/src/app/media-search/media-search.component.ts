@@ -1,4 +1,5 @@
-import { Component, OnDestroy } from '@angular/core';
+import { Component, DestroyRef, OnDestroy, inject } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MatFormFieldModule } from '@angular/material/form-field';
@@ -100,6 +101,14 @@ async function runWithConcurrencyLimit<T, R>(
   styleUrl: './media-search.component.scss'
 })
 export class MediaSearchComponent implements OnDestroy {
+  /**
+   * Ends in-flight reads when the component is destroyed.
+   *
+   * Reads only: unsubscribing an HttpClient call aborts the request, so routing
+   * a write through this would mean navigating away cancels the user's action.
+   */
+  private readonly destroyRef = inject(DestroyRef);
+
   searchTerm = '';
   /** false = TV (Sonarr), true = Movies (Radarr) — only meaningful for
    * normal (non-AI) search, since AI results carry their own per-item type. */
@@ -249,7 +258,7 @@ export class MediaSearchComponent implements OnDestroy {
     forkJoin({
       tv: needsTv ? this.api.getTvLibrary() : Promise.resolve<MediaLookupResult[]>([]),
       movies: needsMovies ? this.libraryApi.getDownloadedMovies() : Promise.resolve<MediaLookupResult[]>([])
-    }).subscribe({
+    }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: ({ tv, movies }) => {
         const byTvdbId = new Map(tv.filter(s => s.tvdbId !== undefined).map(s => [s.tvdbId, s]));
         const byTmdbId = new Map(movies.filter(m => m.tmdbId !== undefined).map(m => [m.tmdbId, m]));
@@ -327,7 +336,7 @@ export class MediaSearchComponent implements OnDestroy {
     const pending = this.entries.filter(e => e.addState === 'added' && e.addedId !== undefined);
     if (pending.length === 0) return;
 
-    this.api.getQueue().subscribe({
+    this.api.getQueue().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (queue) => {
         const tvRecords = queue.tv.records || [];
         const movieRecords = queue.movies.records || [];

@@ -88,7 +88,7 @@ public static class MediaRequestEndpoints
         }
         catch (HttpRequestException ex)
         {
-            Log.Warning("[MediaRequest] Sonarr search failed: {Message}", ex.Message);
+            Log.Warning(ex, "[MediaRequest] Sonarr search failed");
             return Results.Json(new { error = "Sonarr is unavailable" }, statusCode: StatusCodes.Status503ServiceUnavailable);
         }
     }
@@ -112,7 +112,7 @@ public static class MediaRequestEndpoints
         }
         catch (HttpRequestException ex)
         {
-            Log.Warning("[MediaRequest] Sonarr add failed: {Message}", ex.Message);
+            Log.Warning(ex, "[MediaRequest] Sonarr add failed");
             return Results.Json(new { error = "Sonarr rejected the request" }, statusCode: StatusCodes.Status502BadGateway);
         }
     }
@@ -126,7 +126,7 @@ public static class MediaRequestEndpoints
         }
         catch (HttpRequestException ex)
         {
-            Log.Warning("[MediaRequest] Sonarr library fetch failed: {Message}", ex.Message);
+            Log.Warning(ex, "[MediaRequest] Sonarr library fetch failed");
             return Results.Json(new { error = "Sonarr is unavailable" }, statusCode: StatusCodes.Status503ServiceUnavailable);
         }
     }
@@ -144,7 +144,7 @@ public static class MediaRequestEndpoints
         }
         catch (HttpRequestException ex)
         {
-            Log.Warning("[MediaRequest] Sonarr update-seasons failed: {Message}", ex.Message);
+            Log.Warning(ex, "[MediaRequest] Sonarr update-seasons failed");
             return Results.Json(new { error = "Sonarr rejected the request" }, statusCode: StatusCodes.Status502BadGateway);
         }
     }
@@ -161,7 +161,7 @@ public static class MediaRequestEndpoints
         }
         catch (HttpRequestException ex)
         {
-            Log.Warning("[MediaRequest] Radarr search failed: {Message}", ex.Message);
+            Log.Warning(ex, "[MediaRequest] Radarr search failed");
             return Results.Json(new { error = "Radarr is unavailable" }, statusCode: StatusCodes.Status503ServiceUnavailable);
         }
     }
@@ -185,7 +185,7 @@ public static class MediaRequestEndpoints
         }
         catch (HttpRequestException ex)
         {
-            Log.Warning("[MediaRequest] Radarr add failed: {Message}", ex.Message);
+            Log.Warning(ex, "[MediaRequest] Radarr add failed");
             return Results.Json(new { error = "Radarr rejected the request" }, statusCode: StatusCodes.Status502BadGateway);
         }
     }
@@ -229,7 +229,7 @@ public static class MediaRequestEndpoints
             }
             catch (Exception ex)
             {
-                Log.Warning("[MediaRequest] Could not resolve the '{Tag}' tag: {Message}", DateNight.PoolTag, ex.Message);
+                Log.Warning(ex, "[MediaRequest] Could not resolve the '{Tag}' tag", DateNight.PoolTag);
                 return Results.Json(
                     new { error = $"Could not create the '{DateNight.PoolTag}' tag in Radarr — nothing was imported." },
                     statusCode: StatusCodes.Status502BadGateway);
@@ -320,7 +320,7 @@ public static class MediaRequestEndpoints
             }
             catch (Exception ex)
             {
-                Log.Warning("[MediaRequest] Bulk import row '{Title}' ({Year}) failed: {Message}", title, row.Year, ex.Message);
+                Log.Warning(ex, "[MediaRequest] Bulk import row '{Title}' ({Year}) failed", title, row.Year);
                 results.Add(new BulkImportMovieResult(title, row.Year, "error", ex.Message, null));
             }
         }
@@ -344,7 +344,7 @@ public static class MediaRequestEndpoints
         }
         catch (HttpRequestException ex)
         {
-            Log.Warning("[MediaRequest] Queue fetch failed: {Message}", ex.Message);
+            Log.Warning(ex, "[MediaRequest] Queue fetch failed");
             return Results.Json(new { error = "Queue temporarily unavailable" }, statusCode: StatusCodes.Status503ServiceUnavailable);
         }
     }

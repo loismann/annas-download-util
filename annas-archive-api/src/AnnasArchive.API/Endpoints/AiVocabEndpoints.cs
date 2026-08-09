@@ -74,7 +74,7 @@ public static class AiVocabEndpoints
         }
         catch (Exception ex) when (ex is not ArgumentException)
         {
-            Log.Error("❌ OpenAI learn-more failed: {ExMessage}", ex.Message);
+            Log.Error(ex, "❌ OpenAI learn-more failed");
             return ApiResponse.InternalError("Failed to fetch details.");
         }
     }

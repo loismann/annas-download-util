@@ -1,4 +1,5 @@
-import { Component, OnDestroy, OnInit } from '@angular/core';
+import { Component, DestroyRef, OnDestroy, OnInit, inject } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
@@ -49,6 +50,14 @@ interface ConfettiPiece {
   styleUrl: './quiz.component.scss'
 })
 export class QuizComponent implements OnInit, OnDestroy {
+  /**
+   * Ends in-flight reads when the component is destroyed.
+   *
+   * Reads only: unsubscribing an HttpClient call aborts the request, so routing
+   * a write through this would mean navigating away cancels the user's action.
+   */
+  private readonly destroyRef = inject(DestroyRef);
+
   index: QuizIndex | null = null;
   subject: QuizSubject | null = null;
   subjectId = '';
@@ -95,7 +104,7 @@ export class QuizComponent implements OnInit, OnDestroy {
 
   loadIndex(): void {
     this.status = 'loading';
-    this.quizApi.getSubjects().subscribe({
+    this.quizApi.getSubjects().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: index => {
         this.index = index;
         if (index.subjects.length > 0) {
@@ -115,7 +124,7 @@ export class QuizComponent implements OnInit, OnDestroy {
     if (!subjectId) return;
     this.subjectId = subjectId;
     this.status = 'loading';
-    this.quizApi.getSubject(subjectId).subscribe({
+    this.quizApi.getSubject(subjectId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: subject => {
         this.subject = subject;
         this.questionBank = this.buildQuestionBank(subject);

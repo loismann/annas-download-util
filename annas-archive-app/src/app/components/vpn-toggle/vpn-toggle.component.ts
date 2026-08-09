@@ -1,4 +1,5 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, DestroyRef, OnInit, inject } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MatSlideToggleModule } from '@angular/material/slide-toggle';
@@ -22,6 +23,14 @@ import { LoggerService } from '../../services/logger.service';
   styleUrl: './vpn-toggle.component.scss'
 })
 export class VpnToggleComponent implements OnInit {
+  /**
+   * Ends in-flight reads when the component is destroyed.
+   *
+   * Reads only: unsubscribing an HttpClient call aborts the request, so routing
+   * a write through this would mean navigating away cancels the user's action.
+   */
+  private readonly destroyRef = inject(DestroyRef);
+
   // Off by default (matches the backend's default) until the real value
   // loads from the server.
   enabled = false;
@@ -36,7 +45,7 @@ export class VpnToggleComponent implements OnInit {
   ) {}
 
   ngOnInit(): void {
-    this.api.getVpnSettings().subscribe({
+    this.api.getVpnSettings().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (resp) => {
         this.enabled = resp.enabled;
         this.region = resp.region;

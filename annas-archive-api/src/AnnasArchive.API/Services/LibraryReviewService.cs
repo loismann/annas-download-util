@@ -161,7 +161,7 @@ public class LibraryReviewService : ILibraryReviewService
                 }
                 catch (Exception ex)
                 {
-                    Log.Warning("[LibraryReview] Failed to delete {FileName}: {Message}", safeFileName, ex.Message);
+                    Log.Warning(ex, "[LibraryReview] Failed to delete {FileName}", safeFileName);
                     return new LibraryReviewDecisionResult(false, "Failed to delete book.");
                 }
                 break;
@@ -274,7 +274,7 @@ public class LibraryReviewService : ILibraryReviewService
         }
         catch (Exception ex)
         {
-            Log.Warning("[LibraryReview] Failed to load progress state: {Message}", ex.Message);
+            Log.Warning(ex, "[LibraryReview] Failed to load progress state");
             return new LibraryReviewProgressState();
         }
     }
@@ -287,7 +287,7 @@ public class LibraryReviewService : ILibraryReviewService
         }
         catch (Exception ex)
         {
-            Log.Warning("[LibraryReview] Failed to persist progress state: {Message}", ex.Message);
+            Log.Warning(ex, "[LibraryReview] Failed to persist progress state");
         }
     }
 }

@@ -120,6 +120,38 @@ describe('BookReaderComponent (characterization)', () => {
     expect(component).toBeTruthy();
   });
 
+  // The three reading themes live in a second component stylesheet
+  // (book-reader-themes.component.scss) so that neither file exceeds the 32 kB
+  // per-component-style budget. Nothing in the build enforces that it is still
+  // listed in `styleUrls`: drop it, or revert `styleUrls` to `styleUrl`, and the
+  // reader simply renders unthemed — no error, no warning. This is the guard.
+  describe('the reading themes stylesheet', () => {
+    /** The reading pane only exists once a chapter is on screen. */
+    function paneUnderTheme(theme: 'light' | 'sepia' | 'dark'): HTMLElement {
+      seatInChapter();
+      component.appearance.setTheme(theme);
+      fixture.detectChanges();
+
+      return fixture.nativeElement.querySelector('.text-window') as HTMLElement;
+    }
+
+    it('should style the reading panes for the current theme', () => {
+      // --slate-900, which the dark theme paints the reading surface with.
+      expect(getComputedStyle(paneUnderTheme('dark')).backgroundColor).toBe('rgb(15, 23, 42)');
+    });
+
+    it('should repaint when the theme changes', () => {
+      paneUnderTheme('dark');
+
+      component.appearance.setTheme('sepia');
+      fixture.detectChanges();
+
+      const pane = fixture.nativeElement.querySelector('.text-window') as HTMLElement;
+
+      expect(getComputedStyle(pane).backgroundColor).toBe('rgb(244, 233, 215)');
+    });
+  });
+
   // Everything rendered in the analysis pane goes through [innerHTML], and all
   // of it is model output derived from an EPUB — a file downloaded from Anna's
   // Archive or LibGen, i.e. arbitrary third-party content. The page holds the

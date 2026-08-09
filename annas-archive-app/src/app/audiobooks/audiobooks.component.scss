@@ -15,24 +15,24 @@
   padding: 14px 20px;
   font-size: 1.1rem;
   font-weight: 700;
-  background: linear-gradient(135deg, #ec4899 0%, #db2777 100%);
-  color: #ffffff;
+  background: linear-gradient(135deg, var(--pink-500) 0%, var(--pink-600) 100%);
+  color: var(--text-inverse);
   border: none;
   border-radius: 10px;
   cursor: pointer;
   transition: all 0.2s ease;
-  box-shadow: 0 4px 14px rgba(236, 72, 153, 0.35);
+  box-shadow: 0 4px 14px rgba(var(--pink-500-rgb), 0.35);
 }
 
 .reset-view-btn:hover {
   transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(236, 72, 153, 0.45);
-  background: linear-gradient(135deg, #f472b6 0%, #ec4899 100%);
+  box-shadow: 0 6px 20px rgba(var(--pink-500-rgb), 0.45);
+  background: linear-gradient(135deg, var(--pink-400) 0%, var(--pink-500) 100%);
 }
 
 .reset-view-btn:active {
   transform: translateY(0);
-  box-shadow: 0 2px 8px rgba(236, 72, 153, 0.3);
+  box-shadow: 0 2px 8px rgba(var(--pink-500-rgb), 0.3);
 }
 
 .w-100 {
@@ -42,11 +42,11 @@
 .sidebar-meta {
   margin-top: auto;
   padding-top: 12px;
-  border-top: 1px solid #e5e7eb;
+  border-top: 1px solid var(--border);
   display: flex;
   justify-content: space-between;
   font-size: 0.85rem;
-  color: #475569;
+  color: var(--text-body);
 }
 
 .meta-value {
@@ -56,7 +56,7 @@
 .bulk-edit-section {
   margin-top: 1rem;
   padding: 1rem;
-  background: #f8fafc;
+  background: var(--surface-page);
   border-radius: 8px;
 }
 
@@ -74,7 +74,7 @@
 
 .selection-counter {
   font-weight: 600;
-  color: #3f51b5;
+  color: var(--brand);
   font-size: 0.9rem;
   padding: 0.5rem 0;
   text-align: center;
@@ -96,9 +96,9 @@
 }
 
 .owner-filter {
-  border: 1px solid #cbd5f5;
-  background: #ffffff;
-  color: #3f51b5;
+  border: 1px solid var(--lavender-200);
+  background: var(--surface-card);
+  color: var(--brand);
   padding: 6px 12px;
   border-radius: 999px;
   font-size: 0.8rem;
@@ -107,14 +107,14 @@
 }
 
 .owner-filter.active {
-  background: #3f51b5;
-  color: #ffffff;
-  border-color: #3f51b5;
+  background: var(--brand);
+  color: var(--text-inverse);
+  border-color: var(--brand);
 }
 
 .owner-filter:hover {
   transform: translateY(-1px);
-  box-shadow: 0 6px 12px rgba(63, 81, 181, 0.15);
+  box-shadow: 0 6px 12px rgba(var(--brand-rgb), 0.15);
 }
 
 /* Tile + size-control styling lives in the shared MediaTile / TileSizeControls
@@ -126,7 +126,7 @@
 }
 
 .count-indicator {
-  color: #64748b;
+  color: var(--text-muted);
   font-size: 0.85rem;
   margin-bottom: 12px;
 }
@@ -138,12 +138,12 @@
 }
 
 .error {
-  color: #f44336;
+  color: var(--mat-red-500);
   margin-bottom: 1rem;
 }
 
 .empty-state {
-  color: #777;
+  color: var(--text-muted);
   text-align: center;
   padding: 2rem;
 }
@@ -166,7 +166,7 @@
 }
 
 .tile-meta {
-  color: #64748b;
+  color: var(--text-muted);
   font-size: 0.8rem;
   line-height: 1.2;
   white-space: nowrap;
@@ -252,6 +252,6 @@ app-media-tile.pending-tile.failed .pending-status {
 
 .pending-progress-bar {
   height: 100%;
-  background: #4caf50;
+  background: var(--mat-green-500);
   transition: width 0.4s ease;
 }

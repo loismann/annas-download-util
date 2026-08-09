@@ -317,33 +317,10 @@ public static class AnnaDownloadEndpoints
         if (validationError != null)
             return ApiResponse.BadRequest(validationError);
 
-        var memberKey = cfg["Anna:MemberKey"]
-            ?? throw new InvalidOperationException("Missing Anna:MemberKey.");
-
-        // Use shared helper to download book from Anna's Archive
-        var (resp, fileName, acctInfo, errorMessage, failure) = await AnnaDownloadHelpers.DownloadBookFromAnnasArchiveAsync(md5, title, anna, memberKey);
-
-        if (errorMessage != null)
-        {
-            // Return current tracking status on error
-            var (downloadsLeft, downloadsPerDay) = downloadTracking.GetDownloadStatus();
-            var trackingInfo = new AccountFastDownloadInfoDto(downloadsLeft, downloadsPerDay);
-            // Non-2xx, but the body is unchanged: accountFastInfo still rides along
-            // because a failed attempt can still have consumed a quota slot, and the
-            // counter has to stay truthful. The browser reads it from the error.
-            return Results.Json(
-                new { success = false, message = errorMessage, accountFastInfo = trackingInfo },
-                statusCode: AnnaDownloadHelpers.StatusCodeFor(failure));
-        }
-
-        if (resp == null || fileName == null)
-        {
-            var (downloadsLeft, downloadsPerDay) = downloadTracking.GetDownloadStatus();
-            var trackingInfo = new AccountFastDownloadInfoDto(downloadsLeft, downloadsPerDay);
-            return Results.Json(
-                new { success = false, message = "Failed to download book.", accountFastInfo = trackingInfo },
-                statusCode: StatusCodes.Status502BadGateway);
-        }
+        var (resp, fileName, acctInfo, downloadError) =
+            await AnnaDownloadHelpers.DownloadForSendAsync(md5, title, anna, cfg, downloadTracking);
+        if (downloadError != null)
+            return downloadError;
 
         using (resp)
         {
@@ -371,73 +348,21 @@ public static class AnnaDownloadEndpoints
 
                 Log.Information("[send-to-boox] Dropbox upload successful! File: {UploadedPath}", uploaded.PathDisplay);
 
-                // Get user name from auth context
-                var userName = context.User?.FindFirst(ClaimTypes.Email)?.Value
-                    ?? context.User?.FindFirst(ClaimTypes.Name)?.Value
-                    ?? "unknown";
-
-                // Record successful download in our tracking system
-                downloadTracking.RecordDownload(md5, userName);
-                Log.Information("[send-to-boox] Recorded download for user {UserName}, MD5: {Md5}", userName, md5);
-
-                // Get updated download tracking status
-                var (downloadsLeft, downloadsPerDay) = downloadTracking.GetDownloadStatus();
-                var counterInfo = new AccountFastDownloadInfoDto(downloadsLeft, downloadsPerDay);
-
                 return Results.Ok(new
                 {
                     success         = true,
                     dropboxPath     = uploaded.PathDisplay,
                     dropboxFileId   = uploaded.Id,
-                    accountFastInfo = counterInfo
+                    accountFastInfo = SendToTargetHelpers.RecordDownload(context, downloadTracking, md5, "send-to-boox")
                 });
             }
-            catch (Dropbox.Api.ApiException<UploadError> ex)
-            {
-                var details = ex.ErrorResponse?.ToString() ?? ex.ToString();
-                Log.Warning("Dropbox upload failed: {ErrorMessage} | Details: {Details}", ex.Message, details ?? "N/A");
-
-                return Results.Ok(new
-                {
-                    success         = false,
-                    message         = "Failed to upload file to Dropbox. Please try again.",
-                    accountFastInfo = acctInfo
-                });
-            }
-            catch (Dropbox.Api.HttpException ex)
-            {
-                var details = ex.ToString();
-                Log.Warning(" Dropbox upload failed (HTTP {ExStatusCode}): {ExMessage} | Uri: {ExRequestUri} | Details: {Details}", ex.StatusCode, ex.Message, ex.RequestUri, details);
-                return Results.Ok(new
-                {
-                    success         = false,
-                    message         = "Failed to upload file to Dropbox. Please try again.",
-                    accountFastInfo = acctInfo
-                });
-            }
-            catch (Dropbox.Api.DropboxException ex)
-            {
-                Log.Warning(" Dropbox upload failed (DropboxException): {Ex}", ex);
-                return Results.Ok(new
-                {
-                    success         = false,
-                    message         = "Failed to upload file to Dropbox. Please try again.",
-                    accountFastInfo = acctInfo
-                });
-            }
-            catch (HttpRequestException ex)
-            {
-                Log.Warning(" Dropbox upload failed (HTTP): {Ex}", ex);
-                return Results.Ok(new
-                {
-                    success         = false,
-                    message         = "Failed to upload file to Dropbox. Please try again.",
-                    accountFastInfo = acctInfo
-                });
-            }
+            // One catch, not five. The five it replaced had byte-identical
+            // bodies and differed only in how they logged, which is now the
+            // helper's job. ArgumentException is still excluded so the global
+            // handler can turn it into a 400.
             catch (Exception ex) when (ex is not ArgumentException)
             {
-                Log.Warning(" Dropbox upload failed: {ExMessage}", ex.Message);
+                SendToTargetHelpers.LogDropboxFailure("send-to-boox", "upload", ex);
 
                 return Results.Ok(new
                 {
@@ -475,32 +400,10 @@ public static class AnnaDownloadEndpoints
         if (kindleTargetError != null)
             return ApiResponse.BadRequest(kindleTargetError);
 
-        var memberKey = cfg["Anna:MemberKey"]
-            ?? throw new InvalidOperationException("Missing Anna:MemberKey.");
-
-        // Use shared helper to download book from Anna's Archive
-        var (resp, fileName, acctInfo, errorMessage, failure) = await AnnaDownloadHelpers.DownloadBookFromAnnasArchiveAsync(md5, title, anna, memberKey);
-
-        if (errorMessage != null)
-        {
-            var (downloadsLeft, downloadsPerDay) = downloadTracking.GetDownloadStatus();
-            var trackingInfo = new AccountFastDownloadInfoDto(downloadsLeft, downloadsPerDay);
-            // Non-2xx, but the body is unchanged: accountFastInfo still rides along
-            // because a failed attempt can still have consumed a quota slot, and the
-            // counter has to stay truthful. The browser reads it from the error.
-            return Results.Json(
-                new { success = false, message = errorMessage, accountFastInfo = trackingInfo },
-                statusCode: AnnaDownloadHelpers.StatusCodeFor(failure));
-        }
-
-        if (resp == null || fileName == null)
-        {
-            var (downloadsLeft, downloadsPerDay) = downloadTracking.GetDownloadStatus();
-            var trackingInfo = new AccountFastDownloadInfoDto(downloadsLeft, downloadsPerDay);
-            return Results.Json(
-                new { success = false, message = "Failed to download book.", accountFastInfo = trackingInfo },
-                statusCode: StatusCodes.Status502BadGateway);
-        }
+        var (resp, fileName, acctInfo, downloadError) =
+            await AnnaDownloadHelpers.DownloadForSendAsync(md5, title, anna, cfg, downloadTracking);
+        if (downloadError != null)
+            return downloadError;
 
         var tempFilePath = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid()}_{fileName}");
 
@@ -555,19 +458,6 @@ public static class AnnaDownloadEndpoints
                         Log.Information(" Dropbox backup successful! Path: {DropboxPath}", dropboxPathResult);
                     }
                 }
-                catch (Dropbox.Api.ApiException<UploadError> ex)
-                {
-                    var details = ex.ErrorResponse?.ToString() ?? ex.ToString();
-                    Log.Warning("⚠️ Dropbox backup failed (non-critical): {ErrorMessage} | Details: {Details}", ex.Message, details);
-                }
-                catch (Dropbox.Api.HttpException ex)
-                {
-                    Log.Warning("⚠️ Dropbox backup failed (non-critical, HTTP {StatusCode}): {ErrorMessage}", ex.StatusCode, ex.Message);
-                }
-                catch (Dropbox.Api.DropboxException ex)
-                {
-                    Log.Warning("⚠️ Dropbox backup failed (non-critical): {ErrorMessage}", ex.Message);
-                }
                 // Deliberately swallows everything, including ArgumentException:
                 // this is a best-effort backup, and its failure must not fail the
                 // download that already succeeded. Unlike the endpoint-level
@@ -575,21 +465,8 @@ public static class AnnaDownloadEndpoints
                 // improve — no response is being produced.
                 catch (Exception ex)
                 {
-                    Log.Warning("⚠️ Dropbox backup failed (non-critical): {ErrorMessage}", ex.Message);
+                    SendToTargetHelpers.LogDropboxFailure("send-to-kindle", "backup (non-critical)", ex);
                 }
-
-                // Get user name from auth context
-                var userName = context.User?.FindFirst(ClaimTypes.Email)?.Value
-                    ?? context.User?.FindFirst(ClaimTypes.Name)?.Value
-                    ?? "unknown";
-
-                // Record successful download in our tracking system
-                downloadTracking.RecordDownload(md5, userName);
-                Log.Information("[send-to-kindle] Recorded download for user {UserName}, MD5: {Md5}", userName, md5);
-
-                // Get updated download tracking status
-                var (downloadsLeft, downloadsPerDay) = downloadTracking.GetDownloadStatus();
-                var counterInfo = new AccountFastDownloadInfoDto(downloadsLeft, downloadsPerDay);
 
                 return Results.Ok(new
                 {
@@ -598,12 +475,12 @@ public static class AnnaDownloadEndpoints
                         ? $"Book sent to {target}'s Kindle and backed up to Dropbox"
                         : $"Book sent to {target}'s Kindle (Dropbox backup failed, but email succeeded)",
                     dropboxPath     = dropboxPathResult,
-                    accountFastInfo = counterInfo
+                    accountFastInfo = SendToTargetHelpers.RecordDownload(context, downloadTracking, md5, "send-to-kindle")
                 });
             }
             catch (Exception ex) when (ex is not ArgumentException)
             {
-                Log.Warning(" Send to Kindle failed: {ExMessage}", ex.Message);
+                Log.Warning(ex, " Send to Kindle failed");
                 return Results.Ok(new
                 {
                     success         = false,

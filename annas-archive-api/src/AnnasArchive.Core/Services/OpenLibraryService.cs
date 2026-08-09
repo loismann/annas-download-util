@@ -360,7 +360,7 @@ public class OpenLibraryService : IOpenLibraryService
         }
         catch (Exception ex)
         {
-            Log.Warning("[OpenLibrary] Error finding work key: {ErrorMessage}", ex.Message);
+            Log.Warning(ex, "[OpenLibrary] Error finding work key");
             return null;
         }
     }
@@ -395,7 +395,7 @@ public class OpenLibraryService : IOpenLibraryService
         }
         catch (Exception ex)
         {
-            Log.Warning("[OpenLibrary] Error getting work description: {ErrorMessage}", ex.Message);
+            Log.Warning(ex, "[OpenLibrary] Error getting work description");
             return null;
         }
     }
@@ -430,7 +430,7 @@ public class OpenLibraryService : IOpenLibraryService
         }
         catch (Exception ex)
         {
-            Log.Warning("[OpenLibrary] Error finding edition key: {ErrorMessage}", ex.Message);
+            Log.Warning(ex, "[OpenLibrary] Error finding edition key");
             return null;
         }
     }
@@ -465,7 +465,7 @@ public class OpenLibraryService : IOpenLibraryService
         }
         catch (Exception ex)
         {
-            Log.Warning("[OpenLibrary] Error getting edition description: {ErrorMessage}", ex.Message);
+            Log.Warning(ex, "[OpenLibrary] Error getting edition description");
             return null;
         }
     }
@@ -508,7 +508,7 @@ public class OpenLibraryService : IOpenLibraryService
         }
         catch (Exception ex)
         {
-            Log.Warning("[OpenLibrary] Error getting first sentence: {ErrorMessage}", ex.Message);
+            Log.Warning(ex, "[OpenLibrary] Error getting first sentence");
             return null;
         }
     }

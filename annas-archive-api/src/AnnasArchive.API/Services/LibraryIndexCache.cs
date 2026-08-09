@@ -433,7 +433,7 @@ public class LibraryIndexCache : MetaIndexCache<LibraryBookDto>
             }
             catch (Exception ex)
             {
-                Log.Debug("[LibraryIndexCache] Skipping file {FilePath}: {Message}", filePath, ex.Message);
+                Log.Debug(ex, "[LibraryIndexCache] Skipping file {FilePath}", filePath);
             }
         }
 

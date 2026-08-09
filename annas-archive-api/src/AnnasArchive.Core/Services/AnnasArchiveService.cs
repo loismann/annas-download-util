@@ -119,7 +119,7 @@ public class AnnasArchiveService
                 }
                 catch (Exception dumpEx)
                 {
-                    Log.Warning("[AnnasArchiveService] Failed to dump debug HTML: {Message}", dumpEx.Message);
+                    Log.Warning(dumpEx, "[AnnasArchiveService] Failed to dump debug HTML");
                 }
 
                 if (!fallbackAttempted && !string.Equals(effectiveQuery, trimmedQuery, StringComparison.Ordinal) && page == 2)

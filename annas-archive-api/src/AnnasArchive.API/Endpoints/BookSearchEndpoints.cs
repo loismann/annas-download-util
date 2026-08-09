@@ -102,14 +102,14 @@ public static class BookSearchEndpoints
         }
         catch (HttpRequestException ex)
         {
-            Log.Warning("Book search failed due to external service error: {Message}", ex.Message);
+            Log.Warning(ex, "Book search failed due to external service error");
             return Results.Json(
                 new { error = "External search service unavailable", details = ex.Message },
                 statusCode: StatusCodes.Status503ServiceUnavailable);
         }
         catch (TaskCanceledException ex) when (ex.InnerException is TimeoutException)
         {
-            Log.Warning("Book search timed out: {Message}", ex.Message);
+            Log.Warning(ex, "Book search timed out");
             return Results.Json(
                 new { error = "Search request timed out" },
                 statusCode: StatusCodes.Status503ServiceUnavailable);
@@ -276,7 +276,7 @@ public static class BookSearchEndpoints
         }
         catch (Exception ex) when (ex is not ArgumentException)
         {
-            Log.Information("[slum-health] Error: {ErrorMessage}", ex.Message);
+            Log.Information(ex, "[slum-health] Error");
             return Results.Json(
                 new { success = false, error = "Could not reach the status service." },
                 statusCode: StatusCodes.Status502BadGateway);

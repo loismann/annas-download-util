@@ -1,4 +1,5 @@
 import { Component, Inject, OnInit, AfterViewInit, OnDestroy } from '@angular/core';
+import { Subject, takeUntil } from 'rxjs';
 import { CommonModule } from '@angular/common';
 import { MAT_DIALOG_DATA, MatDialogRef, MatDialogModule } from '@angular/material/dialog';
 import { MatButtonModule } from '@angular/material/button';
@@ -53,7 +54,20 @@ export class CharacterGraphModalComponent implements OnInit, AfterViewInit, OnDe
     // Chart will be created after data loads
   }
 
+  /**
+   * Ends in-flight *reads* when the component goes.
+   *
+   * Their response handlers restart polling and countdown timers, so a read
+   * that resolved after destroy used to start a timer on a dead component that
+   * nothing would ever clear. Writes are deliberately NOT routed through this:
+   * unsubscribing an HttpClient call aborts the request, which would mean
+   * navigating away cancelled the user's action.
+   */
+  private readonly destroy$ = new Subject<void>();
+
   ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
     if (this.chart) {
       this.chart.dispose();
     }
@@ -64,7 +78,7 @@ export class CharacterGraphModalComponent implements OnInit, AfterViewInit, OnDe
     this.error = null;
 
     // Try to load existing graph first
-    this.aiApi.getCharacterGraph(this.data.dropboxPath).subscribe({
+    this.aiApi.getCharacterGraph(this.data.dropboxPath).pipe(takeUntil(this.destroy$)).subscribe({
       next: response => {
         // Check if graph needs updating
         if (response.needsUpdate) {

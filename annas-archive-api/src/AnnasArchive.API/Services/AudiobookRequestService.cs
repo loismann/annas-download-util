@@ -267,8 +267,7 @@ public sealed class AudiobookRequestService(
             {
                 // An indexer outage must not read as "this book does not exist" and
                 // block a request that would otherwise be fine. Fail open.
-                Log.Warning("[Listenarr] release probe for \"{Title}\" failed, assuming available: {Message}",
-                    title, ex.Message);
+                Log.Warning(ex, "[Listenarr] release probe for \"{Title}\" failed, assuming available", title);
                 return true;
             }
         }
@@ -366,10 +365,7 @@ public sealed class AudiobookRequestService(
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
         {
-            Log.Warning(
-                "[Listenarr] release grab outcome is unknown for user {UserId}, audiobook {ListenarrId}/{Asin}, elapsed {ElapsedMs}ms: {Message}",
-                SafeUser(ownerKey), listenarrId, request.Asin,
-                Stopwatch.GetElapsedTime(started).TotalMilliseconds, ex.Message);
+            Log.Warning(ex, "[Listenarr] release grab outcome is unknown for user {UserId}, audiobook {ListenarrId}/{Asin}, elapsed {ElapsedMs}ms", SafeUser(ownerKey), listenarrId, request.Asin, Stopwatch.GetElapsedTime(started).TotalMilliseconds);
             throw;
         }
     }
@@ -658,7 +654,7 @@ public sealed class AudiobookRequestService(
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
         {
-            Log.Warning("[Listenarr] could not reconcile ambiguous add for {Asin}: {Message}", asin, ex.Message);
+            Log.Warning(ex, "[Listenarr] could not reconcile ambiguous add for {Asin}", asin);
             return null;
         }
     }

@@ -1,9 +1,9 @@
 .intro { margin-top: 0; line-height: 1.45; }
 mat-radio-group { display: grid; gap: 10px; min-width: min(640px, 76vw); }
-.edition { display: block; border: 1px solid rgba(255, 255, 255, .13); border-radius: 10px; padding: 12px; cursor: pointer; }
-.edition:hover, .edition.selected { border-color: #7c4dff; background: rgba(124, 77, 255, .08); }
+.edition { display: block; border: 1px solid rgba(var(--white-rgb), .13); border-radius: 10px; padding: 12px; cursor: pointer; }
+.edition:hover, .edition.selected { border-color: var(--mat-purple-a200); background: rgba(124, 77, 255, .08); }
 .edition-title { white-space: normal; font-weight: 600; }
-.edition-facts { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 8px 0 0 34px; color: rgba(255, 255, 255, .66); font-size: .86rem; }
+.edition-facts { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 8px 0 0 34px; color: rgba(var(--white-rgb), .66); font-size: .86rem; }
 .edition-facts .asin { opacity: .55; font-variant-numeric: tabular-nums; }
 .state { margin: 6px 0 0 34px; color: #ffd180; font-size: .84rem; }
 @media (max-width: 600px) {

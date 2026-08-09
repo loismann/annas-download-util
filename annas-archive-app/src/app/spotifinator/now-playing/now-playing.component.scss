@@ -1,0 +1,119 @@
+// The footer is a flex child of the Spotifinator card, so the host element has
+// to get out of the way rather than becoming that flex child itself.
+:host { display: contents; }
+
+.now-playing {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex: 0 0 auto;
+  // Rather than squeeze everything onto one line at iPad width, the progress bar
+  // and its clock drop to a second row. Everything that is an icon or a control
+  // keeps its full size on the first row.
+  flex-wrap: wrap;
+  row-gap: 0.35rem;
+  padding: 0.55rem 1rem;
+  border-top: 1px solid var(--mat-grey-300);
+  background: var(--mat-grey-50);
+
+  // Nothing here may shrink: these are fixed-size glyphs, and a flex item that
+  // gives up width does not scale its icon, it clips it.
+  > mat-icon,
+  .now-art,
+  .now-transport,
+  .now-device { flex: 0 0 auto; }
+
+  &.now-playing-problem {
+    color: #7a5200;
+    background: rgba(154, 91, 0, 0.07);
+    font-size: 0.85rem;
+
+    span { flex: 1 1 12rem; min-width: 0; }
+  }
+}
+
+.now-art { width: 44px; height: 44px; border-radius: 4px; object-fit: cover; }
+
+// Shuffle, back, play/pause, forward — kept together as one unit so the wrap at
+// narrow widths moves the progress bar away from them rather than splitting them.
+.now-transport {
+  display: flex;
+  align-items: center;
+
+  .now-toggle {
+    flex: 0 0 auto;
+    // Tighter than Material's default 40px so four controls still fit on a phone
+    // without the row wrapping mid-transport.
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    line-height: 36px;
+  }
+
+  // Shuffle is the only one of the four with a state, so it is the only one that
+  // needs to look different when it is on.
+  .shuffle-on { color: var(--spotify-green); }
+}
+
+.now-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  // Was `0 0 200px`: rigid, so on a narrow screen the title kept its 200px and
+  // the play button and device icon were the ones squeezed instead.
+  flex: 1 1 10rem;
+
+  strong, span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  strong { font-size: 0.86rem; }
+  span { color: var(--slate-500); font-size: 0.76rem; }
+}
+
+.now-progress {
+  // Wide enough to be worth reading or it wraps to its own row with the clock,
+  // instead of shrinking to a stub that pushes the controls out of shape.
+  flex: 1 1 8rem;
+  height: 4px;
+  min-width: 6rem;
+  border-radius: 2px;
+  background: #dcdcdc;
+  overflow: hidden;
+}
+
+.now-progress-fill {
+  height: 100%;
+  background: var(--spotify-green);
+  transition: width 0.9s linear;
+}
+
+.now-time {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+}
+
+// On the iPads this is the only clue about where the sound is actually coming
+// from, since the browser is a remote rather than the player.
+.now-device {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: var(--spot-green-700);
+  font-size: 0.75rem;
+  max-width: 160px;
+  min-width: 0;
+  white-space: nowrap;
+
+  // The overflow lives on the *name*, not on the row. With it on the row the
+  // speaker glyph was the thing that got clipped when the name was long, which
+  // is backwards — the icon is the part that still means something truncated.
+  .now-device-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}

@@ -113,8 +113,19 @@ export class PhotoPrintsComponent implements OnInit {
     return new Date(now.getTime() - days * 86_400_000).toISOString();
   }
 
+  /**
+   * Bumped every time the grid is reloaded from the top.
+   *
+   * A `Load more` already in flight when the filters change belongs to the
+   * previous range, and its handler *appends* — so its page used to arrive
+   * after the reload and mix last year's photos into a list showing last week.
+   */
+  private gridGeneration = 0;
+
   loadPhotos(): void {
+    this.gridGeneration++;
     this.loadingPhotos = true;
+    this.loadingMore = false;
     this.error = null;
     this.api.browsePhotos({
       takenAfter: this.rangeStart(),
@@ -139,6 +150,7 @@ export class PhotoPrintsComponent implements OnInit {
   loadMore(): void {
     if (this.nextPage === null || this.loadingMore) return;
     this.loadingMore = true;
+    const generation = this.gridGeneration;
     this.api.browsePhotos({
       takenAfter: this.rangeStart(),
       favoritesOnly: this.favoritesOnly,
@@ -146,6 +158,9 @@ export class PhotoPrintsComponent implements OnInit {
       size: PAGE_SIZE
     }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (page) => {
+        // The filters moved on while this was in flight — this page belongs to
+        // a grid that is no longer on screen.
+        if (generation !== this.gridGeneration) return;
         this.photos = [...this.photos, ...page.items];
         this.nextPage = page.nextPage;
         this.loadingMore = false;

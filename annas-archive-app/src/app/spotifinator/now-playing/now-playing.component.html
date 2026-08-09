@@ -1,0 +1,70 @@
+
+<!--
+  Now playing. Present whenever Spotify reports something active anywhere, which
+  in remote mode is a device that is not this browser at all — hence the device
+  name: on the iPads it is the only clue about where the sound is coming from.
+-->
+@if (playback?.track) {
+  <footer class="now-playing">
+    @if (playback!.track!.albumArtUrl) {
+      <img class="now-art" [src]="playback!.track!.albumArtUrl" alt="" />
+    }
+    <div class="now-copy">
+      <strong>{{ playback!.track!.name }}</strong>
+      <span>{{ playback!.track!.artists }}</span>
+    </div>
+
+    <!--
+      Transport controls. Skipping needs playback to have started from a
+      playlist rather than a single track — a lone track has nothing after it —
+      so the tooltip says so instead of leaving a dead-looking button.
+    -->
+    <div class="now-transport">
+      <button mat-icon-button class="now-toggle"
+              [matTooltip]="shuffleLabel()"
+              [class.shuffle-on]="playback!.isShuffling"
+              (click)="toggleShuffle()">
+        <mat-icon>shuffle</mat-icon>
+      </button>
+
+      <button mat-icon-button class="now-toggle"
+              matTooltip="Previous track"
+              (click)="skipPrevious()">
+        <mat-icon>skip_previous</mat-icon>
+      </button>
+
+      <button mat-icon-button class="now-toggle"
+              (click)="togglePlayPause()"
+              [matTooltip]="playback!.isPlaying ? 'Pause' : 'Play'">
+        <mat-icon>{{ playback!.isPlaying ? 'pause' : 'play_arrow' }}</mat-icon>
+      </button>
+
+      <button mat-icon-button class="now-toggle"
+              matTooltip="Next track"
+              (click)="skipNext()">
+        <mat-icon>skip_next</mat-icon>
+      </button>
+    </div>
+
+    <div class="now-progress">
+      <div class="now-progress-fill" [style.width.%]="progressPercent()"></div>
+    </div>
+
+    <span class="now-time">
+      {{ present.formatDuration(playback!.progressMs) }} / {{ present.formatDuration(playback!.track!.durationMs) }}
+    </span>
+
+    @if (playback!.device) {
+      <span class="now-device" [matTooltip]="'Playing on ' + playback!.device!.name">
+        <mat-icon inline>{{ present.deviceIcon(playback!.device!.type) }}</mat-icon>
+        <span class="now-device-name">{{ playback!.device!.name }}</span>
+      </span>
+    }
+  </footer>
+} @else if (problem) {
+  <footer class="now-playing now-playing-problem">
+    <mat-icon>info_outline</mat-icon>
+    <span>{{ problem }}</span>
+    <button mat-button (click)="refreshDevices()">Check again</button>
+  </footer>
+}

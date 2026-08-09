@@ -43,6 +43,15 @@ const PREFETCH_CONCURRENCY = 3;
   styleUrl: './library-review-modal.component.scss'
 })
 export class LibraryReviewModalComponent implements OnInit, OnDestroy {
+  /**
+   * Ends the summary prefetch when the modal closes.
+   *
+   * Reads only. Unsubscribing an HttpClient call aborts the request, so the
+   * three writes on this modal — the favourite, the genre save and the review
+   * decision itself — are deliberately left unguarded. They used to run through
+   * here, which meant closing the modal on a decision still in flight threw the
+   * decision away, including a confirmed delete.
+   */
   private destroy$ = new Subject<void>();
 
   readonly phase: 'cull' | 'genre' | 'complete';
@@ -141,7 +150,8 @@ export class LibraryReviewModalComponent implements OnInit, OnDestroy {
       ? [...(book.favoritedBy ?? []), ownerName]
       : (book.favoritedBy ?? []).filter(o => o !== ownerName);
 
-    this.libraryApi.setLibraryBookFavorite(book.fileName, newValue).pipe(takeUntil(this.destroy$)).subscribe({
+    // Not guarded — see the note on destroy$. This is a POST.
+    this.libraryApi.setLibraryBookFavorite(book.fileName, newValue).subscribe({
       next: (resp) => {
         book.favoritedBy = resp.favoritedBy;
       },
@@ -185,9 +195,11 @@ export class LibraryReviewModalComponent implements OnInit, OnDestroy {
       // Omitting them here would silently strip ownership off every book in this phase.
       tags: book.tags,
       series: book.series
+    // Not guarded — see the note on destroy$. A PATCH followed by a POST, and
+    // aborting between the two would leave the genre saved but the book still
+    // queued for review.
     }).pipe(
-      switchMap(() => this.libraryApi.submitLibraryReviewDecision(book.fileName, 'genreSet')),
-      takeUntil(this.destroy$)
+      switchMap(() => this.libraryApi.submitLibraryReviewDecision(book.fileName, 'genreSet'))
     ).subscribe({
       next: () => this.advance(),
       error: err => {
@@ -205,9 +217,9 @@ export class LibraryReviewModalComponent implements OnInit, OnDestroy {
     this.state = 'submittingDecision';
     this.error = null;
 
-    this.libraryApi.submitLibraryReviewDecision(book.fileName, decision).pipe(
-      takeUntil(this.destroy$)
-    ).subscribe({
+    // Not guarded — see the note on destroy$. This is a POST, and for 'delete'
+    // it is the call that removes the book.
+    this.libraryApi.submitLibraryReviewDecision(book.fileName, decision).subscribe({
       next: () => this.advance(),
       error: err => {
         this.logger.error('[library-review] Failed to submit decision', err);

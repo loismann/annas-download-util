@@ -47,6 +47,15 @@ import { TileSize, matchesSearchTerm } from '../shared/media-grid';
   styleUrl: './video-library.component.scss'
 })
 export class VideoLibraryComponent implements OnInit, OnDestroy {
+  /**
+   * Ends in-flight *reads* when the component goes.
+   *
+   * Reads only. Unsubscribing an HttpClient call aborts the underlying request,
+   * so the three PATCHes on this page — the metadata save, the rating and the
+   * bookmark — are deliberately left unguarded: they used to run through here,
+   * which meant rating a video and immediately navigating away silently
+   * cancelled the save the user had just watched the UI accept.
+   */
   private destroy$ = new Subject<void>();
 
   placeholderUrl = '/assets/video-placeholder.jpg';
@@ -185,12 +194,8 @@ export class VideoLibraryComponent implements OnInit, OnDestroy {
       const loadNextBatch = () => {
         if (skip >= total) {
           this.zone.run(() => {
-            this.videos = [...this.videos, ...pendingVideos];
-            this._cachedFilteredVideos = null;
-            this._cachedSortedVideos = null;
-            this.genres = this.buildGenreList(this.videos);
+            this.finishBackgroundLoad(pendingVideos);
             this.logger.log('[video-library] All videos loaded', { total: this.videos.length });
-            this.recomputeDisplayVideosAsync();
           });
           return;
         }
@@ -199,27 +204,46 @@ export class VideoLibraryComponent implements OnInit, OnDestroy {
           .pipe(takeUntil(this.destroy$))
           .subscribe({
             next: (response) => {
-              pendingVideos.push(...(response.videos ?? []));
-              skip += response.videos.length;
+              const batch = response.videos ?? [];
+              pendingVideos.push(...batch);
+              skip += batch.length;
+              // An empty batch advances `skip` by nothing, so recursing on it
+              // would re-request the same page for as long as the server keeps
+              // claiming a higher totalCount than it will hand over — an
+              // unbounded request loop with no way for the user to stop it.
+              if (batch.length === 0) {
+                this.zone.run(() => this.finishBackgroundLoad(pendingVideos));
+                return;
+              }
               loadNextBatch();
             },
             error: (err) => {
               this.logger.error('[video-library] Background load failed', err);
-              this.zone.run(() => {
-                if (pendingVideos.length > 0) {
-                  this.videos = [...this.videos, ...pendingVideos];
-                  this._cachedFilteredVideos = null;
-                  this._cachedSortedVideos = null;
-                  this.genres = this.buildGenreList(this.videos);
-                  this.recomputeDisplayVideosAsync();
-                }
-              });
+              this.zone.run(() => this.finishBackgroundLoad(pendingVideos));
             }
           });
       };
 
       loadNextBatch();
     });
+  }
+
+  /**
+   * Folds whatever the background load managed to fetch into the grid.
+   *
+   * Shared by all three ways that load can end — every batch in, a batch that
+   * came back empty, or an outright failure — because a partly loaded library
+   * on screen beats none, and because three copies of this had already started
+   * to drift apart.
+   */
+  private finishBackgroundLoad(pending: VideoDto[]): void {
+    if (pending.length === 0) return;
+
+    this.videos = [...this.videos, ...pending];
+    this._cachedFilteredVideos = null;
+    this._cachedSortedVideos = null;
+    this.genres = this.buildGenreList(this.videos);
+    this.recomputeDisplayVideosAsync();
   }
 
   invalidateFilterCache(): void {
@@ -378,7 +402,6 @@ export class VideoLibraryComponent implements OnInit, OnDestroy {
   }
 
   resetView(): void {
-    this.invalidateFilterCache();
     this.searchTerm = '';
     this.selectedGenre = '';
     this.minPersonalRating = 0;
@@ -388,6 +411,10 @@ export class VideoLibraryComponent implements OnInit, OnDestroy {
     this.filterBookmarked = false;
     this.bulkEditMode = false;
     this.selectedVideosForBulk.clear();
+    // After the fields, not before them: recomputing first rebuilt the grid
+    // from the filters that were about to be cleared, so Reset restored the
+    // controls but left the same filtered set on screen.
+    this.invalidateFilterCache();
     this.virtualScroll?.scrollToIndex(0);
     setTimeout(() => this.recalculateLayout(), 0);
   }
@@ -467,7 +494,8 @@ export class VideoLibraryComponent implements OnInit, OnDestroy {
           playlist: result.playlist ?? video.playlist ?? null,
           title: result.title ?? video.title,
           channel: result.channel ?? video.channel
-        }).pipe(takeUntil(this.destroy$)).subscribe({
+        // Not guarded by destroy$ — see the note on that field. This is a PATCH.
+        }).subscribe({
           next: () => this.logger.log('[video-library] Updated video metadata:', video.fileName),
           error: (err) => this.logger.error('[video-library] Failed to update video metadata:', err)
         });
@@ -482,11 +510,17 @@ export class VideoLibraryComponent implements OnInit, OnDestroy {
     if (nextRating === current) return;
 
     video.personalRating = nextRating;
+    // Not guarded by destroy$ — see the note on that field. This is a PATCH.
     this.videoApi.updateVideoRatings(video.fileName, {
       personalRating: nextRating
-    }).pipe(takeUntil(this.destroy$)).subscribe({
+    }).subscribe({
       next: () => this.logger.log('[video-library] Updated personal rating:', video.fileName, nextRating),
-      error: (err) => this.logger.error('[video-library] Failed to update personal rating:', err)
+      error: (err) => {
+        this.logger.error('[video-library] Failed to update personal rating:', err);
+        // Put the stars back, the way the bookmark toggle below already does.
+        // Leaving the new rating on screen tells the user it saved.
+        video.personalRating = current;
+      }
     });
   }
 
@@ -494,9 +528,10 @@ export class VideoLibraryComponent implements OnInit, OnDestroy {
     const newValue = !video.bookmarked;
     video.bookmarked = newValue;
 
+    // Not guarded by destroy$ — see the note on that field. This is a PATCH.
     this.videoApi.updateVideoRatings(video.fileName, {
       bookmarked: newValue
-    }).pipe(takeUntil(this.destroy$)).subscribe({
+    }).subscribe({
       next: () => this.logger.log('[video-library] Updated bookmark:', video.fileName, newValue),
       error: (err) => {
         this.logger.error('[video-library] Failed to update bookmark:', err);

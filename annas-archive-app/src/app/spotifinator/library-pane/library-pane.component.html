@@ -1,0 +1,115 @@
+<section class="library-pane">
+  @if (!playlist) {
+    <div class="library-empty">
+      <mat-icon>library_music</mat-icon>
+      <p>Pick a playlist on the left to see what is in it.</p>
+      <small>Or ask the assistant on the right to find or build something.</small>
+    </div>
+  } @else {
+    <header class="library-header">
+      @if (playlist.imageUrl) {
+        <img class="library-cover" [src]="playlist.imageUrl"
+             [alt]="playlist.name" />
+      } @else {
+        <div class="library-cover library-cover-blank"><mat-icon>queue_music</mat-icon></div>
+      }
+
+      <div class="library-heading">
+        <span class="library-eyebrow">{{ present.ownershipLabel(playlist) }}</span>
+        <h2>{{ playlist.name }}</h2>
+        <span class="library-meta">
+          {{ present.itemCountLabel(playlist) }}
+          @if (itemsAccess === 'Forbidden') {
+            · Spotify will not show what is inside
+          }
+        </span>
+
+        <div class="library-header-actions">
+          <button mat-flat-button color="primary"
+                  [disabled]="!canPlayPlaylist(playlist)"
+                  (click)="playPlaylist(playlist)"
+                  [matTooltip]="playDisabledReason() || 'Play this playlist'">
+            <mat-icon>play_arrow</mat-icon> Play
+          </button>
+          @if (playlist.spotifyUrl) {
+            <button mat-stroked-button (click)="openInSpotify(playlist.spotifyUrl)">
+              <mat-icon>open_in_new</mat-icon> Open in Spotify
+            </button>
+          }
+        </div>
+      </div>
+    </header>
+
+    @if (itemsLoading && items.length === 0) {
+      <div class="library-loading"><mat-spinner diameter="28"></mat-spinner></div>
+    } @else if (itemsAccess !== 'Available') {
+      <!--
+        Not "0 songs". A playlist Spotify will not read is unknown, and saying
+        zero is how a followed playlist full of music looks empty.
+      -->
+      <div class="library-note">
+        Spotify did not return the contents of this playlist. That is not the same
+        as it being empty — you follow it, but do not own or collaborate on it, so
+        Spotify shows the playlist without its songs.
+      </div>
+    } @else if (items.length === 0) {
+      <div class="library-note">This playlist really is empty — Spotify reports 0 items.</div>
+    } @else {
+      <ol class="track-list">
+        @for (item of items; track item.position) {
+          <li class="track-row"
+              [class.is-playing]="isTrackPlaying(item)"
+              [class.unplayable]="!canPlayItem(item)">
+            <button class="track-play" type="button"
+                    [disabled]="!canPlayItem(item)"
+                    (click)="playItem(item)"
+                    [matTooltip]="canPlayItem(item)
+                      ? 'Play ' + (item.name || 'this')
+                      : itemUnplayableReason(item)">
+              @if (isTrackPlaying(item) && playback?.isPlaying) {
+                <mat-icon>volume_up</mat-icon>
+              } @else {
+                <span class="track-number">{{ item.position + 1 }}</span>
+                <mat-icon class="track-play-icon">play_arrow</mat-icon>
+              }
+            </button>
+
+            @if (item.albumArtUrl) {
+              <img class="track-art" [src]="item.albumArtUrl" [alt]="item.albumName || ''" />
+            } @else {
+              <div class="track-art track-art-blank"><mat-icon>music_note</mat-icon></div>
+            }
+
+            <div class="track-copy">
+              <span class="track-name">{{ item.name || 'Unknown' }}</span>
+              <span class="track-meta">{{ present.itemMeta(item) }}</span>
+            </div>
+
+            <span class="track-duration">
+              {{ item.durationMs ? present.formatDuration(item.durationMs) : '' }}
+            </span>
+
+            @if (item.spotifyUrl) {
+              <button mat-icon-button class="track-open"
+                      matTooltip="Open in Spotify"
+                      (click)="openInSpotify(item.spotifyUrl)">
+                <mat-icon>open_in_new</mat-icon>
+              </button>
+            }
+          </li>
+        }
+      </ol>
+
+      @if (items.length < itemsTotal) {
+        <div class="library-more">
+          <button mat-stroked-button
+                  [disabled]="itemsLoading"
+                  (click)="loadMore()">
+            {{ itemsLoading ? 'Loading…' : 'Show more' }}
+            ({{ items.length }} of {{ itemsTotal }})
+          </button>
+        </div>
+      }
+    }
+  }
+</section>

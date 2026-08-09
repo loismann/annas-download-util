@@ -191,9 +191,14 @@ export class JellyfinPlayerModalComponent implements AfterViewInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
-    this.hls?.destroy();
+    // Order matters. hls.js's destroy() detaches the media element, which
+    // clears its src and calls load() — and that resets currentTime to 0.
+    // Saving afterwards therefore recorded position 0 and wiped the resume
+    // point for exactly the files that need it most: the transcoded ones,
+    // which are the only ones hls.js is used for.
     if (this.progressSaveTimer) clearInterval(this.progressSaveTimer);
     this.saveProgress();
+    this.hls?.destroy();
   }
 
   trackLabel(track: MediaTrackInfo): string {

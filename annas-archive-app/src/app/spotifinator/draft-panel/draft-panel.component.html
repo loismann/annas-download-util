@@ -1,0 +1,86 @@
+<details class="discovery-draft" open>
+  <summary>
+    <span class="draft-title">
+      <strong>{{ draft.name }}</strong>
+      <small>{{ draft.candidates.length }} candidates · {{ draft.state }}</small>
+    </span>
+    <span class="draft-header-actions" (click)="$event.preventDefault(); $event.stopPropagation()">
+      <!--
+        Create opens the review card; it does not write. Delete really does
+        delete — a draft has never touched Spotify, so there is nothing to
+        preview and nothing to undo.
+      -->
+      <button mat-flat-button color="primary" type="button"
+              (click)="createInSpotify()"
+              [disabled]="pending || present.resolvedCandidateCount(draft) === 0"
+              [matTooltip]="present.resolvedCandidateCount(draft) === 0
+                ? 'None of these matched a Spotify track yet'
+                : 'Review and create this as a real Spotify playlist'">
+        <mat-icon>library_add</mat-icon>
+        Create in Spotify ({{ present.resolvedCandidateCount(draft) }})
+      </button>
+
+      @if (!draft.savedAt) {
+        <button mat-stroked-button type="button" (click)="save()"
+                [disabled]="pending">
+          <mat-icon>bookmark_add</mat-icon> Save draft
+        </button>
+      } @else {
+        <span class="draft-saved"><mat-icon>bookmark</mat-icon> Saved</span>
+      }
+
+      <button mat-icon-button type="button" matTooltip="Delete this draft"
+              class="draft-delete"
+              (click)="delete()"
+              [disabled]="pending">
+        <mat-icon>delete_outline</mat-icon>
+      </button>
+      <button mat-icon-button type="button" matTooltip="Close draft (keeps it)"
+              (click)="closed.emit()">
+        <mat-icon>close</mat-icon>
+      </button>
+    </span>
+  </summary>
+  <div class="draft-status-line">Draft only — Spotify unchanged</div>
+  <p>{{ draft.summary }}</p>
+  @if (draft.clarifyingQuestion) {
+    <div class="analysis-note">{{ draft.clarifyingQuestion }}</div>
+  }
+  @if (draft.candidates.length > 0) {
+    <div class="draft-candidates">
+      @for (candidate of draft.candidates; track candidate.id; let first = $first; let last = $last) {
+        <div class="draft-candidate">
+          <span class="draft-position">{{ candidate.position + 1 }}</span>
+          <div class="draft-candidate-copy" (click)="openInSpotify(candidate.track?.spotifyUrl || null)">
+            <strong>{{ candidate.title }}</strong>
+            <span>{{ candidate.artist }} · {{ present.candidateResolutionLabel(candidate) }}</span>
+            <small [class.unfamiliar]="candidate.probablyUnfamiliar">{{ candidate.familiarityLabel }}</small>
+            @if (candidate.rationale) { <small>{{ candidate.rationale }}</small> }
+            @if (candidate.alternatives.length > 0) {
+              <div class="draft-alternatives">
+                <small>Choose the Spotify match:</small>
+                @for (alternative of candidate.alternatives; track alternative.id) {
+                  <button type="button"
+                          (click)="$event.stopPropagation(); selectAlternative(candidate.id, alternative.id)">
+                    {{ alternative.name }} — {{ alternative.artists }} · {{ alternative.albumName }}
+                  </button>
+                }
+              </div>
+            }
+          </div>
+          <div class="draft-actions">
+            <button mat-icon-button matTooltip="Move up" [disabled]="first"
+                    (click)="moveCandidate(candidate.id, -1)"><mat-icon>arrow_upward</mat-icon></button>
+            <button mat-icon-button matTooltip="Move down" [disabled]="last"
+                    (click)="moveCandidate(candidate.id, 1)"><mat-icon>arrow_downward</mat-icon></button>
+            <button mat-icon-button matTooltip="Remove from draft"
+                    (click)="removeCandidate(candidate.id)"><mat-icon>close</mat-icon></button>
+          </div>
+        </div>
+      }
+    </div>
+  }
+  @if (draft.knownMusicCoverage) {
+    <div class="analysis-note">{{ draft.knownMusicCoverage }}</div>
+  }
+</details>

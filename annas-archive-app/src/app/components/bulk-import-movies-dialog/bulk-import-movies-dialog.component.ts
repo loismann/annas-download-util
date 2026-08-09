@@ -64,6 +64,10 @@ type Stage = 'upload' | 'preview' | 'importing' | 'results';
           </div>
 
           <div *ngSwitchCase="'preview'" class="preview-stage">
+            <!-- Also rendered here, not only on the upload stage: a failed import
+                 with nothing yet added drops back to this stage, and the reason
+                 it set had nowhere to appear. -->
+            <p *ngIf="parseError" class="error">{{ parseError }}</p>
             <p>
               {{ validCount }} of {{ rows.length }} row(s) ready to import.
               <span *ngIf="invalidCount > 0" class="error">{{ invalidCount }} row(s) have a problem and will be skipped.</span>
@@ -252,11 +256,14 @@ export class BulkImportMoviesDialogComponent {
       if (!title) {
         error = 'Title is required';
       } else if (yearRaw) {
-        const parsed = parseInt(yearRaw, 10);
-        if (Number.isNaN(parsed) || yearRaw.length !== 4) {
+        // Four digits and nothing else. parseInt stops at the first non-digit,
+        // so a length check around it let "197a" through as the year 197 — and
+        // a wrong year is worse than a rejected one here, since the backend
+        // matches on title+year and would silently find nothing.
+        if (!/^\d{4}$/.test(yearRaw)) {
           error = `Invalid year "${yearRaw}"`;
         } else {
-          year = parsed;
+          year = parseInt(yearRaw, 10);
         }
       }
 

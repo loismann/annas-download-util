@@ -249,16 +249,21 @@ public static class AiSummarizeEndpoints
                 return;
             }
 
-            // Pre-stream guard, not leftover ceremony.
+            // Pre-stream guard, and doubly so.
             //
-            // The sibling handlers dropped their own key checks when they moved
-            // to the shared AI clients, which raise a configuration failure
-            // themselves. This one stays because of what comes next: BeginStream
-            // commits the response with a 200 and SSE headers, and after that a
-            // missing key can only be reported as an `error` event inside a
-            // stream the client already believes succeeded. Checked here, it is
-            // an honest 500.
-            var apiKey = cfg["OpenAI:ApiKey"] ?? Environment.GetEnvironmentVariable("OPENAI_API_KEY");
+            // Every one of these checks earns its place: the shared AI client
+            // never gets to report a missing key, because HttpClientConfiguration
+            // throws while *building* the client, so the request never leaves the
+            // process and the failure arrives as a generic 500.
+            //
+            // This one has a second reason on top. BeginStream commits the
+            // response with a 200 and SSE headers, and after that a missing key
+            // could only be reported as an `error` event inside a stream the
+            // client already believes succeeded.
+            //
+            // One source deliberately: HttpClientConfiguration reads
+            // "OpenAI:ApiKey" and only that key.
+            var apiKey = cfg["OpenAI:ApiKey"];
             if (string.IsNullOrWhiteSpace(apiKey))
             {
                 context.Response.StatusCode = 500;

@@ -67,7 +67,10 @@ public static class AiCharacterEndpoints
         allSummaries.AddRange(sectionSummaries);
         var totalSummaryCount = allSummaries.Count;
 
-        var apiKey = cfg["OpenAI:ApiKey"] ?? Environment.GetEnvironmentVariable("OPENAI_API_KEY");
+        // One source. HttpClientConfiguration reads "OpenAI:ApiKey" and only
+        // that key, so a key supplied any other way passes this guard and then
+        // fails where the client is built — with no sentence worth reading.
+        var apiKey = cfg["OpenAI:ApiKey"];
         if (string.IsNullOrWhiteSpace(apiKey))
             return Results.Problem("OpenAI API key not configured.");
 
@@ -189,7 +192,10 @@ public static class AiCharacterEndpoints
 
         Log.Information("🔄 Updating character graph with new content...");
 
-        var apiKey = cfg["OpenAI:ApiKey"] ?? Environment.GetEnvironmentVariable("OPENAI_API_KEY");
+        // One source. HttpClientConfiguration reads "OpenAI:ApiKey" and only
+        // that key, so a key supplied any other way passes this guard and then
+        // fails where the client is built — with no sentence worth reading.
+        var apiKey = cfg["OpenAI:ApiKey"];
         if (string.IsNullOrWhiteSpace(apiKey))
             return Results.Problem("OpenAI API key not configured.");
 

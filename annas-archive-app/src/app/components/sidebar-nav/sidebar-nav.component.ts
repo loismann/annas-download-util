@@ -1,10 +1,8 @@
-import { Component, EventEmitter, Input, OnDestroy, Output } from '@angular/core';
+import { Component, EventEmitter, Input, Output } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { RouterLink, RouterLinkActive, Router, NavigationEnd } from '@angular/router';
+import { RouterLink, RouterLinkActive } from '@angular/router';
 import { MatIconModule } from '@angular/material/icon';
 import { MatTooltipModule } from '@angular/material/tooltip';
-import { filter, startWith } from 'rxjs/operators';
-import { Subscription } from 'rxjs';
 import { AuthService } from '../../services/auth.service';
 import { NAV_ENTRIES, NavEntry } from './nav-model';
 
@@ -247,7 +245,7 @@ import { NAV_ENTRIES, NavEntry } from './nav-model';
     }
   `]
 })
-export class SidebarNavComponent implements OnDestroy {
+export class SidebarNavComponent {
   /** Renders the icon rail instead of the full-width panel. */
   @Input() collapsed = false;
 
@@ -263,22 +261,12 @@ export class SidebarNavComponent implements OnDestroy {
   /** Groups the person has deliberately collapsed. Absence means open, so
    *  groups start expanded without needing to be seeded per render. */
   private closed = new Set<string>();
-  private activeUrl = '';
-  private routerSub: Subscription;
 
-  constructor(
-    private auth: AuthService,
-    private router: Router
-  ) {
-    this.routerSub = this.router.events.pipe(
-      filter(e => e instanceof NavigationEnd),
-      startWith(null)
-    ).subscribe(() => { this.activeUrl = this.router.url.split('?')[0]; });
-  }
-
-  ngOnDestroy(): void {
-    this.routerSub.unsubscribe();
-  }
+  // Highlighting is `routerLinkActive`'s job, in the template. This class used
+  // to also hold a `router.events` subscription that tracked the current URL
+  // into a private field — which nothing ever read. Removing the field took
+  // the subscription, the Router, and the OnDestroy hook with it.
+  constructor(private auth: AuthService) {}
 
   /** Entries this person can actually reach — a group whose children are all
    *  admin-only would otherwise render as an empty expandable. */

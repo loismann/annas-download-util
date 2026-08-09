@@ -1,0 +1,105 @@
+<!--
+  Account and inventory plumbing. Collapsed by default: it is the least
+  interesting thing on the page once you are connected, and it was occupying the
+  most valuable space. The summary line still surfaces anything that needs
+  action, so a problem is visible without opening it.
+-->
+<details class="connection-panel" [class.connected]="connection?.isConnected"
+         [open]="needsAttention()">
+  <summary class="connection-summary-line">
+    <span class="connection-dot" [class.ok]="connection?.isConnected"></span>
+    <span class="connection-summary-text">
+      <strong>{{ connection?.displayName || 'Spotify' }}</strong>
+      <small>{{ summaryLabel() }}</small>
+    </span>
+    <mat-icon class="connection-chevron">expand_more</mat-icon>
+  </summary>
+
+  @if (loading) {
+    <div class="connection-loading">
+      <mat-spinner diameter="20"></mat-spinner>
+      <span>Checking Spotify connection…</span>
+    </div>
+  } @else if (connection) {
+    <div class="connection-summary">
+      <div>
+        <strong>{{ connection.displayName || 'Spotify' }}</strong>
+        <span class="connection-state">{{ connection.state }}</span>
+      </div>
+
+      <div class="connection-actions">
+        @if (!connection.isConnected || connection.state === 'ScopeLimited') {
+          <button mat-stroked-button color="primary" (click)="connect()" [disabled]="actionPending">
+            {{ connection.state === 'Disconnected' ? 'Connect Spotify' : 'Reauthorize' }}
+          </button>
+        } @else if (connection.state === 'RateLimited' || connection.state === 'QuotaExceeded' || connection.state === 'SpotifyUnavailable') {
+          <button mat-stroked-button (click)="load()" [disabled]="actionPending">
+            Refresh status
+          </button>
+        } @else {
+          <button mat-stroked-button (click)="connect()" [disabled]="actionPending">
+            Reauthorize
+          </button>
+        }
+        @if (connection.state !== 'Disconnected') {
+          <button mat-button (click)="disconnect()" [disabled]="actionPending">Disconnect</button>
+        }
+      </div>
+    </div>
+
+    @if (connection.accountId) {
+      <div class="connection-details">
+        <span>Account {{ connection.accountId }}</span>
+        <span>{{ connection.grantedScopes.length }} scopes granted</span>
+        <span>Last successful call: {{ present.formatConnectionDate(connection.lastSuccessfulCallAt) }}</span>
+        @if (connection.daysUntilReauthorization !== null) {
+          <span>Reauthorize in {{ connection.daysUntilReauthorization }} days</span>
+        }
+      </div>
+    }
+
+    @if (connection.warning) {
+      <div class="connection-warning">{{ connection.warning }}</div>
+    }
+
+
+    @if (connection.isConnected) {
+      <div class="inventory-summary">
+        <div class="inventory-copy">
+          <strong>Library inventory</strong>
+          @if (inventoryStatus?.lastInventoryAt) {
+            <span>Last refreshed {{ present.formatConnectionDate(inventoryStatus!.lastInventoryAt) }}</span>
+          } @else {
+            <span>Not refreshed yet</span>
+          }
+        </div>
+        <button mat-stroked-button
+                (click)="refreshInventoryRequested.emit()"
+                [disabled]="inventoryPending || present.inventoryIsRunning(inventoryStatus)">
+          {{ present.inventoryIsRunning(inventoryStatus) ? 'Refreshing…' : 'Refresh inventory' }}
+        </button>
+      </div>
+      @if (inventoryStatus && present.inventoryIsRunning(inventoryStatus)) {
+        <mat-progress-bar mode="determinate" [value]="present.inventoryProgress(inventoryStatus)"></mat-progress-bar>
+        <div class="inventory-progress">
+          {{ inventoryStatus.message }}
+        </div>
+      } @else if (inventoryStatus?.message) {
+        <div class="inventory-progress" [class.inventory-problem]="inventoryStatus?.state === 'Failed'">
+          {{ inventoryStatus!.message }}
+        </div>
+      }
+    }
+    @if (connection.missingScopes.length > 0) {
+      <div class="missing-scopes">Missing: {{ connection.missingScopes.join(', ') }}</div>
+    }
+  }
+
+  @if (inventoryError) {
+    <div class="connection-warning">{{ inventoryError }}</div>
+  }
+
+  @if (notice) {
+    <div class="connection-notice">{{ notice }}</div>
+  }
+</details>

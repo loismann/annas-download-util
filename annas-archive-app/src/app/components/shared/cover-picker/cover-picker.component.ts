@@ -279,7 +279,7 @@ export class CoverPickerComponent implements OnInit, OnDestroy {
 
     this.libraryApi.fetchLibraryCoverCandidates(title, this.author ?? undefined).pipe(takeUntil(this.destroy$)).subscribe({
       next: (resp) => {
-        const urls = Array.from(new Set(resp.covers || []));
+        const urls = CoverCandidates.unique(resp.covers);
         this.applyCandidates(urls)
           .catch(() => {
             this.candidatesError = 'Failed to load cover images.';

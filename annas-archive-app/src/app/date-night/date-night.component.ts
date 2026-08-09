@@ -699,8 +699,30 @@ export class DateNightComponent implements OnInit, OnDestroy {
 
   setViewAs(person: 'Mom' | 'Dad' | null): void {
     this.impersonation.set(person);
+    // Switching who you are testing as is a fresh visit as that person, so the
+    // auto-open latches below start over.
+    this.flyerAutoOpened = false;
+    this.scheduleModalAutoOpened = false;
     this.loadCycle();
   }
+
+  /**
+   * Whether each dialog has already auto-opened this visit.
+   *
+   * Both dialogs mark themselves seen from their own ngOnInit with a
+   * fire-and-forget POST (recordFlyerShown / acknowledgeSchedule), and that
+   * POST is the only thing that turns off the flag which opened them. But
+   * closing either one reloads the cycle, so the two race: if the POST failed
+   * or had not landed, the reload saw the flag still set and reopened the
+   * dialog the user had just dismissed — with no way out of the loop except
+   * leaving the page.
+   *
+   * One auto-open per visit removes the race entirely. The backend still owns
+   * the "once a day" rule across visits, and opening either dialog explicitly —
+   * the "See this week's picks" button, "Respond now" — is unaffected.
+   */
+  private flyerAutoOpened = false;
+  private scheduleModalAutoOpened = false;
 
   ngOnInit(): void {
     this.realName = this.auth.getOwnerName();
@@ -745,12 +767,19 @@ export class DateNightComponent implements OnInit, OnDestroy {
       next: c => {
         this.cycle = c;
         this.skipped = c.skipped;
+        // Every successful action ends here, so clearing the banner in one place
+        // clears it for all of them. Without this a failed propose/cancel/retry
+        // left "Could not send that proposal." on screen after the retry worked.
+        this.error = null;
         this.syncLockedCountdown(c);
         this.syncLockedStatusPoll(c);
-        if (c.shouldShowFlyerToday) {
+        if (c.shouldShowFlyerToday && !this.flyerAutoOpened) {
+          this.flyerAutoOpened = true;
           this.openFlyer();
           return;
         }
+        // Reached once the flyer has had its turn, so a last vote that resolves
+        // the week still hands straight over to the pending time proposal.
         this.maybeOpenScheduleModal(c);
       },
       error: () => { this.error = 'Could not load this week’s picks.'; }
@@ -788,7 +817,13 @@ export class DateNightComponent implements OnInit, OnDestroy {
             this.syncLockedCountdown(latest);
             this.syncLockedStatusPoll(latest);
           }
-        }
+        },
+        // Swallowed on purpose, and it has to be handled rather than omitted: a
+        // subscribe with no error callback makes RxJS report the failure as an
+        // unhandled error, so a backend blip raised one every 15 seconds. This
+        // is a background refresh — the card keeps showing what it already has
+        // and the next tick tries again. Nothing to tell the user.
+        error: () => {}
       });
     }, 15000);
   }
@@ -811,7 +846,9 @@ export class DateNightComponent implements OnInit, OnDestroy {
   /** Auto-opens a daily "your turn" reminder for an unanswered proposal, or
    * the one-time "called off" notice for the person who didn't cancel. */
   private maybeOpenScheduleModal(c: CycleView): void {
-    if (shouldOpenScheduleModal(c, this.myName)) this.openScheduleModal();
+    if (this.scheduleModalAutoOpened || !shouldOpenScheduleModal(c, this.myName)) return;
+    this.scheduleModalAutoOpened = true;
+    this.openScheduleModal();
   }
 
   /** Whether every one of this week's movies has my vote recorded. */

@@ -177,7 +177,11 @@ export class MediaSearchComponent implements OnDestroy {
 
     const mediaType: MediaType = this.searchingMovies ? 'movie' : 'tv';
     const search$ = this.searchingMovies ? this.api.searchMovies(term) : this.api.searchTv(term);
-    search$.subscribe({
+    // Guarded like the other two reads on this page. This one matters more than
+    // most: its handler calls crossReferenceLibrary(), so a search landing after
+    // destroy did not just set state on a dead component, it started two more
+    // requests from it. The AI search below is a POST and is left alone.
+    search$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (results) => {
         this.entries = results.map(result => ({
           result,

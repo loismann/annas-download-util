@@ -73,6 +73,8 @@ export class AudiobookPlayerDialogComponent implements OnInit, AfterViewInit, On
   private fileOffsets: number[] = [];
   private progressSaveTimer?: ReturnType<typeof setInterval>;
   private pendingSeekOnLoad: number | null = null;
+  /** The `loadedmetadata` handler waiting on the file currently being loaded. */
+  private pendingLoadListener?: () => void;
   private lastSavedTime = 0;
 
   constructor(
@@ -103,7 +105,14 @@ export class AudiobookPlayerDialogComponent implements OnInit, AfterViewInit, On
   }
 
   ngAfterViewInit(): void {
-    this.loadFile(this.resolveFileIndexForTime(this.pendingSeekOnLoad ?? 0));
+    // The offset *within* the file matters as much as which file it is. Loading
+    // without it resumed at the start of the right file instead of where the
+    // listener left off — on a book split into hour-long files, that is up to
+    // an hour of re-listening, and the scrub bar showed the wrong place too.
+    const resumeAt = this.pendingSeekOnLoad ?? 0;
+    const index = this.resolveFileIndexForTime(resumeAt);
+    this.globalTime = resumeAt;
+    this.loadFile(index, /* autoplay */ false, resumeAt - this.fileOffsets[index]);
   }
 
   ngOnDestroy(): void {
@@ -258,11 +267,25 @@ export class AudiobookPlayerDialogComponent implements OnInit, AfterViewInit, On
     audio.src = this.api.getStreamUrl(this.data.item.id, file.ino);
     audio.playbackRate = this.playbackRate;
 
+    // Drop the previous file's pending listener first.
+    //
+    // A load superseded before its metadata arrived left its handler attached,
+    // and that handler still ran on the new file. The *position* survived it —
+    // handlers fire in registration order, so the newest one has the last word
+    // — but `autoplay` did not: reaching the end of a file queues an
+    // autoplaying load of the next, and scrubbing somewhere else instead still
+    // started playback. Each superseded load also stacked another listener.
+    if (this.pendingLoadListener) {
+      audio.removeEventListener('loadedmetadata', this.pendingLoadListener);
+    }
+
     const onReady = () => {
       audio.currentTime = localStartTime;
       if (autoplay) audio.play();
       audio.removeEventListener('loadedmetadata', onReady);
+      this.pendingLoadListener = undefined;
     };
+    this.pendingLoadListener = onReady;
     audio.addEventListener('loadedmetadata', onReady);
   }
 

@@ -103,7 +103,10 @@ public static class ChapterLabelingHelper
         string? billTo,
         CancellationToken cancellationToken)
     {
-        var apiKey = cfg["OpenAI:ApiKey"] ?? Environment.GetEnvironmentVariable("OPENAI_API_KEY");
+        // One source. HttpClientConfiguration reads "OpenAI:ApiKey" and only
+        // that key, so a key supplied any other way passes this guard and then
+        // fails where the client is built — with no sentence worth reading.
+        var apiKey = cfg["OpenAI:ApiKey"];
         if (string.IsNullOrWhiteSpace(apiKey))
         {
             Log.Information("OpenAI API key not configured for chapter labeling.");

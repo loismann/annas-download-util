@@ -268,10 +268,17 @@ export class MediaLibraryComponent implements OnInit, OnDestroy {
           }
           this.prevQueueReadings.set(id, { sizeleft: totalLeft, timestamp: now });
 
+          // The record with the most left to fetch is the one the series is
+          // actually waiting on. Taking records[0] instead reported whichever
+          // episode Sonarr happened to list first, so a show with one episode
+          // a minute out and another forty minutes out advertised "one minute"
+          // — an aggregate percent above a non-aggregate ETA.
+          const slowest = records.reduce((a, b) => (b.sizeleft ?? 0) > (a.sizeleft ?? 0) ? b : a);
+
           nextProgress.set(id, {
             percent,
             speedLabel,
-            etaLabel: records[0]?.timeleft ?? null
+            etaLabel: slowest.timeleft ?? null
           });
         }
 

@@ -5,6 +5,7 @@ import { provideRouter } from '@angular/router';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { MatDialog } from '@angular/material/dialog';
 import { SpotifinatorComponent } from './spotifinator.component';
+import { SpotifinatorPresentation as Present } from './spotifinator.presentation';
 import { Subject, of } from 'rxjs';
 import { SpotifinatorApiService } from '../services/spotifinator-api.service';
 import { SpotifyPlaybackService } from '../services/spotify-playback.service';
@@ -69,194 +70,6 @@ describe('SpotifinatorComponent', () => {
     expect(component.messages.length).toBe(1);
   });
 
-  it('should format duration correctly', () => {
-    const fixture = TestBed.createComponent(SpotifinatorComponent);
-    const component = fixture.componentInstance;
-    expect(component.formatDuration(180000)).toBe('3:00');
-    expect(component.formatDuration(65000)).toBe('1:05');
-    expect(component.formatDuration(30000)).toBe('0:30');
-  });
-
-  // ─── "unknown is not zero" ─────────────────────────────────────────────────
-
-  describe('itemCountLabel', () => {
-    const playlist = (over: Partial<SpotifyPlaylist>): SpotifyPlaylist => ({
-      id: 'p', name: 'P', imageUrl: null, trackCount: 0, spotifyUrl: null,
-      contentsAvailable: true, snapshotId: null, ownerId: null, ownerName: null,
-      isOwnedByUser: false, isCollaborative: false, isPublic: null, uri: null, inventoryAt: null,
-      ...over
-    });
-
-    let component: SpotifinatorComponent;
-    beforeEach(() => {
-      component = TestBed.createComponent(SpotifinatorComponent).componentInstance;
-    });
-
-    it('shows a real count when Spotify reported one', () => {
-      expect(component.itemCountLabel(playlist({ trackCount: 17 }))).toBe('17 items');
-    });
-
-    it('singularises a one-item playlist', () => {
-      expect(component.itemCountLabel(playlist({ trackCount: 1 }))).toBe('1 item');
-    });
-
-    it('says empty playlists have 0 items', () => {
-      expect(component.itemCountLabel(playlist({ trackCount: 0 }))).toBe('0 items');
-    });
-
-    it('never renders a number when contents are unavailable', () => {
-      // The headline bug: a followed playlist full of music must not read as 0.
-      const label = component.itemCountLabel(
-        playlist({ trackCount: null, contentsAvailable: false }));
-
-      expect(label).toBe('Contents unavailable');
-      expect(label).not.toContain('0');
-    });
-
-    it('trusts contentsAvailable=false even if a count leaked through', () => {
-      expect(component.itemCountLabel(playlist({ trackCount: 5, contentsAvailable: false })))
-        .toBe('Contents unavailable');
-    });
-  });
-
-  describe('ownershipLabel', () => {
-    const playlist = (over: Partial<SpotifyPlaylist>): SpotifyPlaylist => ({
-      id: 'p', name: 'P', imageUrl: null, trackCount: 0, spotifyUrl: null,
-      contentsAvailable: true, snapshotId: null, ownerId: null, ownerName: null,
-      isOwnedByUser: false, isCollaborative: false, isPublic: null, uri: null, inventoryAt: null,
-      ...over
-    });
-
-    let component: SpotifinatorComponent;
-    beforeEach(() => {
-      component = TestBed.createComponent(SpotifinatorComponent).componentInstance;
-    });
-
-    it('marks playlists you own', () => {
-      expect(component.ownershipLabel(playlist({ isOwnedByUser: true }))).toBe('Yours');
-    });
-
-    it('marks collaborative playlists', () => {
-      expect(component.ownershipLabel(playlist({ isCollaborative: true }))).toBe('Collaborative');
-    });
-
-    it('names the owner of a followed playlist', () => {
-      expect(component.ownershipLabel(playlist({ ownerName: 'Mom' }))).toBe('Followed · Mom');
-    });
-
-    it('still says followed when the owner name is missing', () => {
-      expect(component.ownershipLabel(playlist({}))).toBe('Followed');
-    });
-  });
-
-  // ─── item rendering ────────────────────────────────────────────────────────
-
-  describe('itemMeta', () => {
-    const item = (over: Partial<SpotifyPlaylistItem>): SpotifyPlaylistItem => ({
-      position: 0, kind: 'Track', id: 't', name: 'Song', uri: 'spotify:track:t',
-      artists: 'Artist', albumName: 'Album', durationMs: 180000, spotifyUrl: null,
-      isLocal: false, addedAt: null, isrc: null, albumArtUrl: null,
-      ...over
-    });
-
-    let component: SpotifinatorComponent;
-    beforeEach(() => {
-      component = TestBed.createComponent(SpotifinatorComponent).componentInstance;
-    });
-
-    it('describes a track with artist, album and duration', () => {
-      expect(component.itemMeta(item({}))).toBe('Artist · Album · 3:00');
-    });
-
-    it('omits the empty artist line for a podcast episode', () => {
-      expect(component.itemMeta(item({ kind: 'Episode', artists: '', albumName: null })))
-        .toBe('3:00');
-    });
-
-    it('flags a local file', () => {
-      expect(component.itemMeta(item({ kind: 'Local' }))).toContain('local file');
-    });
-
-    it('explains an item that is no longer on Spotify', () => {
-      expect(component.itemMeta(item({ kind: 'Unavailable', artists: '', albumName: null, durationMs: 0 })))
-        .toBe('This item is no longer on Spotify');
-    });
-  });
-
-  describe('type guards', () => {
-    let component: SpotifinatorComponent;
-    beforeEach(() => {
-      component = TestBed.createComponent(SpotifinatorComponent).componentInstance;
-    });
-
-    it('tells an items page apart from a playlist', () => {
-      const page = { playlistId: 'p', items: [], total: 0, offset: 0, limit: 50,
-                     hasMore: false, access: 'Available', snapshotId: null };
-
-      expect(component.isItemsPage(page)).toBe(true);
-      expect(component.isPlaylist(page)).toBe(false);
-    });
-
-    it('tells a playlist apart from an items page', () => {
-      const playlist = { id: 'p', name: 'P', contentsAvailable: true, trackCount: 3 };
-
-      expect(component.isPlaylist(playlist)).toBe(true);
-      expect(component.isItemsPage(playlist)).toBe(false);
-    });
-
-    it('does not mistake an empty array for results', () => {
-      expect(component.isPlaylistArray([])).toBe(false);
-      expect(component.isRecentContexts([])).toBe(false);
-    });
-
-    it('treats null data as nothing to render', () => {
-      expect(component.isPlaylist(null)).toBe(false);
-      expect(component.isItemsPage(null)).toBe(false);
-      expect(component.isSearchResult(null)).toBe(false);
-    });
-
-    it('recognizes inventory progress without mistaking it for analysis', () => {
-      const status = {
-        jobId: 'job', state: 'Running', totalPlaylists: 100, processedPlaylists: 25,
-        readablePlaylists: 24, partialPlaylists: 1, unreadablePlaylists: 0,
-        startedAt: null, updatedAt: null, completedAt: null, lastInventoryAt: null,
-        message: 'Reading'
-      };
-
-      expect(component.isInventoryStatus(status)).toBe(true);
-      expect(component.isAnalysis(status)).toBe(false);
-      expect(component.inventoryProgress(status as any)).toBe(25);
-    });
-
-    it('recognizes a persisted discovery draft', () => {
-      const draft = {
-        id: 'draft', state: 'Ready', name: 'Deep South', summary: 'A sequence',
-        userPrompts: ['1950s Deep South music'], desiredTrackCount: 25,
-        clarifyingQuestion: null, candidates: [], knownMusicCoverage: 'Partial evidence',
-        createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
-      };
-
-      expect(component.isDiscoveryDraft(draft)).toBe(true);
-      expect(component.isInventoryStatus(draft)).toBe(false);
-    });
-
-    it('renders catalog resolution independently from familiarity evidence', () => {
-      const candidate = (resolution: any) => ({
-        id: 'candidate', position: 0, artist: 'Artist', title: 'Song', rationale: null,
-        resolution, track: null, alternatives: [], probablyUnfamiliar: true,
-        familiarityLabel: 'Probably unfamiliar'
-      });
-
-      expect(component.candidateResolutionLabel(candidate('Resolved')))
-        .toBe('Matched in Spotify catalog');
-      expect(component.candidateResolutionLabel(candidate('Ambiguous')))
-        .toBe('Multiple Spotify catalog matches');
-      expect(component.candidateResolutionLabel(candidate('NotFound')))
-        .toBe('No confident Spotify catalog match');
-      expect(component.candidateResolutionLabel(candidate(1)))
-        .toBe('Multiple Spotify catalog matches');
-    });
-  });
 
   it('replaces a queued chat card when the dedicated status endpoint advances', () => {
     const fixture = TestBed.createComponent(SpotifinatorComponent);
@@ -286,30 +99,69 @@ describe('SpotifinatorComponent', () => {
     http.verify();
   });
 
-  it('saves a draft into the sidebar and can close the active workspace', () => {
+  it('says so when the inventory will not even start', () => {
+    // The button lives in the connection panel, so the answer has to get back
+    // there — a refresh that never starts produces no status to render.
     const component = TestBed.createComponent(SpotifinatorComponent).componentInstance;
     const http = TestBed.inject(HttpTestingController);
+    component.connection = { isConnected: true, state: 'Connected' } as never;
+
+    component.refreshInventory();
+    http.expectOne(req => req.url.endsWith('/inventory/refresh'))
+      .flush({ error: 'Spotify is rate limiting us.' }, { status: 429, statusText: 'Too Many' });
+
+    expect(component.inventoryError).toBe('Spotify is rate limiting us.');
+    expect(component.inventoryActionPending).toBe(false);
+    http.verify();
+  });
+
+  describe('the draft the page is currently about', () => {
     const draft: any = {
       id: 'draft', state: 'Ready', name: 'Deep South', summary: 'A sequence',
       userPrompts: ['prompt'], desiredTrackCount: 25, clarifyingQuestion: null,
       candidates: [], knownMusicCoverage: 'coverage', createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(), savedAt: null
     };
-    component.activeDraft = draft;
 
-    component.saveActiveDraft();
-    const save = http.expectOne(req => req.method === 'PATCH' && req.url.endsWith('/drafts/draft'));
-    expect(save.request.body.saved).toBe(true);
-    const saved = { ...draft, savedAt: new Date().toISOString() };
-    save.flush(saved);
-    http.expectOne(req => req.method === 'GET' && req.url.endsWith('/drafts')).flush([saved]);
+    let component: SpotifinatorComponent;
+    let http: HttpTestingController;
+    beforeEach(() => {
+      component = TestBed.createComponent(SpotifinatorComponent).componentInstance;
+      http = TestBed.inject(HttpTestingController);
+      component.activeDraft = draft;
+    });
 
-    expect(component.savedDrafts).toHaveSize(1);
-    component.closeActiveDraft();
-    expect(component.activeDraft).toBeNull();
-    expect(component.savedDrafts).toHaveSize(1);
-    expect(localStorage.getItem('spotifinator.activeDraftId')).toBeNull();
-    http.verify();
+    it('puts a newly saved draft in the sidebar', () => {
+      component.onDraftChanged({ ...draft, savedAt: new Date().toISOString() });
+
+      http.expectOne(req => req.method === 'GET' && req.url.endsWith('/drafts'))
+        .flush([{ ...draft, savedAt: new Date().toISOString() }]);
+      expect(component.savedDrafts).toHaveSize(1);
+      http.verify();
+    });
+
+    it('does not refetch the sidebar for an edit to a draft already in it', () => {
+      // Every reorder and every removed candidate comes back through here. The
+      // list only changes membership on a save, so anything else is a wasted
+      // round trip for a list that already has the right rows.
+      const saved = { ...draft, savedAt: '2026-08-01T00:00:00Z' };
+      component.savedDrafts = [saved];
+
+      component.onDraftChanged({ ...saved, name: 'Renamed' });
+
+      http.verify();
+      expect(component.savedDrafts[0].name).toBe('Renamed');
+    });
+
+    it('closing keeps the draft — it only puts the workspace away', () => {
+      component.savedDrafts = [draft];
+
+      component.closeActiveDraft();
+
+      expect(component.activeDraft).toBeNull();
+      expect(component.savedDrafts).toHaveSize(1);
+      expect(localStorage.getItem('spotifinator.activeDraftId')).toBeNull();
+    });
   });
 
   // ─── change plan gating ────────────────────────────────────────────────────
@@ -350,25 +202,25 @@ describe('SpotifinatorComponent', () => {
     // there. What stays here is everything about how a *finished* plan is reported.
 
     it('only offers actions while the plan is still awaiting a decision', () => {
-      expect(component.planIsPending(plan({ status: 'AwaitingConfirmation' }))).toBe(true);
-      expect(component.planIsPending(plan({ status: 'Completed' }))).toBe(false);
-      expect(component.planIsPending(plan({ status: 'Cancelled' }))).toBe(false);
-      expect(component.planIsPending(plan({ status: 'Expired' }))).toBe(false);
+      expect(Present.planIsPending(plan({ status: 'AwaitingConfirmation' }))).toBe(true);
+      expect(Present.planIsPending(plan({ status: 'Completed' }))).toBe(false);
+      expect(Present.planIsPending(plan({ status: 'Cancelled' }))).toBe(false);
+      expect(Present.planIsPending(plan({ status: 'Expired' }))).toBe(false);
     });
 
     it('explains an expired plan in terms of what happened', () => {
-      expect(component.planStatusLabel(plan({ status: 'Expired' }))).toContain('playlist changed');
+      expect(Present.planStatusLabel(plan({ status: 'Expired' }))).toContain('playlist changed');
     });
 
     it('distinguishes partly done from failed', () => {
-      expect(component.planStatusLabel(plan({ status: 'PartiallyCompleted' }))).toBe('Partly done');
-      expect(component.planStatusLabel(plan({ status: 'Failed' }))).toBe('Failed');
+      expect(Present.planStatusLabel(plan({ status: 'PartiallyCompleted' }))).toBe('Partly done');
+      expect(Present.planStatusLabel(plan({ status: 'Failed' }))).toBe('Failed');
     });
 
     it('recognises a plan in the transcript', () => {
-      expect(component.isPlan(plan())).toBe(true);
-      expect(component.isPlan({ tracks: [] })).toBe(false);
-      expect(component.isPlan(null)).toBe(false);
+      expect(Present.isPlan(plan())).toBe(true);
+      expect(Present.isPlan({ tracks: [] })).toBe(false);
+      expect(Present.isPlan(null)).toBe(false);
     });
 
     // ─── bulk plans (phase 8) ─────────────────────────────────────────────────
@@ -381,11 +233,11 @@ describe('SpotifinatorComponent', () => {
         status: 'Pending' as const, resultingSnapshotId: null, failure: null
       });
 
-      expect(component.planStepLabel(step('VerifyPlaylistPopulated')))
+      expect(Present.planStepLabel(step('VerifyPlaylistPopulated')))
         .toContain('Check everything arrived');
-      expect(component.planStepLabel(step('RemoveFromLibrary', 'Road Trip')))
+      expect(Present.planStepLabel(step('RemoveFromLibrary', 'Road Trip')))
         .toBe('Remove from your library — Road Trip');
-      expect(component.planStepLabel(step('AddToLibrary', 'Road Trip')))
+      expect(Present.planStepLabel(step('AddToLibrary', 'Road Trip')))
         .toBe('Put back in your library — Road Trip');
     });
 
@@ -426,40 +278,7 @@ describe('SpotifinatorComponent', () => {
         ]
       } as never;
 
-      expect(component.resolvedCandidateCount(draft)).toBe(1);
-    });
-
-    it('will not offer to create a draft where nothing matched', () => {
-      const api = TestBed.inject(SpotifinatorApiService);
-      const build = spyOn(api, 'buildCreateFromDraftPlan');
-      component.activeDraft = {
-        id: 'd1', name: 'Empty', candidates: [{ id: 'c1', resolution: 'NotFound', track: null }]
-      } as never;
-
-      component.createDraftInSpotify();
-
-      expect(build).not.toHaveBeenCalled();
-    });
-
-    it('creating from a draft opens the review modal rather than writing', () => {
-      // Two properties in one, and both were broken before. The button must not be
-      // a shortcut past the confirmation — and the confirmation must appear *here*,
-      // not as a card in the chat pane the user is not looking at, which is what
-      // made the button seem to do nothing at all.
-      const api = TestBed.inject(SpotifinatorApiService);
-      const confirmPlan = spyOn(api, 'confirmPlan');
-      const built = plan({ action: 'CreatePlaylist', status: 'AwaitingConfirmation' });
-      spyOn(api, 'buildCreateFromDraftPlan').and.returnValue(of(built));
-
-      component.activeDraft = {
-        id: 'd1', name: 'Morr', candidates: [{ id: 'c1', resolution: 'Resolved', track: { id: 't' } }]
-      } as never;
-
-      component.createDraftInSpotify();
-
-      expect(dialog.open).toHaveBeenCalled();
-      expect(dialog.open.calls.mostRecent().args[1].data.plan).toBe(built);
-      expect(confirmPlan).not.toHaveBeenCalled();
+      expect(Present.resolvedCandidateCount(draft)).toBe(1);
     });
 
     it('leaves nothing in the transcript when a review is abandoned', () => {
@@ -501,21 +320,9 @@ describe('SpotifinatorComponent', () => {
     it('offers the step list only when something went wrong', () => {
       // A plan that simply worked has nothing to explain, and an expander nobody
       // needs is the clutter this whole change is about.
-      expect(component.planHasTrouble(plan({ status: 'Completed' }))).toBe(false);
-      expect(component.planHasTrouble(plan({ status: 'PartiallyCompleted' }))).toBe(true);
-      expect(component.planHasTrouble(plan({ status: 'Failed' }))).toBe(true);
-    });
-
-    it('asks before deleting a draft, and does nothing if you say no', () => {
-      const api = TestBed.inject(SpotifinatorApiService);
-      const del = spyOn(api, 'deleteDiscoveryDraft');
-      spyOn(window, 'confirm').and.returnValue(false);
-      component.activeDraft = { id: 'd1', name: 'Morr', candidates: [] } as never;
-
-      component.deleteActiveDraft();
-
-      expect(del).not.toHaveBeenCalled();
-      expect(component.activeDraft).not.toBeNull();
+      expect(Present.planHasTrouble(plan({ status: 'Completed' }))).toBe(false);
+      expect(Present.planHasTrouble(plan({ status: 'PartiallyCompleted' }))).toBe(true);
+      expect(Present.planHasTrouble(plan({ status: 'Failed' }))).toBe(true);
     });
 
     it('clears the draft everywhere once it is deleted', () => {
@@ -537,114 +344,24 @@ describe('SpotifinatorComponent', () => {
         id: 'm1', role: 'assistant', content: 'here', timestamp: new Date(), data: draft
       });
 
-      component.deleteActiveDraft();
+      component.onDraftDeleted(draft);
 
       // Left anywhere, a stale card could be re-opened after the draft is gone.
       expect(component.activeDraft).toBeNull();
       expect(component.savedDrafts).toEqual([]);
       expect(component.messages.find(m => m.id === 'm1')!.data).toBeNull();
+      expect(component.messages.at(-1)!.content).toContain('Spotify is untouched');
     });
 
-    // ─── connection foldout ───────────────────────────────────────────────────
+    it('a refusal from the draft panel is answered in the transcript', () => {
+      component.onDraftFailed('That draft could not be turned into a playlist.');
 
-    it('keeps the connection panel shut when everything is healthy', () => {
-      component.connectionLoading = false;
-      component.connection = {
-        isConnected: true, missingScopes: [], warning: null, lastError: null, displayName: 'tamupino'
-      } as never;
-
-      expect(component.connectionNeedsAttention()).toBe(false);
+      const last = component.messages.at(-1)!;
+      expect(last.content).toBe('That draft could not be turned into a playlist.');
+      expect(last.error).toBe(true);
     });
 
-    it('opens the connection panel whenever something needs doing', () => {
-      component.connectionLoading = false;
-
-      component.connection = { isConnected: false, missingScopes: [], warning: null, lastError: null } as never;
-      expect(component.connectionNeedsAttention()).toBe(true);
-
-      // The case that matters after adding playback scopes: connected, but the new
-      // permissions have not been granted yet.
-      component.connection = {
-        isConnected: true, missingScopes: ['streaming'], warning: null, lastError: null
-      } as never;
-      expect(component.connectionNeedsAttention()).toBe(true);
-    });
-
-    // ─── library pane and playback ────────────────────────────────────────────
-
-    const listItem = (over: Partial<SpotifyPlaylistItem> = {}): SpotifyPlaylistItem => ({
-      position: 0, kind: 'Track', id: 't', name: 'Mystery Train',
-      uri: 'spotify:track:t', artists: 'Elvis', albumName: 'Sun', durationMs: 146000,
-      spotifyUrl: null, isLocal: false, addedAt: null, isrc: null, albumArtUrl: null,
-      ...over
-    });
-
-    it('will not offer to play a local file even though it has a URI', () => {
-      // The discriminating case. Spotify gives local files a spotify:local: URI, so
-      // a "does it have a URI" check alone would happily offer to play one — and the
-      // API cannot play it. The kind is what makes this safe, not the URI.
-      component.playbackMode = 'local';
-      const local = listItem({ kind: 'Local', isLocal: true, uri: 'spotify:local:Us:Home+Recording::214' });
-
-      expect(local.uri).toBeTruthy();
-      expect(component.canPlayItem(local)).toBe(false);
-      expect(component.itemUnplayableReason(local)).toContain('Local files cannot be played');
-    });
-
-    it('will not offer to play an item that has left Spotify but kept its URI', () => {
-      // Same shape of trap: a removed track can still carry the URI it had.
-      component.playbackMode = 'local';
-      const gone = listItem({ kind: 'Unavailable', uri: 'spotify:track:removed' });
-
-      expect(component.canPlayItem(gone)).toBe(false);
-      expect(component.itemUnplayableReason(gone)).toContain('no longer on Spotify');
-    });
-
-    it('offers no play buttons at all when nothing can play', () => {
-      component.playbackMode = 'unavailable';
-
-      expect(component.canPlayItem(listItem())).toBe(false);
-    });
-
-    it('explains why playback is impossible on a device that cannot do it', () => {
-      spyOnProperty(navigator, 'userAgent', 'get')
-        .and.returnValue('Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X)');
-      component.playbackMode = 'unavailable';
-
-      // The iPad case has to name the workaround, not just refuse.
-      expect(component.playDisabledReason()).toContain('Open Spotify on your phone');
-    });
-
-    it('plays a track inside its playlist so the next song follows', () => {
-      // With bare URIs playback stops after one song. The context is what makes
-      // clicking track 3 continue into track 4.
-      const playback = TestBed.inject(SpotifyPlaybackService);
-      const play = spyOn(playback, 'play').and.resolveTo();
-      component.playbackMode = 'local';
-      component.selectedPlaylist = { id: 'p1', uri: 'spotify:playlist:p1' } as never;
-
-      component.playItem(listItem({ position: 3 }));
-
-      expect(play).toHaveBeenCalledWith({
-        contextUri: 'spotify:playlist:p1', offsetPosition: 3
-      });
-    });
-
-    it('does not lose the playlist you are looking at to a slow response', () => {
-      // Click A, click B, then A's page arrives. Without the guard it overwrites B.
-      const api = TestBed.inject(SpotifinatorApiService);
-      const slow = new Subject<never>();
-      spyOn(api, 'getPlaylistItems').and.returnValue(slow as never);
-
-      component.openPlaylist({ id: 'a', name: 'A' } as never);
-      component.openPlaylist({ id: 'b', name: 'B' } as never);
-
-      slow.next({ playlistId: 'a', items: [listItem()], total: 1, offset: 0,
-                  limit: 50, hasMore: false, access: 'Available', snapshotId: null } as never);
-
-      expect(component.selectedPlaylist!.id).toBe('b');
-      expect(component.selectedItems).toEqual([]);
-    });
+    // ─── the playlist rail ───────────────────────────────────────────────────
 
     it('sorts your own playlists above ones you merely follow', () => {
       const api = TestBed.inject(SpotifinatorApiService);
@@ -657,19 +374,6 @@ describe('SpotifinatorComponent', () => {
       component.loadPlaylists();
 
       expect(component.playlists.map(p => p.name)).toEqual(['Mine', 'Alpha', 'Zed']);
-    });
-
-    it('reports progress as a percentage of the track, guarding zero length', () => {
-      component.playback = {
-        isPlaying: true, progressMs: 73000, device: null,
-        track: { durationMs: 146000 } as never
-      } as never;
-      expect(component.playbackProgressPercent()).toBe(50);
-
-      component.playback = {
-        isPlaying: true, progressMs: 10, device: null, track: { durationMs: 0 } as never
-      } as never;
-      expect(component.playbackProgressPercent()).toBe(0);
     });
 
     it('sends exactly one resume even if the button is hit twice', () => {
@@ -687,6 +391,102 @@ describe('SpotifinatorComponent', () => {
       component.retryPlan(stalled);
 
       expect(retry).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // ─── writes have to outlive the page ───────────────────────────────────────
+
+  describe('leaving the page does not cancel a write', () => {
+    // Unsubscribing an HttpClient call aborts the request, so routing a write
+    // through the destroy guard means navigating away cancels the user's
+    // action — a confirmed draft delete, a plan resuming against Spotify, a
+    // reordered candidate list. Classification is by the service method's HTTP
+    // verb, never by its name: `processCommand` is a POST and counts,
+    // `getPlaylistItems` is a GET and does not.
+
+    const stalled = {
+      id: 'plan-9', status: 'PartiallyCompleted', steps: [], preview: { summary: '' },
+      recovery: { canResume: true, advice: 'Some of it landed.' }
+    } as never;
+
+    interface WriteCase {
+      readonly what: string;
+      readonly verb: string;
+      readonly path: string;
+      readonly act: (component: SpotifinatorComponent) => void;
+    }
+
+    const writes: WriteCase[] = [
+      { what: 'starting a library inventory', verb: 'POST',
+        path: '/inventory/refresh', act: c => c.refreshInventory() },
+      { what: 'sending a chat command', verb: 'POST',
+        path: '/command', act: c => { c.userInput = 'build me something'; c.onSubmit(); } },
+      { what: 'resuming a half-applied plan', verb: 'POST',
+        path: '/plans/plan-9/retry', act: c => c.retryPlan(stalled) },
+      { what: 'undoing a plan', verb: 'POST',
+        path: '/plans/plan-9/undo', act: c => c.undoPlan(stalled) }
+    ];
+
+    for (const write of writes) {
+      it(`${write.what} survives the component being destroyed`, () => {
+        // Both destructive paths ask first; saying yes is the case under test.
+        spyOn(window, 'confirm').and.returnValue(true);
+
+        const fixture = TestBed.createComponent(SpotifinatorComponent);
+        const component = fixture.componentInstance;
+        // Deliberately no detectChanges: ngOnInit would add a connection GET to
+        // every one of these, and the connection is what is being faked anyway.
+        component.connection = { isConnected: true, state: 'Connected' } as never;
+        const http = TestBed.inject(HttpTestingController);
+
+        write.act(component);
+        const request = http.expectOne(
+          req => req.method === write.verb && req.url.endsWith(write.path));
+
+        fixture.destroy();
+
+        expect(request.cancelled)
+          .withContext(`${write.verb} ${write.path} was aborted by ngOnDestroy`)
+          .toBe(false);
+      });
+    }
+
+    it('reads are still cancelled — the guard is about verbs, not caution', () => {
+      const fixture = TestBed.createComponent(SpotifinatorComponent);
+      const component = fixture.componentInstance;
+      const http = TestBed.inject(HttpTestingController);
+
+      component.loadPlaylists();
+      const request = http.expectOne(req => req.method === 'GET' && req.url.endsWith('/playlists'));
+
+      fixture.destroy();
+
+      expect(request.cancelled).toBe(true);
+    });
+
+    it('does not drop a review modal onto whatever the user navigated to', () => {
+      // The consequence of no longer cancelling: an undo or a create-from-draft
+      // plan is built by a POST that can now answer after the page has gone.
+      const dialog = { open: jasmine.createSpy('open') };
+      dialog.open.and.returnValue({ afterClosed: () => of(undefined) });
+      TestBed.overrideProvider(MatDialog, { useValue: dialog });
+
+      const fixture = TestBed.createComponent(SpotifinatorComponent);
+      const component = fixture.componentInstance;
+      const http = TestBed.inject(HttpTestingController);
+
+      component.undoPlan(stalled);
+      const request = http.expectOne(req => req.url.endsWith('/plans/plan-9/undo'));
+
+      fixture.destroy();
+      // Read before flushing. `cancelled` is set by the subscription teardown,
+      // and a successful flush tears the subscription down too — so after a
+      // flush the flag is true either way and proves nothing.
+      const abortedByDestroy = request.cancelled;
+      request.flush({ ...(stalled as object), status: 'AwaitingConfirmation' });
+
+      expect(abortedByDestroy).toBe(false);
+      expect(dialog.open).not.toHaveBeenCalled();
     });
   });
 });

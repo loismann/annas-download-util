@@ -1,0 +1,105 @@
+// The panel is the first block of the conversation pane, which is a flex
+// column — so the host must not become an extra box between them.
+:host { display: contents; }
+
+// Shared with the analysis card in the transcript, which keeps its own copy:
+// view encapsulation means a parent rule cannot reach in here.
+.analysis-note {
+  margin-top: 0.75rem;
+  color: var(--text-body);
+  font-size: 0.88rem;
+}
+
+.discovery-draft {
+  margin: 0 -0.9rem;
+  border: 1px solid rgba(var(--spotify-green-rgb), 0.45);
+  border-radius: 11px 11px 8px 8px;
+  background: #f5fff8;
+  overflow: hidden;
+
+  summary {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.7rem 0.9rem;
+    cursor: pointer;
+
+    .draft-title {
+      display: flex;
+      flex-direction: column;
+    }
+  }
+
+  > p, > .analysis-note { margin: 0.25rem 0.9rem 0.7rem; }
+}
+
+.draft-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+// Destructive, so it reads as destructive — but only on hover, so it does not
+// shout at you from a card whose main action is "create".
+.draft-delete {
+  color: #8a8f98;
+
+  &:hover:not([disabled]) { color: var(--mat-error); }
+}
+
+.draft-saved {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  color: var(--spot-green-700);
+  font-size: 0.78rem;
+
+  mat-icon { width: 18px; height: 18px; font-size: 18px; }
+}
+
+.draft-status-line {
+  margin: -0.15rem 0.9rem 0.65rem;
+  color: #315b3c;
+  font-size: 0.75rem;
+}
+
+.draft-candidates {
+  max-height: 300px;
+  overflow-y: auto;
+  border-top: 1px solid rgba(var(--black-rgb), 0.08);
+  border-bottom: 1px solid rgba(var(--black-rgb), 0.08);
+}
+
+.draft-candidate {
+  display: grid;
+  grid-template-columns: 2rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.75rem;
+  border-bottom: 1px solid rgba(var(--black-rgb), 0.06);
+}
+
+.draft-position { color: var(--slate-500); text-align: center; }
+.draft-candidate-copy { display: flex; flex-direction: column; min-width: 0; cursor: pointer; }
+.draft-candidate-copy span, .draft-candidate-copy small { color: var(--slate-500); }
+.draft-candidate-copy .unfamiliar { color: #16723a; font-weight: 600; }
+.draft-actions { display: flex; }
+
+.draft-alternatives {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-top: 0.35rem;
+
+  button {
+    border: 1px solid rgba(var(--spotify-green-rgb), 0.5);
+    border-radius: 5px;
+    background: white;
+    color: #174c29;
+    padding: 0.3rem 0.45rem;
+    text-align: left;
+    cursor: pointer;
+  }
+}

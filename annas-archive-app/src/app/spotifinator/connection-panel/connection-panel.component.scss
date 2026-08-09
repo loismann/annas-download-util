@@ -1,0 +1,145 @@
+// The panel is the first block of the sidebar's flex column, so the host must
+// not become an extra box between them.
+:host { display: contents; }
+
+.connection-panel {
+  margin: 0;
+  padding: 0.75rem;
+  border: 1px solid #d7d7d7;
+  border-radius: 10px;
+  background: var(--mat-grey-50);
+
+  &.connected {
+    border-color: rgba(var(--spotify-green-rgb), 0.5);
+    background: rgba(var(--spotify-green-rgb), 0.06);
+  }
+
+  &[open] .connection-chevron { transform: rotate(180deg); }
+}
+
+.connection-summary-line {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  list-style: none;
+
+  // Safari draws its own disclosure triangle; we render our own chevron.
+  &::-webkit-details-marker { display: none; }
+}
+
+.connection-summary-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+
+  strong { font-size: 0.85rem; }
+
+  small {
+    color: var(--text-body);
+    font-size: 0.72rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.connection-dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--mat-error);
+
+  &.ok { background: var(--spotify-green); }
+}
+
+.connection-chevron {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  transition: transform 0.15s ease;
+}
+
+.connection-loading,
+.connection-summary,
+.connection-actions,
+.connection-details {
+  display: flex;
+  align-items: center;
+}
+
+.connection-loading {
+  gap: 0.75rem;
+}
+
+.connection-summary {
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.connection-state {
+  display: block;
+  margin-top: 0.15rem;
+  color: var(--text-body);
+  font-size: 0.8rem;
+}
+
+.connection-actions {
+  width: 100%;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+}
+
+.connection-details {
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-top: 0.65rem;
+  color: var(--text-body);
+  font-size: 0.75rem;
+}
+
+.connection-warning,
+.missing-scopes,
+.connection-notice {
+  margin-top: 0.65rem;
+  font-size: 0.8rem;
+}
+
+.inventory-summary {
+  display: flex;
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 1rem;
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid rgba(var(--black-rgb), 0.1);
+}
+
+.inventory-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.inventory-progress {
+  margin-top: 0.35rem;
+  color: var(--text-body);
+  font-size: 0.85rem;
+}
+
+.inventory-problem {
+  color: var(--mat-error);
+}
+
+.connection-warning,
+.missing-scopes {
+  color: var(--spot-amber-700);
+}
+
+.connection-notice {
+  color: #315b3c;
+}

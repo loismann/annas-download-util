@@ -1,0 +1,213 @@
+// The pane is the middle column of the workspace grid, so the host has to be
+// that column rather than a box inside it.
+:host { display: contents; }
+
+.library-pane {
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  border: 1px solid #e3e3e3;
+  border-radius: 12px;
+  background: var(--surface-card);
+}
+
+.library-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  height: 100%;
+  color: var(--text-muted);
+  text-align: center;
+
+  mat-icon { width: 48px; height: 48px; font-size: 48px; opacity: 0.35; }
+  p { margin: 0; font-size: 0.95rem; }
+  small { font-size: 0.8rem; opacity: 0.8; }
+}
+
+.library-header {
+  display: flex;
+  gap: 1rem;
+  padding: 1.1rem;
+  background: linear-gradient(160deg, rgba(var(--spotify-green-rgb), 0.16), transparent 70%);
+}
+
+.library-cover {
+  flex: 0 0 auto;
+  width: 128px;
+  height: 128px;
+  border-radius: 6px;
+  object-fit: cover;
+  box-shadow: 0 4px 18px rgba(var(--black-rgb), 0.22);
+}
+
+.library-cover-blank {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #e4e4e4;
+  color: var(--text-subtle);
+
+  mat-icon { width: 48px; height: 48px; font-size: 48px; }
+}
+
+.library-heading {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  min-width: 0;
+  gap: 0.25rem;
+
+  h2 {
+    margin: 0;
+    font-size: 1.85rem;
+    line-height: 1.1;
+    font-weight: 700;
+  }
+}
+
+.library-eyebrow {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--spot-green-700);
+}
+
+.library-meta { color: var(--slate-600); font-size: 0.82rem; }
+
+.library-header-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.55rem;
+  flex-wrap: wrap;
+}
+
+.library-loading { display: flex; justify-content: center; padding: 2.5rem; }
+
+.library-note {
+  margin: 1rem;
+  padding: 0.75rem 0.85rem;
+  border-left: 3px solid var(--spot-amber-700);
+  background: rgba(154, 91, 0, 0.07);
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+
+.library-more { display: flex; justify-content: center; padding: 0.9rem; }
+
+// ─── Track list ──────────────────────────────────────────────────────────────
+
+.track-list {
+  list-style: none;
+  margin: 0;
+  padding: 0.35rem 0.5rem 0.5rem;
+}
+
+.track-row {
+  display: grid;
+  grid-template-columns: 2.4rem 40px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.3rem 0.4rem;
+  border-radius: 6px;
+
+  &:hover { background: rgba(var(--black-rgb), 0.045); }
+
+  &.is-playing {
+    background: rgba(var(--spotify-green-rgb), 0.1);
+    .track-name { color: var(--github-green); font-weight: 600; }
+  }
+
+  // Local files and removed items can never play. Dimmed rather than hidden:
+  // they are genuinely in the playlist and pretending otherwise would be a lie.
+  &.unplayable {
+    .track-name, .track-meta { opacity: 0.55; }
+    .track-play { cursor: not-allowed; }
+  }
+
+  // Swapping the number for a play arrow on hover only works where hover exists.
+  // On the iPads it never fires, so the play affordance was permanently invisible;
+  // there, the arrow is simply always shown.
+  @media (hover: hover) {
+    &:hover .track-play-icon { display: inline-flex; }
+    &:hover .track-number { display: none; }
+  }
+}
+
+.track-play {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  // border-box plus an explicit padding reset: a button carries user-agent
+  // padding, and without both the 24px glyph is laid out inside a box narrower
+  // than itself and gets clipped.
+  box-sizing: border-box;
+  padding: 0;
+  width: 2.2rem;
+  height: 2.2rem;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+
+  &:disabled { opacity: 0.4; }
+  mat-icon { flex: 0 0 auto; }
+  .track-play-icon { display: none; }
+  .track-number { color: var(--slate-500); font-size: 0.85rem; font-variant-numeric: tabular-nums; }
+}
+
+@media (hover: none) {
+  .track-play {
+    .track-play-icon { display: inline-flex; }
+    .track-number { display: none; }
+  }
+}
+
+.track-art {
+  width: 40px;
+  height: 40px;
+  border-radius: 4px;
+  object-fit: cover;
+}
+
+.track-art-blank {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--slate-200);
+  color: var(--text-subtle);
+
+  mat-icon { width: 20px; height: 20px; font-size: 20px; }
+}
+
+.track-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+
+  .track-name,
+  .track-meta {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .track-name { font-size: 0.9rem; }
+  .track-meta { color: #6b6b6b; font-size: 0.78rem; }
+}
+
+.track-duration {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+
+// Revealed on hover where hovering is possible, permanently visible where it is
+// not — an opacity-0 control on a touch screen is a control that never appears.
+@media (hover: hover) {
+  .track-open { opacity: 0; }
+  .track-row:hover .track-open { opacity: 1; }
+}

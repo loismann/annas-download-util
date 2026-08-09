@@ -1,8 +1,6 @@
 import { Component, HostListener, Inject, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { Subject } from 'rxjs';
-import { takeUntil } from 'rxjs/operators';
 import { MatDialogModule, MatDialogRef, MAT_DIALOG_DATA } from '@angular/material/dialog';
 import { MatDividerModule } from '@angular/material/divider';
 import { MatFormFieldModule } from '@angular/material/form-field';
@@ -65,8 +63,6 @@ export interface VideoEditDialogResult {
   styleUrl: './video-edit-dialog.component.scss'
 })
 export class VideoEditDialogComponent implements OnDestroy {
-  private destroy$ = new Subject<void>();
-
   readonly separatorKeysCodes = [ENTER, COMMA] as const;
 
   genres: string[];
@@ -98,8 +94,6 @@ export class VideoEditDialogComponent implements OnDestroy {
   }
 
   ngOnDestroy(): void {
-    this.destroy$.next();
-    this.destroy$.complete();
     if (this.deleteConfirmTimeout) {
       clearTimeout(this.deleteConfirmTimeout);
     }
@@ -239,7 +233,11 @@ export class VideoEditDialogComponent implements OnDestroy {
     this.cancelDeleteConfirm();
     this.isDeleting = true;
 
-    this.videoApi.deleteVideo(this.data.fileName).pipe(takeUntil(this.destroy$)).subscribe({
+    // Not guarded by a destroy subject: this is a DELETE, and unsubscribing an
+    // HttpClient call aborts the request. Closing the dialog while it was in
+    // flight therefore cancelled the deletion the user had just confirmed —
+    // and the dialog closes on success, so the guard could only ever hurt.
+    this.videoApi.deleteVideo(this.data.fileName).subscribe({
       next: () => {
         this.dialogRef.close({ deleted: true } as VideoEditDialogResult);
       },

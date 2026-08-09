@@ -37,107 +37,13 @@
                       [class.pane-playlists]="activePane === 'playlists'"
                       [class.pane-assistant]="activePane === 'assistant'">
       <aside class="spotify-sidebar">
-    <!--
-      Account and inventory plumbing. Collapsed by default: it is the least
-      interesting thing on the page once you are connected, and it was occupying the
-      most valuable space. The summary line still surfaces anything that needs
-      action, so a problem is visible without opening it.
-    -->
-    <details class="connection-panel" [class.connected]="connection?.isConnected"
-             [open]="connectionNeedsAttention()">
-      <summary class="connection-summary-line">
-        <span class="connection-dot" [class.ok]="connection?.isConnected"></span>
-        <span class="connection-summary-text">
-          <strong>{{ connection?.displayName || 'Spotify' }}</strong>
-          <small>{{ connectionSummaryLabel() }}</small>
-        </span>
-        <mat-icon class="connection-chevron">expand_more</mat-icon>
-      </summary>
-
-      @if (connectionLoading) {
-        <div class="connection-loading">
-          <mat-spinner diameter="20"></mat-spinner>
-          <span>Checking Spotify connection…</span>
-        </div>
-      } @else if (connection) {
-        <div class="connection-summary">
-          <div>
-            <strong>{{ connection.displayName || 'Spotify' }}</strong>
-            <span class="connection-state">{{ connection.state }}</span>
-          </div>
-
-          <div class="connection-actions">
-            @if (!connection.isConnected || connection.state === 'ScopeLimited') {
-              <button mat-stroked-button color="primary" (click)="connectSpotify(true)" [disabled]="connectionActionPending">
-                {{ connection.state === 'Disconnected' ? 'Connect Spotify' : 'Reauthorize' }}
-              </button>
-            } @else if (connection.state === 'RateLimited' || connection.state === 'QuotaExceeded' || connection.state === 'SpotifyUnavailable') {
-              <button mat-stroked-button (click)="loadConnection()" [disabled]="connectionActionPending">
-                Refresh status
-              </button>
-            } @else {
-              <button mat-stroked-button (click)="connectSpotify(true)" [disabled]="connectionActionPending">
-                Reauthorize
-              </button>
-            }
-            @if (connection.state !== 'Disconnected') {
-              <button mat-button (click)="disconnectSpotify()" [disabled]="connectionActionPending">Disconnect</button>
-            }
-          </div>
-        </div>
-
-        @if (connection.accountId) {
-          <div class="connection-details">
-            <span>Account {{ connection.accountId }}</span>
-            <span>{{ connection.grantedScopes.length }} scopes granted</span>
-            <span>Last successful call: {{ formatConnectionDate(connection.lastSuccessfulCallAt) }}</span>
-            @if (connection.daysUntilReauthorization !== null) {
-              <span>Reauthorize in {{ connection.daysUntilReauthorization }} days</span>
-            }
-          </div>
-        }
-
-        @if (connection.warning) {
-          <div class="connection-warning">{{ connection.warning }}</div>
-        }
-
-
-        @if (connection.isConnected) {
-          <div class="inventory-summary">
-            <div class="inventory-copy">
-              <strong>Library inventory</strong>
-              @if (inventoryStatus?.lastInventoryAt) {
-                <span>Last refreshed {{ formatConnectionDate(inventoryStatus!.lastInventoryAt) }}</span>
-              } @else {
-                <span>Not refreshed yet</span>
-              }
-            </div>
-            <button mat-stroked-button
-                    (click)="refreshInventory()"
-                    [disabled]="inventoryActionPending || inventoryIsRunning(inventoryStatus)">
-              {{ inventoryIsRunning(inventoryStatus) ? 'Refreshing…' : 'Refresh inventory' }}
-            </button>
-          </div>
-          @if (inventoryStatus && inventoryIsRunning(inventoryStatus)) {
-            <mat-progress-bar mode="determinate" [value]="inventoryProgress(inventoryStatus)"></mat-progress-bar>
-            <div class="inventory-progress">
-              {{ inventoryStatus.message }}
-            </div>
-          } @else if (inventoryStatus?.message) {
-            <div class="inventory-progress" [class.inventory-problem]="inventoryStatus?.state === 'Failed'">
-              {{ inventoryStatus!.message }}
-            </div>
-          }
-        }
-        @if (connection.missingScopes.length > 0) {
-          <div class="missing-scopes">Missing: {{ connection.missingScopes.join(', ') }}</div>
-        }
-      }
-
-      @if (connectionNotice) {
-        <div class="connection-notice">{{ connectionNotice }}</div>
-      }
-    </details>
+        <app-spotify-connection-panel
+          [inventoryStatus]="inventoryStatus"
+          [inventoryPending]="inventoryActionPending"
+          [inventoryError]="inventoryError"
+          (connectionChanged)="onConnectionChanged($event)"
+          (disconnected)="onDisconnected()"
+          (refreshInventoryRequested)="refreshInventory()" />
 
         <!-- Playlists. The rail is the entry point the feature never had. -->
         <section class="playlist-rail">
@@ -175,7 +81,7 @@
                       "Contents unavailable", never 0 — a followed playlist full of
                       music must not look identical to an empty one.
                     -->
-                    <small>{{ itemCountLabel(playlist) }}</small>
+                    <small>{{ present.itemCountLabel(playlist) }}</small>
                   </span>
                 </button>
               }
@@ -211,210 +117,20 @@
         assistant to the right — Spotify's own shape, with the assistant alongside
         rather than in place of it.
       -->
-      <section class="library-pane">
-        @if (!selectedPlaylist) {
-          <div class="library-empty">
-            <mat-icon>library_music</mat-icon>
-            <p>Pick a playlist on the left to see what is in it.</p>
-            <small>Or ask the assistant on the right to find or build something.</small>
-          </div>
-        } @else {
-          <header class="library-header">
-            @if (selectedPlaylist.imageUrl) {
-              <img class="library-cover" [src]="selectedPlaylist.imageUrl"
-                   [alt]="selectedPlaylist.name" />
-            } @else {
-              <div class="library-cover library-cover-blank"><mat-icon>queue_music</mat-icon></div>
-            }
-
-            <div class="library-heading">
-              <span class="library-eyebrow">{{ ownershipLabel(selectedPlaylist) }}</span>
-              <h2>{{ selectedPlaylist.name }}</h2>
-              <span class="library-meta">
-                {{ itemCountLabel(selectedPlaylist) }}
-                @if (selectedItemsAccess === 'Forbidden') {
-                  · Spotify will not show what is inside
-                }
-              </span>
-
-              <div class="library-header-actions">
-                <button mat-flat-button color="primary"
-                        [disabled]="!canPlayPlaylist(selectedPlaylist)"
-                        (click)="playPlaylist(selectedPlaylist)"
-                        [matTooltip]="playDisabledReason() || 'Play this playlist'">
-                  <mat-icon>play_arrow</mat-icon> Play
-                </button>
-                @if (selectedPlaylist.spotifyUrl) {
-                  <button mat-stroked-button (click)="openInSpotify(selectedPlaylist.spotifyUrl)">
-                    <mat-icon>open_in_new</mat-icon> Open in Spotify
-                  </button>
-                }
-              </div>
-            </div>
-          </header>
-
-          @if (selectedItemsLoading && selectedItems.length === 0) {
-            <div class="library-loading"><mat-spinner diameter="28"></mat-spinner></div>
-          } @else if (selectedItemsAccess !== 'Available') {
-            <!--
-              Not "0 songs". A playlist Spotify will not read is unknown, and saying
-              zero is how a followed playlist full of music looks empty.
-            -->
-            <div class="library-note">
-              Spotify did not return the contents of this playlist. That is not the same
-              as it being empty — you follow it, but do not own or collaborate on it, so
-              Spotify shows the playlist without its songs.
-            </div>
-          } @else if (selectedItems.length === 0) {
-            <div class="library-note">This playlist really is empty — Spotify reports 0 items.</div>
-          } @else {
-            <ol class="track-list">
-              @for (item of selectedItems; track item.position) {
-                <li class="track-row"
-                    [class.is-playing]="isTrackPlaying(item)"
-                    [class.unplayable]="!canPlayItem(item)">
-                  <button class="track-play" type="button"
-                          [disabled]="!canPlayItem(item)"
-                          (click)="playItem(item)"
-                          [matTooltip]="canPlayItem(item)
-                            ? 'Play ' + (item.name || 'this')
-                            : itemUnplayableReason(item)">
-                    @if (isTrackPlaying(item) && playback?.isPlaying) {
-                      <mat-icon>volume_up</mat-icon>
-                    } @else {
-                      <span class="track-number">{{ item.position + 1 }}</span>
-                      <mat-icon class="track-play-icon">play_arrow</mat-icon>
-                    }
-                  </button>
-
-                  @if (item.albumArtUrl) {
-                    <img class="track-art" [src]="item.albumArtUrl" [alt]="item.albumName || ''" />
-                  } @else {
-                    <div class="track-art track-art-blank"><mat-icon>music_note</mat-icon></div>
-                  }
-
-                  <div class="track-copy">
-                    <span class="track-name">{{ item.name || 'Unknown' }}</span>
-                    <span class="track-meta">{{ itemMeta(item) }}</span>
-                  </div>
-
-                  <span class="track-duration">
-                    {{ item.durationMs ? formatDuration(item.durationMs) : '' }}
-                  </span>
-
-                  @if (item.spotifyUrl) {
-                    <button mat-icon-button class="track-open"
-                            matTooltip="Open in Spotify"
-                            (click)="openInSpotify(item.spotifyUrl)">
-                      <mat-icon>open_in_new</mat-icon>
-                    </button>
-                  }
-                </li>
-              }
-            </ol>
-
-            @if (selectedItems.length < selectedItemsTotal) {
-              <div class="library-more">
-                <button mat-stroked-button
-                        [disabled]="selectedItemsLoading"
-                        (click)="loadMoreSelectedItems()">
-                  {{ selectedItemsLoading ? 'Loading…' : 'Show more' }}
-                  ({{ selectedItems.length }} of {{ selectedItemsTotal }})
-                </button>
-              </div>
-            }
-          }
-        }
-      </section>
+      <app-spotify-library-pane
+        [playlist]="selectedPlaylist"
+        [playback]="playback"
+        [playbackMode]="playbackMode" />
 
       <section class="conversation-pane">
       @if (activeDraft) {
-        <details class="discovery-draft" open>
-          <summary>
-            <span class="draft-title">
-              <strong>{{ activeDraft.name }}</strong>
-              <small>{{ activeDraft.candidates.length }} candidates · {{ activeDraft.state }}</small>
-            </span>
-            <span class="draft-header-actions" (click)="$event.preventDefault(); $event.stopPropagation()">
-              <!--
-                Create opens the review card; it does not write. Delete really does
-                delete — a draft has never touched Spotify, so there is nothing to
-                preview and nothing to undo.
-              -->
-              <button mat-flat-button color="primary" type="button"
-                      (click)="createDraftInSpotify()"
-                      [disabled]="draftActionPending || resolvedCandidateCount(activeDraft) === 0"
-                      [matTooltip]="resolvedCandidateCount(activeDraft) === 0
-                        ? 'None of these matched a Spotify track yet'
-                        : 'Review and create this as a real Spotify playlist'">
-                <mat-icon>library_add</mat-icon>
-                Create in Spotify ({{ resolvedCandidateCount(activeDraft) }})
-              </button>
-
-              @if (!activeDraft.savedAt) {
-                <button mat-stroked-button type="button" (click)="saveActiveDraft()"
-                        [disabled]="draftActionPending">
-                  <mat-icon>bookmark_add</mat-icon> Save draft
-                </button>
-              } @else {
-                <span class="draft-saved"><mat-icon>bookmark</mat-icon> Saved</span>
-              }
-
-              <button mat-icon-button type="button" matTooltip="Delete this draft"
-                      class="draft-delete"
-                      (click)="deleteActiveDraft()"
-                      [disabled]="draftActionPending">
-                <mat-icon>delete_outline</mat-icon>
-              </button>
-              <button mat-icon-button type="button" matTooltip="Close draft (keeps it)"
-                      (click)="closeActiveDraft()">
-                <mat-icon>close</mat-icon>
-              </button>
-            </span>
-          </summary>
-          <div class="draft-status-line">Draft only — Spotify unchanged</div>
-          <p>{{ activeDraft.summary }}</p>
-          @if (activeDraft.clarifyingQuestion) {
-            <div class="analysis-note">{{ activeDraft.clarifyingQuestion }}</div>
-          }
-          @if (activeDraft.candidates.length > 0) {
-            <div class="draft-candidates">
-              @for (candidate of activeDraft.candidates; track candidate.id; let first = $first; let last = $last) {
-                <div class="draft-candidate">
-                  <span class="draft-position">{{ candidate.position + 1 }}</span>
-                  <div class="draft-candidate-copy" (click)="openInSpotify(candidate.track?.spotifyUrl || null)">
-                    <strong>{{ candidate.title }}</strong>
-                    <span>{{ candidate.artist }} · {{ candidateResolutionLabel(candidate) }}</span>
-                    <small [class.unfamiliar]="candidate.probablyUnfamiliar">{{ candidate.familiarityLabel }}</small>
-                    @if (candidate.rationale) { <small>{{ candidate.rationale }}</small> }
-                    @if (candidate.alternatives.length > 0) {
-                      <div class="draft-alternatives">
-                        <small>Choose the Spotify match:</small>
-                        @for (alternative of candidate.alternatives; track alternative.id) {
-                          <button type="button"
-                                  (click)="$event.stopPropagation(); selectDraftAlternative(activeDraft, candidate.id, alternative.id)">
-                            {{ alternative.name }} — {{ alternative.artists }} · {{ alternative.albumName }}
-                          </button>
-                        }
-                      </div>
-                    }
-                  </div>
-                  <div class="draft-actions">
-                    <button mat-icon-button matTooltip="Move up" [disabled]="first"
-                            (click)="moveDraftCandidate(activeDraft, candidate.id, -1)"><mat-icon>arrow_upward</mat-icon></button>
-                    <button mat-icon-button matTooltip="Move down" [disabled]="last"
-                            (click)="moveDraftCandidate(activeDraft, candidate.id, 1)"><mat-icon>arrow_downward</mat-icon></button>
-                    <button mat-icon-button matTooltip="Remove from draft"
-                            (click)="removeDraftCandidate(activeDraft, candidate.id)"><mat-icon>close</mat-icon></button>
-                  </div>
-                </div>
-              }
-            </div>
-          }
-          @if (activeDraft.knownMusicCoverage) {
-            <div class="analysis-note">{{ activeDraft.knownMusicCoverage }}</div>
-          }
-        </details>
+        <app-spotify-draft-panel
+          [draft]="activeDraft"
+          (changed)="onDraftChanged($event)"
+          (closed)="closeActiveDraft()"
+          (deleted)="onDraftDeleted($event)"
+          (planBuilt)="reviewPlan($event)"
+          (failed)="onDraftFailed($event)" />
       }
 
       <!-- Chat Messages -->
@@ -444,10 +160,10 @@
                 The step list is collapsed and only exists at all when something went
                 wrong, because that is the only time it answers a question.
               -->
-              @if (isPlan(message.data)) {
+              @if (present.isPlan(message.data)) {
                 <div class="plan-receipt" [class]="'plan-receipt-' + message.data.status.toLowerCase()">
-                  <mat-icon inline>{{ planOutcomeIcon(message.data) }}</mat-icon>
-                  <span class="plan-receipt-text">{{ planStatusLabel(message.data) }}</span>
+                  <mat-icon inline>{{ present.planOutcomeIcon(message.data) }}</mat-icon>
+                  <span class="plan-receipt-text">{{ present.planStatusLabel(message.data) }}</span>
 
                   @if (message.data.recovery?.canResume) {
                     <button mat-button
@@ -461,7 +177,7 @@
                   }
                 </div>
 
-                @if (planHasTrouble(message.data)) {
+                @if (present.planHasTrouble(message.data)) {
                   <details class="plan-trouble">
                     <summary>What happened</summary>
                     @if (message.data.recovery) {
@@ -470,7 +186,7 @@
                     <ul>
                       @for (step of message.data.steps; track step.ordinal) {
                         <li [class]="'plan-step-' + step.status.toLowerCase()">
-                          {{ planStepLabel(step) }}
+                          {{ present.planStepLabel(step) }}
                           @if (step.status === 'Skipped') { — not attempted }
                           @if (step.failure) { — {{ step.failure }} }
                         </li>
@@ -481,7 +197,7 @@
               }
 
 
-              @if (isSearchResult(message.data) && message.data.tracks.length > 0) {
+              @if (present.isSearchResult(message.data) && message.data.tracks.length > 0) {
                 <div class="results-container">
                   <mat-list class="track-list">
                     @for (track of message.data.tracks; track track.id) {
@@ -493,7 +209,7 @@
                         }
                         <div matListItemTitle class="track-title">{{ track.name }}</div>
                         <div matListItemLine class="track-meta">
-                          {{ track.artists }} · {{ track.albumName }} · {{ formatDuration(track.durationMs) }}
+                          {{ track.artists }} · {{ track.albumName }} · {{ present.formatDuration(track.durationMs) }}
                         </div>
                       </mat-list-item>
                     }
@@ -502,7 +218,7 @@
               }
 
               <!-- Playlist array results -->
-              @if (isPlaylistArray(message.data)) {
+              @if (present.isPlaylistArray(message.data)) {
                 <div class="results-container">
                   <mat-list class="playlist-list">
                     @for (playlist of message.data; track playlist.id) {
@@ -514,7 +230,7 @@
                         }
                         <div matListItemTitle>{{ playlist.name }}</div>
                         <div matListItemLine>
-                          {{ itemCountLabel(playlist) }} · {{ ownershipLabel(playlist) }} · {{ inventoryLabel(playlist) }}
+                          {{ present.itemCountLabel(playlist) }} · {{ present.ownershipLabel(playlist) }} · {{ present.inventoryLabel(playlist) }}
                         </div>
                         <button
                           matListItemMeta
@@ -532,7 +248,7 @@
               }
 
               <!-- Single playlist result -->
-              @if (isPlaylist(message.data)) {
+              @if (present.isPlaylist(message.data)) {
                 <div class="results-container single-playlist">
                   <mat-card class="playlist-card" (click)="openInSpotify(message.data.spotifyUrl)">
                     @if (message.data.imageUrl) {
@@ -543,7 +259,7 @@
                     <div class="playlist-info">
                       <span class="playlist-name">{{ message.data.name }}</span>
                       <span class="playlist-tracks">
-                        {{ itemCountLabel(message.data) }} · {{ ownershipLabel(message.data) }} · {{ inventoryLabel(message.data) }}
+                        {{ present.itemCountLabel(message.data) }} · {{ present.ownershipLabel(message.data) }} · {{ present.inventoryLabel(message.data) }}
                       </span>
                     </div>
                   </mat-card>
@@ -551,17 +267,17 @@
               }
 
               <!-- Playlist contents -->
-              @if (isItemsPage(message.data)) {
+              @if (present.isItemsPage(message.data)) {
                 <div class="results-container">
                   @if (message.data.items.length > 0) {
                     <mat-list class="track-list">
                       @for (item of message.data.items; track item.position) {
                         <mat-list-item class="track-item" (click)="openInSpotify(item.spotifyUrl)">
-                          <mat-icon matListItemAvatar>{{ itemIcon(item) }}</mat-icon>
+                          <mat-icon matListItemAvatar>{{ present.itemIcon(item) }}</mat-icon>
                           <div matListItemTitle class="track-title">
                             {{ item.position + 1 }}. {{ item.name || 'No longer available on Spotify' }}
                           </div>
-                          <div matListItemLine class="track-meta">{{ itemMeta(item) }}</div>
+                          <div matListItemLine class="track-meta">{{ present.itemMeta(item) }}</div>
                         </mat-list-item>
                       }
                     </mat-list>
@@ -575,9 +291,9 @@
               }
 
               <!-- Library analysis -->
-              @if (isAnalysis(message.data)) {
+              @if (present.isAnalysis(message.data)) {
                 <div class="results-container analysis">
-                  @if (!analysisIsComplete(message.data)) {
+                  @if (!present.analysisIsComplete(message.data)) {
                     <div class="analysis-warning">
                       <mat-icon>warning</mat-icon>
                       <span>
@@ -608,7 +324,7 @@
                             {{ group.confidence === 'Exact' ? 'content_copy' : group.confidence === 'Recording' ? 'fingerprint' : 'help_outline' }}
                           </mat-icon>
                           <div matListItemTitle>{{ group.playlistName }}</div>
-                          <div matListItemLine>{{ duplicateLabel(group) }}</div>
+                          <div matListItemLine>{{ present.duplicateLabel(group) }}</div>
                         </mat-list-item>
                       }
                     </mat-list>
@@ -622,7 +338,7 @@
                           <mat-icon matListItemAvatar>join_inner</mat-icon>
                           <div matListItemTitle>{{ overlap.leftName }} ↔ {{ overlap.rightName }}</div>
                           <div matListItemLine>
-                            {{ overlapLabel(overlap) }} · {{ overlap.sharedItems }} shared
+                            {{ present.overlapLabel(overlap) }} · {{ overlap.sharedItems }} shared
                           </div>
                         </mat-list-item>
                       }
@@ -655,7 +371,7 @@
                         <mat-list-item>
                           <mat-icon matListItemAvatar>lock</mat-icon>
                           <div matListItemTitle>{{ playlist.name }}</div>
-                          <div matListItemLine>{{ ownershipLabel(playlist) }}</div>
+                          <div matListItemLine>{{ present.ownershipLabel(playlist) }}</div>
                         </mat-list-item>
                       }
                     </mat-list>
@@ -678,7 +394,7 @@
                 </div>
               }
 
-              @if (isInventoryStatus(message.data)) {
+              @if (present.isInventoryStatus(message.data)) {
                 <div class="results-container analysis-warning">
                   <mat-icon>sync</mat-icon>
                   <span>{{ message.data.message }}</span>
@@ -686,7 +402,7 @@
               }
 
               <!-- Top tracks / artists -->
-              @if (isTopItems(message.data)) {
+              @if (present.isTopItems(message.data)) {
                 <div class="results-container">
                   <mat-list class="playlist-list">
                     @for (item of message.data.items; track item.id) {
@@ -703,7 +419,7 @@
               }
 
               <!-- Recent playlist contexts -->
-              @if (isRecentContexts(message.data)) {
+              @if (present.isRecentContexts(message.data)) {
                 <div class="results-container">
                   <mat-list class="playlist-list">
                     @for (context of message.data; track context.playlistId) {
@@ -750,75 +466,6 @@
       </div>
       </section>
     </mat-card-content>
-
-    <!--
-      Now playing. Present whenever Spotify reports something active anywhere, which
-      in remote mode is a device that is not this browser at all — hence the device
-      name: on the iPads it is the only clue about where the sound is coming from.
-    -->
-    @if (playback?.track) {
-      <footer class="now-playing">
-        @if (playback!.track!.albumArtUrl) {
-          <img class="now-art" [src]="playback!.track!.albumArtUrl" alt="" />
-        }
-        <div class="now-copy">
-          <strong>{{ playback!.track!.name }}</strong>
-          <span>{{ playback!.track!.artists }}</span>
-        </div>
-
-        <!--
-          Transport controls. Skipping needs playback to have started from a
-          playlist rather than a single track — a lone track has nothing after it —
-          so the tooltip says so instead of leaving a dead-looking button.
-        -->
-        <div class="now-transport">
-          <button mat-icon-button class="now-toggle"
-                  [matTooltip]="shuffleLabel()"
-                  [class.shuffle-on]="playback!.isShuffling"
-                  (click)="toggleShuffle()">
-            <mat-icon>shuffle</mat-icon>
-          </button>
-
-          <button mat-icon-button class="now-toggle"
-                  matTooltip="Previous track"
-                  (click)="skipPrevious()">
-            <mat-icon>skip_previous</mat-icon>
-          </button>
-
-          <button mat-icon-button class="now-toggle"
-                  (click)="togglePlayPause()"
-                  [matTooltip]="playback!.isPlaying ? 'Pause' : 'Play'">
-            <mat-icon>{{ playback!.isPlaying ? 'pause' : 'play_arrow' }}</mat-icon>
-          </button>
-
-          <button mat-icon-button class="now-toggle"
-                  matTooltip="Next track"
-                  (click)="skipNext()">
-            <mat-icon>skip_next</mat-icon>
-          </button>
-        </div>
-
-        <div class="now-progress">
-          <div class="now-progress-fill" [style.width.%]="playbackProgressPercent()"></div>
-        </div>
-
-        <span class="now-time">
-          {{ formatDuration(playback!.progressMs) }} / {{ formatDuration(playback!.track!.durationMs) }}
-        </span>
-
-        @if (playback!.device) {
-          <span class="now-device" [matTooltip]="'Playing on ' + playback!.device!.name">
-            <mat-icon inline>{{ deviceIcon(playback!.device!.type) }}</mat-icon>
-            <span class="now-device-name">{{ playback!.device!.name }}</span>
-          </span>
-        }
-      </footer>
-    } @else if (playbackProblem) {
-      <footer class="now-playing now-playing-problem">
-        <mat-icon>info_outline</mat-icon>
-        <span>{{ playbackProblem }}</span>
-        <button mat-button (click)="refreshDevices()">Check again</button>
-      </footer>
-    }
+    <app-spotify-now-playing [playback]="playback" [problem]="playbackProblem" />
   </mat-card>
 </div>

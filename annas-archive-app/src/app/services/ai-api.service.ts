@@ -136,10 +136,6 @@ export interface GroupableBook {
   year: number | null;
 }
 
-export interface GroupSearchResultsRequest {
-  books: GroupableBook[];
-}
-
 /** Each inner array is the md5s of one group of "same book" results —
  *  every md5 from the request appears in exactly one group. */
 export interface GroupSearchResultsResponse {

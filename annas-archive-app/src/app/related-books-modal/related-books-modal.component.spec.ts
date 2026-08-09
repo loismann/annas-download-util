@@ -1,7 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { RelatedBooksModalComponent, RelatedBooksModalData } from './related-books-modal.component';
 import { MAT_DIALOG_DATA, MatDialogRef } from '@angular/material/dialog';
-import { AnnaArchiveApiService } from '../services/anna-archive-api.service';
+import { BookSearchApiService } from '../services/book-search-api.service';
 import { AiApiService } from '../services/ai-api.service';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { of } from 'rxjs';
@@ -10,7 +10,7 @@ describe('RelatedBooksModalComponent', () => {
   let component: RelatedBooksModalComponent;
   let fixture: ComponentFixture<RelatedBooksModalComponent>;
   let mockDialogRef: jasmine.SpyObj<MatDialogRef<RelatedBooksModalComponent>>;
-  let mockApiService: jasmine.SpyObj<AnnaArchiveApiService>;
+  let mockApiService: jasmine.SpyObj<BookSearchApiService>;
   let mockAiApiService: jasmine.SpyObj<AiApiService>;
 
   const mockDialogData: RelatedBooksModalData = {
@@ -25,12 +25,13 @@ describe('RelatedBooksModalComponent', () => {
 
   beforeEach(async () => {
     mockDialogRef = jasmine.createSpyObj('MatDialogRef', ['close']);
-    mockApiService = jasmine.createSpyObj('AnnaArchiveApiService', [
+    mockApiService = jasmine.createSpyObj('BookSearchApiService', [
       'searchBooks',
       'sendToLibrary',
       'sendToBoox',
       'sendToKindle',
-      'fetchCover'
+      'fetchCover',
+      'getDownloadProgress'
     ]);
     mockAiApiService = jasmine.createSpyObj('AiApiService', [
       'matchSeriesBooks'
@@ -47,7 +48,7 @@ describe('RelatedBooksModalComponent', () => {
       providers: [
         { provide: MatDialogRef, useValue: mockDialogRef },
         { provide: MAT_DIALOG_DATA, useValue: mockDialogData },
-        { provide: AnnaArchiveApiService, useValue: mockApiService },
+        { provide: BookSearchApiService, useValue: mockApiService },
         { provide: AiApiService, useValue: mockAiApiService }
       ]
     }).compileComponents();

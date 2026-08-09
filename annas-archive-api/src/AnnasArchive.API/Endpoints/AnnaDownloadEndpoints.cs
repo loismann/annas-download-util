@@ -317,9 +317,8 @@ public static class AnnaDownloadEndpoints
         if (validationError != null)
             return ApiResponse.BadRequest(validationError);
 
-        var (resp, fileName, acctInfo, downloadError) =
-            await AnnaDownloadHelpers.DownloadForSendAsync(md5, title, anna, cfg, downloadTracking);
-        if (downloadError != null)
+        var download = await AnnaDownloadHelpers.DownloadForSendAsync(md5, title, anna, cfg, downloadTracking);
+        if (!download.TryGetBook(out var resp, out var fileName, out var acctInfo, out var downloadError))
             return downloadError;
 
         using (resp)
@@ -400,9 +399,8 @@ public static class AnnaDownloadEndpoints
         if (kindleTargetError != null)
             return ApiResponse.BadRequest(kindleTargetError);
 
-        var (resp, fileName, acctInfo, downloadError) =
-            await AnnaDownloadHelpers.DownloadForSendAsync(md5, title, anna, cfg, downloadTracking);
-        if (downloadError != null)
+        var download = await AnnaDownloadHelpers.DownloadForSendAsync(md5, title, anna, cfg, downloadTracking);
+        if (!download.TryGetBook(out var resp, out var fileName, out var acctInfo, out var downloadError))
             return downloadError;
 
         var tempFilePath = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid()}_{fileName}");

@@ -21,33 +21,11 @@
   height: 100%;
 }
 
-.library-sidebar,
-.library-panel {
-  background: var(--surface-card);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  box-shadow: 0 20px 40px rgba(var(--slate-900-rgb), 0.06);
-  padding: 16px;
-  display: flex;
-  flex-direction: column;
-}
-
-.library-sidebar {
-  gap: 16px;
-}
-
-.sidebar-header h2 {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-}
-
-.sidebar-header p {
-  margin: 6px 0 0;
-  color: var(--text-muted);
-  font-size: 0.85rem;
-}
+/* .library-sidebar / .library-panel / .sidebar-header are styled by the global
+   styles/library-layout.scss. This file used to repeat those rules verbatim;
+   only .library-panel is even in this template — .library-sidebar and
+   .sidebar-header moved into <app-library-sidebar> and the copies here were
+   matching nothing under view encapsulation. */
 
 .reset-view-btn {
   width: 100%;
@@ -185,25 +163,6 @@
   padding: 1rem;
   background: var(--surface-page);
   border-radius: 8px;
-}
-
-.bulk-edit-toggle {
-  width: 100%;
-  margin-bottom: 0.5rem;
-}
-
-.bulk-edit-controls {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.selection-counter {
-  font-weight: 600;
-  color: var(--brand);
-  font-size: 0.9rem;
-  padding: 0.5rem 0;
-  text-align: center;
 }
 
 .bulk-send-actions {

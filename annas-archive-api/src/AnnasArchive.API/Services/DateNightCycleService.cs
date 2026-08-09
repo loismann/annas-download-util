@@ -101,6 +101,23 @@ public class DateNightCycleService
     /// week.</summary>
     private const string TestCycleId = "test";
 
+    /// <summary>
+    /// The four things <c>isTest</c> actually decides. It is threaded through most of
+    /// this class, but it only ever branches here: three storage keys and a log suffix.
+    ///
+    /// The obvious tidy-up — make the dry run a second instance of a scoped store and
+    /// drop the parameter — was investigated and is wrong. The dry run is not an
+    /// isolated parallel world: <see cref="GetEligibleMoviesAsync"/> reads the *real*
+    /// lists as well as the test ones, so a dry-run draw cannot offer a movie the
+    /// household has banned, and <see cref="RestoreMovieAsync"/> writes both lists in
+    /// one call and takes no <c>isTest</c> at all. Two independent instances could not
+    /// see across, which is the property that makes testing safe.
+    /// </summary>
+    private static string CycleKey(bool isTest) => isTest ? TestCycleStateKey : CycleStateKey;
+    private static string ListsKey(bool isTest) => isTest ? TestListsStateKey : ListsStateKey;
+    private static string ReserveKey(bool isTest) => isTest ? TestSummaryReserveStateKey : SummaryReserveStateKey;
+    private static string DryRunTag(bool isTest) => isTest ? " (dry run)" : "";
+
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     private readonly DateNightAvailabilityService _availability;
@@ -375,7 +392,7 @@ public class DateNightCycleService
             if (reserve.Count == 5)
             {
                 SaveSummaryReserve(reserve, isTest);
-                Log.Information("[DateNight] Prepared the next 5-movie summary reserve{Test}", isTest ? " (dry run)" : "");
+                Log.Information("[DateNight] Prepared the next 5-movie summary reserve{Test}", DryRunTag(isTest));
             }
         }
         finally
@@ -400,10 +417,10 @@ public class DateNightCycleService
 
     private List<int> LoadSummaryReserve(bool isTest) =>
         JsonSerializer.Deserialize<List<int>>(
-            _db.GetState(isTest ? TestSummaryReserveStateKey : SummaryReserveStateKey) ?? "[]", JsonOptions) ?? [];
+            _db.GetState(ReserveKey(isTest)) ?? "[]", JsonOptions) ?? [];
 
     private void SaveSummaryReserve(List<int> movieIds, bool isTest) =>
-        _db.SetState(isTest ? TestSummaryReserveStateKey : SummaryReserveStateKey,
+        _db.SetState(ReserveKey(isTest),
             JsonSerializer.Serialize(movieIds, JsonOptions));
 
     private static (int MovieId, string Title, int? Year, string? Overview) SummaryCandidate(JsonObject movie) =>
@@ -559,7 +576,7 @@ public class DateNightCycleService
                 SaveLists(lists, isTest);
             }
 
-            Log.Information("[DateNight] {Person} voted {Vote} on movie {MovieId}{Test}", person, vote, movieId, isTest ? " (dry run)" : "");
+            Log.Information("[DateNight] {Person} voted {Vote} on movie {MovieId}{Test}", person, vote, movieId, DryRunTag(isTest));
 
             // Resolve the instant the last vote comes in, rather than waiting for
             // Sunday — the deadline (AdvanceAsync) only ever needs to run Resolve
@@ -663,7 +680,7 @@ public class DateNightCycleService
             };
             SaveCycle(cycle, isTest);
             Log.Information("[DateNight] {Person} {Verb} {Count} slot(s) for this week's date night{Test}",
-                person, isCounterProposal ? "counter-proposed" : "proposed", slots.Count, isTest ? " (dry run)" : "");
+                person, isCounterProposal ? "counter-proposed" : "proposed", slots.Count, DryRunTag(isTest));
             return cycle;
         }
         finally
@@ -721,7 +738,7 @@ public class DateNightCycleService
             };
             SaveCycle(cycle, isTest);
             Log.Information("[DateNight] {Person} approved {Date} {Time} — locking in movie {MovieId}{Test}",
-                person, slot.Date, slot.Time, cycle.ResolvedMovieId, isTest ? " (dry run)" : "");
+                person, slot.Date, slot.Time, cycle.ResolvedMovieId, DryRunTag(isTest));
         }
         finally
         {
@@ -885,7 +902,7 @@ public class DateNightCycleService
                 Schedule = cycle.Schedule with { Status = "Cancelled", CancelledBy = person, AcknowledgedBy = [person] }
             };
             SaveCycle(cycle, isTest);
-            Log.Information("[DateNight] {Person} cancelled this week's date night{Test}", person, isTest ? " (dry run)" : "");
+            Log.Information("[DateNight] {Person} cancelled this week's date night{Test}", person, DryRunTag(isTest));
         }
         finally
         {
@@ -1030,7 +1047,7 @@ public class DateNightCycleService
                 };
                 SaveCycle(cycle, isTest);
                 Log.Information("[DateNight] Playback started for movie {MovieId}{Test}",
-                    cycle.ResolvedMovieId, isTest ? " (dry run)" : "");
+                    cycle.ResolvedMovieId, DryRunTag(isTest));
             }
             return cycle;
         }
@@ -1075,7 +1092,7 @@ public class DateNightCycleService
                 await radarr.CancelMovieDownloadAsync(movieId, ct);
                 await radarr.EditMoviesAsync([movieId], monitored: false, ct: ct);
                 Log.Information("[DateNight] Movie {MovieId} unmonitored after showtime concluded ({Reason}){Test}",
-                    movieId, reason, isTest ? " (dry run)" : "");
+                    movieId, reason, DryRunTag(isTest));
             }
             catch (Exception ex)
             {
@@ -1100,7 +1117,7 @@ public class DateNightCycleService
         };
         SaveCycle(concluded, isTest);
         Log.Information("[DateNight] Cycle {CycleId} concluded after showtime ({Reason}){Test}",
-            cycle.CycleId, reason, isTest ? " (dry run)" : "");
+            cycle.CycleId, reason, DryRunTag(isTest));
         return concluded;
     }
 
@@ -1155,7 +1172,7 @@ public class DateNightCycleService
         }
 
         Log.Information("[DateNight] Movie {MovieId} marked watched — file removed, unmonitored, pool tag removed{Test}",
-            movieId, isTest ? " (dry run)" : "");
+            movieId, DryRunTag(isTest));
     }
 
     /// <summary>The leak-prevention gate: while false, Mom and Dad see only the static
@@ -1171,7 +1188,7 @@ public class DateNightCycleService
 
     public Dictionary<int, MovieListEntry> GetLists(bool isTest = false)
     {
-        var json = _db.GetState(isTest ? TestListsStateKey : ListsStateKey);
+        var json = _db.GetState(ListsKey(isTest));
         if (string.IsNullOrWhiteSpace(json)) return new();
         try
         {
@@ -1358,7 +1375,7 @@ public class DateNightCycleService
 
     private WeeklyCycle? LoadCycle(bool isTest = false)
     {
-        var json = _db.GetState(isTest ? TestCycleStateKey : CycleStateKey);
+        var json = _db.GetState(CycleKey(isTest));
         if (string.IsNullOrWhiteSpace(json) || json == "null") return null;
         try
         {
@@ -1372,8 +1389,8 @@ public class DateNightCycleService
     }
 
     private void SaveCycle(WeeklyCycle cycle, bool isTest = false) =>
-        _db.SetState(isTest ? TestCycleStateKey : CycleStateKey, JsonSerializer.Serialize(cycle, JsonOptions));
+        _db.SetState(CycleKey(isTest), JsonSerializer.Serialize(cycle, JsonOptions));
 
     private void SaveLists(Dictionary<int, MovieListEntry> lists, bool isTest = false) =>
-        _db.SetState(isTest ? TestListsStateKey : ListsStateKey, JsonSerializer.Serialize(lists, JsonOptions));
+        _db.SetState(ListsKey(isTest), JsonSerializer.Serialize(lists, JsonOptions));
 }

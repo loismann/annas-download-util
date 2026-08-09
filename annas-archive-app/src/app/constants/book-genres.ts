@@ -47,4 +47,3 @@ export const STANDARD_GENRES = [
   'Uncategorized'
 ] as const;
 
-export type StandardGenre = typeof STANDARD_GENRES[number];

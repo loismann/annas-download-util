@@ -71,3 +71,60 @@ describe('library-layout global stylesheet', () => {
     expect(displayOf('.sidebar-backdrop')).toBe(isPhoneViewport() ? 'block' : 'none');
   });
 });
+
+/**
+ * Guards the bulk-edit cluster, which moved here from four component
+ * stylesheets that each held a byte-identical copy.
+ *
+ * The failure this exists for is the silent one: a global rule reaches a
+ * component's markup only because it is global, and nothing in the build
+ * complains if it stops arriving. Delete the block from library-layout.scss
+ * and four sidebars render unstyled with a green compile.
+ *
+ * MatButtonModule is imported for the same reason as the FAB suite above —
+ * `.bulk-edit-toggle` is a mat-button in every real caller, so Material's
+ * ViewEncapsulation.None styles must be in the cascade for the width
+ * assertion to mean anything.
+ */
+@Component({
+  standalone: true,
+  imports: [MatButtonModule],
+  template: `
+    <div class="bulk-host" style="width: 200px">
+      <button class="bulk-edit-toggle" mat-button>Bulk edit</button>
+      <div class="bulk-edit-controls">
+        <span class="selection-counter">3 selected</span>
+      </div>
+    </div>
+  `,
+})
+class BulkEditHostComponent {}
+
+describe('library-layout bulk-edit cluster', () => {
+  let fixture: ComponentFixture<BulkEditHostComponent>;
+
+  const styleOf = (selector: string): CSSStyleDeclaration =>
+    getComputedStyle(fixture.nativeElement.querySelector(selector) as HTMLElement);
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({ imports: [BulkEditHostComponent] }).compileComponents();
+    fixture = TestBed.createComponent(BulkEditHostComponent);
+    fixture.detectChanges();
+  });
+
+  it('stacks the bulk-edit controls in a column', () => {
+    const style = styleOf('.bulk-edit-controls');
+    expect(style.display).toBe('flex');
+    expect(style.flexDirection).toBe('column');
+  });
+
+  it('centres the selection counter and keeps it bold', () => {
+    const style = styleOf('.selection-counter');
+    expect(style.textAlign).toBe('center');
+    expect(style.fontWeight).toBe('600');
+  });
+
+  it('stretches the toggle to its container rather than Material\'s intrinsic width', () => {
+    expect(styleOf('.bulk-edit-toggle').width).toBe('200px');
+  });
+});

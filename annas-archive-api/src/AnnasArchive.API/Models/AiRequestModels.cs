@@ -167,31 +167,6 @@ public record UltraChapterSummaryRequest(
     int? DisplayChapterNumber = null,
     bool ForceRegenerate = false);
 
-public record FullChapterSummaryResponse(
-    string Summary,
-    int PromptTokens,
-    int CompletionTokens,
-    int TotalTokens,
-    double? AllowanceUsedPercent,
-    long? TokensRemaining,
-    DateTime CachedAt,
-    List<ProcessingStep> Steps);
-
-public record ProcessingStep(
-    string Stage,
-    int StepNumber,
-    int TotalSteps,
-    string Message,
-    bool Success,
-    string? Error);
-
-public record ChapterSummaryCacheResponse(
-    string Summary,
-    int PromptTokens,
-    int CompletionTokens,
-    int TotalTokens,
-    DateTime CachedAt);
-
 // ─── Token Usage ─────────────────────────────────────────────────────────
 public record TokenUsageResponse(
     long PromptTokens,

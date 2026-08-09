@@ -196,11 +196,6 @@ public record SpotifySnapshotResponse(
 
 // ─── Request/Response DTOs for Endpoints ─────────────────────────────────────
 
-public record SpotifySearchRequest(
-    string Query,
-    int Limit = 10
-);
-
 public record SpotifyTrackDto(
     string Id,
     string Name,
@@ -215,17 +210,6 @@ public record SpotifyTrackDto(
 public record SpotifySearchResultDto(
     List<SpotifyTrackDto> Tracks,
     int Total
-);
-
-public record CreatePlaylistRequest(
-    string Name,
-    string? Description = null,
-    bool Public = false
-);
-
-public record AddTracksRequest(
-    string PlaylistId,
-    List<string> TrackUris
 );
 
 /// <summary>
@@ -279,46 +263,3 @@ public record SpotifyConnectionErrorDto(
     int? RetryAfterSeconds = null
 );
 
-// ─── AI Command Models ───────────────────────────────────────────────────────
-
-public record SpotifyCommandRequest(
-    string Message,
-    string? Context = null
-);
-
-public record SpotifyCommandResponse(
-    ParsedSpotifyCommand Parsed,
-    string NaturalResponse,
-    object? Data = null,
-    string? Error = null
-);
-
-public record ParsedSpotifyCommand(
-    string Action,
-    string? SearchQuery = null,
-    string? PlaylistName = null,
-    string? PlaylistId = null,
-    List<string>? TrackUris = null,
-    string? Description = null,
-    double Confidence = 1.0,
-    string? ClarificationNeeded = null,
-    // Vibe-based generation fields
-    string? VibeDescription = null,
-    int? TrackCount = null,
-    List<string>? ClarifyingQuestions = null,
-    bool ReadyToGenerate = false
-);
-
-// ─── Vibe Generation Models ──────────────────────────────────────────────────
-
-public record GeneratedSongSuggestion(
-    string Artist,
-    string Title,
-    string? Reason = null
-);
-
-public record VibeGenerationResult(
-    List<SpotifyTrackDto> FoundTracks,
-    List<string> NotFoundSongs,
-    SpotifyPlaylistDto? CreatedPlaylist = null
-);

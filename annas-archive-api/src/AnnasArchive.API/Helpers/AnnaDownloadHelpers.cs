@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using AnnasArchive.Core.Helpers;
@@ -55,24 +56,84 @@ public static class AnnaDownloadHelpers
     }
 
     /// <summary>
+    /// The outcome of <see cref="DownloadForSendAsync"/>: either the book, or the
+    /// response to send instead — never both, never neither.
+    ///
+    /// This used to be a 4-tuple of nullables. The invariant held at runtime (the
+    /// helper null-checks before returning success) but nothing expressed it to the
+    /// compiler, so both call sites dereferenced <c>resp</c> and <c>fileName</c>
+    /// after testing only the error, and each earned two nullable warnings. Those
+    /// four were the entire warning count of the build, which is worth keeping at
+    /// zero — a warning nobody expects is one somebody reads.
+    ///
+    /// <see cref="TryGetBook"/> carries the invariant in the type system via
+    /// <see cref="NotNullWhenAttribute"/>, so the same call sites now compile clean
+    /// without a null-forgiving operator anywhere.
+    /// </summary>
+    public sealed class DownloadForSendResult
+    {
+        private readonly HttpResponseMessage? _response;
+        private readonly string? _fileName;
+        private readonly AccountFastDownloadInfoDto? _accountInfo;
+        private readonly IResult? _error;
+
+        private DownloadForSendResult(
+            HttpResponseMessage? response,
+            string? fileName,
+            AccountFastDownloadInfoDto? accountInfo,
+            IResult? error)
+        {
+            _response = response;
+            _fileName = fileName;
+            _accountInfo = accountInfo;
+            _error = error;
+        }
+
+        public static DownloadForSendResult Downloaded(
+            HttpResponseMessage response,
+            string fileName,
+            AccountFastDownloadInfoDto? accountInfo) =>
+            new(response, fileName, accountInfo, null);
+
+        public static DownloadForSendResult Failed(IResult error) =>
+            new(null, null, null, error);
+
+        /// <summary>
+        /// True with the book when the download succeeded; false with the finished
+        /// response to return when it did not. <paramref name="accountInfo"/> stays
+        /// nullable on purpose — Anna's Archive does not always report the counters,
+        /// so "succeeded but we don't know the quota" is a real state.
+        /// </summary>
+        public bool TryGetBook(
+            [NotNullWhen(true)] out HttpResponseMessage? response,
+            [NotNullWhen(true)] out string? fileName,
+            out AccountFastDownloadInfoDto? accountInfo,
+            [NotNullWhen(false)] out IResult? error)
+        {
+            response = _response;
+            fileName = _fileName;
+            accountInfo = _accountInfo;
+            error = _error;
+            return _error is null;
+        }
+    }
+
+    /// <summary>
     /// Fetches the book, or the response to send instead.
     ///
     /// The two "send to device" endpoints had this same 27-line prologue —
-    /// member key, download, two failure branches — copied between them. On
-    /// failure <paramref name="error"/> is the finished response and everything
-    /// else is null; on success it is the other way round.
+    /// member key, download, two failure branches — copied between them.
     ///
     /// Both failure bodies still carry the quota counters despite being non-2xx:
     /// a failed attempt can have consumed a slot, and the counter has to stay
     /// truthful. The browser reads it off the error.
     /// </summary>
-    public static async Task<(HttpResponseMessage? response, string? fileName, AccountFastDownloadInfoDto? accountInfo, IResult? error)>
-        DownloadForSendAsync(
-            string md5,
-            string? title,
-            AnnasArchiveDownloads anna,
-            IConfiguration cfg,
-            IDownloadTrackingService downloadTracking)
+    public static async Task<DownloadForSendResult> DownloadForSendAsync(
+        string md5,
+        string? title,
+        AnnasArchiveDownloads anna,
+        IConfiguration cfg,
+        IDownloadTrackingService downloadTracking)
     {
         var memberKey = cfg["Anna:MemberKey"]
             ?? throw new InvalidOperationException("Missing Anna:MemberKey.");
@@ -82,19 +143,19 @@ public static class AnnaDownloadHelpers
 
         if (errorMessage != null)
         {
-            return (null, null, null, Results.Json(
+            return DownloadForSendResult.Failed(Results.Json(
                 new { success = false, message = errorMessage, accountFastInfo = CurrentCounters(downloadTracking) },
                 statusCode: StatusCodeFor(failure)));
         }
 
         if (resp == null || fileName == null)
         {
-            return (null, null, null, Results.Json(
+            return DownloadForSendResult.Failed(Results.Json(
                 new { success = false, message = "Failed to download book.", accountFastInfo = CurrentCounters(downloadTracking) },
                 statusCode: StatusCodes.Status502BadGateway));
         }
 
-        return (resp, fileName, acctInfo, null);
+        return DownloadForSendResult.Downloaded(resp, fileName, acctInfo);
     }
 
     /// <summary>

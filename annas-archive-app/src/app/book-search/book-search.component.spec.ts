@@ -1,6 +1,5 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { BookSearchComponent } from './book-search.component';
-import { AnnaArchiveApiService } from '../services/anna-archive-api.service';
 import { BookSearchApiService } from '../services/book-search-api.service';
 import { AiApiService } from '../services/ai-api.service';
 import { AuthService } from '../services/auth.service';
@@ -14,7 +13,6 @@ import { HttpErrorResponse } from '@angular/common/http';
 describe('BookSearchComponent', () => {
   let component: BookSearchComponent;
   let fixture: ComponentFixture<BookSearchComponent>;
-  let mockApiService: jasmine.SpyObj<AnnaArchiveApiService>;
   let mockBookSearchApiService: jasmine.SpyObj<BookSearchApiService>;
   let mockAiApiService: jasmine.SpyObj<AiApiService>;
   let mockAuthService: jasmine.SpyObj<AuthService>;
@@ -41,15 +39,6 @@ describe('BookSearchComponent', () => {
   });
 
   beforeEach(async () => {
-    // AnnaArchiveApiService - core book operations (no AI methods)
-    mockApiService = jasmine.createSpyObj('AnnaArchiveApiService', [
-      'searchBooks',
-      'sendToLibrary',
-      'sendToBoox',
-      'sendToKindle',
-      'fetchCover'
-    ]);
-
     // AiApiService - AI-related methods
     mockAiApiService = jasmine.createSpyObj('AiApiService', [
       'suggestAuthors',
@@ -137,7 +126,6 @@ describe('BookSearchComponent', () => {
         HttpClientTestingModule
       ],
       providers: [
-        { provide: AnnaArchiveApiService, useValue: mockApiService },
         { provide: BookSearchApiService, useValue: mockBookSearchApiService },
         { provide: AiApiService, useValue: mockAiApiService },
         { provide: AuthService, useValue: mockAuthService },

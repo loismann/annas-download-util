@@ -6,10 +6,6 @@ import { tap } from 'rxjs/operators';
 import { LoggerService } from './logger.service';
 import { apiBase } from './api-base';
 
-export interface LoginRequest {
-  code: string;
-}
-
 export interface LoginResponse {
   token: string;
   name: string;

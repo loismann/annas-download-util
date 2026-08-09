@@ -22,7 +22,7 @@ import {
   BookWithCandidates,
   CandidateBook
 } from '../services/ai-api.service';
-import { AnnaArchiveApiService, DownloadProgressResponse } from '../services/anna-archive-api.service';
+import { BookSearchApiService, DownloadProgressResponse } from '../services/book-search-api.service';
 import { BookDto } from '../models/book-dto.model';
 import { firstValueFrom } from 'rxjs';
 import { LoggerService } from '../services/logger.service';
@@ -121,7 +121,7 @@ export class RelatedBooksModalComponent implements OnDestroy {
     public dialogRef: MatDialogRef<RelatedBooksModalComponent>,
     @Inject(MAT_DIALOG_DATA) public data: RelatedBooksModalData,
     private aiApi: AiApiService,
-    private annaApi: AnnaArchiveApiService,
+    private bookSearchApi: BookSearchApiService,
     private logger: LoggerService
   ) {}
 
@@ -233,7 +233,7 @@ export class RelatedBooksModalComponent implements OnDestroy {
       MATCH_SEARCH_CONCURRENCY,
       async (book): Promise<BookWithCandidates> => {
         try {
-          const searchResults = await firstValueFrom(this.annaApi.searchBooks(book.title, false));
+          const searchResults = await firstValueFrom(this.bookSearchApi.searchBooks(book.title, false));
 
           // Convert BookDto[] to CandidateBook[]
           const candidates: CandidateBook[] = (searchResults ?? []).map(result => ({
@@ -385,7 +385,7 @@ export class RelatedBooksModalComponent implements OnDestroy {
         const trySaveToLibrary = async (): Promise<boolean> => {
           try {
             const started = await firstValueFrom(
-              this.annaApi.sendToLibrary(
+              this.bookSearchApi.sendToLibrary(
                 selected.md5,
                 selected.title,
                 coverUrl,
@@ -421,19 +421,19 @@ export class RelatedBooksModalComponent implements OnDestroy {
             : `✗ Library failed: ${selected.title}`;
         } else if (action === 'dropbox') {
           await trySaveToLibrary();
-          const resp = await firstValueFrom(this.annaApi.sendToBoox(selected.md5, selected.title, coverUrl));
+          const resp = await firstValueFrom(this.bookSearchApi.sendToBoox(selected.md5, selected.title, coverUrl));
           this.sendLog[this.sendLog.length - 1] = resp?.success
             ? `✓ Sent to Dropbox: ${selected.title}`
             : `✗ Dropbox failed: ${selected.title}`;
         } else if (action === 'kindle-dad') {
           await trySaveToLibrary();
-          const resp = await firstValueFrom(this.annaApi.sendToKindle(selected.md5, selected.title, 'dad', coverUrl));
+          const resp = await firstValueFrom(this.bookSearchApi.sendToKindle(selected.md5, selected.title, 'dad', coverUrl));
           this.sendLog[this.sendLog.length - 1] = resp?.success
             ? `✓ Sent to Dad's Kindle: ${selected.title}`
             : `✗ Dad's Kindle failed: ${selected.title} - ${resp?.message || 'Unknown error'}`;
         } else {
           await trySaveToLibrary();
-          const resp = await firstValueFrom(this.annaApi.sendToKindle(selected.md5, selected.title, 'mom', coverUrl));
+          const resp = await firstValueFrom(this.bookSearchApi.sendToKindle(selected.md5, selected.title, 'mom', coverUrl));
           this.sendLog[this.sendLog.length - 1] = resp?.success
             ? `✓ Sent to Mom's Kindle: ${selected.title}`
             : `✗ Mom's Kindle failed: ${selected.title} - ${resp?.message || 'Unknown error'}`;
@@ -582,7 +582,7 @@ export class RelatedBooksModalComponent implements OnDestroy {
       return;
     }
 
-    this.annaApi.fetchCover(title, this.data.author).pipe(takeUntil(this.destroy$)).subscribe({
+    this.bookSearchApi.fetchCover(title, this.data.author).pipe(takeUntil(this.destroy$)).subscribe({
       next: (resp) => {
         if (resp?.coverUrl) {
           book.coverUrl = resp.coverUrl;
@@ -603,7 +603,7 @@ export class RelatedBooksModalComponent implements OnDestroy {
       return;
     }
 
-    this.annaApi.fetchCover(title, this.data.author).pipe(takeUntil(this.destroy$)).subscribe({
+    this.bookSearchApi.fetchCover(title, this.data.author).pipe(takeUntil(this.destroy$)).subscribe({
       next: (resp) => {
         if (resp?.coverUrl) {
           book.coverUrl = resp.coverUrl;
@@ -649,7 +649,7 @@ export class RelatedBooksModalComponent implements OnDestroy {
 
     while (true) {
       try {
-        const status = await firstValueFrom(this.annaApi.getDownloadProgress(jobId));
+        const status = await firstValueFrom(this.bookSearchApi.getDownloadProgress(jobId));
         consecutiveFailures = 0;
         this.activeDownloadPercent = status.percent;
 

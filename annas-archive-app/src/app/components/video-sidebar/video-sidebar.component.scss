@@ -115,28 +115,9 @@
   border-radius: 8px;
 }
 
-.bulk-edit-toggle {
-  width: 100%;
-  margin-bottom: 0.5rem;
-}
-
 .select-all-visible-btn {
   width: 100%;
   margin-bottom: 0.5rem;
-}
-
-.bulk-edit-controls {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.selection-counter {
-  font-weight: 600;
-  color: var(--brand);
-  font-size: 0.9rem;
-  padding: 0.5rem 0;
-  text-align: center;
 }
 
 /* View Mode Toggle */

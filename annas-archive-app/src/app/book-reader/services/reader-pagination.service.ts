@@ -3,15 +3,6 @@ import { ReaderTextUtilsService } from './reader-text-utils.service';
 import { MAX_PAGE_SIZE_WORDS, MIN_PAGE_SIZE_WORDS } from '../../constants/limits';
 
 /**
- * Configuration for page size calculation.
- */
-export interface PaginationConfig {
-  fontSize: number;
-  containerWidth: number;
-  containerHeight: number;
-}
-
-/**
  * Result of page size calculation.
  */
 export interface PageSizeResult {

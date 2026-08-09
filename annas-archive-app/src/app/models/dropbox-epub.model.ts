@@ -1,11 +1,3 @@
-export interface DropboxEpubFile {
-  id: string;
-  name: string;
-  path: string;
-  size: number;
-  serverModified: string;
-}
-
 export interface LibraryReaderBook {
   fileName: string;
   readerKey: string;

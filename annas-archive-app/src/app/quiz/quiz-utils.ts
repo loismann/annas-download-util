@@ -2,42 +2,6 @@ import { QuizMode, QuizOption, QuizQuestion, QuizQuestionType, QuizSessionQuesti
 
 export type QuizAnswer = string | string[];
 
-const DEFAULT_MODES: QuizMode[] = [
-  {
-    id: 'practice',
-    label: 'Practice',
-    questionCount: 10,
-    shuffleQuestions: true,
-    shuffleOptions: true,
-    showFeedback: true,
-    allowReview: true
-  },
-  {
-    id: 'test',
-    label: 'Test',
-    questionCount: 25,
-    shuffleQuestions: true,
-    shuffleOptions: true,
-    showFeedback: false,
-    allowReview: false,
-    timeLimitSeconds: 900
-  }
-];
-
-export function getModes(subject: QuizSubject): QuizMode[] {
-  return subject.modes && subject.modes.length > 0 ? subject.modes : DEFAULT_MODES;
-}
-
-export function getDefaultMode(): QuizMode {
-  return DEFAULT_MODES[0];
-}
-
-export function getModeById(subject: QuizSubject, modeId?: string): QuizMode {
-  const modes = getModes(subject);
-  if (!modeId) return modes[0];
-  return modes.find(mode => mode.id === modeId) ?? modes[0];
-}
-
 export function flattenQuestions(subject: QuizSubject): QuizQuestion[] {
   return subject.questionSets.flatMap(set => set.questions);
 }
@@ -56,10 +20,6 @@ export function buildSessionQuestions(subject: QuizSubject, mode: QuizMode): Qui
 export function buildOptions(question: QuizQuestion, mode: QuizMode): QuizOption[] {
   const options = question.options ? [...question.options] : defaultOptionsForType(question.type);
   return mode.shuffleOptions ? shuffleArray(options) : options;
-}
-
-export function isMultiSelect(type: QuizQuestionType): boolean {
-  return type === 'multi-select';
 }
 
 export function scoreAnswer(question: QuizQuestion, answer?: QuizAnswer): boolean {

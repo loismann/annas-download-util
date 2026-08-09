@@ -9,23 +9,28 @@ import { SEARCH_TIMEOUT_MS, LOG_SAMPLE_SIZE } from '../constants';
 import { apiBase } from './api-base';
 
 /* ─────────────── Download response shapes ──────────────── */
-export interface DownloadMemberResponse {
-  downloadUrl: string;
+export interface SendToTargetResponse {
+  success: boolean;
+  dropboxPath?: string;
+  dropboxFileId?: string;
+  /** Only the send-to-library endpoints return this: the download runs detached
+   *  from the request that started it, so the caller polls getDownloadProgress. */
+  jobId?: string;
+  message?: string;
   accountFastInfo: {
     downloadsLeft: number;
     downloadsPerDay: number;
   } | null;
 }
 
-export interface SendToTargetResponse {
-  success: boolean;
-  dropboxPath?: string;
-  dropboxFileId?: string;
-  message?: string;
-  accountFastInfo: {
-    downloadsLeft: number;
-    downloadsPerDay: number;
-  } | null;
+export interface DownloadProgressResponse {
+  jobId: string;
+  status: 'queued' | 'downloading' | 'complete' | 'error';
+  bytesDownloaded: number;
+  totalBytes: number | null;
+  percent: number | null;
+  fileName: string | null;
+  message: string | null;
 }
 
 /* ─────────────── Cover and description lookup ─────────────────────── */
@@ -152,6 +157,17 @@ export class BookSearchApiService {
       `${this.baseUrl}/book/${md5}/send-to-library`,
       null,
       { params }
+    );
+  }
+
+  /**
+   * Poll the status of a "send to library" background download (jobId comes back
+   * from sendToLibrary/sendToLibraryLibGen) — the actual download runs detached
+   * from the request that started it, since large books can take minutes.
+   */
+  getDownloadProgress(jobId: string): Observable<DownloadProgressResponse> {
+    return this.http.get<DownloadProgressResponse>(
+      `${this.apiHost}/api/library/download-progress/${jobId}`
     );
   }
 

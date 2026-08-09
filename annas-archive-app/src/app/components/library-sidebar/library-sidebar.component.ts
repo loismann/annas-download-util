@@ -8,14 +8,6 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MatIconModule } from '@angular/material/icon';
 
-export interface AdminFilters {
-  filterMissingAuthor: boolean;
-  filterMissingCover: boolean;
-  filterGenreCountEnabled: boolean;
-  filterGenreCount: number;
-  filterGenreComparison: 'less' | 'more';
-}
-
 @Component({
   selector: 'app-library-sidebar',
   standalone: true,

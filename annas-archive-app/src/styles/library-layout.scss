@@ -46,6 +46,33 @@
   letter-spacing: -0.02em;
 }
 
+/* Bulk-edit controls in the sidebar. Four sidebars (ebook, TV & movie,
+   audiobooks, video) carried byte-identical copies of these three rules; a
+   fifth copy sat in library.component.scss matching nothing, left behind when
+   the sidebar markup moved into <app-library-sidebar>.
+
+   Only those four templates use these classes, and none of them overrode a
+   value, so unlike .loading / .error / .empty-state — which several components
+   use with genuinely different rules — this cluster is safe to state once. */
+.bulk-edit-toggle {
+  width: 100%;
+  margin-bottom: 0.5rem;
+}
+
+.bulk-edit-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.selection-counter {
+  font-weight: 600;
+  color: var(--brand);
+  font-size: 0.9rem;
+  padding: 0.5rem 0;
+  text-align: center;
+}
+
 .sidebar-header p {
   margin: 6px 0 0;
   color: var(--text-muted);

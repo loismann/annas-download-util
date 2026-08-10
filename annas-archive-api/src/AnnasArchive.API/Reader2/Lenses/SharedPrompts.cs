@@ -1,20 +1,77 @@
 namespace AnnasArchive.API.Reader2.Lenses;
 
 /// <summary>
-/// Prompts no book type changes.
+/// Prompts no book type supplies.
 ///
-/// <para>Cleaning up a chapter title is the same job whether the book is Kant or
-/// Tolstoy, so it lives here with its own version constant rather than being
-/// copied into every <see cref="LensPrompts"/> — six identical strings that must
-/// be edited together is precisely the duplication the lens contract exists to
-/// avoid. It is still golden-tested; it simply is not part of that contract.</para>
+/// <para>Cleaning up a chapter title, pulling the hard words out of a passage,
+/// and writing a deep dive on one term are the same jobs whatever the book is,
+/// so they live here with their own version constant rather than being copied
+/// into every <see cref="LensPrompts"/> — six identical strings that must be
+/// edited together is precisely the duplication the lens contract exists to
+/// avoid. They are still golden-tested; they simply are not part of that
+/// contract.</para>
 ///
-/// <para>If a second lens-independent prompt ever appears, it joins it here.</para>
+/// <para><b>Lens-flavoured without being lens-supplied.</b> Vocabulary output
+/// does differ by book type — a military reading wants unit designations and
+/// ranks where a literary one wants philosophical terms — so the calls below are
+/// given the lens's public name and description as context. That is metadata the
+/// client already receives, not prompt text, so it stays out of the lens
+/// contract and out of the goldens.</para>
 /// </summary>
 public static class SharedPrompts
 {
     /// <summary>Bumped on any edit below, exactly like a lens's own version.</summary>
     public const int Version = 1;
+
+    /// <summary>Every prompt here, so the golden tests cannot miss a new one.</summary>
+    public static readonly IReadOnlyDictionary<string, string> All =
+        new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["chapterlabels"] = ChapterLabels,
+            ["sectionvocab"] = SectionVocabulary,
+            ["learnmore"] = LearnMore
+        };
+
+    /// <summary>
+    /// The story-extraction prompt, around the wording a book type supplies.
+    ///
+    /// <para><b>The JSON keys are the wire contract</b> between a lens's prompt and
+    /// <see cref="Story.StoryExtraction"/>, which parses them. Copied into each
+    /// story lens they were three statements of one fact that nothing checked, and
+    /// a lens whose list quietly lost <c>"aliasHints"</c> would simply stop
+    /// proposing aliases — no error, no failing test, just a cast list that grows
+    /// duplicates. They are written once here instead.</para>
+    ///
+    /// <para>What is <i>not</i> shared is the wording either side of it. A campaign
+    /// history and a novel mean different things by an actor, a group, an edge, and
+    /// a thread, and pretending otherwise would flatten the difference the lenses
+    /// exist to keep. Each supplies its own, and the goldens still pin the whole
+    /// composed prompt per lens.</para>
+    /// </summary>
+    /// <param name="opening">
+    /// What this book type is keeping a record of, and what it has been given.
+    /// </param>
+    /// <param name="kinds">
+    /// What an actor, a group, an edge, and a thread are here, and the forms a name
+    /// takes in this kind of book.
+    /// </param>
+    public static string StoryExtraction(string opening, string kinds) =>
+        $"""
+         {opening}
+
+         Report only what appears in the provided summaries; infer nothing beyond them.
+
+         Return a delta describing what this chapter adds, as JSON and nothing else,
+         with these keys: "newActors", "actorUpdates", "aliasHints", "newGroups",
+         "groupUpdates", "edgeChanges", "newThreads", "threadBeats". Use an empty array
+         for anything this chapter does not touch.
+
+         {kinds}
+
+         Every entry carries the chapter number it came from. Do not restate what the
+         digest already holds, do not remove anything, and do not rank, explain, or
+         editorialise.
+         """;
 
     /// <summary>
     /// Turns a spine's worth of raw headings into a usable contents list.
@@ -40,5 +97,79 @@ public static class SharedPrompts
         Do not invent content that the opening text does not support, do not
         renumber anything, and do not merge or drop a chapter. When the opening
         gives you nothing to work with, "Chapter N" is the correct answer.
+
+        Answer with one line per chapter and nothing else: the chapter's number, a
+        full stop, a space, then the title. No preamble, no blank lines, no
+        commentary. Return exactly as many lines as you were given chapters.
+        """;
+
+    /// <summary>
+    /// The hard words in one section, defined.
+    ///
+    /// <para>Terms the reader has already marked known are excluded by name in
+    /// the input rather than filtered afterwards — spending the model's words on
+    /// a definition that will be thrown away is the waste, not the definition.
+    /// </para>
+    /// </summary>
+    public const string SectionVocabulary = """
+        You are helping somebody read a difficult book. Find the words and phrases
+        in the passage that a intelligent non-specialist would not confidently
+        define, and define them.
+
+        Include:
+        - specialist and technical vocabulary
+        - ordinary words used in a technical or period sense
+        - named people, places, works, and movements that carry weight here
+        - foreign-language phrases
+
+        Leave out anything in the "Already known" list, anything a general reader
+        plainly knows, and anything the passage itself defines clearly.
+
+        One line per term and nothing else: the term exactly as it appears in the
+        passage, then " — ", then a definition of one or two sentences that says
+        what it means *in this context*. No numbering, no preamble, no commentary.
+        Twenty terms at the very most; fewer is normal and better. If the passage
+        contains nothing a reader would stumble on, answer with nothing at all.
+        """;
+
+    /// <summary>
+    /// The deep dive behind a single term. Returns HTML because it renders
+    /// straight into the reader's panel.
+    /// </summary>
+    /// <remarks>
+    /// The image rules are Reader I's, kept word for word because they were
+    /// arrived at the hard way: a hallucinated Wikimedia URL renders as a broken
+    /// image, so "skip images entirely" is the better answer whenever the model
+    /// is unsure. Cached here, unlike Reader I, which re-bills for every ask.
+    /// </remarks>
+    public const string LearnMore = """
+        You are a scholarly explainer with expertise in philosophy, critical
+        theory, literature, history, and cultural studies. Provide nuanced,
+        intellectually rich analysis that bridges academic and accessible
+        discourse.
+
+        Write 300-400 words on the term you are given, going well beyond a
+        dictionary definition. Cover its core meaning and etymology, how the
+        concept developed, how different disciplines understand it, the thinkers
+        and works associated with it, how it is used in popular versus academic
+        discourse, the misconceptions and debates around it, and where it bears on
+        anything current.
+
+        Answer as concise HTML: paragraphs, <ul>, <strong>. Structure it as a rich
+        overview paragraph of two or three sentences, then a bullet list, then a
+        "Resources" section of authoritative links as plain <a href="...">text</a>.
+
+        IMAGE RULES (strict):
+        - Prefer upload.wikimedia.org or commons.wikimedia.org; use fully-qualified
+          HTTPS URLs with underscores instead of spaces.
+        - Do NOT include an image unless you are confident the URL exists and is
+          directly fetchable, ending in .jpg, .jpeg, or .png.
+        - If unsure about a URL, skip images entirely. A broken image is worse than
+          no image.
+        - No base64, and no relative URLs.
+
+        After the text, if and only if you have images you are sure of, add a line
+        reading "Images:" followed by an <img src="..." alt="..." loading="lazy" />
+        for each. Two or three at most.
         """;
 }

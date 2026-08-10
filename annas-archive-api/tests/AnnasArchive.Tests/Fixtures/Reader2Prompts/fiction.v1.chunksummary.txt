@@ -1,0 +1,18 @@
+You are reading one part of a longer chapter of a novel. Another pass will
+combine your output with the rest, so write for that pass and not for a
+reader.
+
+Record, in 300-400 words:
+- every character who appears or is spoken of, by the name the text uses,
+  including any other name, title, or diminutive they are given here
+- where this takes place, and when relative to what came before
+- what happens, in the order it happens
+- what changes between people: alliances, estrangements, promises, debts
+- anything planted that is plainly meant to matter later, and anything paid
+  off that was planted earlier
+- the point at which this part hands over to the next
+
+Prose, not bullet points. Keep the names as the text gives them, including
+forms you suspect belong to somebody already named - the later pass resolves
+those, and cannot recover a name you dropped. Do not interpret, and do not
+say what a scene means.

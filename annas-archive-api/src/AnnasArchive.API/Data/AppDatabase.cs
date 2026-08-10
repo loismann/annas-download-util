@@ -231,8 +231,20 @@ public class AppDatabase
                 label       TEXT,
                 created_at  TEXT    NOT NULL
             );
-            CREATE INDEX IF NOT EXISTS ix_r2_bookmark_book_user
-                ON r2_bookmark(book_id, user_id);
+            -- Unique on the position, not merely indexed: marking a page is a
+            -- toggle, and two rows for one page would render the same place twice
+            -- in the bookmark bar. Enforced here so two devices pressing it at
+            -- once cannot both insert, which a read-then-insert would allow.
+            --
+            -- A new name, and the old index dropped, rather than redefining
+            -- ix_r2_bookmark_book_user in place: CREATE ... IF NOT EXISTS matches
+            -- on name alone, so reusing it would silently no-op on a database that
+            -- already has the non-unique version and leave the ON CONFLICT clause
+            -- in BookmarkStore with nothing to match. (book_id, user_id) is this
+            -- index's leftmost prefix, so it also serves the per-reader listing.
+            DROP INDEX IF EXISTS ix_r2_bookmark_book_user;
+            CREATE UNIQUE INDEX IF NOT EXISTS ux_r2_bookmark_position
+                ON r2_bookmark(book_id, user_id, chapter, word_offset);
 
             CREATE TABLE IF NOT EXISTS r2_reading_preferences (
                 user_id     TEXT PRIMARY KEY,

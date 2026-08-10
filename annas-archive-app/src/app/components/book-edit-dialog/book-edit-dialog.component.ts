@@ -12,6 +12,7 @@ import { MatChipsModule } from '@angular/material/chips';
 import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
+import { MatMenuModule } from '@angular/material/menu';
 import { COMMA, ENTER } from '@angular/cdk/keycodes';
 import { MatChipInputEvent } from '@angular/material/chips';
 import { Router } from '@angular/router';
@@ -25,6 +26,8 @@ import { FavoriteToggleComponent } from '../shared/favorite-toggle/favorite-togg
 import { OwnerPickerComponent } from '../shared/owner-picker/owner-picker.component';
 import { GenreChipsEditorComponent } from '../shared/genre-chips-editor/genre-chips-editor.component';
 import { BOOK_OWNER_OPTIONS, BOOK_OWNER_TAGS } from '../../constants/owners';
+import { Reader2ApiService } from '../../reader2/services/reader2-api.service';
+import { Lens } from '../../reader2/reader2.models';
 
 export interface BookEditDialogData {
   title: string;
@@ -66,6 +69,7 @@ export interface BookEditDialogResult {
     MatIconModule,
     MatButtonModule,
     MatProgressSpinnerModule,
+    MatMenuModule,
     MatDividerModule,
     FavoriteToggleComponent,
     OwnerPickerComponent,
@@ -102,6 +106,11 @@ export class BookEditDialogComponent implements OnInit, OnDestroy {
   dropboxState: 'idle' | 'sending' | 'success' | 'error' = 'idle';
   readerState: 'idle' | 'sending' | 'success' | 'error' = 'idle';
 
+  // Reader II. Its own state because the two readers coexist until Reader I is
+  // retired, and a shared flag would make "which one am I adding to" ambiguous.
+  reader2Lenses: Lens[] = [];
+  reader2State: 'idle' | 'loading' | 'sending' | 'error' = 'idle';
+
   // Summary state
   summary: string | null = null;
   summaryLoading = false;
@@ -114,7 +123,8 @@ export class BookEditDialogComponent implements OnInit, OnDestroy {
     private router: Router,
     private logger: LoggerService,
     private dialog: MatDialog,
-    private authService: AuthService
+    private authService: AuthService,
+    private reader2: Reader2ApiService
   ) {
     const fromLibrary = (data.availableGenres ?? []).filter(Boolean);
     // Filter out owner tags from genres list
@@ -473,6 +483,15 @@ export class BookEditDialogComponent implements OnInit, OnDestroy {
     });
   }
 
+  /**
+   * Which reader this person's buttons point at. One control each while both
+   * readers exist: the admin enrols into Reader II, everyone else keeps the
+   * original, and nobody sees a button for a reader that is not theirs.
+   */
+  get usesReader2(): boolean {
+    return this.authService.isAdmin();
+  }
+
   readerAction(): void {
     if (this.data.readerEnabled || this.readerState === 'success') {
       this.viewInReader();
@@ -485,6 +504,56 @@ export class BookEditDialogComponent implements OnInit, OnDestroy {
     this.dialogRef.close();
     this.router.navigate(['/reader'], {
       queryParams: { fileName: this.data.fileName }
+    });
+  }
+
+  /**
+   * The book types Reader II offers, fetched the first time the menu is opened.
+   *
+   * <p>Never a hard-coded list: the whole point of the lens registry is that a
+   * fourth book type costs one class on the server and nothing here. Loaded
+   * lazily so opening this dialog to change a genre costs no request.</p>
+   */
+  loadReader2Lenses(): void {
+    if (this.reader2Lenses.length > 0 || this.reader2State === 'loading') {
+      return;
+    }
+
+    this.reader2State = 'loading';
+    this.reader2.lenses().pipe(takeUntil(this.destroy$)).subscribe({
+      next: (lenses) => {
+        this.reader2Lenses = lenses;
+        this.reader2State = 'idle';
+      },
+      error: () => {
+        this.reader2State = 'error';
+      }
+    });
+  }
+
+  /**
+   * Enrols the book under a chosen type and opens it.
+   *
+   * <p>Enrolment is an upsert keyed by content hash, so adding a book that is
+   * already on the shelf is safe and keeps the type it is already being read
+   * under — the server will not silently revert a book from Fiction to the
+   * default because it was added twice.</p>
+   */
+  addToReader2(lensKey: string): void {
+    if (!this.data.fileName || this.reader2State === 'sending') {
+      return;
+    }
+
+    this.reader2State = 'sending';
+    this.reader2.enrol(this.data.fileName, lensKey).pipe(takeUntil(this.destroy$)).subscribe({
+      next: (book) => {
+        this.reader2State = 'idle';
+        this.dialogRef.close();
+        this.router.navigate(['/reader2'], { queryParams: { book: book.bookId } });
+      },
+      error: () => {
+        this.reader2State = 'error';
+      }
     });
   }
 

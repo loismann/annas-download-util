@@ -1,0 +1,159 @@
+:host {
+  display: block;
+}
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+.tiers {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.tier {
+  border: 1px solid var(--reader2-border, #d0d0d0);
+  background: transparent;
+  border-radius: 999px;
+  padding: 0.15rem 0.65rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+
+  &.on {
+    background: var(--reader2-accent-soft, #e8effa);
+    border-color: var(--reader2-accent, #3b6ea5);
+  }
+}
+
+.pick select {
+  border: 1px solid var(--reader2-border, #d0d0d0);
+  border-radius: 999px;
+  padding: 0.15rem 0.5rem;
+  font-size: 0.8rem;
+  background: transparent;
+  max-width: 12rem;
+}
+
+.hidden-note,
+.empty {
+  font-size: 0.82rem;
+  opacity: 0.75;
+  margin: 0 0 0.5rem;
+}
+
+.link {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--reader2-accent, #3b6ea5);
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.cast {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.actor + .actor {
+  border-top: 1px solid var(--reader2-border, #ececec);
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas: 'name tier' 'role tier';
+  gap: 0 0.5rem;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: none;
+  padding: 0.5rem 0.25rem;
+  cursor: pointer;
+  font: inherit;
+
+  &:hover {
+    background: var(--reader2-hover, rgb(0 0 0 / 4%));
+  }
+}
+
+.name {
+  grid-area: name;
+  font-weight: 600;
+}
+
+.aliases {
+  font-weight: 400;
+  font-size: 0.78rem;
+  opacity: 0.7;
+}
+
+.role {
+  grid-area: role;
+  font-size: 0.8rem;
+  opacity: 0.8;
+}
+
+.tier-badge {
+  grid-area: tier;
+  align-self: center;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.1rem 0.4rem;
+  border-radius: 3px;
+  background: var(--reader2-hover, rgb(0 0 0 / 6%));
+
+  &.t-major {
+    background: var(--reader2-accent-soft, #e8effa);
+  }
+
+  &.t-mentioned {
+    opacity: 0.55;
+  }
+}
+
+.dossier {
+  padding: 0 0.25rem 0.6rem;
+  font-size: 0.85rem;
+
+  p {
+    margin: 0 0 0.4rem;
+  }
+}
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.15rem 0.75rem;
+  font-size: 0.78rem;
+  opacity: 0.7;
+}
+
+.arc {
+  margin: 0.35rem 0 0;
+  padding-left: 1.1rem;
+
+  li {
+    margin-bottom: 0.15rem;
+  }
+}
+
+.at {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.7;
+  margin-right: 0.3rem;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}

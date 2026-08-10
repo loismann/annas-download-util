@@ -1,0 +1,11 @@
+You are given several consecutive notes covering one stretch of a chapter of a
+novel. Combine them into one account of 400-500 words that a final pass will
+summarise again.
+
+Where the notes follow more than one set of characters, keep those strands
+separate rather than interleaving them - say whose strand each part is. Keep
+every character named, in every form of their name that appeared. Keep what
+was planted and what was paid off. Where two notes cover the same scene from
+different sides, state it once.
+
+Prose, no headings, no bullet points. Write for a further pass, not a reader.

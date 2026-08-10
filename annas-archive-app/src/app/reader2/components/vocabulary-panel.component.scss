@@ -1,0 +1,44 @@
+:host { display: flex; flex-direction: column; gap: 0.6rem; min-height: 0; overflow-y: auto; }
+
+.controls { display: flex; align-items: center; gap: 0.35rem; }
+.controls button {
+  display: inline-flex; align-items: center; gap: 0.3rem;
+  padding: 0.3rem 0.6rem; border: 1px solid rgba(127, 127, 127, 0.35);
+  border-radius: 0.35rem; background: none; cursor: pointer; font: inherit; color: inherit;
+}
+.controls button:disabled { opacity: 0.4; cursor: default; }
+.regenerate { border: 0 !important; opacity: 0.6; padding: 0.2rem !important; }
+.regenerate:hover { opacity: 1; }
+
+.found { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; }
+.term { display: flex; align-items: baseline; justify-content: space-between; gap: 0.5rem; }
+.meaning { margin: 0.1rem 0 0; opacity: 0.8; font-size: 0.9em; line-height: 1.5; }
+
+.actions { display: inline-flex; gap: 0.1rem; }
+.actions button, .filed li button, .dive header button, .clear {
+  display: inline-flex; border: 0; background: none; cursor: pointer;
+  color: inherit; opacity: 0.55; padding: 0.15rem;
+}
+.actions button:hover, .filed li button:hover, .dive header button:hover, .clear:hover { opacity: 1; }
+
+.dive {
+  border: 1px solid rgba(127, 127, 127, 0.35); border-radius: 0.35rem; padding: 0.6rem;
+}
+.dive header { display: flex; align-items: center; justify-content: space-between; }
+.dive h3 { margin: 0; font-size: 0.95rem; }
+.dive-body { font-size: 0.9em; line-height: 1.6; }
+.dive-body img { max-width: 100%; height: auto; border-radius: 0.25rem; }
+
+.filed summary { cursor: pointer; display: flex; align-items: center; gap: 0.4rem; padding: 0.25rem 0; }
+.filed ul { list-style: none; margin: 0; padding: 0 0 0 0.75rem; }
+.filed li { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+.count { opacity: 0.55; font-variant-numeric: tabular-nums; }
+
+.idle { opacity: 0.6; }
+
+.forget-book {
+  display: inline-flex; align-items: center; gap: 0.3rem; align-self: flex-start;
+  border: 0; background: none; cursor: pointer; color: inherit; opacity: 0.55;
+  font: inherit; font-size: 0.8em; padding: 0.2rem 0;
+}
+.forget-book:hover { opacity: 1; }

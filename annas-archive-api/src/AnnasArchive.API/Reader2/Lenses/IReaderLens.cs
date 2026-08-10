@@ -1,39 +1,6 @@
 namespace AnnasArchive.API.Reader2.Lenses;
 
 /// <summary>
-/// The prompts a lens must supply, named so a golden file can pin each one
-/// individually.
-///
-/// <para>An enum rather than seven hand-listed properties at every call site:
-/// validation, the golden tests, and the registry all iterate tiers, so adding
-/// an eighth tier later means touching the lenses that must change and nothing
-/// else.</para>
-/// </summary>
-public enum PromptTier
-{
-    /// <summary>A reader-selected passage, explained.</summary>
-    PassageAnalysis,
-
-    /// <summary>Tier 1 — one chunk, written to be synthesised rather than read.</summary>
-    ChunkSummary,
-
-    /// <summary>Tier 2 — a group of chunks, written to be summarised again.</summary>
-    SectionSynthesis,
-
-    /// <summary>Tier 3 — the only tier a person reads.</summary>
-    ChapterSummary,
-
-    /// <summary>A standalone, on-demand summary of one section.</summary>
-    SectionSummary,
-
-    /// <summary>The plain-language retelling. Named for the reader, not the code.</summary>
-    ExplainSimply,
-
-    /// <summary>Story-model extraction. Absent unless the lens builds one.</summary>
-    StoryExtraction
-}
-
-/// <summary>
 /// One lens's complete prompt ladder.
 ///
 /// <para>The three summary tiers are tuned as one: chunks are written to be
@@ -51,23 +18,21 @@ public sealed record LensPrompts(
     string ExplainSimply,
     string? StoryExtraction = null)
 {
-    /// <summary>Every tier a lens must fill in, whatever else it does.</summary>
-    public static readonly IReadOnlyList<PromptTier> RequiredTiers =
-        Enum.GetValues<PromptTier>().Where(t => t != PromptTier.StoryExtraction).ToArray();
-
-    public static readonly IReadOnlyList<PromptTier> AllTiers = Enum.GetValues<PromptTier>();
-
-    /// <summary>The prompt for a tier, or null for an unfilled optional one.</summary>
-    public string? this[PromptTier tier] => tier switch
+    /// <summary>
+    /// The wording for one call, or null — for the optional story prompt, and
+    /// for the two kinds no lens owns (see <see cref="CallKinds.Lens"/>).
+    /// </summary>
+    public string? this[CallKind kind] => kind switch
     {
-        PromptTier.PassageAnalysis => PassageAnalysis,
-        PromptTier.ChunkSummary => ChunkSummary,
-        PromptTier.SectionSynthesis => SectionSynthesis,
-        PromptTier.ChapterSummary => ChapterSummary,
-        PromptTier.SectionSummary => SectionSummary,
-        PromptTier.ExplainSimply => ExplainSimply,
-        PromptTier.StoryExtraction => StoryExtraction,
-        _ => throw new ArgumentOutOfRangeException(nameof(tier), tier, "Unmapped prompt tier.")
+        CallKind.PassageAnalysis => PassageAnalysis,
+        CallKind.ChunkSummary => ChunkSummary,
+        CallKind.SectionSynthesis => SectionSynthesis,
+        CallKind.ChapterSummary => ChapterSummary,
+        CallKind.SectionSummary => SectionSummary,
+        CallKind.ExplainSimply => ExplainSimply,
+        CallKind.StoryExtraction => StoryExtraction,
+        CallKind.ChapterLabels or CallKind.LearnMore or CallKind.SectionVocab => null,
+        _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unmapped call kind.")
     };
 }
 

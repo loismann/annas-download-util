@@ -12,7 +12,16 @@ namespace AnnasArchive.API.Reader2.Domain;
 /// enforces that, because a second place that decides which book this is, is
 /// exactly how Reader I ended up with twelve path builders.</para>
 /// </summary>
-public sealed record ReaderContext(EnrolledBook Book, IReaderLens Lens, string UserId)
+/// <param name="Http">
+/// Carried because the shared AI services need it and nothing else will do: the
+/// completion client bills the signed-in user against it, and
+/// <c>TokenLimitHelpers.CheckTokenLimit</c> reads their allowance from it.
+/// Passed explicitly rather than through an <c>IHttpContextAccessor</c> so the
+/// dependency is visible in the signature and the pipeline stays testable with a
+/// <c>DefaultHttpContext</c>. Nothing below the pipeline may read anything else
+/// from it — identity is <see cref="UserId"/>.
+/// </param>
+public sealed record ReaderContext(EnrolledBook Book, IReaderLens Lens, string UserId, HttpContext Http)
 {
     public BookRef Ref => Book.Book;
 }
@@ -66,7 +75,7 @@ public sealed class ReaderContextResolver(IBookRegistry books, ILensRegistry len
         // serve artifacts generated under one reading as though they belonged to
         // another, so this is an error the reader is told about.
         return lenses.TryGet(enrolled.LensKey, out var lens)
-            ? ReaderContextResult.Ok(new ReaderContext(enrolled, lens, userId))
+            ? ReaderContextResult.Ok(new ReaderContext(enrolled, lens, userId, http))
             : ReaderContextResult.Failed(ReaderContextFailure.UnknownLens);
     }
 }

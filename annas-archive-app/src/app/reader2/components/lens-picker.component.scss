@@ -1,0 +1,13 @@
+.lenses { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+
+.lens {
+  display: inline-flex; align-items: center; gap: 0.35rem;
+  padding: 0.35rem 0.75rem; border-radius: 999px; cursor: pointer;
+  border: 1px solid rgba(127, 127, 127, 0.45); background: none;
+  font: inherit; color: inherit;
+}
+.lens:hover:not(:disabled) { background: rgba(127, 127, 127, 0.12); }
+.lens.selected { border-color: currentColor; font-weight: 600; }
+.lens:disabled { opacity: 0.5; cursor: default; }
+
+mat-icon { font-size: 1.1rem; width: 1.1rem; height: 1.1rem; }

@@ -1,3 +1,4 @@
+using AnnasArchive.API.Reader2.Ai;
 using AnnasArchive.API.Reader2.Domain;
 using AnnasArchive.API.Reader2.Lenses;
 
@@ -15,10 +16,13 @@ public static class Reader2Endpoints
 
     public static WebApplication MapReader2Endpoints(this WebApplication app)
     {
-        // Resolved here, at startup, purely for its side effect: LensRegistry
-        // validates every registered lens in its constructor, and a bad
-        // registration must fail the deploy rather than a reader's first click.
+        // Resolved here, at startup, for their side effects. LensRegistry validates
+        // every registered lens in its constructor; Reader2Options.Validate rejects
+        // a budget of zero or a temperature set alongside a reasoning effort. Both
+        // must fail the deploy rather than a reader's first click — Reader I shipped
+        // a token budget nothing read for months precisely because nothing checked.
         app.Services.GetRequiredService<ILensRegistry>();
+        app.Services.GetRequiredService<Reader2Options>().Validate();
 
         var group = app.MapGroup(RoutePrefix)
             .RequireAuthorization()
@@ -26,6 +30,11 @@ public static class Reader2Endpoints
 
         group.MapLensRoutes();
         group.MapBookRoutes();
+        group.MapChapterRoutes();
+        group.MapAiRoutes();
+        group.MapReadingRoutes();
+        group.MapVocabularyRoutes();
+        group.MapStoryRoutes();
 
         return app;
     }

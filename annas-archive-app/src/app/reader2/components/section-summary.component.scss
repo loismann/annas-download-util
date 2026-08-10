@@ -1,0 +1,25 @@
+:host { display: flex; flex-direction: column; gap: 0.75rem; min-height: 0; }
+
+.sections { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+
+.section {
+  display: inline-flex; align-items: center; gap: 0.3rem;
+  padding: 0.25rem 0.6rem; border: 1px solid rgba(127, 127, 127, 0.35);
+  border-radius: 999px; background: none; cursor: pointer; font: inherit; color: inherit;
+}
+.section:hover { background: rgba(127, 127, 127, 0.12); }
+.section.current { border-color: currentColor; font-weight: 600; }
+.here-marker { opacity: 0.7; }
+
+.summary { display: flex; flex-direction: column; gap: 0.5rem; overflow-y: auto; min-height: 0; }
+.summary header { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+.summary h3 { margin: 0; font-size: 0.95rem; }
+
+.regenerate {
+  border: 0; background: none; cursor: pointer; color: inherit; opacity: 0.6;
+  display: inline-flex; padding: 0.15rem;
+}
+.regenerate:hover { opacity: 1; }
+
+.prose { white-space: pre-wrap; line-height: 1.6; }
+.idle, .empty { opacity: 0.6; }

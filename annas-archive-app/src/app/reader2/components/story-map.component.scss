@@ -1,0 +1,46 @@
+:host {
+  display: block;
+}
+
+.empty {
+  font-size: 0.82rem;
+  opacity: 0.75;
+}
+
+.scroll {
+  overflow-x: auto;
+}
+
+svg {
+  display: block;
+}
+
+line {
+  stroke: var(--reader2-accent, #3b6ea5);
+  stroke-width: 1.5;
+
+  // Lateral ties are not command: dashed, and never mistakable for the tree.
+  &.lateral {
+    stroke: var(--reader2-warn, #c99a2e);
+    stroke-dasharray: 4 3;
+  }
+}
+
+circle {
+  fill: var(--reader2-surface, #fff);
+  stroke: var(--reader2-accent, #3b6ea5);
+  stroke-width: 1.5;
+}
+
+.who {
+  font-size: 11px;
+  text-anchor: middle;
+  fill: currentcolor;
+}
+
+.tie {
+  font-size: 9px;
+  text-anchor: middle;
+  fill: currentcolor;
+  opacity: 0.6;
+}

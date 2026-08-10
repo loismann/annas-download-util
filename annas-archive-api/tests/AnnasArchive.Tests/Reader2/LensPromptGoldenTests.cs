@@ -26,24 +26,25 @@ public class LensPromptGoldenTests
     /// to prove a lens can be added without touching production, and pinning its
     /// wording here would make it the exception that disproves that.
     /// </summary>
-    public static TheoryData<string> ProductionLenses() => new() { "literary" };
+    public static TheoryData<string> ProductionLenses() => new() { "literary", "military", "fiction" };
 
-    private static readonly IReadOnlyList<IReaderLens> Lenses = [new LiteraryLens()];
+    private static readonly IReadOnlyList<IReaderLens> Lenses =
+        [new LiteraryLens(), new MilitaryLens(), new FictionLens()];
 
     private static readonly string GoldenDirectory =
         Path.Combine(AppContext.BaseDirectory, "Fixtures", "Reader2Prompts");
 
     private static IReaderLens Lens(string key) => Lenses.Single(l => l.Key == key);
 
-    private static string PathFor(string key, int version, PromptTier tier) =>
+    private static string PathFor(string key, int version, CallKind tier) =>
         Path.Combine(GoldenDirectory, $"{key}.v{version}.{Tier(tier)}.txt");
 
-    private static string Tier(PromptTier tier) => tier.ToString().ToLowerInvariant();
+    private static string Tier(CallKind tier) => tier.ToString().ToLowerInvariant();
 
     /// <summary>Newlines only, so a checkout on another platform does not "change" a prompt.</summary>
     private static string Normalize(string text) => text.Replace("\r\n", "\n").TrimEnd();
 
-    private static string ReadGolden(string key, int version, PromptTier tier)
+    private static string ReadGolden(string key, int version, CallKind tier)
     {
         var path = PathFor(key, version, tier);
 
@@ -54,13 +55,30 @@ public class LensPromptGoldenTests
         return Normalize(File.ReadAllText(path));
     }
 
+    /// <summary>
+    /// The list above is written by hand, so it can be forgotten. This is what
+    /// stops a fourth book type shipping with no prompt pinned at all — every
+    /// lens the API assembly defines has to appear here.
+    /// </summary>
+    [Fact]
+    public void Every_lens_the_api_ships_is_pinned_here()
+    {
+        var shipped = typeof(LiteraryLens).Assembly.GetTypes()
+            .Where(t => t is { IsClass: true, IsAbstract: false } && typeof(IReaderLens).IsAssignableFrom(t))
+            .Select(t => ((IReaderLens)Activator.CreateInstance(t)!).Key);
+
+        Lenses.Select(l => l.Key).Should().BeEquivalentTo(shipped,
+            "a lens with no golden file is a prompt that can be edited without its "
+            + "version moving, which is the one thing this file exists to prevent");
+    }
+
     [Theory]
     [MemberData(nameof(ProductionLenses))]
     public void Every_prompt_matches_the_golden_for_its_current_version(string key)
     {
         var lens = Lens(key);
 
-        foreach (var tier in LensPrompts.AllTiers)
+        foreach (var tier in CallKinds.Lens)
         {
             var prompt = lens.Prompts[tier];
             if (prompt is null) continue;
@@ -83,7 +101,7 @@ public class LensPromptGoldenTests
         var lens = Lens(key);
 
         for (var version = 1; version <= lens.PromptVersion; version++)
-            foreach (var tier in LensPrompts.RequiredTiers)
+            foreach (var tier in CallKinds.RequiredOfEveryLens)
                 File.Exists(PathFor(key, version, tier)).Should().BeTrue(
                     $"{key} v{version} {tier} must be kept — the version history is what makes "
                     + "a stale artifact detectable");
@@ -98,8 +116,8 @@ public class LensPromptGoldenTests
 
         for (var version = 2; version <= lens.PromptVersion; version++)
         {
-            var previous = LensPrompts.RequiredTiers.Select(t => ReadGolden(key, version - 1, t));
-            var current = LensPrompts.RequiredTiers.Select(t => ReadGolden(key, version, t));
+            var previous = CallKinds.RequiredOfEveryLens.Select(t => ReadGolden(key, version - 1, t));
+            var current = CallKinds.RequiredOfEveryLens.Select(t => ReadGolden(key, version, t));
 
             current.Should().NotEqual(previous,
                 $"{key} v{version} is word for word v{version - 1}; a bump with no edit makes "
@@ -116,10 +134,30 @@ public class LensPromptGoldenTests
     [Fact]
     public void Shared_prompts_match_the_golden_for_their_current_version()
     {
-        var path = Path.Combine(GoldenDirectory, $"shared.v{SharedPrompts.Version}.chapterlabels.txt");
+        SharedPrompts.All.Should().NotBeEmpty();
 
-        File.Exists(path).Should().BeTrue($"golden {Path.GetFileName(path)} must exist");
-        Normalize(SharedPrompts.ChapterLabels).Should().Be(Normalize(File.ReadAllText(path)));
+        foreach (var (name, prompt) in SharedPrompts.All)
+        {
+            var path = Path.Combine(GoldenDirectory, $"shared.v{SharedPrompts.Version}.{name}.txt");
+
+            File.Exists(path).Should().BeTrue($"golden {Path.GetFileName(path)} must exist");
+            Normalize(prompt).Should().Be(Normalize(File.ReadAllText(path)), $"shared {name} changed");
+        }
+    }
+
+    /// <summary>
+    /// The image rules came from Reader I the hard way — a hallucinated Wikimedia
+    /// URL renders as a broken image — so they are pinned by content, not just by
+    /// hash, and a well-meaning edit that softens them fails here.
+    /// </summary>
+    [Fact]
+    public void The_deep_dive_keeps_reader_ones_strict_image_rules()
+    {
+        SharedPrompts.LearnMore.Should()
+            .Contain("upload.wikimedia.org")
+            .And.Contain("fully-qualified")
+            .And.Contain("skip images entirely")
+            .And.Contain("No base64");
     }
 
     /// <summary>
@@ -134,7 +172,7 @@ public class LensPromptGoldenTests
             var served = System.Text.Json.JsonSerializer.Serialize(
                 AnnasArchive.API.Reader2.Endpoints.LensResponse.From(lens, isDefault: false));
 
-            foreach (var tier in LensPrompts.AllTiers)
+            foreach (var tier in CallKinds.Lens)
             {
                 var prompt = lens.Prompts[tier];
                 if (prompt is null) continue;
@@ -154,7 +192,7 @@ public class LensPromptGoldenTests
     public void No_prompt_contains_an_interpolation_hole_for_book_text()
     {
         foreach (var lens in Lenses)
-            foreach (var tier in LensPrompts.AllTiers)
+            foreach (var tier in CallKinds.Lens)
                 if (lens.Prompts[tier] is { } prompt)
                     prompt.Should().NotMatchRegex(
                         @"\{[A-Za-z_]", $"{lens.Key}'s {tier} prompt looks like a template");

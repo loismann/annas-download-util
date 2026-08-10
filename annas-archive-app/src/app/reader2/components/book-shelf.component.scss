@@ -1,0 +1,32 @@
+:host { display: block; min-height: 0; overflow-y: auto; }
+
+.shelf { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.shelf li { display: flex; align-items: flex-start; gap: 0.25rem; }
+
+.book {
+  display: flex; flex-direction: column; gap: 0.1rem; flex: 1; text-align: left;
+  padding: 0.5rem 0.6rem; border: 0; border-left: 3px solid transparent;
+  background: none; cursor: pointer; font: inherit; color: inherit;
+}
+.book:hover:not(:disabled) { background: rgba(127, 127, 127, 0.12); }
+.book:disabled { cursor: default; }
+.book.current { border-left-color: currentColor; font-weight: 600; }
+
+.title { font-size: 0.95em; }
+.authors { opacity: 0.65; font-size: 0.8em; }
+.type { opacity: 0.5; font-size: 0.75em; text-transform: uppercase; letter-spacing: 0.04em; }
+
+.unavailable .book { opacity: 0.5; }
+.missing {
+  display: inline-flex; align-items: center; gap: 0.25rem;
+  font-size: 0.75em; opacity: 0.9;
+}
+.missing mat-icon { font-size: 1em; width: 1em; height: 1em; }
+
+.remove {
+  display: inline-flex; border: 0; background: none; cursor: pointer;
+  color: inherit; opacity: 0.4; padding: 0.5rem 0.3rem;
+}
+.remove:hover { opacity: 1; }
+
+.empty { opacity: 0.6; padding: 0.75rem; }

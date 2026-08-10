@@ -7,6 +7,8 @@ import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { of, throwError } from 'rxjs';
 import { BrowserAnimationsModule } from '@angular/platform-browser/animations';
+import { Reader2ApiService } from '../../reader2/services/reader2-api.service';
+import { Book, Lens } from '../../reader2/reader2.models';
 
 describe('BookEditDialogComponent', () => {
   let component: BookEditDialogComponent;
@@ -14,6 +16,7 @@ describe('BookEditDialogComponent', () => {
   let mockDialogRef: jasmine.SpyObj<MatDialogRef<BookEditDialogComponent>>;
   let mockLibraryApiService: jasmine.SpyObj<LibraryApiService>;
   let mockRouter: jasmine.SpyObj<Router>;
+  let mockReader2: jasmine.SpyObj<Reader2ApiService>;
 
   const testDialogData: BookEditDialogData = {
     title: 'Test Book',
@@ -29,6 +32,20 @@ describe('BookEditDialogComponent', () => {
     readerEnabled: false
   };
 
+  /** Deliberately not 'literary' — nothing here may assume a particular type. */
+  const READER2_LENSES: Lens[] = [
+    { key: 'ideas-key', displayName: 'Ideas', description: 'the ideas reading', icon: 'psychology',
+      sortOrder: 0, isDefault: true, buildsStoryModel: false, storyVocabulary: null },
+    { key: 'naval-history', displayName: 'Naval History', description: 'ships', icon: 'sailing',
+      sortOrder: 1, isDefault: false, buildsStoryModel: true, storyVocabulary: null }
+  ];
+
+  const READER2_BOOK: Book = {
+    bookId: '0123456789abcdef', fileName: 'test-book.epub', title: 'Test Book',
+    authors: ['Test Author'], lensKey: 'naval-history', addedAtUtc: '',
+    lastOpenedAtUtc: null, isAvailable: true
+  };
+
   beforeEach(async () => {
     mockDialogRef = jasmine.createSpyObj('MatDialogRef', ['close']);
     mockLibraryApiService = jasmine.createSpyObj('LibraryApiService', [
@@ -40,13 +57,20 @@ describe('BookEditDialogComponent', () => {
     mockLibraryApiService.getLibraryBookSummary.and.returnValue(of({ summary: null, source: null }));
     mockRouter = jasmine.createSpyObj('Router', ['navigate']);
 
+    mockReader2 = jasmine.createSpyObj<Reader2ApiService>('Reader2ApiService', ['lenses', 'enrol']);
+    mockReader2.lenses.and.returnValue(of(READER2_LENSES));
+    mockReader2.enrol.and.returnValue(of(READER2_BOOK));
+
     await TestBed.configureTestingModule({
       imports: [BookEditDialogComponent, BrowserAnimationsModule],
       providers: [
         { provide: MatDialogRef, useValue: mockDialogRef },
-        { provide: MAT_DIALOG_DATA, useValue: testDialogData },
+        // A fresh copy per test: component.data *is* this object, so a test that
+        // writes to it would otherwise leak into every test that follows.
+        { provide: MAT_DIALOG_DATA, useValue: structuredClone(testDialogData) },
         { provide: LibraryApiService, useValue: mockLibraryApiService },
         { provide: Router, useValue: mockRouter },
+        { provide: Reader2ApiService, useValue: mockReader2 },
         // AuthService -> HttpClient.
         provideHttpClient(),
         provideHttpClientTesting()
@@ -216,7 +240,8 @@ describe('BookEditDialogComponent', () => {
         mockRouter,
         { log: () => {}, error: () => {}, warn: () => {} } as any, // mock logger
         mockDialog,
-        { getOwnerName: () => null } as any // mock auth
+        { getOwnerName: () => null } as any, // mock auth
+        mockReader2
       );
 
       expect(testComponent.selectedOwners).toEqual(new Set(["Dad's Books", "Mom's Books"]));
@@ -419,6 +444,71 @@ describe('BookEditDialogComponent', () => {
       // Assert
       expect(component.deleteConfirmPending).toBe(false);
       expect(mockDialogRef.close).not.toHaveBeenCalled();
+    });
+  });
+  describe('adding a book to Reader II', () => {
+    it('asks the server for the book types rather than listing its own', () => {
+      component.loadReader2Lenses();
+
+      expect(mockReader2.lenses).toHaveBeenCalled();
+      expect(component.reader2Lenses.map(l => l.key)).toEqual(['ideas-key', 'naval-history']);
+    });
+
+    /** Opening this dialog to change a genre must not cost a request. */
+    it('fetches the book types only once, however often the menu is opened', () => {
+      component.loadReader2Lenses();
+      component.loadReader2Lenses();
+
+      expect(mockReader2.lenses).toHaveBeenCalledTimes(1);
+    });
+
+    it('reports a failure to load the types instead of showing an empty menu', () => {
+      mockReader2.lenses.and.returnValue(throwError(() => new Error('offline')));
+
+      component.loadReader2Lenses();
+
+      expect(component.reader2State).toBe('error');
+      expect(component.reader2Lenses).toEqual([]);
+    });
+
+    it('enrols the file under the type that was chosen', () => {
+      component.addToReader2('naval-history');
+
+      expect(mockReader2.enrol).toHaveBeenCalledWith('test-book.epub', 'naval-history');
+    });
+
+    /** The reader opens on the book that was just added, not on the shelf. */
+    it('closes the dialog and opens the book in Reader II', () => {
+      component.addToReader2('naval-history');
+
+      expect(mockDialogRef.close).toHaveBeenCalled();
+      expect(mockRouter.navigate).toHaveBeenCalledWith(
+        ['/reader2'], { queryParams: { book: '0123456789abcdef' } });
+    });
+
+    it('stays open and offers a retry when enrolment fails', () => {
+      mockReader2.enrol.and.returnValue(throwError(() => new Error('nope')));
+
+      component.addToReader2('ideas-key');
+
+      expect(component.reader2State).toBe('error');
+      expect(mockDialogRef.close).not.toHaveBeenCalled();
+      expect(mockRouter.navigate).not.toHaveBeenCalled();
+    });
+
+    it('does nothing without a file name to enrol', () => {
+      component.data.fileName = null;
+
+      component.addToReader2('ideas-key');
+
+      expect(mockReader2.enrol).not.toHaveBeenCalled();
+    });
+
+    /** Reader I and Reader II coexist; adding to one must not touch the other. */
+    it('leaves the Reader I control alone', () => {
+      component.addToReader2('ideas-key');
+
+      expect(mockLibraryApiService.updateLibraryBookReaderEnabled).not.toHaveBeenCalled();
     });
   });
 });

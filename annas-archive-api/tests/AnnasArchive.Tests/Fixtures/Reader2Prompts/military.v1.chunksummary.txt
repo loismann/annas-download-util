@@ -1,0 +1,18 @@
+You are reading one part of a longer chapter of military history. Another
+pass will combine your output with the rest, so write for that pass and not
+for a reader.
+
+Record, in 300-400 words:
+- the ground, the weather, the time of day, and the date, wherever they are given
+- every formation and unit named, at the strength and under the commander stated
+- what was ordered, by whom, to whom, and when it arrived
+- what actually happened, in the order it happened
+- every point at which somebody chose between courses of action, and what was
+  known to them at that moment
+- losses, ammunition, supply, and distance marched, with the figures as written
+- anything the author flags as disputed between sources
+
+Prose, not bullet points. Keep proper names, unit designations, and numbers
+exactly as the text gives them - a later pass cannot recover a figure you
+rounded. Do not judge the decisions here; record what was in front of the
+people taking them.

@@ -44,6 +44,19 @@ public sealed class ChapterTextStore
     public Task<string> ReadChapterAsync(BookRef book, int chapter, CancellationToken ct = default) =>
         File.ReadAllTextAsync(ChapterFile(book, chapter), ct);
 
+    /// <summary>
+    /// A chapter's text, or null if it is not extracted.
+    ///
+    /// <para>Synchronous on purpose: whole-book search reads every chapter in a
+    /// tight loop with no model and no network, and awaiting each one buys
+    /// nothing over a local file a few tens of kilobytes long.</para>
+    /// </summary>
+    public string? TryReadChapter(BookRef book, int chapter)
+    {
+        var path = ChapterFile(book, chapter);
+        return File.Exists(path) ? File.ReadAllText(path) : null;
+    }
+
     public async Task WriteChapterAsync(
         BookRef book, int chapter, string text, CancellationToken ct = default)
     {

@@ -1,0 +1,42 @@
+:host { display: block; position: relative; }
+
+.bar { display: flex; align-items: center; gap: 0.15rem; }
+
+.toggle, .count {
+  display: inline-flex; align-items: center; justify-content: center; gap: 0.2rem;
+  border: 0; background: none; cursor: pointer; font: inherit; color: inherit;
+  padding: 0.25rem; border-radius: 0.35rem;
+}
+.toggle:hover:not(:disabled), .count:hover:not(:disabled) { background: rgba(127, 127, 127, 0.12); }
+.toggle:disabled, .count:disabled { opacity: 0.4; cursor: default; }
+.toggle.marked { color: #c8842a; }
+
+.count { font-variant-numeric: tabular-nums; font-size: 0.85em; opacity: 0.75; }
+
+.list {
+  position: absolute; z-index: 5; right: 0; top: 100%; min-width: 16rem; max-height: 18rem;
+  overflow-y: auto; list-style: none; margin: 0.25rem 0 0; padding: 0.25rem;
+  border: 1px solid rgba(127, 127, 127, 0.35); border-radius: 0.35rem;
+  background: Canvas; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
+}
+.list li { display: flex; align-items: center; gap: 0.25rem; }
+
+.jump {
+  display: flex; flex-direction: column; gap: 0.1rem; flex: 1;
+  padding: 0.35rem 0.5rem; border: 0; background: none; cursor: pointer;
+  text-align: left; font: inherit; color: inherit;
+}
+.jump:hover { background: rgba(127, 127, 127, 0.12); }
+.where { font-weight: 600; font-size: 0.9em; }
+.label { opacity: 0.7; font-size: 0.8em; }
+
+.remove {
+  border: 0; background: none; cursor: pointer; color: inherit; opacity: 0.5;
+  display: inline-flex; padding: 0.2rem;
+}
+.remove:hover { opacity: 1; }
+
+.visually-hidden {
+  position: absolute; width: 1px; height: 1px; overflow: hidden;
+  clip: rect(0 0 0 0); white-space: nowrap;
+}

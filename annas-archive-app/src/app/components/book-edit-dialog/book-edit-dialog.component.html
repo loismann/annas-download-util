@@ -47,6 +47,7 @@
             </ng-container>
           </button>
           <button mat-stroked-button color="primary" type="button" (click)="readerAction()"
+            *ngIf="!usesReader2"
             [disabled]="!data.fileName || readerState === 'sending'">
             <ng-container [ngSwitch]="readerState">
               <span *ngSwitchCase="'sending'">Adding…</span>
@@ -54,6 +55,38 @@
               <span *ngSwitchDefault>{{ data.readerEnabled ? 'View in ereader' : 'Add to ebook reader' }}</span>
             </ng-container>
           </button>
+
+          <!--
+            Reader II. A separate control while both readers exist: the book type
+            is chosen up front because it decides what every summary will be, and
+            the list comes from the server so a new type costs nothing here.
+          -->
+          <button mat-stroked-button color="primary" type="button"
+            *ngIf="usesReader2"
+            [matMenuTriggerFor]="reader2Menu"
+            (menuOpened)="loadReader2Lenses()"
+            [disabled]="!data.fileName || reader2State === 'sending'">
+            <ng-container [ngSwitch]="reader2State">
+              <span *ngSwitchCase="'sending'">Adding…</span>
+              <span *ngSwitchCase="'error'"><mat-icon inline>refresh</mat-icon> Retry</span>
+              <span *ngSwitchDefault>Read in Reader II</span>
+            </ng-container>
+          </button>
+
+          <mat-menu #reader2Menu="matMenu">
+            <button mat-menu-item disabled *ngIf="reader2State === 'loading'">Loading book types…</button>
+            <button mat-menu-item disabled
+              *ngIf="reader2State !== 'loading' && reader2Lenses.length === 0">
+              No book types available
+            </button>
+            <button mat-menu-item type="button"
+              *ngFor="let lens of reader2Lenses"
+              [title]="lens.description"
+              (click)="addToReader2(lens.key)">
+              <mat-icon>{{ lens.icon }}</mat-icon>
+              <span>{{ lens.displayName }}</span>
+            </button>
+          </mat-menu>
         </div>
       </div>
 

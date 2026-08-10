@@ -147,8 +147,14 @@ public class LensRegistryTests
     {
         var prompts = new TestLens().Prompts;
 
-        LensPrompts.AllTiers.Should().OnlyContain(t => !string.IsNullOrWhiteSpace(prompts[t]));
-        LensPrompts.RequiredTiers.Should().NotContain(PromptTier.StoryExtraction);
-        LensPrompts.AllTiers.Should().Contain(PromptTier.StoryExtraction);
+        CallKinds.Lens.Should().OnlyContain(k => !string.IsNullOrWhiteSpace(prompts[k]));
+        CallKinds.RequiredOfEveryLens.Should().NotContain(CallKind.StoryExtraction);
+        CallKinds.Lens.Should().Contain(CallKind.StoryExtraction);
+
+        // The kinds no lens owns must come back empty, not throw and not
+        // accidentally alias another tier's wording.
+        CallKinds.All.Except(CallKinds.Lens).Should()
+            .OnlyContain(k => prompts[k] == null)
+            .And.BeEquivalentTo([CallKind.ChapterLabels, CallKind.LearnMore, CallKind.SectionVocab]);
     }
 }

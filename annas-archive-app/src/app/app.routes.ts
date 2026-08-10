@@ -1,6 +1,7 @@
 import { Routes } from '@angular/router';
 import { authGuard } from './guards/auth.guard';
 import { adminGuard } from './guards/admin.guard';
+import { reader1Guard, reader2Guard } from './guards/reader-split.guard';
 
 /**
  * Every page is lazy-loaded via `loadComponent`.
@@ -27,9 +28,16 @@ export const routes: Routes = [
     canActivate: [authGuard]
   },
   {
+    // Ebook Reader II. Runs alongside /reader until that one is retired; the two
+    // share no code, no routes, and no state. See DOCS/features/EBOOK_READER_II.md.
+    path: 'reader2',
+    loadComponent: () => import('./reader2/reader-shell.component').then(m => m.ReaderShellComponent),
+    canActivate: [authGuard, reader2Guard]
+  },
+  {
     path: 'reader',
     loadComponent: () => import('./book-reader/book-reader.component').then(m => m.BookReaderComponent),
-    canActivate: [authGuard]
+    canActivate: [authGuard, reader1Guard]
   },
   {
     path: 'library',

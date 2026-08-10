@@ -1,0 +1,21 @@
+.chapters { display: flex; flex-direction: column; overflow-y: auto; }
+
+.chapter {
+  display: flex; justify-content: space-between; gap: 1rem; align-items: baseline;
+  padding: 0.5rem 0.75rem; border: 0; background: none; cursor: pointer;
+  text-align: left; font: inherit; color: inherit; border-left: 3px solid transparent;
+}
+.chapter:hover { background: rgba(127, 127, 127, 0.12); }
+.chapter.current { border-left-color: currentColor; font-weight: 600; }
+
+.title { flex: 1; }
+.words { opacity: 0.55; font-size: 0.8em; font-variant-numeric: tabular-nums; }
+.empty { opacity: 0.6; padding: 0.75rem; }
+
+/* Quiet on purpose: it marks what is already bought, and a loud tick would read
+   as an alert about a chapter rather than a note about a cost. */
+.summarised {
+  color: var(--r2-accent, currentColor);
+  font-size: 0.75rem;
+  opacity: 0.75;
+}

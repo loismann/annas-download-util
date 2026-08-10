@@ -82,21 +82,50 @@ describe('SidebarNavComponent (characterization)', () => {
   // ─── Who can see what ────────────────────────────────────────────────
 
   describe('visibility', () => {
+    // Keyed by route rather than label: the two readers deliberately share the
+    // label "Ebook Reader", so a route is the only honest identity here.
     it('should hide admin-only entries from everyone else', () => {
-      const shown = component.railEntries.map(e => e.label);
-      const adminOnly = allLeaves().filter(e => e.adminOnly).map(e => e.label);
+      const shown = component.railEntries.map(e => e.route);
+      const adminOnly = allLeaves().filter(e => e.adminOnly).map(e => e.route);
 
       expect(adminOnly.length).toBeGreaterThan(0);
-      adminOnly.forEach(label => expect(shown).not.toContain(label));
+      adminOnly.forEach(route => expect(shown).not.toContain(route));
     });
 
     it('should show them to an admin', () => {
       isAdmin = true;
-      const adminOnly = allLeaves().filter(e => e.adminOnly).map(e => e.label);
+      const adminOnly = allLeaves().filter(e => e.adminOnly).map(e => e.route);
 
-      const shown = component.railEntries.map(e => e.label);
+      const shown = component.railEntries.map(e => e.route);
 
-      adminOnly.forEach(label => expect(shown).toContain(label));
+      adminOnly.forEach(route => expect(shown).toContain(route));
+    });
+
+    // ─── the reader split ────────────────────────────────────────────
+
+    it('should give the family the original reader and not Reader II', () => {
+      const routes = component.railEntries.map(e => e.route);
+
+      expect(routes).toContain('/reader');
+      expect(routes).not.toContain('/reader2');
+    });
+
+    it('should give the admin Reader II and not the original', () => {
+      isAdmin = true;
+
+      const routes = component.railEntries.map(e => e.route);
+
+      expect(routes).toContain('/reader2');
+      expect(routes).not.toContain('/reader');
+    });
+
+    it('should call each person\'s reader by the same plain name', () => {
+      const family = component.railEntries.find(e => e.route === '/reader');
+      isAdmin = true;
+      const admin = component.railEntries.find(e => e.route === '/reader2');
+
+      expect(family?.label).toBe('Ebook Reader');
+      expect(admin?.label).toBe('Ebook Reader');
     });
 
     it('should filter the rail and the panel identically', () => {

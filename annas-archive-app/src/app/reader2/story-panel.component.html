@@ -1,0 +1,58 @@
+<ng-container *ngIf="story.model() as model">
+  <!-- Waiting on the reader, so never behind a tab. -->
+  <app-reader2-merge-resolver
+    *ngIf="story.openQuestions().length"
+    [questions]="story.openQuestions()"
+    [actors]="model.actors"
+    (resolve)="answer($event)" />
+
+  <div class="empty-state" *ngIf="empty()">
+    <p>
+      No {{ model.vocabulary.actors.toLowerCase() }} recorded yet. The record is
+      built from chapter summaries as you ask for them.
+    </p>
+
+    <button type="button" class="build" *ngIf="summarised() > 0" (click)="build()">
+      Build it from the {{ summarised() }} summarised
+      {{ summarised() === 1 ? 'chapter' : 'chapters' }}
+    </button>
+
+    <p class="hint" *ngIf="summarised() === 0">
+      Summarise a chapter first — there is nothing to build from yet.
+    </p>
+  </div>
+
+  <ng-container *ngIf="!empty()">
+    <nav class="views" role="tablist" aria-label="Story views">
+      <button
+        *ngFor="let choice of views"
+        type="button"
+        role="tab"
+        [attr.aria-selected]="view() === choice.key"
+        [class.on]="view() === choice.key"
+        (click)="view.set(choice.key)">
+        {{ choice.key === 'cast' ? model.vocabulary.actors : choice.label }}
+      </button>
+    </nav>
+
+    <app-reader2-character-table
+      *ngIf="view() === 'cast'"
+      [actors]="model.actors"
+      [groups]="model.groups"
+      [threads]="model.threads"
+      [vocabulary]="model.vocabulary"
+      [currentChapter]="model.throughChapter" />
+
+    <app-reader2-thread-panel
+      *ngIf="view() === 'threads'"
+      [threads]="model.threads"
+      [actors]="model.actors"
+      [vocabulary]="model.vocabulary"
+      [currentChapter]="model.throughChapter" />
+
+    <app-reader2-story-map
+      *ngIf="view() === 'map'"
+      [actors]="model.actors"
+      [edges]="model.edges" />
+  </ng-container>
+</ng-container>

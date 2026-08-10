@@ -99,12 +99,35 @@ public static class CoreServiceConfiguration
         services.AddSingleton<Reader2.Domain.IBookRegistry, Reader2.Domain.BookRegistry>();
         services.AddSingleton<Reader2.Epub.BookIngestor>();
         services.AddSingleton<Reader2.Domain.IReaderContextResolver, Reader2.Domain.ReaderContextResolver>();
+        services.AddSingleton<Reader2.Story.StoryModelService>();
 
         // Book types. Adding one is this line and its class — nothing else in the
         // application changes, which is what the extensibility contract test in
         // AnnasArchive.Tests/Reader2 exists to keep true.
         services.AddSingleton<Reader2.Lenses.IReaderLens, Reader2.Lenses.LiteraryLens>();
+        services.AddSingleton<Reader2.Lenses.IReaderLens, Reader2.Lenses.MilitaryLens>();
+        services.AddSingleton<Reader2.Lenses.IReaderLens, Reader2.Lenses.FictionLens>();
         services.AddSingleton<Reader2.Lenses.ILensRegistry, Reader2.Lenses.LensRegistry>();
+
+        // Read once. Every budget, model, and threshold in one object, so nothing
+        // downstream reads IConfiguration and no key can be misspelled into a
+        // silent default — the Reader I defect this whole type exists to prevent.
+        services.AddSingleton(sp =>
+            Reader2.Ai.Reader2Options.Load(sp.GetRequiredService<IConfiguration>()));
+        services.AddSingleton<Reader2.Ai.ModelCalls>();
+
+        // Injected rather than a static field, unlike the other users of KeyedLocks
+        // in this codebase: the gateway is what stops two tabs billing one summary
+        // twice, so a test has to be able to see the lock it is using.
+        services.AddSingleton<KeyedLocks>();
+        services.AddSingleton<Reader2.Ai.ArtifactGateway>();
+        services.AddSingleton<Reader2.Ai.IReaderAiPipeline, Reader2.Ai.ReaderAiPipeline>();
+        services.AddSingleton<Reader2.Ai.ChapterLabeller>();
+        services.AddSingleton<Reader2.Storage.ReaderStateStore>();
+        services.AddSingleton<Reader2.Storage.BookmarkStore>();
+        services.AddSingleton<Reader2.Vocabulary.VocabularyStore>();
+        services.AddSingleton<Reader2.Vocabulary.VocabularyPipeline>();
+        services.AddSingleton<Reader2.Vocabulary.FlashcardStore>();
 
         // Library services - LibraryIndexCache warms on startup via IHostedService
         services.AddSingleton<LibraryIndexCache>();

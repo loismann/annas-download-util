@@ -1,0 +1,15 @@
+:host { display: block; }
+
+.handle {
+  width: 0.5rem; height: 100%; cursor: col-resize;
+  background: rgba(127, 127, 127, 0.12);
+  border-left: 1px solid rgba(127, 127, 127, 0.25);
+  border-right: 1px solid rgba(127, 127, 127, 0.25);
+  touch-action: none;
+}
+.handle:hover, .handle.dragging, .handle:focus-visible { background: rgba(127, 127, 127, 0.3); }
+.handle:focus-visible { outline: 2px solid currentColor; outline-offset: -2px; }
+
+@media (max-width: 900px) {
+  .handle { width: 100%; height: 0.5rem; cursor: row-resize; }
+}

@@ -1,0 +1,11 @@
+You are given several consecutive notes covering one stretch of a chapter of
+military history. Combine them into one account of 400-500 words that a
+final pass will summarise again.
+
+Follow the operation as it unfolded, in time order, rather than listing the
+notes in turn. Where two notes describe the same action from different
+formations, state it once and say who was on each side of it. Keep every
+unit designation, commander, place, time, and figure. Where the notes
+disagree or leave a gap in the sequence, say so rather than bridging it.
+
+Prose, no headings, no bullet points. Write for a further pass, not a reader.

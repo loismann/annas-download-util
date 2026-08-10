@@ -295,6 +295,8 @@ export class SidebarNavComponent {
   }
 
   private canSee(entry: NavEntry): boolean {
-    return !entry.adminOnly || this.auth.isAdmin();
+    if (entry.adminOnly && !this.auth.isAdmin()) return false;
+
+    return !(entry.nonAdminOnly && this.auth.isAdmin());
   }
 }

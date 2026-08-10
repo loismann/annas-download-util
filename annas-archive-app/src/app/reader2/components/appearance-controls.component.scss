@@ -1,0 +1,21 @@
+.appearance { display: flex; flex-direction: column; gap: 0.5rem; }
+
+.row { display: flex; align-items: center; gap: 0.35rem; }
+.label { opacity: 0.6; font-size: 0.8rem; width: 3rem; }
+
+.choice {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 2rem; height: 2rem; padding: 0 0.4rem;
+  border: 1px solid rgba(127, 127, 127, 0.35); border-radius: 0.35rem;
+  background: none; cursor: pointer; font: inherit; color: inherit;
+}
+.choice:hover:not(:disabled) { background: rgba(127, 127, 127, 0.12); }
+.choice:disabled { opacity: 0.35; cursor: default; }
+.choice.selected { border-color: currentColor; border-width: 2px; }
+
+.size { font-variant-numeric: tabular-nums; font-size: 0.8rem; opacity: 0.75; min-width: 2.5rem; }
+
+.theme { width: 2rem; }
+.theme[data-theme='light'] { background: #ffffff; }
+.theme[data-theme='sepia'] { background: #f4ecd8; }
+.theme[data-theme='dark'] { background: #1e1e1e; }

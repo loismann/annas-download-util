@@ -1,0 +1,89 @@
+<div class="reader" [class.no-sidebar]="!sidebarOpen()" [style.--split]="splitRatio()">
+  <aside class="sidebar" *ngIf="sidebarOpen()">
+    <!-- No book open: the shelf is the reader's way in. -->
+    <ng-container *ngIf="!store.book()">
+      <h1 class="book-title">Your books</h1>
+      <app-reader2-book-shelf
+        [books]="store.books()"
+        [lenses]="store.lenses()"
+        [currentBookId]="null"
+        (open)="openBook($event)"
+        (remove)="removeBook($event)" />
+    </ng-container>
+
+    <ng-container *ngIf="store.book() as book">
+      <button type="button" class="back" (click)="closeBook()">‹ All books</button>
+      <h1 class="book-title">{{ store.bookTitle() || book.title }}</h1>
+
+      <app-reader2-lens-picker
+        [lenses]="store.lenses()"
+        [selectedKey]="book.lensKey"
+        [disabled]="!!store.busy()"
+        (choose)="changeLens($event)" />
+
+      <app-reader2-chapter-list
+        [chapters]="store.chapters()"
+        [currentIndex]="store.chapterIndex()"
+        (select)="openChapter($event)" />
+    </ng-container>
+  </aside>
+
+  <main class="reading" *ngIf="store.book(); else pickABook">
+    <app-reader2-reader-tools
+      [lens]="store.lens()"
+      [open]="panel()"
+      [sidebarOpen]="sidebarOpen()"
+      [exportUrl]="store.exportUrl()"
+      (openChange)="panel.set($event)"
+      (changeType)="sidebarOpen.set(true)"
+      (toggleSidebar)="sidebarOpen.set(!sidebarOpen())"
+      (reIndex)="reIndex()"
+      (remove)="removeBook(store.book()!.bookId)"
+      (toggleFullscreen)="toggleFullscreen()">
+      <app-reader2-bookmark-bar
+        [bookmarks]="bookmarks.bookmarks()"
+        [markHere]="bookmarks.markHere()"
+        [chapters]="store.chapters()"
+        [open]="bookmarksOpen()"
+        [disabled]="!!store.busy()"
+        (toggle)="bookmarks.toggleAsync()"
+        (jump)="jumpTo($event)"
+        (remove)="bookmarks.removeAsync($event)"
+        (openChange)="bookmarksOpen.set($event)" />
+    </app-reader2-reader-tools>
+
+    <div class="reading-surface">
+      <app-reader2-chapter-view
+        [title]="store.currentChapter()?.title ?? ''"
+        [text]="store.visibleText()"
+        [page]="store.page()"
+        [pageTotal]="store.pageTotal()"
+        [pageStartWord]="store.wordOffset()"
+        [canBack]="store.canPageBack()"
+        [canForward]="store.canPageForward()"
+        [preferences]="store.preferences()"
+        (forward)="turnPage(true)"
+        (back)="turnPage(false)"
+        (selected)="selection.set($event)" />
+    </div>
+  </main>
+
+  <ng-template #pickABook>
+    <main class="reading empty">
+      <p>Choose a book to start reading.</p>
+    </main>
+  </ng-template>
+
+  <app-reader2-split-handle
+    *ngIf="store.book()"
+    [ratio]="splitRatio()"
+    (ratioChange)="dragSplit($event)"
+    (commit)="commitSplit($event)" />
+
+  <section class="analysis" *ngIf="store.book()">
+    <app-reader2-panels
+      [open]="panel()"
+      [selection]="selection()"
+      (dismiss)="selection.set(null)" />
+  </section>
+</div>

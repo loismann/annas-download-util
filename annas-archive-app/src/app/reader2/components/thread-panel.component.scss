@@ -1,0 +1,98 @@
+:host {
+  display: block;
+}
+
+.empty {
+  font-size: 0.82rem;
+  opacity: 0.75;
+}
+
+.threads {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.thread {
+  padding: 0.6rem 0.25rem;
+
+  + .thread {
+    border-top: 1px solid var(--reader2-border, #ececec);
+  }
+
+  // The distinction this panel exists for: quiet threads are set apart,
+  // not just labelled.
+  &.dormant {
+    border-left: 3px solid var(--reader2-warn, #c99a2e);
+    padding-left: 0.6rem;
+    background: var(--reader2-warn-soft, rgb(201 154 46 / 7%));
+  }
+
+  &.done {
+    opacity: 0.6;
+  }
+}
+
+.head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.name {
+  font-weight: 600;
+}
+
+.status {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.1rem 0.4rem;
+  border-radius: 3px;
+  background: var(--reader2-hover, rgb(0 0 0 / 6%));
+
+  &.s-dormant {
+    background: var(--reader2-warn-soft, rgb(201 154 46 / 18%));
+  }
+
+  &.s-active {
+    background: var(--reader2-accent-soft, #e8effa);
+  }
+}
+
+.quiet,
+.returned {
+  font-size: 0.8rem;
+  margin: 0.25rem 0 0;
+}
+
+.quiet {
+  font-weight: 500;
+}
+
+.returned {
+  opacity: 0.8;
+}
+
+.who {
+  font-size: 0.78rem;
+  opacity: 0.7;
+  margin: 0.25rem 0 0;
+}
+
+.beats {
+  margin: 0.35rem 0 0;
+  padding-left: 1.1rem;
+  font-size: 0.82rem;
+
+  li {
+    margin-bottom: 0.15rem;
+  }
+}
+
+.at {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.7;
+  margin-right: 0.3rem;
+}

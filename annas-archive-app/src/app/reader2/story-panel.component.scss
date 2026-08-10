@@ -1,0 +1,46 @@
+:host {
+  display: block;
+  padding: 0.5rem 0.75rem;
+}
+
+.empty-state {
+  font-size: 0.85rem;
+
+  p {
+    margin: 0 0 0.6rem;
+  }
+
+  .hint {
+    opacity: 0.7;
+  }
+}
+
+.build {
+  border: 1px solid var(--reader2-accent, #3b6ea5);
+  background: var(--reader2-accent-soft, #e8effa);
+  border-radius: 4px;
+  padding: 0.35rem 0.8rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.views {
+  display: flex;
+  gap: 0.25rem;
+  margin-bottom: 0.75rem;
+  border-bottom: 1px solid var(--reader2-border, #ececec);
+
+  button {
+    border: 0;
+    background: none;
+    padding: 0.35rem 0.7rem;
+    font-size: 0.85rem;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+
+    &.on {
+      border-bottom-color: var(--reader2-accent, #3b6ea5);
+      font-weight: 600;
+    }
+  }
+}

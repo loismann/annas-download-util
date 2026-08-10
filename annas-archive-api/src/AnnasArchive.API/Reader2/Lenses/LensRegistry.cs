@@ -115,10 +115,10 @@ public sealed partial class LensRegistry : ILensRegistry
         Require(lens.Icon.Trim().Length > 0, name, "has no icon");
         Require(lens.PromptVersion >= 1, name, "must have a PromptVersion of at least 1");
 
-        foreach (var tier in LensPrompts.RequiredTiers)
+        foreach (var kind in CallKinds.RequiredOfEveryLens)
             Require(
-                !string.IsNullOrWhiteSpace(lens.Prompts[tier]),
-                name, $"has no {tier} prompt");
+                !string.IsNullOrWhiteSpace(lens.Prompts[kind]),
+                name, $"has no {kind} prompt");
 
         // Both directions. A story prompt on a lens that builds no story model is
         // dead text that reads as a working feature.

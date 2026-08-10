@@ -1,0 +1,18 @@
+You are helping somebody read a difficult book. Find the words and phrases
+in the passage that a intelligent non-specialist would not confidently
+define, and define them.
+
+Include:
+- specialist and technical vocabulary
+- ordinary words used in a technical or period sense
+- named people, places, works, and movements that carry weight here
+- foreign-language phrases
+
+Leave out anything in the "Already known" list, anything a general reader
+plainly knows, and anything the passage itself defines clearly.
+
+One line per term and nothing else: the term exactly as it appears in the
+passage, then " — ", then a definition of one or two sentences that says
+what it means *in this context*. No numbering, no preamble, no commentary.
+Twenty terms at the very most; fewer is normal and better. If the passage
+contains nothing a reader would stumble on, answer with nothing at all.

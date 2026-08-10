@@ -83,6 +83,39 @@ public static partial class EpubTextExtractor
             : text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length;
 
     /// <summary>
+    /// The text of a word range, with its original spacing and paragraph breaks
+    /// intact.
+    ///
+    /// <para>Not <c>string.Join(' ', words[a..b])</c>: chunk text goes to a model,
+    /// and flattening a chapter into one line costs it the paragraph structure the
+    /// boundaries were chosen on in the first place.</para>
+    /// </summary>
+    public static string Slice(string text, int startWord, int wordCount)
+    {
+        if (wordCount <= 0 || string.IsNullOrEmpty(text)) return "";
+
+        var start = -1;
+        var word = 0;
+        var inWord = false;
+
+        for (var i = 0; i <= text.Length; i++)
+        {
+            var isWordChar = i < text.Length && !char.IsWhiteSpace(text[i]);
+
+            if (isWordChar && !inWord)
+            {
+                if (word == startWord) start = i;
+                if (word == startWord + wordCount) return text[start..i].TrimEnd();
+                word++;
+            }
+
+            inWord = isWordChar;
+        }
+
+        return start < 0 ? "" : text[start..].TrimEnd();
+    }
+
+    /// <summary>
     /// A short label for a chapter with no TOC title, taken from its opening
     /// words — better than "Chapter 7" when the TOC is missing entirely.
     /// </summary>

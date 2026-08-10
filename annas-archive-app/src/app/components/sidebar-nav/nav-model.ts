@@ -34,6 +34,9 @@ export interface NavEntry {
   /** Hidden from non-admins. Route guards are the real enforcement — this only
    *  keeps the menu honest about where a person can actually go. */
   adminOnly?: boolean;
+  /** The inverse: hidden from the admin. Exists for the reader split — while
+   *  both readers run, each person's menu shows only the one that is theirs. */
+  nonAdminOnly?: boolean;
 }
 
 export const NAV_ENTRIES: NavEntry[] = [
@@ -47,7 +50,10 @@ export const NAV_ENTRIES: NavEntry[] = [
       // `local_library` is a person reading — the civic-library glyph. A shelf of
       // books says "collection", which is what this page actually is.
       { label: 'Ebook Library', shortLabel: 'Ebook Library', route: '/library', icon: 'library_books' },
-      { label: 'Ebook Reader', shortLabel: 'Reader', route: '/reader', icon: 'chrome_reader_mode' }
+      // One label, two destinations: each person sees a single "Ebook Reader",
+      // and the split sends the admin to Reader II while it proves itself.
+      { label: 'Ebook Reader', shortLabel: 'Reader', route: '/reader', icon: 'chrome_reader_mode', nonAdminOnly: true },
+      { label: 'Ebook Reader', shortLabel: 'Reader', route: '/reader2', icon: 'chrome_reader_mode', adminOnly: true }
     ]
   },
   {

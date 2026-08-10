@@ -13,3 +13,7 @@ count. For each one:
 Do not invent content that the opening text does not support, do not
 renumber anything, and do not merge or drop a chapter. When the opening
 gives you nothing to work with, "Chapter N" is the correct answer.
+
+Answer with one line per chapter and nothing else: the chapter's number, a
+full stop, a space, then the title. No preamble, no blank lines, no
+commentary. Return exactly as many lines as you were given chapters.

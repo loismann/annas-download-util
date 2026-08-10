@@ -87,6 +87,16 @@ describe('AnalysisPanelComponent', () => {
     expect(render().textContent).toContain("I'm a Dummy");
   });
 
+  /** The lenses ask for bold headings by name; raw asterisks are the bug. */
+  it('renders the summary as formatted prose, not raw markdown', () => {
+    const prose = render({ markdown: '### Finn\n\n**Who is present:** Finn.' })
+      .querySelector('.prose');
+
+    expect(prose?.querySelector('h3')?.textContent).toBe('Finn');
+    expect(prose?.querySelector('strong')).not.toBeNull();
+    expect(prose?.textContent).not.toContain('**');
+  });
+
   it('asks to generate without forcing, and to regenerate with it', () => {
     const kinds: string[] = [];
     const forced: string[] = [];

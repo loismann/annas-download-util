@@ -2,7 +2,7 @@ import { Injectable, computed, inject, signal } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import { Reader2ApiService } from './reader2-api.service';
 import { ReaderTasks, quietly } from './reader-tasks';
-import { pageAt, pageCount, pageOf, repaginate } from './pagination';
+import { FitAt, pageIndexOf, pageStarts } from './pagination';
 import {
   Book, ChapterInfo, ChapterList, DEFAULT_PREFERENCES, Lens, ReadingPreferences, SearchHit, SectionInfo
 } from '../reader2.models';
@@ -53,11 +53,28 @@ export class ReaderStore {
    * to be compared.
    */
   readonly wordOffset = signal(0);
-  readonly pageWords = signal(300);
 
-  readonly totalWords = computed(() => countWords(this.chapterText()));
-  readonly pageTotal = computed(() => pageCount(this.totalWords(), this.pageWords()));
-  readonly page = computed(() => pageOf(this.wordOffset(), this.totalWords(), this.pageWords()));
+  /**
+   * How many words fit on a page starting at an offset. Injected by the shell —
+   * measured from the real surface once one exists, an estimate until then —
+   * so this store stays free of the DOM and testable with a lambda.
+   */
+  private readonly fit = signal<FitAt>(() => 300);
+
+  /** The chapter as words — the unit every offset, slice, and fit shares. */
+  readonly chapterWords = computed(() => splitWords(this.chapterText()));
+
+  readonly totalWords = computed(() => this.chapterWords().length);
+
+  /**
+   * Where every page starts. Variable-length pages, because a page of long
+   * words holds fewer of them — one number per chapter is the estimate that
+   * either ran text past the bottom edge or left a gap above it.
+   */
+  readonly pageBounds = computed(() => pageStarts(this.totalWords(), this.fit()));
+
+  readonly pageTotal = computed(() => this.pageBounds().length);
+  readonly page = computed(() => pageIndexOf(this.pageBounds(), this.wordOffset()));
 
   readonly currentChapter = computed<ChapterInfo | null>(
     () => this.chapters()[this.chapterIndex()] ?? null);
@@ -79,8 +96,11 @@ export class ReaderStore {
 
   /** The words on screen. Derived, so nothing has to remember to re-slice. */
   readonly visibleText = computed(() => {
-    const bounds = pageAt(this.page(), this.totalWords(), this.pageWords());
-    return sliceWords(this.chapterText(), bounds.startWord, bounds.wordCount);
+    const starts = this.pageBounds();
+    const from = starts[this.page()];
+    const to = starts[this.page() + 1] ?? this.totalWords();
+
+    return this.chapterWords().slice(from, to).join(' ');
   });
 
   readonly canPageBack = computed(() => this.page() > 0 || this.chapterIndex() > 0);
@@ -146,7 +166,7 @@ export class ReaderStore {
   /** Forward a page, rolling into the next chapter at the end of this one. */
   async pageForwardAsync(): Promise<void> {
     if (this.page() < this.pageTotal() - 1) {
-      this.wordOffset.set(pageAt(this.page() + 1, this.totalWords(), this.pageWords()).startWord);
+      this.wordOffset.set(this.pageBounds()[this.page() + 1]);
       await this.rememberPositionAsync();
       return;
     }
@@ -157,7 +177,7 @@ export class ReaderStore {
   /** Back a page, landing on the *last* page of the previous chapter. */
   async pageBackAsync(): Promise<void> {
     if (this.page() > 0) {
-      this.wordOffset.set(pageAt(this.page() - 1, this.totalWords(), this.pageWords()).startWord);
+      this.wordOffset.set(this.pageBounds()[this.page() - 1]);
       await this.rememberPositionAsync();
       return;
     }
@@ -165,18 +185,16 @@ export class ReaderStore {
     if (this.chapterIndex() === 0) return;
 
     await this.goToAsync(this.chapterIndex() - 1);
-    this.wordOffset.set(pageAt(this.pageTotal() - 1, this.totalWords(), this.pageWords()).startWord);
+    this.wordOffset.set(this.pageBounds()[this.pageTotal() - 1]);
   }
 
   /**
    * Re-measures after a resize or a font change, keeping the reader on the same
-   * words. The page number moves; the reader does not.
+   * words: the offset is the anchor, and the page number is derived from it, so
+   * the page number moves and the reader does not.
    */
-  resize(newPageWords: number): void {
-    const page = repaginate(this.page(), this.totalWords(), this.pageWords(), newPageWords);
-
-    this.pageWords.set(newPageWords);
-    this.wordOffset.set(pageAt(page, this.totalWords(), newPageWords).startWord);
+  resize(fit: FitAt): void {
+    this.fit.set(fit);
   }
 
   async rememberPositionAsync(): Promise<void> {
@@ -252,14 +270,9 @@ export class ReaderStore {
   }
 }
 
-function countWords(text: string): number {
-  return text.trim().length === 0 ? 0 : text.trim().split(/\s+/).length;
-}
-
-/** The same word-offset arithmetic the server uses, so offsets mean one thing. */
-function sliceWords(text: string, start: number, count: number): string {
-  if (count <= 0) return '';
-  return text.trim().split(/\s+/).slice(start, start + count).join(' ');
+/** The same word-splitting the server does, so offsets mean one thing. */
+function splitWords(text: string): string[] {
+  return text.trim().length === 0 ? [] : text.trim().split(/\s+/);
 }
 
 function clampIndex(index: number, length: number): number {

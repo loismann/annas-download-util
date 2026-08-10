@@ -48,6 +48,21 @@ export type ToolPanel = 'sections' | 'story' | 'vocabulary' | 'flashcards' | 'se
 
       <ng-content></ng-content>
 
+      <!--
+        The analysis pane is the default (open === null), but a default with no
+        button is unreachable once any panel is open — the only way back was
+        knowing to click a toggled icon a second time. This names it.
+      -->
+      <button
+        type="button"
+        class="icon"
+        [class.selected]="open === null"
+        [attr.aria-pressed]="open === null"
+        title="Chapter summary and analysis"
+        (click)="openChange.emit(null)">
+        <mat-icon>psychology</mat-icon>
+      </button>
+
       <button
         *ngFor="let panel of panels"
         type="button"

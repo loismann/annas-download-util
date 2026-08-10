@@ -65,7 +65,7 @@ describe('ReaderStore', () => {
   async function open(): Promise<void> {
     await store.loadShelfAsync();
     await store.openAsync(BOOK.bookId);
-    store.pageWords.set(300);
+    store.resize(() => 300);
   }
 
   it('loads the shelf and the reader’s own preferences', async () => {
@@ -141,7 +141,7 @@ describe('ReaderStore', () => {
     await store.pageForwardAsync();
     const before = store.wordOffset();
 
-    store.resize(150);
+    store.resize(() => 150);
 
     expect(store.wordOffset()).toBe(before);
     expect(store.page()).toBe(4);

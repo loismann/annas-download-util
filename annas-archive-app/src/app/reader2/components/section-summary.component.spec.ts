@@ -89,4 +89,12 @@ describe('SectionSummaryComponent', () => {
 
     expect(render().querySelector('.empty')).not.toBeNull();
   });
+  it('renders the section summary as formatted prose, not raw markdown', () => {
+    const prose = render({ openIndex: 0, markdown: '**What happens:** things.' })
+      .querySelector('.prose');
+
+    expect(prose?.querySelector('strong')).not.toBeNull();
+    expect(prose?.textContent).not.toContain('**');
+  });
+
 });

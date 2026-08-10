@@ -1,73 +1,63 @@
 /**
- * Paging arithmetic, as pure functions of (word count, page size).
+ * Paging arithmetic, as pure functions.
  *
- * <p>No DOM, no component, no service — measuring the container is the caller's
- * job and everything after it is arithmetic. That split is deliberate: the
- * interesting failures here are all off-by-one (a page that skips a word, a
- * "next" that stalls on the last page, a resize that loses the reader's place),
- * and those are only cheap to test when there is no layout involved.</p>
+ * <p>No DOM here — measuring how many words fit is {@link FitAt}'s job, supplied
+ * by the caller ({@code page-fit.ts} measures real layout; tests pass a lambda).
+ * Everything after that measurement is arithmetic, and the interesting failures
+ * are all off-by-one (a page that skips a word, a "next" that stalls on the last
+ * page, a resize that loses the reader's place) — only cheap to test when there
+ * is no layout involved.</p>
  */
 
-/** Where one page starts and ends, in words. */
-export interface Page {
-  index: number;
-  startWord: number;
-  wordCount: number;
-}
+/**
+ * How many words fit on the page that starts at a word offset.
+ *
+ * <p>A function rather than a number because pages are not all the same size:
+ * a page of long words, or one carrying the chapter title, holds fewer than a
+ * page of short dialogue. One number per chapter is exactly the estimate that
+ * either ran text past the bottom edge or left a gap above it.</p>
+ */
+export type FitAt = (startWord: number) => number;
 
 /** Never fewer than this, however small the container measures. */
 export const MIN_PAGE_WORDS = 20;
 
-/** How many pages a chapter of this length makes. Always at least one. */
-export function pageCount(totalWords: number, pageWords: number): number {
-  const size = usable(pageWords);
-  return totalWords <= 0 ? 1 : Math.ceil(totalWords / size);
-}
-
-/** The page containing a word offset, clamped into the chapter. */
-export function pageOf(wordOffset: number, totalWords: number, pageWords: number): number {
-  const size = usable(pageWords);
-  const clamped = clamp(wordOffset, 0, Math.max(0, totalWords - 1));
-
-  return Math.min(Math.floor(clamped / size), pageCount(totalWords, pageWords) - 1);
-}
-
-/** The bounds of one page, clamped so the last page never runs past the end. */
-export function pageAt(index: number, totalWords: number, pageWords: number): Page {
-  const size = usable(pageWords);
-  const clampedIndex = clamp(index, 0, pageCount(totalWords, pageWords) - 1);
-  const startWord = clampedIndex * size;
-
-  return {
-    index: clampedIndex,
-    startWord,
-    wordCount: Math.max(0, Math.min(size, totalWords - startWord))
-  };
-}
-
 /**
- * The word offset to keep the reader on when the page size changes.
- *
- * <p>Resizing a window must not move somebody in a book. Page *numbers* are not
- * stable across a resize — page 4 of 12 becomes page 7 of 20 — so the word
- * offset is what carries over, and the page number is recomputed from it. This
- * function exists to make that the obvious thing to call rather than something
- * each caller reinvents.</p>
+ * Where every page starts, walked from the front with the real fit at each
+ * boundary. Always at least one page, so an empty chapter still renders.
  */
-export function repaginate(
-  currentPage: number, totalWords: number, oldPageWords: number, newPageWords: number
-): number {
-  const anchor = pageAt(currentPage, totalWords, oldPageWords).startWord;
-  return pageOf(anchor, totalWords, newPageWords);
+export function pageStarts(totalWords: number, fitAt: FitAt): number[] {
+  const starts = [0];
+
+  for (let at = 0; at < totalWords;) {
+    at += Math.max(MIN_PAGE_WORDS, Math.floor(fitAt(at)) || MIN_PAGE_WORDS);
+    if (at < totalWords) starts.push(at);
+  }
+
+  return starts;
+}
+
+/** The page containing a word offset. Half-open: a page owns its first word. */
+export function pageIndexOf(starts: readonly number[], wordOffset: number): number {
+  let low = 0;
+  let high = starts.length - 1;
+
+  while (low < high) {
+    const mid = Math.ceil((low + high) / 2);
+
+    if (starts[mid] <= wordOffset) low = mid;
+    else high = mid - 1;
+  }
+
+  return low;
 }
 
 /**
  * Words that fit in a container, from its measured size and the type in it.
  *
- * <p>An estimate, and honestly so: exact reflow measurement means laying the
- * text out twice on every resize. The character-per-word figure is English
- * prose's long-run average, and being a page out at the end of a long chapter
- * costs a reader one keypress.</p>
+ * <p>The estimate, kept as the <i>fallback</i> fit for when there is nothing to
+ * measure yet — the first paint, a test, a hidden surface. Real pages come from
+ * measuring real layout in {@code page-fit.ts}.</p>
  */
 export function wordsPerPage(
   heightPx: number, widthPx: number, fontSizePx: number, lineHeight = 1.6
@@ -96,11 +86,3 @@ export function sectionAt(
 
 /** Including the space after it. */
 const AVERAGE_WORD_CHARS = 6;
-
-function usable(pageWords: number): number {
-  return Math.max(MIN_PAGE_WORDS, Math.floor(pageWords) || MIN_PAGE_WORDS);
-}
-
-function clamp(value: number, low: number, high: number): number {
-  return Math.min(Math.max(value, low), Math.max(low, high));
-}

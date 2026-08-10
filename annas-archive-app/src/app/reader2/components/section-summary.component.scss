@@ -21,5 +21,16 @@
 }
 .regenerate:hover { opacity: 1; }
 
-.prose { white-space: pre-wrap; line-height: 1.6; }
+.prose {
+  line-height: 1.55;
+
+  // Rendered markdown lands via innerHTML, outside Angular's style scoping.
+  ::ng-deep {
+    h1, h2, h3, h4 { font-size: 1rem; margin: 0.9em 0 0.35em; }
+    p { margin: 0 0 0.6em; }
+    ul, ol { margin: 0 0 0.6em; padding-left: 1.3em; }
+    li { margin-bottom: 0.2em; }
+    strong { font-weight: 600; }
+  }
+}
 .idle, .empty { opacity: 0.6; }

@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { MatIconModule } from '@angular/material/icon';
 import { SectionInfo } from '../reader2.models';
 import { sectionAt } from '../services/pagination';
+import { ProsePipe } from '../prose.pipe';
 
 /** Which section the reader asked about, and whether to pay again. */
 export interface SectionRequest {
@@ -21,7 +22,7 @@ export interface SectionRequest {
 @Component({
   selector: 'app-reader2-section-summary',
   standalone: true,
-  imports: [CommonModule, MatIconModule],
+  imports: [CommonModule, MatIconModule, ProsePipe],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <nav class="sections" aria-label="Sections">
@@ -32,6 +33,7 @@ export interface SectionRequest {
         [class.current]="i === openIndex"
         [class.here]="i === sectionHere"
         [attr.aria-current]="i === openIndex ? 'true' : null"
+        title="Show this section's summary — written the first time you ask"
         (click)="open.emit({ index: i, force: false })">
         Section {{ i + 1 }}
         <span class="here-marker" *ngIf="i === sectionHere" title="You are reading here">•</span>
@@ -53,7 +55,7 @@ export interface SectionRequest {
         </button>
       </header>
 
-      <div class="prose" *ngIf="markdown">{{ markdown }}</div>
+      <div class="prose" *ngIf="markdown" [innerHTML]="markdown | prose"></div>
 
       <p class="idle" *ngIf="!markdown && !busy">
         Nothing summarised for this section yet.

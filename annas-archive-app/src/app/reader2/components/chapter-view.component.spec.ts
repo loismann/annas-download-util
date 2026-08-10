@@ -97,14 +97,19 @@ describe('ChapterViewComponent', () => {
     expect(buttons[1].disabled).toBeTrue();
   });
 
-  it('applies the reader’s type and theme to the surface itself', () => {
+  /**
+   * The theme itself is no longer applied here — it lives on the reader root
+   * as CSS variables, so sepia or dark colours the whole reader rather than a
+   * rectangle of text floating on a white page. This component owns only the
+   * font, which is a per-surface choice the root has no opinion on.
+   */
+  it('applies the reader’s font to the surface itself', () => {
     fixture.componentRef.setInput(
       'preferences', { fontFamily: 'mono', fontSize: 22, theme: 'dark', splitRatio: 0.6 });
     fixture.detectChanges();
 
     expect(surface().style.fontSize).toBe('22px');
     expect(surface().style.fontFamily).toContain('Menlo');
-    expect(surface().classList).toContain('theme-dark');
   });
 
   /** An empty selection is not a passage; asking about one would spend nothing usefully. */

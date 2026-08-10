@@ -19,7 +19,7 @@ import { VocabularyStore } from './services/vocabulary-store';
 import { FlashcardStore } from './services/flashcard-store';
 import { BookmarkStore } from './services/bookmark-store';
 import { StoryStore } from './services/story-store';
-import { wordsPerPage } from './services/pagination';
+import { ReaderMeasure } from './services/reader-measure';
 import { Bookmark, PassageSelection } from './reader2.models';
 
 /**
@@ -43,7 +43,7 @@ import { Bookmark, PassageSelection } from './reader2.models';
   ],
   providers: [
     ReaderTasks, ReaderStore, AnalysisStore, VocabularyStore, FlashcardStore, BookmarkStore,
-    StoryStore
+    StoryStore, ReaderMeasure
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './reader-shell.component.html',
@@ -58,6 +58,7 @@ export class ReaderShellComponent implements OnInit {
   private readonly story = inject(StoryStore);
   private readonly confirm = inject(ReaderConfirm);
   private readonly route = inject(ActivatedRoute);
+  private readonly measurer = inject(ReaderMeasure);
 
   protected readonly panel = signal<ToolPanel | null>(null);
   protected readonly sidebarOpen = signal(true);
@@ -85,12 +86,7 @@ export class ReaderShellComponent implements OnInit {
   /** Re-measure on resize, keeping the reader on the same words. */
   @HostListener('window:resize')
   measure(): void {
-    const surface = document.querySelector<HTMLElement>('.reading-surface');
-    if (!surface) return;
-
-    this.store.resize(wordsPerPage(
-      surface.clientHeight - 96, Math.min(surface.clientWidth, 672),
-      this.store.preferences().fontSize));
+    this.measurer.remeasure();
   }
 
   protected async openBook(bookId: string): Promise<void> {
@@ -113,11 +109,8 @@ export class ReaderShellComponent implements OnInit {
   }
 
   protected async openChapter(index: number): Promise<void> {
-    this.selection.set(null);
-    this.analysis.clear();
-    await this.store.goToAsync(index);
+    await this.moveTo(index, 0);
     await this.store.rememberPositionAsync();
-    this.markPlace();
   }
 
   protected async turnPage(forward: boolean): Promise<void> {
@@ -164,15 +157,20 @@ export class ReaderShellComponent implements OnInit {
 
   protected async jumpTo(mark: Bookmark): Promise<void> {
     this.bookmarksOpen.set(false);
+    await this.moveTo(mark.chapter, mark.wordOffset);
+  }
+
+  /** Every navigation drops the selection and analysis and re-marks the place. */
+  private async moveTo(chapter: number, wordOffset: number): Promise<void> {
+    this.selection.set(null);
     this.analysis.clear();
-    await this.store.goToAsync(mark.chapter, mark.wordOffset);
+    await this.store.goToAsync(chapter, wordOffset);
     this.markPlace();
   }
 
   /**
-   * Tells the bookmark store where the reader is, after every move. The toggle
-   * derives from this rather than being set, so it cannot be left claiming a
-   * page is marked once the reader has turned past it.
+   * Tells the bookmark store where the reader is; the bookmark toggle derives
+   * from this, so it cannot claim a page the reader has turned past.
    */
   private markPlace(): void {
     this.bookmarks.setPlace(this.store.chapterIndex(), this.store.wordOffset());

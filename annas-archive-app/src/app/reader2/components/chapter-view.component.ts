@@ -23,8 +23,6 @@ import { DEFAULT_PREFERENCES, PassageSelection, ReadingPreferences } from '../re
       class="surface"
       tabindex="0"
       [attr.aria-label]="title"
-      [class.theme-dark]="preferences.theme === 'dark'"
-      [class.theme-sepia]="preferences.theme === 'sepia'"
       [style.font-family]="fontStack"
       [style.font-size.px]="preferences.fontSize"
       (mouseup)="reportSelection()"

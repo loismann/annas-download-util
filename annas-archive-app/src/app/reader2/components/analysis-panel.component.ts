@@ -4,6 +4,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { Busy } from '../services/reader-tasks';
 import { AnalysisKind } from '../services/analysis-store';
 import { PassageSelection } from '../reader2.models';
+import { ProsePipe } from '../prose.pipe';
 
 /**
  * The right-hand pane: whatever was last generated, and the buttons that
@@ -16,7 +17,7 @@ import { PassageSelection } from '../reader2.models';
 @Component({
   selector: 'app-reader2-analysis-panel',
   standalone: true,
-  imports: [CommonModule, MatIconModule],
+  imports: [CommonModule, MatIconModule, ProsePipe],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <!--
@@ -72,7 +73,7 @@ import { PassageSelection } from '../reader2.models';
 
       <p class="failed" *ngIf="error">{{ error }}</p>
 
-      <div class="prose" *ngIf="markdown && !busy">{{ markdown }}</div>
+      <div class="prose" *ngIf="markdown && !busy" [innerHTML]="markdown | prose"></div>
 
       <p class="idle" *ngIf="!markdown && !busy && !error">
         Nothing generated for this chapter yet.

@@ -1,4 +1,8 @@
-<div class="reader" [class.no-sidebar]="!sidebarOpen()" [style.--split]="splitRatio()">
+<div
+  class="reader"
+  [class.no-sidebar]="!sidebarOpen()"
+  [attr.data-theme]="store.preferences().theme"
+  [style.--split]="splitRatio()">
   <aside class="sidebar" *ngIf="sidebarOpen()">
     <!-- No book open: the shelf is the reader's way in. -->
     <ng-container *ngIf="!store.book()">

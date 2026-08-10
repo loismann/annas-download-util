@@ -97,6 +97,7 @@ public static class CoreServiceConfiguration
         services.AddSingleton<Reader2.Storage.ChapterTextStore>();
         services.AddSingleton<Reader2.Storage.IArtifactStore, Reader2.Storage.SqliteArtifactStore>();
         services.AddSingleton<Reader2.Domain.IBookRegistry, Reader2.Domain.BookRegistry>();
+        services.AddSingleton<Reader2.Epub.BookIngestor>();
 
         // Library services - LibraryIndexCache warms on startup via IHostedService
         services.AddSingleton<LibraryIndexCache>();

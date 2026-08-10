@@ -44,15 +44,24 @@ public sealed class Reader2Fixture : IDisposable
         Books = new BookRegistry(Db, Library, Hashes, Text);
     }
 
-    /// <summary>Writes an EPUB-shaped file and enrols it, returning its id.</summary>
-    public async Task<BookRef> EnrolAsync(
-        string fileName, string contents, string lensKey = "literary", string title = "A Book")
+    /// <summary>Writes a file into the library and enrols it, returning its id.</summary>
+    public Task<BookRef> EnrolAsync(
+        string fileName, string contents, string lensKey = "literary", string title = "A Book") =>
+        EnrolBytesAsync(fileName, System.Text.Encoding.UTF8.GetBytes(contents), lensKey, title);
+
+    /// <inheritdoc cref="EnrolAsync"/>
+    public async Task<BookRef> EnrolBytesAsync(
+        string fileName, byte[] contents, string lensKey = "literary", string title = "A Book")
     {
-        Library.Write(fileName, contents);
+        Library.WriteBytes(fileName, contents);
         var book = (await Hashes.GetAsync(fileName))!.Value;
         await Books.EnrolAsync(book, fileName, title, ["An Author"], lensKey);
         return book;
     }
+
+    /// <summary>Enrols a real EPUB and hands back the registry's record of it.</summary>
+    public async Task<EnrolledBook> EnrolEpubAsync(byte[] epub, string fileName = "book.epub") =>
+        (await Books.GetAsync(await EnrolBytesAsync(fileName, epub)))!;
 
     public void Dispose()
     {
@@ -70,6 +79,12 @@ public sealed class FakeLibrary(string root) : ILibraryBookSource
     {
         Directory.CreateDirectory(Root);
         File.WriteAllText(Path.Combine(Root, fileName), contents);
+    }
+
+    public void WriteBytes(string fileName, byte[] contents)
+    {
+        Directory.CreateDirectory(Root);
+        File.WriteAllBytes(Path.Combine(Root, fileName), contents);
     }
 
     public void Rename(string from, string to) =>
@@ -99,3 +114,18 @@ public sealed class FakeLibrary(string root) : ILibraryBookSource
 
 /// <summary>A stand-in artifact payload.</summary>
 public sealed record TestPayload(string Text, int Number = 0);
+
+/// <summary>
+/// Records progress on the calling thread.
+///
+/// <para><see cref="Progress{T}"/> marshals its callbacks through a
+/// synchronisation context, so a test using it has to sleep and hope. This
+/// records synchronously, which makes the assertions exact instead of timing
+/// dependent.</para>
+/// </summary>
+public sealed class ProgressRecorder<T> : IProgress<T>
+{
+    public List<T> Steps { get; } = [];
+
+    public void Report(T value) => Steps.Add(value);
+}

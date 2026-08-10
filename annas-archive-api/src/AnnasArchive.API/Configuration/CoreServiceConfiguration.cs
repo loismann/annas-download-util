@@ -98,6 +98,13 @@ public static class CoreServiceConfiguration
         services.AddSingleton<Reader2.Storage.IArtifactStore, Reader2.Storage.SqliteArtifactStore>();
         services.AddSingleton<Reader2.Domain.IBookRegistry, Reader2.Domain.BookRegistry>();
         services.AddSingleton<Reader2.Epub.BookIngestor>();
+        services.AddSingleton<Reader2.Domain.IReaderContextResolver, Reader2.Domain.ReaderContextResolver>();
+
+        // Book types. Adding one is this line and its class — nothing else in the
+        // application changes, which is what the extensibility contract test in
+        // AnnasArchive.Tests/Reader2 exists to keep true.
+        services.AddSingleton<Reader2.Lenses.IReaderLens, Reader2.Lenses.LiteraryLens>();
+        services.AddSingleton<Reader2.Lenses.ILensRegistry, Reader2.Lenses.LensRegistry>();
 
         // Library services - LibraryIndexCache warms on startup via IHostedService
         services.AddSingleton<LibraryIndexCache>();

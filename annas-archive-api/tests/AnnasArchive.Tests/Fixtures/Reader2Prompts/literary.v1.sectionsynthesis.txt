@@ -1,0 +1,10 @@
+You are given several consecutive notes covering one stretch of a chapter of
+philosophy, theory, or intellectual history. Combine them into one account
+of 400-500 words that a final pass will summarise again.
+
+Follow the line of argument as it develops rather than listing the notes in
+turn. Keep every term introduced and every thinker named. Where two notes
+cover the same claim, state it once. Where the argument turns, say so and
+say on what.
+
+Prose, no headings, no bullet points. Write for a further pass, not a reader.

@@ -15,6 +15,7 @@ DELETE /api/media/movies/{movieId:int} [api] auth:default
 DELETE /api/media/tv/{seriesId:int} [api] auth:default
 DELETE /api/media/tv/{seriesId:int}/season/{seasonNumber:int} [api] auth:default
 DELETE /api/quiz/subjects/{subjectId} [api] auth:AdminOnly
+DELETE /api/reader2/books/{bookId} [api] auth:default
 DELETE /api/spotify/connection [api] auth:default
 DELETE /api/spotify/drafts/{draftId} [api] auth:default
 DELETE /api/video-library/video/{fileName} [api] auth:AdminOnly
@@ -103,6 +104,8 @@ GET /api/media/wiki-images [api] auth:default
 GET /api/quiz/invalid-questions [api] auth:AdminOnly
 GET /api/quiz/subjects [api] auth:AdminOnly
 GET /api/quiz/subjects/{subjectId} [api] auth:AdminOnly
+GET /api/reader2/books [api] auth:default
+GET /api/reader2/lenses [api] auth:default
 GET /api/spotify/analysis [api] auth:default
 GET /api/spotify/audit [api] auth:default
 GET /api/spotify/connection [api] auth:default
@@ -134,6 +137,7 @@ PATCH /api/library/book/{fileName}/metadata [api] auth:default
 PATCH /api/library/book/{fileName}/ratings [api] auth:default
 PATCH /api/media/movies/{movieId:int}/metadata [api] auth:default
 PATCH /api/media/tv/{seriesId:int}/metadata [api] auth:default
+PATCH /api/reader2/books/{bookId} [api] auth:default
 PATCH /api/spotify/drafts/{draftId} [api] auth:default
 PATCH /api/video-library/video/{fileName}/metadata [api] auth:AdminOnly
 PATCH /api/video-library/video/{fileName}/ratings [api] auth:AdminOnly
@@ -218,6 +222,7 @@ POST /api/media/tv/update-seasons [api] auth:default
 POST /api/media/tv/{seriesId:int}/favorite [api] auth:default
 POST /api/media/tv/{seriesId:int}/season/{seasonNumber:int}/releases/grab [api] auth:default
 POST /api/quiz/subjects/{subjectId}/questions/{questionId}/mark-invalid [api] auth:AdminOnly
+POST /api/reader2/books [api] auth:default
 POST /api/spotify/command [api] auth:default
 POST /api/spotify/connection/authorize [api] auth:default
 POST /api/spotify/inventory/refresh [api] auth:default

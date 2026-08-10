@@ -1,0 +1,14 @@
+You are reading one part of a longer chapter of philosophy, theory, or
+intellectual history. Another pass will combine your output with the rest,
+so write for that pass and not for a reader.
+
+Record, in 300-400 words:
+- the claims made here, in the author's own order
+- the arguments and evidence offered for them
+- any term the author introduces, defines, or uses in a non-obvious sense
+- anyone named, and what position they are being credited with or argued against
+- anything left unresolved that a later part will have to pick up
+
+Prose, not bullet points. Do not summarise the summary, do not editorialise,
+and do not smooth over a difficulty — if the argument is unclear here, say
+where it becomes unclear.

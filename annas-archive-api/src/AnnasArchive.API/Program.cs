@@ -1,6 +1,7 @@
 using AnnasArchive.API.Configuration;
 using AnnasArchive.API.Constants;
 using AnnasArchive.API.Endpoints;
+using AnnasArchive.API.Reader2.Endpoints;
 using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -97,6 +98,10 @@ app.MapVideoLibraryMetadataEndpoints();
 app.MapQuizEndpoints();
 app.MapVocabEndpoints();
 app.MapDropboxReaderEndpoints();
+
+// Ebook Reader II (DOCS/features/EBOOK_READER_II.md). Runs alongside the reader
+// above, sharing nothing with it, until that one is retired.
+app.MapReader2Endpoints();
 app.MapLibraryKindleEndpoints();
 app.MapLibraryCoverEndpoints();
 app.MapLibraryBrowserEndpoints();

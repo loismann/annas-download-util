@@ -484,12 +484,19 @@ export class BookEditDialogComponent implements OnInit, OnDestroy {
   }
 
   /**
-   * Which reader this person's buttons point at. One control each while both
-   * readers exist: the admin enrols into Reader II, everyone else keeps the
-   * original, and nobody sees a button for a reader that is not theirs.
+   * Which reader this dialog's buttons point at — Reader II, for everybody.
+   *
+   * <p>This used to be `isAdmin()`, which is what the reader split meant here:
+   * one enrol control each, and nobody offered a reader that was not theirs. The
+   * split is over (`reader-split.guard.ts`), so there is one control and it goes
+   * to the one reader.</p>
+   *
+   * <p>Kept as a named seam rather than inlined, because the Reader I branch
+   * behind it is still live code and retiring it should be one grep rather than
+   * an archaeology exercise.</p>
    */
   get usesReader2(): boolean {
-    return this.authService.isAdmin();
+    return true;
   }
 
   readerAction(): void {

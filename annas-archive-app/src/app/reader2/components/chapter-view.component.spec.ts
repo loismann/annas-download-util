@@ -26,7 +26,7 @@ describe('ChapterViewComponent', () => {
     component.back.subscribe(() => { back++; });
 
     component.title = 'Opening';
-    component.text = 'one two three';
+    component.paragraphs = ['one two three'];
     component.canBack = true;
     component.canForward = true;
     fixture.detectChanges();
@@ -110,6 +110,21 @@ describe('ChapterViewComponent', () => {
 
     expect(surface().style.fontSize).toBe('22px');
     expect(surface().style.fontFamily).toContain('Menlo');
+  });
+
+  /**
+   * Drawn as paragraphs, not as one block. The prose keeps its breaks all the
+   * way from the EPUB — the chunker on the server depends on them — and this
+   * surface was the last place they were being thrown away.
+   */
+  it('draws one element per paragraph', () => {
+    fixture.componentRef.setInput('paragraphs', ['first para', 'second para', 'third']);
+    fixture.detectChanges();
+
+    const drawn = Array.from(fixture.nativeElement.querySelectorAll('.body'))
+      .map(p => (p as HTMLElement).textContent);
+
+    expect(drawn).toEqual(['first para', 'second para', 'third']);
   });
 
   /** An empty selection is not a passage; asking about one would spend nothing usefully. */

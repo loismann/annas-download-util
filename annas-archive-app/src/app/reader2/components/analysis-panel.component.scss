@@ -51,6 +51,10 @@ mat-icon { font-size: 1.1rem; width: 1.1rem; height: 1.1rem; }
 .selection-actions .dismiss { border: 0; margin-left: auto; opacity: 0.55; padding: 0.2rem; }
 .selection-actions .dismiss:hover { opacity: 1; }
 
+/* Why the button beside it is greyed out. Quiet — it is an explanation, not a
+   warning, and the reader has done nothing wrong. */
+.nudge { margin: 0; font-size: 0.8em; opacity: 0.6; }
+
 /* Quiet. It marks something the reader already owns and may keep — not a
    problem, and certainly not an error. */
 .stale {

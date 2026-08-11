@@ -32,7 +32,10 @@ import { DEFAULT_PREFERENCES, PassageSelection, ReadingPreferences } from '../re
       (keydown.pagedown)="forward.emit()"
       (keydown.pageup)="back.emit()">
       <h2 class="chapter-title">{{ title }}</h2>
-      <p class="body">{{ text }}</p>
+
+      <!-- One element per paragraph, not one per page. The prose arrives with
+           its breaks intact and this is the last place they could be lost. -->
+      <p class="body" *ngFor="let paragraph of paragraphs">{{ paragraph }}</p>
     </article>
 
     <footer class="pager">
@@ -45,7 +48,18 @@ import { DEFAULT_PREFERENCES, PassageSelection, ReadingPreferences } from '../re
 })
 export class ChapterViewComponent {
   @Input() title = '';
-  @Input() text = '';
+
+  /**
+   * The page, as its paragraphs.
+   *
+   * <p>Paragraphs rather than one string: the reading surface is the only thing
+   * that knows how a paragraph should look, and a page handed over as a single
+   * blob has already thrown away the one fact needed to draw it. A page begins
+   * and ends wherever the measurement said, so the first and last of these are
+   * routinely partial paragraphs — that is correct, not a rounding error.</p>
+   */
+  @Input() paragraphs: readonly string[] = [];
+
   @Input() page = 0;
   @Input() pageTotal = 1;
   @Input() pageStartWord = 0;
@@ -79,17 +93,54 @@ export class ChapterViewComponent {
     this.selected.emit({ text, wordOffset: this.pageStartWord + this.wordsBefore(selection) });
   }
 
+  /**
+   * Words on this page before the selection begins, counted a paragraph at a
+   * time.
+   *
+   * <p>Not one range over the whole surface, for two reasons that both silently
+   * shift every offset. <c>Range.toString()</c> concatenates with no separator,
+   * so the last word of one paragraph and the first of the next arrive as one
+   * word and the count comes up short. And the surface's first child is the
+   * chapter heading, whose words are not in the chapter text at all — counting
+   * them pushed every offset along by the length of the title.</p>
+   *
+   * <p>Both meant a passage was analysed with the wrong words around it, and
+   * neither is visible from the reader's side: the analysis is of real prose
+   * from the right chapter, just not quite the prose that was highlighted.</p>
+   */
   private wordsBefore(selection: Selection): number {
     const surface = this.surface?.nativeElement;
     if (!surface) return 0;
 
-    const before = selection.getRangeAt(0).cloneRange();
-    before.selectNodeContents(surface);
-    before.setEnd(selection.getRangeAt(0).startContainer, selection.getRangeAt(0).startOffset);
+    const { startContainer, startOffset } = selection.getRangeAt(0);
+    let words = 0;
 
-    const preceding = before.toString().trim();
-    return preceding.length === 0 ? 0 : preceding.split(/\s+/).length;
+    for (const paragraph of Array.from(surface.querySelectorAll('.body'))) {
+      const upTo = document.createRange();
+      upTo.selectNodeContents(paragraph);
+
+      const where = upTo.comparePoint(startContainer, startOffset);
+
+      // The selection starts before this paragraph: nothing further counts.
+      if (where < 0) break;
+
+      // Inside it: count up to the selection and stop.
+      if (where === 0) upTo.setEnd(startContainer, startOffset);
+
+      words += countWords(upTo.toString());
+
+      if (where === 0) break;
+    }
+
+    return words;
   }
+}
+
+/** Whitespace-separated, the definition the server counts by. */
+function countWords(text: string): number {
+  const trimmed = text.trim();
+
+  return trimmed.length === 0 ? 0 : trimmed.split(/\s+/).length;
 }
 
 const FONT_STACKS: Record<string, string> = {

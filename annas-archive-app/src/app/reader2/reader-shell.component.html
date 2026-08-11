@@ -1,7 +1,7 @@
 <div
   class="reader"
   [class.no-sidebar]="!sidebarOpen()"
-  [attr.data-theme]="store.preferences().theme"
+  [attr.data-tone]="store.preferences().theme"
   [style.--split]="splitRatio()">
   <aside class="sidebar" *ngIf="sidebarOpen()">
     <!-- No book open: the shelf is the reader's way in. -->
@@ -43,7 +43,7 @@
       (toggleSidebar)="sidebarOpen.set(!sidebarOpen())"
       (reIndex)="reIndex()"
       (remove)="removeBook(store.book()!.bookId)"
-      (toggleFullscreen)="toggleFullscreen()">
+      (toggleFullscreen)="chrome.toggleFullscreen()">
       <app-reader2-bookmark-bar
         [bookmarks]="bookmarks.bookmarks()"
         [markHere]="bookmarks.markHere()"
@@ -59,7 +59,7 @@
     <div class="reading-surface">
       <app-reader2-chapter-view
         [title]="store.currentChapter()?.title ?? ''"
-        [text]="store.visibleText()"
+        [paragraphs]="store.visibleParagraphs()"
         [page]="store.page()"
         [pageTotal]="store.pageTotal()"
         [pageStartWord]="store.wordOffset()"

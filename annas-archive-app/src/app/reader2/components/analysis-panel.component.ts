@@ -28,7 +28,11 @@ import { ProsePipe } from '../prose.pipe';
     <section class="selection" *ngIf="selection">
       <p class="quoted">“{{ selection.text }}”</p>
       <div class="selection-actions">
-        <button type="button" [disabled]="!!busy" (click)="analyseSelection.emit(selection)">
+        <button
+          type="button"
+          [disabled]="!!busy || !isPassage"
+          [title]="isPassage ? '' : 'Select a phrase — one word is a word, not a passage'"
+          (click)="analyseSelection.emit(selection)">
           <mat-icon>psychology_alt</mat-icon> Explain this passage
         </button>
         <button type="button" (click)="fileSelection.emit(selection)">
@@ -38,6 +42,12 @@ import { ProsePipe } from '../prose.pipe';
           <mat-icon>close</mat-icon>
         </button>
       </div>
+
+      <!-- Said rather than merely greyed out: a disabled button with no reason
+           beside it is indistinguishable from a broken one. -->
+      <p class="nudge" *ngIf="!isPassage">
+        One word is a vocabulary term. Select a phrase to have it explained.
+      </p>
     </section>
 
     <header class="controls">
@@ -106,9 +116,30 @@ export class AnalysisPanelComponent {
   /** What the reader has highlighted, and not yet decided what to do with. */
   @Input() selection: PassageSelection | null = null;
 
+  /**
+   * Whether what is highlighted is a passage at all.
+   *
+   * <p>One word is not. Passage analysis is a paid call that reads a phrase in
+   * the context of the paragraph around it, and a single word asked of it comes
+   * back as a definition — which is what <i>Add to vocabulary</i> is for, and
+   * free. The two buttons sit side by side, so the cheap one has to be the
+   * obvious answer to the cheap question.</p>
+   *
+   * <p>Split on whitespace rather than counted in characters: a long German
+   * compound is still one word, and "on the" is still a phrase.</p>
+   */
+  protected get isPassage(): boolean {
+    const words = this.selection?.text.trim().split(/\s+/).filter(Boolean) ?? [];
+
+    return words.length >= MIN_PASSAGE_WORDS;
+  }
+
   @Output() generate = new EventEmitter<AnalysisKind>();
   @Output() regenerate = new EventEmitter<AnalysisKind>();
   @Output() analyseSelection = new EventEmitter<PassageSelection>();
   @Output() fileSelection = new EventEmitter<PassageSelection>();
   @Output() dismissSelection = new EventEmitter<void>();
 }
+
+/** Two: the smallest selection that is a phrase rather than a term. */
+const MIN_PASSAGE_WORDS = 2;

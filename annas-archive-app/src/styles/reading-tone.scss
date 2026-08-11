@@ -1,0 +1,53 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   Reading tones — white, sepia, black
+
+   The reader's three themes, as one set of custom properties. Global, and
+   anchored on a `data-tone` attribute rather than on a selector, because two
+   different elements have to be able to carry the same palette: the reader
+   itself, and the app chrome around it.
+
+   That is the whole reason this left `reader-shell.component.scss`. Custom
+   properties inherit down the DOM and nowhere else, so a palette declared on
+   `.reader` cannot reach the sidebar sitting beside it — and a sepia page beside
+   a white sidebar reads as a rendering fault rather than a theme. Declared here
+   and set on `.app-shell` (see `ChromeToneService`), one attribute colours both.
+
+   `plain` is deliberately absent: it means "no reading tone", so it matches
+   nothing here and the :root defaults below stand.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* White. Also the fallback for every page that carries no tone at all, which is
+   why it is on :root rather than on `[data-tone='light']` alone. */
+:root,
+[data-tone='light'] {
+  --r2-bg: #ffffff;
+  --r2-fg: #1e1e1e;
+  --reader2-surface: #ffffff;
+  --reader2-border: #e2e2e2;
+  --reader2-hover: rgb(0 0 0 / 5%);
+  --reader2-accent: #3b6ea5;
+  --reader2-accent-soft: #e8effa;
+  --reader2-warn: #c99a2e;
+  --reader2-warn-soft: rgb(201 154 46 / 12%);
+}
+
+[data-tone='sepia'] {
+  --r2-bg: #f4ecd8;
+  --r2-fg: #43382c;
+  --reader2-surface: #f9f3e3;
+  --reader2-border: #ddd0b2;
+  --reader2-hover: rgb(67 56 44 / 7%);
+  --reader2-accent: #8a6d3b;
+  --reader2-accent-soft: #ecdfc0;
+}
+
+[data-tone='dark'] {
+  --r2-bg: #14161a;
+  --r2-fg: #e6e6e6;
+  --reader2-surface: #1b1e23;
+  --reader2-border: #2c2f35;
+  --reader2-hover: rgb(255 255 255 / 7%);
+  --reader2-accent: #7aa5d8;
+  --reader2-accent-soft: #243247;
+  --reader2-warn-soft: rgb(201 154 46 / 18%);
+}

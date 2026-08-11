@@ -30,6 +30,9 @@ export class ReaderMeasure {
     const surface = document.querySelector<HTMLElement>('.reading-surface .surface');
     if (!surface) return;
 
-    this.store.resize(measuredFit(surface, () => this.store.chapterWords()));
+    this.store.resize(measuredFit(
+      surface,
+      () => this.store.totalWords(),
+      (start, count) => this.store.wordsAsParagraphs(start, count)));
   }
 }

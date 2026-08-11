@@ -72,6 +72,43 @@ describe('AnalysisPanelComponent', () => {
     expect(filed!).toEqual(SELECTION);
   });
 
+  // ─── one word is a term, not a passage ──────────────────────────────
+
+  /**
+   * The two buttons sit side by side, and only one of them bills. Passage
+   * analysis reads a phrase against the paragraph around it; asked for a single
+   * word it comes back with a definition — which is what the free button beside
+   * it already produces. So the cheap answer to the cheap question is the only
+   * one on offer.
+   */
+  it('refuses to explain a single word', () => {
+    const buttons = render({ selection: { text: 'Minerva', wordOffset: 420 } })
+      .querySelectorAll<HTMLButtonElement>('.selection-actions button');
+
+    expect(buttons[0].disabled).withContext('explaining one word').toBeTrue();
+    expect(buttons[1].disabled).withContext('filing one word is the point').toBeFalse();
+  });
+
+  it('says why, rather than leaving a button greyed out for no stated reason', () => {
+    expect(render({ selection: { text: 'Minerva', wordOffset: 420 } }).querySelector('.nudge')?.textContent)
+      .toContain('Select a phrase');
+  });
+
+  it('explains two words, which is already a phrase', () => {
+    const page = render({ selection: { text: 'the owl', wordOffset: 420 } });
+
+    expect(page.querySelectorAll<HTMLButtonElement>('.selection-actions button')[0].disabled).toBeFalse();
+    expect(page.querySelector('.nudge')).toBeNull();
+  });
+
+  /** Whitespace around a double-click's selection is not a second word. */
+  it('is not fooled into calling a padded single word a phrase', () => {
+    const buttons = render({ selection: { text: '  Minerva \n ', wordOffset: 420 } })
+      .querySelectorAll<HTMLButtonElement>('.selection-actions button');
+
+    expect(buttons[0].disabled).toBeTrue();
+  });
+
   it('lets the reader take neither choice', () => {
     let dismissed = 0;
     component.dismissSelection.subscribe(() => { dismissed++; });

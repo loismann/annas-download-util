@@ -23,6 +23,11 @@ export interface NavEntry {
    *  every icon rail does it ("Spotif-inator" reads as "Music" under an icon).
    *  Two words are fine — captions wrap. Falls back to `label`.
    *
+   *  A `\n` forces the break rather than leaving it to the caption's width: a
+   *  two-word name that happens to fit on one line renders flush against both
+   *  edges of a 76px rail, which reads as clipped even when nothing is cut off.
+   *  The rail's `white-space: pre-line` is what honours it.
+   *
    *  Children need one too: the rail flattens groups away, so every leaf shows
    *  up there on its own. */
   shortLabel?: string;
@@ -34,8 +39,9 @@ export interface NavEntry {
   /** Hidden from non-admins. Route guards are the real enforcement — this only
    *  keeps the menu honest about where a person can actually go. */
   adminOnly?: boolean;
-  /** The inverse: hidden from the admin. Exists for the reader split — while
-   *  both readers run, each person's menu shows only the one that is theirs. */
+  /** The inverse: hidden from the admin. For a page that exists for everybody
+   *  else — the admin reaches Date Night through the pool it schedules from,
+   *  and a second way in is a rail slot spent on nothing. */
   nonAdminOnly?: boolean;
 }
 
@@ -49,11 +55,11 @@ export const NAV_ENTRIES: NavEntry[] = [
       { label: 'Book Search', shortLabel: 'Book Search', route: '/search', icon: 'search' },
       // `local_library` is a person reading — the civic-library glyph. A shelf of
       // books says "collection", which is what this page actually is.
-      { label: 'Ebook Library', shortLabel: 'Ebook Library', route: '/library', icon: 'library_books' },
-      // One label, two destinations: each person sees a single "Ebook Reader",
-      // and the split sends the admin to Reader II while it proves itself.
-      { label: 'Ebook Reader', shortLabel: 'Reader', route: '/reader', icon: 'chrome_reader_mode', nonAdminOnly: true },
-      { label: 'Ebook Reader', shortLabel: 'Reader', route: '/reader2', icon: 'chrome_reader_mode', adminOnly: true }
+      { label: 'Ebook Library', shortLabel: 'Ebook\nLibrary', route: '/library', icon: 'library_books' },
+      // Reader II for everybody now. This was two entries under one label while
+      // the split ran; the guard sends anyone who still holds a `/reader` link
+      // here, so there is one reader and one way to it.
+      { label: 'Ebook Reader', shortLabel: 'Reader', route: '/reader2', icon: 'chrome_reader_mode' }
     ]
   },
   {
@@ -64,18 +70,10 @@ export const NAV_ENTRIES: NavEntry[] = [
       { label: 'Audiobook Library', shortLabel: 'Audiobooks', route: '/audiobooks', icon: 'menu_book', overlayIcon: 'headphones' }
     ]
   },
-  // Admin-only until the CVS checkout leg works — see app.routes.ts. The route
-  // guard is the real enforcement; this just keeps it out of everyone's sidebar.
-  // Only the child carries the flag: a group is hidden automatically once it has
-  // no visible children (sidebar-nav.component.ts), and groups never consult
-  // adminOnly themselves.
-  {
-    label: 'Photos',
-    icon: 'photo_library',
-    children: [
-      { label: 'Photo Prints', shortLabel: 'Photo Prints', route: '/photo-prints', icon: 'print', adminOnly: true }
-    ]
-  },
+  // Photo Prints has no menu entry: the CVS checkout leg never landed, so the
+  // page cannot finish an order. `/photo-prints` still routes, which is enough
+  // for the work to be picked up again without a rail slot pointing at a dead
+  // end in the meantime.
   {
     label: 'TV & Movies',
     icon: 'live_tv',
@@ -93,7 +91,9 @@ export const NAV_ENTRIES: NavEntry[] = [
     label: 'Date Night',
     icon: 'local_movies',
     children: [
-      { label: 'Date Night', shortLabel: 'Date Night', route: '/date-night', icon: 'local_movies' },
+      // Everyone but the admin, who schedules from the pool below and reaches
+      // the night itself from there.
+      { label: 'Date Night', shortLabel: 'Date Night', route: '/date-night', icon: 'local_movies', nonAdminOnly: true },
       {
         label: 'Date Night Pool',
         shortLabel: 'Pool',
@@ -106,6 +106,8 @@ export const NAV_ENTRIES: NavEntry[] = [
   // Not admin-only: each person connects their own Spotify account, and the
   // connection is stored per app user, so opening this up gives nobody access to
   // anybody else's library.
-  { label: 'Spotify', shortLabel: 'Spotify', route: '/spotifinator', icon: 'queue_music' },
-  { label: 'Lucy Quiz', shortLabel: 'Quiz', route: '/quiz', icon: 'quiz', adminOnly: true }
+  { label: 'Spotify', shortLabel: 'Spotify', route: '/spotifinator', icon: 'queue_music' }
+  // Lucy Quiz has no entry either, for the same reason as Photo Prints: `/quiz`
+  // still routes and the feature still builds, it just does not earn a place in
+  // anybody's menu.
 ];

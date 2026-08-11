@@ -89,8 +89,8 @@ describe('ReaderStore', () => {
   it('shows only the current page’s words', async () => {
     await open();
 
-    expect(store.visibleText().split(' ').length).toBe(300);
-    expect(store.visibleText().startsWith('w0 ')).toBeTrue();
+    expect(store.visibleParagraphs().join(' ').split(' ').length).toBe(300);
+    expect(store.visibleParagraphs()[0].startsWith('w0 ')).toBeTrue();
   });
 
   it('pages forward and back within a chapter', async () => {
@@ -98,7 +98,7 @@ describe('ReaderStore', () => {
 
     await store.pageForwardAsync();
     expect(store.page()).toBe(1);
-    expect(store.visibleText().startsWith('w300 ')).toBeTrue();
+    expect(store.visibleParagraphs()[0].startsWith('w300 ')).toBeTrue();
 
     await store.pageBackAsync();
     expect(store.page()).toBe(0);
@@ -201,6 +201,27 @@ describe('ReaderStore', () => {
     await open();
 
     expect(store.pageTotal()).toBe(1);
-    expect(store.visibleText()).toBe('');
+    expect(store.visibleParagraphs()).toEqual([]);
+  });
+
+  /**
+   * Paragraphs are carried alongside the words, never inside them. A word offset
+   * is what the reading position, every bookmark, every search hit and every
+   * section boundary are counted in, and the server counts by splitting on
+   * whitespace — so a blank line has to change how the page is drawn without
+   * changing what any of those numbers mean.
+   */
+  it('splits a page into paragraphs without renumbering a single word', async () => {
+    api.chapter.and.returnValue(of<Chapter>({
+      chapter: { id: 0, title: 'Two', level: 0, wordCount: 4, hasSummary: false, summaryIsStale: false },
+      text: 'w0 w1\n\nw2 w3'
+    }));
+
+    await open();
+
+    expect(store.visibleParagraphs()).toEqual(['w0 w1', 'w2 w3']);
+    expect(store.totalWords())
+      .withContext('the blank line is not a word and must not become one')
+      .toBe(4);
   });
 });

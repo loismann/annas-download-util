@@ -18,6 +18,7 @@ import { DateNightAnnouncementService } from './services/date-night-announcement
 import { DateNightShowtimeService } from './services/date-night-showtime.service';
 import { DateNightReminderService } from './services/date-night-reminder.service';
 import { LoggerService } from './services/logger.service';
+import { ChromeToneService } from './services/chrome-tone.service';
 import { EMPTY, Observable, Subscription, fromEvent, interval, merge, of, timer } from 'rxjs';
 import { switchMap, filter, throttleTime, startWith } from 'rxjs/operators';
 
@@ -120,6 +121,15 @@ import { switchMap, filter, throttleTime, startWith } from 'rxjs/operators';
     }
     .app-nav.dark .nav-footer { border-top-color: rgba(217, 164, 65, 0.25); }
     .app-nav.dark .nav-version { color: rgba(232, 220, 192, 0.6); }
+
+    /* The reader's own tone, whichever it is — the palette comes down from
+       data-tone on .app-shell, so one block covers sepia and black both. */
+    .app-nav.tinted {
+      background: var(--r2-bg);
+      border-right-color: var(--reader2-border);
+    }
+    .app-nav.tinted .nav-footer { border-top-color: var(--reader2-border); }
+    .app-nav.tinted .nav-version { color: var(--r2-fg); opacity: 0.6; }
 
     /* On a phone the nav floats above the page instead of taking a column, so
        the page never gets squeezed into an unusable width. */
@@ -323,7 +333,13 @@ import { switchMap, filter, throttleTime, startWith } from 'rxjs/operators';
          the drawer's width changes, so collapsing to the rail left a dead gap
          where the panel used to be. With flex, the page simply takes whatever
          width the aside gives up and snaps back to the left edge. -->
-    <div class="app-shell" *ngIf="authService.isAuthenticated$ | async; else anonymousShell">
+    <!-- data-tone carries the reader's white/sepia/black choice down to
+         everything inside, the sidebar included — see styles/reading-tone.scss
+         for why the palette cannot live inside the reader's own styles. -->
+    <div
+      class="app-shell"
+      [attr.data-tone]="chromeTone.tone()"
+      *ngIf="authService.isAuthenticated$ | async; else anonymousShell">
       <!-- Phones: fixed overlay above the page, with a backdrop.
            Tablet/desktop: an in-flow column that the page sits beside. -->
       <aside
@@ -331,10 +347,12 @@ import { switchMap, filter, throttleTime, startWith } from 'rxjs/operators';
         [class.rail]="!navOpen(isHandset$ | async)"
         [class.overlay]="isHandset$ | async"
         [class.hidden]="(isHandset$ | async) && !drawerOpen"
-        [class.dark]="darkTheme">
+        [class.dark]="darkTheme"
+        [class.tinted]="tinted">
         <app-sidebar-nav
           [collapsed]="!navOpen(isHandset$ | async)"
           [dark]="darkTheme"
+          [tinted]="tinted"
           (navigated)="onNavigated()"></app-sidebar-nav>
 
         <!-- Only when there's room for it: the rail has no width for a storage
@@ -404,6 +422,17 @@ export class AppComponent implements OnInit, OnDestroy {
    * palette to match. */
   darkTheme = false;
   private routeSub?: Subscription;
+
+  /** The reading tone the chrome is currently wearing, published by whichever
+   * page owns the choice. Only the reader sets it today. */
+  readonly chromeTone = inject(ChromeToneService);
+
+  /** Whether that tone is anything other than "none". The theater palette wins
+   * where they meet: those pages are black by design and are not a reading
+   * preference to be overridden by one. */
+  get tinted(): boolean {
+    return this.chromeTone.tone() !== 'plain' && !this.darkTheme;
+  }
 
   /** Phone-sized: the sidebar becomes a slide-over drawer and the toolbar grows
    * a hamburger. 768px is the app's established mobile breakpoint, and putting

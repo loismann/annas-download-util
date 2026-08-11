@@ -20,6 +20,11 @@
    different components' markup. */
 @use 'styles/library-layout';
 
+/* The reader's white/sepia/black palettes. Global because the app shell wears
+   the reader's tone too, and a palette declared inside the reader's own
+   component styles cannot reach the sidebar beside it. */
+@use 'styles/reading-tone';
+
 /* Import Angular Material’s Indigo-Pink theme */
 @import '@angular/material/prebuilt-themes/indigo-pink.css';
 
@@ -33,6 +38,23 @@ html, body {
 /* Prevent horizontal scroll on mobile */
 body {
   overflow-x: hidden;
+}
+
+/* ── Material icons are not all 24px wide ──────────────────────────────────
+   `.mat-icon` forces a 24×24 box and sets `overflow: hidden` on it, but a
+   ligature glyph's rendered advance is whatever the font says it is — `groups`,
+   `spellcheck` and the outline `favorite_border` are all a shade wider than the
+   box they are put in, and the last column of pixels was being cut off.
+
+   That is the answer to why some icons look perfect and some look clipped: it
+   is a property of the individual glyph, not of the component drawing it. So
+   the fix belongs here rather than in each toolbar that trips over it — this
+   was patched three times in three components before it was named.
+
+   Safe for `svgIcon` too: those are sized to the box by Material itself, so
+   there is nothing outside it to reveal. */
+.mat-icon {
+  overflow: visible;
 }
 
 /* Make Material form fields responsive */

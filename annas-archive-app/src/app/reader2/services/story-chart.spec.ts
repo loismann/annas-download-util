@@ -191,6 +191,38 @@ describe('story-chart, against the real AnyChart build', () => {
 
     expect(span().width).toBeCloseTo(before, 0);
   });
+
+  /**
+   * A wheel reports several notches for one flick of a finger, so a step sized
+   * for a deliberate press of the + button runs away under a mouse. Half as much
+   * per notch — and because zoom composes by multiplication, "half" has to mean
+   * two notches landing where one press lands, not half the number.
+   */
+  it('moves half as far on one notch of the wheel as on one press of the button', () => {
+    const made = drawn();
+    const atRest = span().width;
+
+    wheelZoom(made, 120);
+    const oneNotch = span().width;
+    wheelZoom(made, 120);
+    const twoNotches = span().width;
+
+    // Back to where it started, on this same chart rather than a second one:
+    // fit() is a reset to scale 1, which is the fact `fitTo` is built on.
+    made.chart.fit();
+    expect(span().width).withContext('fit() put it back').toBeCloseTo(atRest, 0);
+
+    zoom.in(made.chart);
+
+    expect(span().width)
+      .withContext('two notches compose to exactly one button press')
+      .toBeCloseTo(twoNotches, 0);
+
+    expect(oneNotch)
+      .withContext('and one notch alone falls short of it')
+      .toBeGreaterThan(atRest);
+    expect(oneNotch).toBeLessThan(twoNotches);
+  });
 });
 
 /** Pure, and needs no library — so it is tested apart from the drawing above. */

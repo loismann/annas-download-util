@@ -17,16 +17,23 @@ import { FitAt, MIN_PAGE_WORDS, wordsPerPage } from './pagination';
  * by the store's <code>computed</code> until something they depend on
  * changes.</p>
  */
-export function measuredFit(surface: HTMLElement, words: () => string[]): FitAt {
+/**
+ * @param page  A word range as the paragraphs it would be drawn as. Not a flat
+ *   string: the surface puts a gap between paragraphs, and a probe that laid one
+ *   block where the reader will see four would measure a page several gaps too
+ *   tall and let that much text run off the bottom of every one.
+ */
+export function measuredFit(
+  surface: HTMLElement, total: () => number, page: (start: number, count: number) => string[]
+): FitAt {
   return start => {
-    const all = words();
-    const remaining = all.length - start;
+    const remaining = total() - start;
     if (remaining <= 0) return MIN_PAGE_WORDS;
 
     const probe = cloneSurface(surface);
 
     try {
-      return search(probe, all, start, remaining, surface.clientHeight);
+      return search(probe, page, start, remaining, surface.clientHeight);
     } finally {
       probe.root.remove();
     }
@@ -46,10 +53,11 @@ export function estimatedFit(
  * technically overflows still beats one that advances nowhere.
  */
 function search(
-  probe: ProbeParts, all: string[], start: number, remaining: number, height: number
+  probe: ProbeParts, page: (start: number, count: number) => string[],
+  start: number, remaining: number, height: number
 ): number {
   const fits = (count: number): boolean => {
-    probe.body.textContent = all.slice(start, start + count).join(' ');
+    probe.fill(page(start, count));
     return probe.root.scrollHeight <= height;
   };
 
@@ -75,7 +83,9 @@ function search(
 
 interface ProbeParts {
   root: HTMLElement;
-  body: HTMLElement;
+
+  /** Replaces whatever prose the probe held with these paragraphs. */
+  fill: (paragraphs: string[]) => void;
 }
 
 /**
@@ -83,14 +93,24 @@ interface ProbeParts {
  * scoped styles apply to it exactly as they do to the real one. Width is pinned
  * and height freed: the question is "how tall would this content be at the real
  * width", and the answer is compared against the real height.
+ *
+ * <p>The prose is stripped out and one paragraph kept as the mould. Cloning a
+ * real one is what carries Angular's <c>_ngcontent</c> attribute across, and
+ * without that attribute the scoped <c>.body</c> rules — including the gap
+ * between paragraphs this exists to account for — would not apply to the probe
+ * at all.</p>
  */
 function cloneSurface(surface: HTMLElement): ProbeParts {
   const root = surface.cloneNode(false) as HTMLElement;
+  let mould: HTMLElement | null = null;
 
   for (const child of Array.from(surface.children)) {
-    const copy = child.cloneNode(true) as HTMLElement;
-    if (copy.classList.contains('body')) copy.textContent = '';
-    root.appendChild(copy);
+    if (child.classList.contains('body')) {
+      mould ??= child.cloneNode(false) as HTMLElement;
+      continue;
+    }
+
+    root.appendChild(child.cloneNode(true));
   }
 
   root.style.position = 'fixed';
@@ -107,7 +127,28 @@ function cloneSurface(surface: HTMLElement): ProbeParts {
 
   surface.parentElement?.appendChild(root);
 
-  const body = root.querySelector<HTMLElement>('.body') ?? root;
+  // Only when the surface is showing no prose at all — an empty chapter, or the
+  // paint before the first page arrives. There is nothing to paginate then, so
+  // the missing scoped styles cost the measurement nothing.
+  const blank = mould ?? plainParagraph();
 
-  return { root, body };
+  return {
+    root,
+    fill: paragraphs => {
+      for (const old of Array.from(root.querySelectorAll('.body'))) old.remove();
+
+      for (const text of paragraphs) {
+        const copy = blank.cloneNode(false) as HTMLElement;
+        copy.textContent = text;
+        root.appendChild(copy);
+      }
+    }
+  };
+}
+
+function plainParagraph(): HTMLElement {
+  const paragraph = document.createElement('p');
+  paragraph.className = 'body';
+
+  return paragraph;
 }

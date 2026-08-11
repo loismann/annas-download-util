@@ -36,7 +36,12 @@ import { NAV_ENTRIES, NavEntry } from './nav-model';
       </span>
     </ng-template>
 
-    <nav class="sidebar-nav" [class.rail]="collapsed" [class.dark]="dark" aria-label="Main navigation">
+    <nav
+      class="sidebar-nav"
+      [class.rail]="collapsed"
+      [class.dark]="dark"
+      [class.tinted]="tinted"
+      aria-label="Main navigation">
 
       <!-- ── Rail: one icon per destination, groups flattened away ────────
            No flyouts. A rail exists to reach a page in one click; making a
@@ -191,8 +196,10 @@ import { NAV_ENTRIES, NavEntry } from './nav-model';
       font-size: 11px;
       line-height: 1.15;
       max-width: 100%;
-      /* Captions are up to two words, so they wrap rather than truncate. */
-      white-space: normal;
+      /* Captions are up to two words, so they wrap rather than truncate.
+         pre-line rather than normal, so a newline in a shortLabel is a break the
+         caption asked for, instead of one the rail's width happens to give it. */
+      white-space: pre-line;
       overflow: visible;
     }
 
@@ -243,14 +250,64 @@ import { NAV_ENTRIES, NavEntry } from './nav-model';
     .sidebar-nav.dark.rail .nav-link.active .nav-icon-badge {
       color: var(--thtr-gilt-bright, #ffdf7e);
     }
+
+
+    /* ── The reader's tone ───────────────────────────────────────────────────
+       One block for sepia and for black, because the difference between them is
+       entirely in the variables — which the app shell sets from the reader's own
+       preference (styles/reading-tone.scss). A second block per tone would be
+       the same rules written twice with different hex in them.
+
+       Nothing here applies on the plain tone: no class, no rules, and every
+       page outside the reader keeps the colours above untouched. */
+
+    .sidebar-nav.tinted .nav-link { color: var(--r2-fg); }
+    .sidebar-nav.tinted .nav-link:hover { background: var(--reader2-hover); }
+
+    /* Icons sit back from the labels at every tone. Opacity rather than a
+       second colour, so this holds on a light page and a black one alike. */
+    .sidebar-nav.tinted .nav-icon { color: var(--r2-fg); opacity: 0.7; }
+
+    /* The badge's ring separates it from the icon underneath, so it has to be
+       whatever the sidebar is standing on — see the theater rules above. */
+    .sidebar-nav.tinted .nav-icon-badge {
+      color: var(--r2-fg);
+      background: var(--r2-bg);
+      box-shadow: 0 0 0 1.5px var(--r2-bg);
+    }
+
+    .sidebar-nav.tinted .nav-group { color: var(--r2-fg); }
+    .sidebar-nav.tinted .nav-chevron { color: var(--r2-fg); opacity: 0.5; }
+
+    .sidebar-nav.tinted .nav-link.active {
+      background: var(--reader2-accent-soft);
+      border-left-color: var(--reader2-accent);
+      color: var(--reader2-accent);
+    }
+    .sidebar-nav.tinted.rail .nav-link.active {
+      border-left-color: transparent;
+      border-right-color: var(--reader2-accent);
+    }
+    .sidebar-nav.tinted .nav-link.active .nav-icon,
+    .sidebar-nav.tinted .nav-link.active .nav-icon-badge {
+      color: var(--reader2-accent);
+      opacity: 1;
+    }
   `]
 })
 export class SidebarNavComponent {
   /** Renders the icon rail instead of the full-width panel. */
   @Input() collapsed = false;
 
-  /** Matches the sidebar to the Date Night pages' black background. */
+  /** Matches the sidebar to the Date Night pages' black background. Its own
+   *  input rather than a third tone: the theater palette is gilt and cream, and
+   *  belongs to those pages rather than to a reading preference. */
   @Input() dark = false;
+
+  /** Take colours from the reading tone the shell is wearing, whatever it is.
+   *  The palette arrives as inherited custom properties, so this only has to say
+   *  *whether* to use them, never which. */
+  @Input() tinted = false;
 
   /** Lets the phone drawer close itself once a destination is chosen. The
    *  permanent sidebar ignores it. */

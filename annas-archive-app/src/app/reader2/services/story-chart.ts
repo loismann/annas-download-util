@@ -153,10 +153,34 @@ const HIT_GAP = 12;
  * whether the vendored build has a given method: a map that cannot fit is worse
  * with a broken button than without one.</p>
  */
+/**
+ * <p><c>zoom</c> and not <c>zoomIn</c>/<c>zoomOut</c>: measured against the real
+ * build, those two ignore the factor they are handed and step by a fixed amount
+ * of their own. That is why asking the wheel for a gentler step changed nothing
+ * — every notch was a full button press whatever number it was given. Nothing
+ * says so anywhere; <c>story-chart.spec.ts</c> is where it is written down.</p>
+ */
 export const zoom = {
-  in: (chart: any) => chart?.zoomIn?.(1.3),
-  out: (chart: any) => chart?.zoomOut?.(1.3)
+  in: (chart: any, by: number = BUTTON_STEP) => chart?.zoom?.(by),
+  out: (chart: any, by: number = BUTTON_STEP) => chart?.zoom?.(1 / by)
 };
+
+/** One press of + or −. Deliberate, so it is worth a whole step. */
+const BUTTON_STEP = 1.3;
+
+/**
+ * One notch of the wheel: half a button press.
+ *
+ * <p>The square root rather than half the number, because zoom composes by
+ * multiplication — two notches of √1.3 land on exactly 1.3, which is what "half
+ * as much per notch" has to mean for it to be true of two notches as well as
+ * one. Halving the factor itself (1.15) would make two notches 1.32, and ten
+ * notches four times the intended scale.</p>
+ *
+ * <p>A wheel reports several notches for one flick of a finger, which is why a
+ * step sized for a deliberate button press ran away under a mouse.</p>
+ */
+const WHEEL_STEP = Math.sqrt(BUTTON_STEP);
 
 /**
  * Everything on screen at once.
@@ -195,9 +219,11 @@ const LARGEST_FIT = 1.8;
  * to be somewhere the direction is one line rather than a library default. Away
  * from the reader zooms out and toward them zooms in — the reverse of the usual
  * convention, which is what was asked for.</p>
+ *
+ * <p>Gentler than the buttons: see {@link WHEEL_STEP}.</p>
  */
 export function wheelZoom(drawn: Drawn | undefined, deltaY: number): void {
   if (!drawn || deltaY === 0) return;
 
-  (deltaY > 0 ? zoom.in : zoom.out)(drawn.chart);
+  (deltaY > 0 ? zoom.in : zoom.out)(drawn.chart, WHEEL_STEP);
 }

@@ -8,44 +8,19 @@
   grid-template-columns: 18rem calc((100% - 18rem) * var(--split, 0.6)) auto 1fr;
   height: 100%;
 
-  // ─── the reading theme, owned here and answered everywhere ──────────
+  // ─── the reading theme, answered here and declared elsewhere ────────
   //
-  // One set of variables at the root, so sepia is the colour of the whole
-  // reader — sidebar, toolbar, panels — not a beige rectangle floating on a
-  // white page. Every reader2 component styles itself from these.
-  --r2-bg: #ffffff;
-  --r2-fg: #1e1e1e;
-  --reader2-surface: #ffffff;
-  --reader2-border: #e2e2e2;
-  --reader2-hover: rgb(0 0 0 / 5%);
-  --reader2-accent: #3b6ea5;
-  --reader2-accent-soft: #e8effa;
-  --reader2-warn: #c99a2e;
-  --reader2-warn-soft: rgb(201 154 46 / 12%);
-
+  // The palette behind these two used to be declared right here. It moved to
+  // `src/styles/reading-tone.scss` when the app's sidebar had to wear the same
+  // tone: custom properties inherit downwards only, so a palette declared on
+  // `.reader` can never reach a sibling of the reader.
+  //
+  // This element still carries `data-tone` itself, so it still colours itself
+  // straight from its own preference and does not wait on anyone. The shell
+  // carries the same attribute for the chrome around it, told by
+  // `ChromeToneService` — one declaration, two elements that need it.
   background: var(--r2-bg);
   color: var(--r2-fg);
-}
-
-.reader[data-theme='sepia'] {
-  --r2-bg: #f4ecd8;
-  --r2-fg: #43382c;
-  --reader2-surface: #f9f3e3;
-  --reader2-border: #ddd0b2;
-  --reader2-hover: rgb(67 56 44 / 7%);
-  --reader2-accent: #8a6d3b;
-  --reader2-accent-soft: #ecdfc0;
-}
-
-.reader[data-theme='dark'] {
-  --r2-bg: #14161a;
-  --r2-fg: #e6e6e6;
-  --reader2-surface: #1b1e23;
-  --reader2-border: #2c2f35;
-  --reader2-hover: rgb(255 255 255 / 7%);
-  --reader2-accent: #7aa5d8;
-  --reader2-accent-soft: #243247;
-  --reader2-warn-soft: rgb(201 154 46 / 18%);
 }
 
 .reader.no-sidebar { grid-template-columns: calc(100% * var(--split, 0.6)) auto 1fr; }

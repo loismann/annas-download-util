@@ -82,8 +82,6 @@ describe('SidebarNavComponent (characterization)', () => {
   // ─── Who can see what ────────────────────────────────────────────────
 
   describe('visibility', () => {
-    // Keyed by route rather than label: the two readers deliberately share the
-    // label "Ebook Reader", so a route is the only honest identity here.
     it('should hide admin-only entries from everyone else', () => {
       const shown = component.railEntries.map(e => e.route);
       const adminOnly = allLeaves().filter(e => e.adminOnly).map(e => e.route);
@@ -101,31 +99,45 @@ describe('SidebarNavComponent (characterization)', () => {
       adminOnly.forEach(route => expect(shown).toContain(route));
     });
 
-    // ─── the reader split ────────────────────────────────────────────
+    it('should hide entries marked for everyone but the admin', () => {
+      isAdmin = true;
+      const nonAdminOnly = allLeaves().filter(e => e.nonAdminOnly).map(e => e.route);
 
-    it('should give the family the original reader and not Reader II', () => {
-      const routes = component.railEntries.map(e => e.route);
+      const shown = component.railEntries.map(e => e.route);
 
-      expect(routes).toContain('/reader');
-      expect(routes).not.toContain('/reader2');
+      expect(nonAdminOnly.length).toBeGreaterThan(0);
+      nonAdminOnly.forEach(route => expect(shown).not.toContain(route));
     });
 
-    it('should give the admin Reader II and not the original', () => {
+    // ─── one reader, for everybody ───────────────────────────────────
+
+    /**
+     * This used to be three tests about the reader split: the family had Reader
+     * I, the admin had Reader II, and the two shared a label so that neither
+     * knew there was a second one. Reader II is everybody's now, and the split
+     * guard forwards anyone still holding a /reader link.
+     */
+    it('should offer one reader, the same one, to everybody', () => {
+      const family = component.railEntries.filter(e => e.route?.startsWith('/reader'));
       isAdmin = true;
+      const admin = component.railEntries.filter(e => e.route?.startsWith('/reader'));
 
-      const routes = component.railEntries.map(e => e.route);
-
-      expect(routes).toContain('/reader2');
-      expect(routes).not.toContain('/reader');
+      expect(family.map(e => e.route)).toEqual(['/reader2']);
+      expect(admin.map(e => e.route)).toEqual(['/reader2']);
+      expect(family[0].label).toBe('Ebook Reader');
     });
 
-    it('should call each person\'s reader by the same plain name', () => {
-      const family = component.railEntries.find(e => e.route === '/reader');
+    /**
+     * Both pages still route — the quiz in particular must keep building, since
+     * it shares no code with the reader being retired around it. They are simply
+     * not worth a slot in a rail that has to stay scannable.
+     */
+    it('should point at neither the photo prints page nor the quiz', () => {
       isAdmin = true;
-      const admin = component.railEntries.find(e => e.route === '/reader2');
+      const routes = component.railEntries.map(e => e.route);
 
-      expect(family?.label).toBe('Ebook Reader');
-      expect(admin?.label).toBe('Ebook Reader');
+      expect(routes).not.toContain('/photo-prints');
+      expect(routes).not.toContain('/quiz');
     });
 
     it('should filter the rail and the panel identically', () => {
@@ -242,6 +254,24 @@ describe('SidebarNavComponent (characterization)', () => {
       fixture.detectChanges();
 
       expect(fixture.nativeElement.querySelector('.sidebar-nav.dark')).toBeTruthy();
+    });
+
+    /**
+     * One class for sepia and for black both: the difference between them is
+     * entirely in the custom properties the app shell sets, so the sidebar only
+     * has to say whether to use them.
+     */
+    it('should take the reading tone when the shell is wearing one', () => {
+      component.tinted = true;
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.querySelector('.sidebar-nav.tinted')).toBeTruthy();
+    });
+
+    it('should stay plain when it is not', () => {
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.querySelector('.sidebar-nav.tinted')).toBeNull();
     });
 
     it('should announce itself to assistive tech', () => {

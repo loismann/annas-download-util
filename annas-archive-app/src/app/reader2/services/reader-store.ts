@@ -3,6 +3,7 @@ import { firstValueFrom } from 'rxjs';
 import { Reader2ApiService } from './reader2-api.service';
 import { ReaderTasks, quietly } from './reader-tasks';
 import { FitAt, pageIndexOf, pageStarts } from './pagination';
+import { paragraphStarts, paragraphsOf } from './paragraphs';
 import {
   Book, ChapterInfo, ChapterList, DEFAULT_PREFERENCES, Lens, ReadingPreferences, SearchHit, SectionInfo
 } from '../reader2.models';
@@ -64,6 +65,10 @@ export class ReaderStore {
   /** The chapter as words — the unit every offset, slice, and fit shares. */
   readonly chapterWords = computed(() => splitWords(this.chapterText()));
 
+  /** Which of those begin a paragraph — alongside the words, never inside them,
+   *  so a paragraph break costs no word its number. See {@link paragraphStarts}. */
+  readonly chapterParagraphs = computed(() => paragraphStarts(this.chapterText()));
+
   readonly totalWords = computed(() => this.chapterWords().length);
 
   /**
@@ -94,14 +99,24 @@ export class ReaderStore {
     return this.lenses().find(l => l.key === key) ?? null;
   });
 
-  /** The words on screen. Derived, so nothing has to remember to re-slice. */
-  readonly visibleText = computed(() => {
+  /** The words on screen, in paragraphs. Derived, so nothing re-slices by hand. */
+  readonly visibleParagraphs = computed(() => {
     const starts = this.pageBounds();
     const from = starts[this.page()];
-    const to = starts[this.page() + 1] ?? this.totalWords();
 
-    return this.chapterWords().slice(from, to).join(' ');
+    return this.wordsAsParagraphs(from, (starts[this.page() + 1] ?? this.totalWords()) - from);
   });
+
+  /**
+   * Any run of words as the paragraphs it contains. Public because the page
+   * measurer needs the same answer for a range it is only considering: laying
+   * out one block where the reader will see four measures a page several
+   * paragraph gaps too tall, and every one of them then overflows.
+   */
+  wordsAsParagraphs(startWord: number, wordCount: number): string[] {
+    return paragraphsOf(
+      this.chapterWords(), this.chapterParagraphs(), startWord, startWord + wordCount);
+  }
 
   readonly canPageBack = computed(() => this.page() > 0 || this.chapterIndex() > 0);
   readonly canPageForward = computed(

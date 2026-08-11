@@ -18,6 +18,7 @@ import { FlashcardStore } from './services/flashcard-store';
 import { BookmarkStore } from './services/bookmark-store';
 import { StoryStore } from './services/story-store';
 import { ReaderMeasure } from './services/reader-measure';
+import { ReaderChrome } from './services/reader-chrome';
 import { Bookmark, PassageSelection } from './reader2.models';
 
 /**
@@ -41,7 +42,7 @@ import { Bookmark, PassageSelection } from './reader2.models';
   ],
   providers: [
     ReaderTasks, ReaderStore, AnalysisStore, VocabularyStore, FlashcardStore, BookmarkStore,
-    StoryStore, ReaderMeasure
+    StoryStore, ReaderMeasure, ReaderChrome
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './reader-shell.component.html',
@@ -57,6 +58,9 @@ export class ReaderShellComponent implements OnInit {
   private readonly confirm = inject(ReaderConfirm);
   private readonly route = inject(ActivatedRoute);
   private readonly measurer = inject(ReaderMeasure);
+
+  /** Everything about how the reader looks that is not about what it shows. */
+  protected readonly chrome = inject(ReaderChrome);
 
   protected readonly panel = signal<ToolPanel | null>(null);
   protected readonly sidebarOpen = signal(true);
@@ -191,8 +195,4 @@ export class ReaderShellComponent implements OnInit {
     this.measure();
   }
 
-  protected toggleFullscreen(): void {
-    if (document.fullscreenElement) void document.exitFullscreen();
-    else void document.documentElement.requestFullscreen().catch(() => undefined);
-  }
 }

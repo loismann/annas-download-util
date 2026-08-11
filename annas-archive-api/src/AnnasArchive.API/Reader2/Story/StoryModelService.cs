@@ -7,24 +7,6 @@ using Serilog;
 
 namespace AnnasArchive.API.Reader2.Story;
 
-/// <summary>Why one chapter's ingest did nothing, or null when it did something.</summary>
-public enum IngestSkip
-{
-    /// <summary>Already folded in. The idempotency that makes a back-fill resumable.</summary>
-    AlreadyIngested,
-
-    /// <summary>No chapter summary to extract from. Ingest never summarises.</summary>
-    NoSummary,
-
-    /// <summary>This book's type does not accumulate a story model.</summary>
-    NotAStoryLens
-}
-
-public sealed record IngestResult(StoryModel Model, IngestSkip? Skipped)
-{
-    public bool DidWork => Skipped is null;
-}
-
 /// <summary>
 /// Reads, ingests, and back-fills a book's story model.
 ///
@@ -145,7 +127,10 @@ public sealed class StoryModelService(
                     return new Produced<StoryModel>(latest, Model: "none");
                 }
 
-                return await ExtractAsync(ctx, latest, chapter, summary, token);
+                var extracted = await ExtractAsync(ctx, latest, chapter, summary, token);
+                skipped = extracted.Skipped;
+
+                return extracted.Produced;
             },
             force: true, ct);
 
@@ -226,8 +211,28 @@ public sealed class StoryModelService(
             async token => MergeResolution.Resolve(await ReadAsync(ctx, token), mergeId, accept),
             ct);
 
-    /// <summary>One extraction call, parsed, merged. The only place a model is asked.</summary>
-    private async Task<Produced<StoryModel>> ExtractAsync(
+    /// <summary>What one extraction produced, and why it produced nothing if it did not.</summary>
+    private sealed record Extracted(Produced<StoryModel> Produced, IngestSkip? Skipped);
+
+    /// <summary>
+    /// One extraction call, parsed, merged. The only place a model is asked.
+    ///
+    /// <para><b>An answer that will not parse leaves the chapter un-ingested.</b>
+    /// This used to merge an empty delta and tick the chapter off, on the reasoning
+    /// that the household had paid either way and charging twice for the same
+    /// unusable answer was the worse failure. That reasoning holds for a model that
+    /// answered <i>badly</i>. It does not hold for one that was cut off: the output
+    /// ceiling is the commonest cause by far, the answer is truncated rather than
+    /// wrong, and the same call with more room succeeds. Ticking the chapter off
+    /// made that unreachable — re-summarising walked straight past it, so the only
+    /// way back was a full rebuild, which failed identically.</para>
+    ///
+    /// <para>The cost of the wasted call is real and is not recovered. What is
+    /// recovered is the ability to try again, which is worth more than one fast-tier
+    /// call. The reader is told, rather than left with a record that is silently
+    /// empty and says it is complete.</para>
+    /// </summary>
+    private async Task<Extracted> ExtractAsync(
         ReaderContext ctx, StoryModel current, int chapter, string summary, CancellationToken ct)
     {
         // Corrected, so the digest offers the reader's preferred names and the
@@ -238,17 +243,31 @@ public sealed class StoryModelService(
             chapter, options.StoryDigestMaxActors, options.StoryDigestRecentChapters);
         var produced = await model.AskLensAsync(ctx, CallKind.StoryExtraction, Compose(chapter, digest, summary), ct);
 
-        // A model that answered with something unreadable has cost the household a
-        // call either way, so the chapter is still marked ingested: charging twice
-        // for the same unusable answer is the worse of the two failures.
         if (!StoryExtraction.TryParse(produced.Content.Markdown, chapter, out var delta))
+        {
+            // Logged with the length, because truncation and nonsense look identical
+            // from here and the length is what tells them apart: an answer that ran
+            // to the ceiling was cut off, and the budget is the thing to raise.
             Log.Warning(
-                "[reader2] Story extraction for {Book} chapter {Chapter} was not readable JSON",
-                ctx.Ref, chapter);
+                "[reader2] Story extraction for {Book} chapter {Chapter} was not readable JSON "
+                + "({Tokens} completion tokens, ceiling {Ceiling}). The chapter is left un-ingested "
+                + "so it can be tried again.",
+                ctx.Ref, chapter, produced.CompletionTokens,
+                options.Budgets[CallKind.StoryExtraction].MaxCompletionTokens);
 
-        return new Produced<StoryModel>(
-            StoryModelMerger.Merge(current, delta, options.MergeRules),
-            produced.Model, produced.PromptTokens, produced.CompletionTokens);
+            // The model is stored unchanged rather than merged, so the chapter stays
+            // out of chaptersIngested and the next ingest tries it properly.
+            return new Extracted(
+                new Produced<StoryModel>(
+                    current, produced.Model, produced.PromptTokens, produced.CompletionTokens),
+                IngestSkip.Unreadable);
+        }
+
+        return new Extracted(
+            new Produced<StoryModel>(
+                StoryModelMerger.Merge(current, delta, options.MergeRules),
+                produced.Model, produced.PromptTokens, produced.CompletionTokens),
+            Skipped: null);
     }
 
     /// <summary>The stored chapter summary, or null. Never generates one.</summary>

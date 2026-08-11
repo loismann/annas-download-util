@@ -114,4 +114,30 @@ public class Reader2OptionsTests
         names.Should().OnlyContain(n => n.StartsWith("reader2-"));
         ModelCalls.EndpointName(CallKind.ChapterSummary).Should().Be("reader2-chapter-summary");
     }
+
+    /// <summary>
+    /// Story extraction gets the most room of any call, and the reason is not that
+    /// it writes the most prose — it writes none. It is the one kind whose output
+    /// length scales with how <i>good</i> its input was: a chapter summary naming
+    /// thirty-five commanders and twenty-five places must come back as an entry for
+    /// each, a container for every place, and an edge for every pair in contact.
+    ///
+    /// <para>At 4,000 a campaign chapter was cut off mid-JSON. The answer did not
+    /// parse, nothing was recorded, and the panel said "none recorded yet" — so a
+    /// budget trimmed back here does not read as a smaller answer, it reads as a
+    /// broken feature.</para>
+    /// </summary>
+    [Fact]
+    public void Story_extraction_has_the_most_room_of_any_call()
+    {
+        var options = Load();
+        var extraction = options[CallKind.StoryExtraction].MaxCompletionTokens;
+
+        extraction.Should().BeGreaterThanOrEqualTo(
+            12000, "a dense chapter's delta runs to thousands of tokens of JSON");
+
+        foreach (var kind in CallKinds.All.Where(k => k != CallKind.StoryExtraction))
+            options[kind].MaxCompletionTokens.Should().BeLessThan(
+                extraction, $"{kind} writes prose for a reader; extraction writes a record of a cast");
+    }
 }

@@ -128,7 +128,14 @@ public sealed class Reader2Options
             [CallKind.PassageAnalysis] = new(1600, ModelTier.Fast, Temperature: 0.5),
             [CallKind.ExplainSimply] = new(1500, ModelTier.Deep, ReasoningEffort: "medium"),
             [CallKind.LearnMore] = new(2000, ModelTier.Deep, Temperature: 0.6),
-            [CallKind.StoryExtraction] = new(4000, ModelTier.Fast, Temperature: 0.2),
+            // The largest budget here, and it has to be. This is the one call whose
+            // output length scales with how *good* the input was: a chapter summary
+            // naming thirty-five commanders and twenty-five places must come back as
+            // an entry for each, a container for every place, and an edge for every
+            // pair in contact. At 4,000 a campaign chapter was cut off mid-JSON, the
+            // answer would not parse, and the record came back empty — see the note
+            // on truncation in StoryModelService.ExtractAsync.
+            [CallKind.StoryExtraction] = new(12000, ModelTier.Fast, Temperature: 0.2),
             [CallKind.ChapterLabels] = new(1500, ModelTier.Fast, Temperature: 0.2),
             // Generous on purpose. Terms the reader already knows are excluded in
             // the input, and an exclusion list only earns its place if the model

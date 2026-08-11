@@ -162,22 +162,71 @@ public class StoryModelServiceTests : IDisposable
     }
 
     /// <summary>
-    /// An unreadable answer still marks the chapter ingested. The household has
-    /// paid for the call either way, and charging twice for the same unusable
-    /// answer is the worse of the two failures.
+    /// An unreadable answer leaves the chapter out of the record.
+    ///
+    /// <para>This used to tick the chapter off, reasoning that the household had
+    /// paid either way. That reasoning fitted a model which answered badly; the
+    /// commonest cause turned out to be the output ceiling, where the answer is
+    /// merely cut off and the same call with more room succeeds. Ticking the
+    /// chapter off made the retry unreachable and left a record that looked
+    /// finished and was empty.</para>
     /// </summary>
     [Fact]
-    public async Task An_unreadable_answer_costs_one_call_and_not_two()
+    public async Task An_unreadable_answer_leaves_the_chapter_out_of_the_record()
     {
         var ctx = await BookAsync();
         await SummarisedAsync(ctx, 0);
         _f.Ai.Answer = _ => "I could not find any characters in this chapter.";
 
-        await _story.IngestAsync(ctx, 0);
+        var result = await _story.IngestAsync(ctx, 0);
+
+        result.Skipped.Should().Be(IngestSkip.Unreadable);
+        (await _story.ReadAsync(ctx)).ChaptersIngested
+            .Should().BeEmpty("an un-ingested chapter is what makes a retry possible");
+    }
+
+    /// <summary>
+    /// And the retry actually reaches the model. The wasted call is not recovered;
+    /// the ability to try again is, which is worth more than one fast-tier call.
+    /// </summary>
+    [Fact]
+    public async Task A_chapter_whose_extraction_could_not_be_read_lands_on_the_second_try()
+    {
+        var ctx = await BookAsync();
+        await SummarisedAsync(ctx, 0);
+
+        _f.Ai.Answer = _ => "I could not find any characters in this chapter.";
         await _story.IngestAsync(ctx, 0);
 
-        Extractions.Should().Be(1);
-        (await _story.ReadAsync(ctx)).ChaptersIngested.Should().Equal(0);
+        _f.Ai.Answer = _ => """{"newActors": [{"canonicalName": "Pierre", "tier": "major"}]}""";
+        var result = await _story.IngestAsync(ctx, 0);
+
+        Extractions.Should().Be(2, "the first answer was unusable, so the chapter was never done");
+        result.Skipped.Should().BeNull();
+        result.Model.ChaptersIngested.Should().Equal(0);
+        result.Model.Actors.Should().ContainSingle(a => a.CanonicalName == "Pierre");
+    }
+
+    /// <summary>
+    /// Nothing is lost when one chapter's answer cannot be read: the model is
+    /// stored unchanged rather than merged, so an earlier chapter's cast survives.
+    /// </summary>
+    [Fact]
+    public async Task An_unreadable_answer_does_not_disturb_what_is_already_recorded()
+    {
+        var ctx = await BookAsync();
+        await SummarisedAsync(ctx, 0);
+        await SummarisedAsync(ctx, 1);
+
+        await _story.IngestAsync(ctx, 0);
+
+        _f.Ai.Answer = _ => "not json";
+        await _story.IngestAsync(ctx, 1);
+
+        var model = await _story.ReadAsync(ctx);
+
+        model.Actors.Should().ContainSingle(a => a.CanonicalName == "Pierre");
+        model.ChaptersIngested.Should().Equal(0);
     }
 
     // ─── back-fill ──────────────────────────────────────────────────────

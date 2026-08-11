@@ -60,9 +60,14 @@ internal static class AiRoutes
     /// nothing here reaches a model at all — the gate is around the call, not
     /// around the reporting of it.</para>
     ///
-    /// <para>A failure is swallowed. The reader asked for a summary and has one;
-    /// losing it to a problem with a feature they did not ask about would be the
-    /// wrong trade, and the chapter can be ingested again later.</para>
+    /// <para>A thrown failure is swallowed. The reader asked for a summary and has
+    /// one; losing it to a problem with a feature they did not ask about would be
+    /// the wrong trade, and the chapter can be ingested again later.</para>
+    ///
+    /// <para><b>An unreadable answer is not swallowed.</b> It is the one outcome
+    /// that leaves a record looking finished and empty, which a reader has no way to
+    /// tell from a book with nobody in it — so it is said out loud, in the same
+    /// stream as the rest of the work.</para>
     /// </summary>
     private static async Task IngestQuietlyAsync(
         ReaderContext ctx, int chapter, StoryModelService story, Reader2Options options,
@@ -74,7 +79,12 @@ internal static class AiRoutes
 
         try
         {
-            await story.IngestAsync(ctx, chapter, ct);
+            if ((await story.IngestAsync(ctx, chapter, ct)).Skipped == IngestSkip.Unreadable)
+                stream.Progress.Report(new ProgressStep(
+                    "story", 1, 1,
+                    $"The {ctx.Lens.StoryVocabulary?.Actors.ToLowerInvariant() ?? "story"} in this "
+                    + "chapter could not be read back. Nothing was recorded — summarise it again "
+                    + "to retry."));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

@@ -110,6 +110,15 @@ public sealed class FakeLibrary(string root) : ILibraryBookSource
         var info = new FileInfo(Path.Combine(Root, fileName));
         return info.Exists ? (info.Length, info.LastWriteTimeUtc) : null;
     }
+
+    /// <summary>
+    /// Covers this fake pretends the library knows about, by file name. Empty by
+    /// default, which is the honest answer for a directory a test just made.
+    /// </summary>
+    public Dictionary<string, string> Covers { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+    public string? CoverUrl(string fileName, string baseUrl) =>
+        Covers.TryGetValue(Path.GetFileName(fileName), out var url) ? $"{baseUrl}{url}" : null;
 }
 
 /// <summary>A stand-in artifact payload.</summary>

@@ -24,12 +24,39 @@ public interface ILibraryBookSource
     /// <summary>Size and last-write time, or null if the file is gone. Used to
     /// decide whether a cached content hash is still valid.</summary>
     (long Length, DateTime LastWriteUtc)? Stat(string fileName);
+
+    /// <summary>
+    /// The library's cover image for a book, absolute, or null if it has none.
+    ///
+    /// <para>Here rather than resolved by the reader, because a cover is not one
+    /// rule: it is a URL in the book's <c>.meta.json</c>, or an external address
+    /// left there by a search, or a file in <c>_covers</c> whose extension is
+    /// whatever was downloaded. The library already answers all three, and a
+    /// second implementation would be a second set of books with no picture.</para>
+    /// </summary>
+    string? CoverUrl(string fileName, string baseUrl);
 }
 
 /// <inheritdoc />
-public sealed class LibraryBookSource : ILibraryBookSource
+public sealed class LibraryBookSource(Services.LibraryIndexCache covers) : ILibraryBookSource
 {
     private static string Root => LibraryHelpers.ResolveLibraryRoot();
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// Straight off the library's own index — the same list, the same resolution,
+    /// the same answer the library page shows. It is a warmed cache, so this costs
+    /// a scan of a list already in memory rather than a walk of the disk.
+    /// </remarks>
+    public string? CoverUrl(string fileName, string baseUrl)
+    {
+        var safe = Path.GetFileName(fileName);
+        if (string.IsNullOrWhiteSpace(safe)) return null;
+
+        return covers.GetBooks(baseUrl)
+            .FirstOrDefault(b => string.Equals(b.FileName, safe, StringComparison.OrdinalIgnoreCase))
+            ?.CoverUrl;
+    }
 
     public IReadOnlyList<string> EnumerateEpubFileNames()
     {

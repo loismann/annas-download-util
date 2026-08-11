@@ -41,7 +41,8 @@ describe('AnalysisStore', () => {
     reader = {
       book: signal<Book | null>({
         bookId: BOOK, fileName: 'novel.epub', title: 'A Novel', authors: [],
-        lensKey: 'fiction', addedAtUtc: '', lastOpenedAtUtc: null, isAvailable: true
+        lensKey: 'fiction', addedAtUtc: '', lastOpenedAtUtc: null, isAvailable: true,
+        coverUrl: null
       }),
       chapterIndex: signal(2)
     };

@@ -43,7 +43,7 @@ describe('BookEditDialogComponent', () => {
   const READER2_BOOK: Book = {
     bookId: '0123456789abcdef', fileName: 'test-book.epub', title: 'Test Book',
     authors: ['Test Author'], lensKey: 'naval-history', addedAtUtc: '',
-    lastOpenedAtUtc: null, isAvailable: true
+    lastOpenedAtUtc: null, isAvailable: true, coverUrl: null
   };
 
   beforeEach(async () => {

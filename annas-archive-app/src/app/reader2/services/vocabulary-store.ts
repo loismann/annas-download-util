@@ -49,6 +49,12 @@ export class VocabularyStore {
    * <p>Re-reads the list rather than patching it locally: the server normalises
    * the term to decide which row this is, and guessing at that here is how the
    * panel would come to show *naïveté* and *naivete* as two entries.</p>
+   *
+   * <p><b>And drops it from the passage list</b>, which is the whole visible
+   * result of the click. The server already excludes filed terms from every
+   * section it serves after this — but only from the *next* read, so without this
+   * the word stayed on screen and marking it known looked like a dead button. The
+   * only thing that moved was a count inside a collapsed list.</p>
    */
   async saveTermAsync(
     term: string, state: TermState, definition?: string, bookId?: string
@@ -57,7 +63,15 @@ export class VocabularyStore {
       'Saving the term',
       async () => { await firstValueFrom(this.api.saveTerm(term, state, definition, bookId)); return true; });
 
-    if (saved) await this.loadAsync();
+    if (!saved) return;
+
+    // By the exact term rather than a normalised one, and that is safe here in a
+    // way it is not above: this removes the very row that was clicked, not a row
+    // matched to something the reader typed. Both generate paths already dedupe
+    // by norm, so no two rows in this list can share one.
+    this.sectionTerms.update(terms => terms.filter(t => t.term !== term));
+
+    await this.loadAsync();
   }
 
   async removeTermAsync(term: string): Promise<void> {

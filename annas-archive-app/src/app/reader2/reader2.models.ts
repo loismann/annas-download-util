@@ -35,6 +35,9 @@ export interface Book {
   addedAtUtc: string;
   lastOpenedAtUtc: string | null;
   isAvailable: boolean;
+
+  /** The library's own cover, absolute, or null where the book has none. */
+  coverUrl: string | null;
 }
 
 export interface ChapterInfo {

@@ -28,6 +28,16 @@ public sealed record LensResponse(
 }
 
 /// <summary>One shelf entry.</summary>
+/// <param name="CoverUrl">
+/// The library's cover for this book, or null where it has none.
+///
+/// <para>Served rather than built by the client, because the client cannot build
+/// it: a cover is a URL in the book's metadata, an external address, or a file in
+/// <c>_covers</c> whose extension is whatever was downloaded. Resolved at the
+/// contract boundary and not stored on <see cref="EnrolledBook"/> — a picture is
+/// how the shelf reads, not part of what a book is, and the domain record has no
+/// business holding an absolute URL.</para>
+/// </param>
 public sealed record BookResponse(
     string BookId,
     string FileName,
@@ -36,11 +46,12 @@ public sealed record BookResponse(
     string LensKey,
     DateTime AddedAtUtc,
     DateTime? LastOpenedAtUtc,
-    bool IsAvailable)
+    bool IsAvailable,
+    string? CoverUrl)
 {
-    public static BookResponse From(EnrolledBook book) => new(
+    public static BookResponse From(EnrolledBook book, string? coverUrl = null) => new(
         book.Book.Value, book.FileName, book.Title, book.Authors, book.LensKey,
-        book.AddedAtUtc, book.LastOpenedAtUtc, book.IsAvailable);
+        book.AddedAtUtc, book.LastOpenedAtUtc, book.IsAvailable, coverUrl);
 }
 
 /// <summary>Enrol a library book. <c>LensKey</c> omitted means the default type.</summary>

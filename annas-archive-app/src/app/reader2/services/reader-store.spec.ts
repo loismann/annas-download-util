@@ -7,7 +7,8 @@ import { DEFAULT_PREFERENCES, Book, Chapter, ChapterList, Lens, ReadingPosition,
 
 const BOOK: Book = {
   bookId: '0123456789abcdef', fileName: 'book.epub', title: 'A Book', authors: ['An Author'],
-  lensKey: 'literary', addedAtUtc: '', lastOpenedAtUtc: null, isAvailable: true
+  lensKey: 'literary', addedAtUtc: '', lastOpenedAtUtc: null, isAvailable: true,
+  coverUrl: null
 };
 
 const LENSES: Lens[] = [

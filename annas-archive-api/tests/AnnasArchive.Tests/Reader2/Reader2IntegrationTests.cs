@@ -38,6 +38,36 @@ public sealed class Reader2IntegrationTests : IDisposable
         return (await response.Content.ReadFromJsonAsync<BookResponse>())!;
     }
 
+    // ─── the shelf ───────────────────────────────────────────────────────
+
+    /// <summary>
+    /// The shelf draws the library's cover, so the field has to be on the wire —
+    /// under this exact name, because <c>Book</c> in <c>reader2.models.ts</c>
+    /// declares it and a rename here is a silent shelf of blank tiles.
+    /// </summary>
+    [Fact]
+    public async Task Every_shelf_entry_carries_a_cover_field()
+    {
+        await EnrolAsync();
+
+        using var shelf = JsonDocument.Parse(await _client.GetStringAsync("/api/reader2/books"));
+
+        shelf.RootElement.EnumerateArray().Should().NotBeEmpty();
+        foreach (var book in shelf.RootElement.EnumerateArray())
+            book.TryGetProperty("coverUrl", out _).Should().BeTrue();
+    }
+
+    /// <summary>
+    /// Null and not an empty string or a placeholder path: the shelf decides what
+    /// to draw for a book with no picture, and it can only do that if "none" is
+    /// distinguishable from "here it is".
+    /// </summary>
+    [Fact]
+    public async Task A_book_the_library_has_no_cover_for_reports_none()
+    {
+        (await EnrolAsync()).CoverUrl.Should().BeNull();
+    }
+
     // ─── the extensibility contract, over the wire ───────────────────────
 
     /// <summary>

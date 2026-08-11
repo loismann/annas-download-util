@@ -52,8 +52,16 @@ body {
    was patched three times in three components before it was named.
 
    Safe for `svgIcon` too: those are sized to the box by Material itself, so
-   there is nothing outside it to reveal. */
-.mat-icon {
+   there is nothing outside it to reveal.
+
+   `.mat-icon.mat-icon`, doubled, and that is the whole reason this was still
+   broken after it was "fixed": MatIcon declares `ViewEncapsulation.None`, so
+   Angular injects its own `.mat-icon { overflow: hidden }` into `<head>` when
+   the component first loads — which is after this file. Equal specificity, and
+   later in the document wins. Nothing about the rule was wrong; it was simply
+   never the one that applied. Doubling the class outranks it without `!important`,
+   the same trick `.thtr-btn.thtr-btn` uses in `theater.scss`. */
+.mat-icon.mat-icon {
   overflow: visible;
 }
 

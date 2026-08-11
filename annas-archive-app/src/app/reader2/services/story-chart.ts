@@ -183,6 +183,17 @@ const BUTTON_STEP = 1.3;
 const WHEEL_STEP = Math.sqrt(BUTTON_STEP);
 
 /**
+ * How much <c>deltaY</c> counts as one notch.
+ *
+ * <p>The number a classic mouse wheel reports for one detent. It matters because
+ * a wheel is not the only thing that sends wheel events: a trackpad and a
+ * high-resolution wheel send a stream of small deltas — a single flick is twenty
+ * or more events of <c>deltaY</c> 3 to 10 — and charging a full notch for each of
+ * them is why the map shot to the end of its range under the lightest touch.</p>
+ */
+const NOTCH = 100;
+
+/**
  * Everything on screen at once.
  *
  * <p><b>The build's own <c>fit()</c> does not fit.</b> Measured against the real
@@ -221,9 +232,23 @@ const LARGEST_FIT = 1.8;
  * convention, which is what was asked for.</p>
  *
  * <p>Gentler than the buttons: see {@link WHEEL_STEP}.</p>
+ *
+ * <p><b>Sized by how far the wheel actually turned</b>, not one flat step per
+ * event. Zoom composes by multiplication, so a scroll's worth of events
+ * multiplies together — and a device that reports the same movement as thirty
+ * small events instead of one large one was charged thirty times for it. Raising
+ * the step to the fraction of a notch turned makes the two agree: thirty events
+ * of <c>deltaY</c> 4 and one event of <c>deltaY</c> 120 both land on the same
+ * scale, because the exponents sum to the same number.</p>
+ *
+ * <p>Clamped to one notch an event, so a single violent flick — some devices
+ * report <c>deltaY</c> in the thousands — is still one step rather than the far
+ * end of the range.</p>
  */
 export function wheelZoom(drawn: Drawn | undefined, deltaY: number): void {
   if (!drawn || deltaY === 0) return;
 
-  (deltaY > 0 ? zoom.in : zoom.out)(drawn.chart, WHEEL_STEP);
+  const notches = Math.max(-1, Math.min(1, deltaY / NOTCH));
+
+  drawn.chart?.zoom?.(WHEEL_STEP ** notches);
 }

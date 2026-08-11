@@ -34,7 +34,8 @@ describe('StoryPanelComponent', () => {
     reader = {
       book: signal<Book | null>({
         bookId: 'book-1', fileName: 'novel.epub', title: 'A Novel', authors: [],
-        lensKey: 'fiction', addedAtUtc: '', lastOpenedAtUtc: null, isAvailable: true
+        lensKey: 'fiction', addedAtUtc: '', lastOpenedAtUtc: null, isAvailable: true,
+        coverUrl: null
       }),
       lenses: signal<Lens[]>([]),
       chapters: signal<ChapterInfo[]>([]),

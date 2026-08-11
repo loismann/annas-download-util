@@ -19,8 +19,22 @@ internal static class BookRoutes
         return group;
     }
 
-    private static async Task<IResult> HandleList(IBookRegistry books, CancellationToken ct) =>
-        Results.Ok((await books.ListAsync(ct)).Select(BookResponse.From).ToArray());
+    private static async Task<IResult> HandleList(
+        HttpContext context, IBookRegistry books, ILibraryBookSource library, CancellationToken ct) =>
+        Results.Ok((await books.ListAsync(ct)).Select(b => Shelf(b, library, context)).ToArray());
+
+    /// <summary>
+    /// One shelf entry, with the library's cover attached.
+    ///
+    /// <para>Absolute, from the request's own scheme and host, because that is what
+    /// the library page already serves and two conventions for one picture is how
+    /// half of them end up broken behind a proxy.</para>
+    /// </summary>
+    private static BookResponse Shelf(
+        EnrolledBook book, ILibraryBookSource library, HttpContext context) =>
+        BookResponse.From(
+            book,
+            library.CoverUrl(book.FileName, $"{context.Request.Scheme}://{context.Request.Host}"));
 
     /// <summary>
     /// Enrols a library book.
@@ -32,6 +46,7 @@ internal static class BookRoutes
     /// something at enrolment that ingestion will read again anyway.</para>
     /// </summary>
     private static async Task<IResult> HandleEnrol(
+        HttpContext context,
         [FromBody] EnrolBookRequest request,
         IBookRegistry books,
         ILibraryBookSource library,
@@ -66,7 +81,7 @@ internal static class BookRoutes
         var enrolled = await books.EnrolAsync(
             book.Value, fileName, metadata.Title, metadata.Authors, lens.Key, ct);
 
-        return Results.Ok(BookResponse.From(enrolled));
+        return Results.Ok(Shelf(enrolled, library, context));
     }
 
     /// <summary>
@@ -78,9 +93,11 @@ internal static class BookRoutes
     /// somebody already paid for.</para>
     /// </summary>
     private static async Task<IResult> HandleSetLens(
+        HttpContext context,
         string bookId,
         [FromBody] SetLensRequest request,
         IBookRegistry books,
+        ILibraryBookSource library,
         ILensRegistry lenses,
         CancellationToken ct)
     {
@@ -93,7 +110,7 @@ internal static class BookRoutes
 
         if (!await books.SetLensAsync(book, lens.Key, ct)) return NotFound("No such book.");
 
-        return Results.Ok(BookResponse.From((await books.GetAsync(book, ct))!));
+        return Results.Ok(Shelf((await books.GetAsync(book, ct))!, library, context));
     }
 
     private static async Task<IResult> HandleRemove(

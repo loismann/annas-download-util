@@ -51,7 +51,8 @@ describe('StoryStore', () => {
     reader = {
       book: signal<Book | null>({
         bookId: 'book-1', fileName: 'novel.epub', title: 'A Novel', authors: [],
-        lensKey: 'fiction', addedAtUtc: '', lastOpenedAtUtc: null, isAvailable: true
+        lensKey: 'fiction', addedAtUtc: '', lastOpenedAtUtc: null, isAvailable: true,
+        coverUrl: null
       }),
       lenses: signal<Lens[]>([lens('fiction', true), lens('literary', false)]),
       chapters: signal<ChapterInfo[]>([chapter(0, true), chapter(1, true), chapter(2, false)])

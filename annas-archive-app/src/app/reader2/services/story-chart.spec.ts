@@ -223,6 +223,39 @@ describe('story-chart, against the real AnyChart build', () => {
       .toBeGreaterThan(atRest);
     expect(oneNotch).toBeLessThan(twoNotches);
   });
+
+  /**
+   * The reason the map was unusable under a mouse. A trackpad and a
+   * high-resolution wheel report one flick as a stream of small deltas rather
+   * than one large one; charging a whole notch per event made the same physical
+   * movement zoom many times further on one device than on another.
+   */
+  it('charges the same for one flick however many events the device split it into', () => {
+    const made = drawn();
+
+    wheelZoom(made, 100);
+    const inOneEvent = span().width;
+
+    made.chart.fit();
+    for (let i = 0; i < 25; i++) wheelZoom(made, 4);
+
+    expect(span().width)
+      .withContext('25 events of 4 equal one event of 100')
+      .toBeCloseTo(inOneEvent, 0);
+  });
+
+  /** Some devices report deltaY in the thousands for a single flick. */
+  it('will not spend more than one notch on one event, however violent', () => {
+    const made = drawn();
+
+    wheelZoom(made, 100);
+    const oneNotch = span().width;
+
+    made.chart.fit();
+    wheelZoom(made, 100_000);
+
+    expect(span().width).toBeCloseTo(oneNotch, 0);
+  });
 });
 
 /** Pure, and needs no library — so it is tested apart from the drawing above. */

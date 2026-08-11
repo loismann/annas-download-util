@@ -24,7 +24,7 @@ function chapterList(count = 3): ChapterList {
   return {
     title: 'A Book', lensKey: 'literary',
     chapters: Array.from({ length: count }, (_, i) => ({
-      id: i, title: `Chapter ${i + 1}`, level: 0, wordCount: 1000, hasSummary: false
+      id: i, title: `Chapter ${i + 1}`, level: 0, wordCount: 1000, hasSummary: false, summaryIsStale: false
     }))
   };
 }
@@ -47,7 +47,7 @@ describe('ReaderStore', () => {
     api.preferences.and.returnValue(of(PREFERENCES));
     api.chapters.and.returnValue(of(chapterList()));
     api.chapter.and.callFake((_: string, n: number) =>
-      of<Chapter>({ chapter: { id: n, title: `Chapter ${n + 1}`, level: 0, wordCount: 1000, hasSummary: false }, text: TEXT }));
+      of<Chapter>({ chapter: { id: n, title: `Chapter ${n + 1}`, level: 0, wordCount: 1000, hasSummary: false, summaryIsStale: false }, text: TEXT }));
     api.sections.and.returnValue(of([]));
     api.position.and.returnValue(of({ chapter: 0, wordOffset: 0, updatedAtUtc: '' }));
     api.savePosition.and.callFake((_: string, chapter: number, wordOffset: number) => {
@@ -196,7 +196,7 @@ describe('ReaderStore', () => {
 
   it('an empty chapter still has one page and shows nothing', async () => {
     api.chapter.and.returnValue(
-      of<Chapter>({ chapter: { id: 0, title: 'Empty', level: 0, wordCount: 0, hasSummary: false }, text: '' }));
+      of<Chapter>({ chapter: { id: 0, title: 'Empty', level: 0, wordCount: 0, hasSummary: false, summaryIsStale: false }, text: '' }));
 
     await open();
 

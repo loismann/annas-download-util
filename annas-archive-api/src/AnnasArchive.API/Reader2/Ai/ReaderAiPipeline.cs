@@ -67,7 +67,7 @@ public sealed class ReaderAiPipeline(
         bool force = false, CancellationToken ct = default) =>
         gateway.GetOrGenerateAsync(
             ArtifactKey.ChapterSummary(ctx.Ref, ctx.Lens.Key, chapter),
-            ctx, ctx.Lens.PromptVersion,
+            ctx, ctx.Lens.Versions[CallKind.ChapterSummary],
             token => ClimbLadderAsync(ctx, chapter, progress, token),
             force, ct);
 
@@ -155,7 +155,7 @@ public sealed class ReaderAiPipeline(
         ArtifactKey key, ReaderContext ctx, CallKind kind, bool force, CancellationToken ct,
         Func<CancellationToken, Task<string>> buildInput) =>
         gateway.GetOrGenerateAsync(
-            key, ctx, ctx.Lens.PromptVersion,
+            key, ctx, ctx.Lens.Versions[kind],
             async token => await model.AskLensAsync(ctx, kind, await buildInput(token), token),
             force, ct);
 
@@ -171,7 +171,7 @@ public sealed class ReaderAiPipeline(
     {
         var earlier = await artifacts.ListAsync<Prose>(
             new ArtifactQuery(ctx.Ref, ctx.Lens.Key, ArtifactKind.PassageAnalysis, request.Chapter),
-            new ArtifactVersions(Prose.SchemaVersion, ctx.Lens.PromptVersion), ct);
+            new ArtifactVersions(Prose.SchemaVersion, ctx.Lens.Versions[CallKind.PassageAnalysis]), ct);
 
         return Join(earlier
             .Where(a => a.Key.Ordinal < request.WordOffset)

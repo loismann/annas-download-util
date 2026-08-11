@@ -118,8 +118,26 @@ public class LensRegistryTests
     [InlineData(-1)]
     public void A_prompt_version_below_one_fails_to_start(int version)
     {
-        Building(new BrokenLens { PromptVersion = version })
-            .Should().Throw<LensConfigurationException>().WithMessage("*PromptVersion*");
+        Building(new BrokenLens { Versions = PromptVersions.All(version) })
+            .Should().Throw<LensConfigurationException>().WithMessage("*prompt version*");
+    }
+
+    /// <summary>
+    /// Every prompt, not only the ones every lens must supply. A zero on the
+    /// optional story prompt would make its artifacts impossible to mark stale
+    /// ever again, which fails quietly rather than loudly.
+    /// </summary>
+    [Fact]
+    public void One_prompt_version_below_one_fails_to_start_even_when_the_rest_are_fine()
+    {
+        Building(new BrokenLens
+        {
+            BuildsStoryModel = true,
+            StoryVocabulary = new StoryVocabulary("A", "B", "C"),
+            Prompts = new BrokenLens().Prompts with { StoryExtraction = "x" },
+            Versions = PromptVersions.All(1) with { StoryExtraction = 0 }
+        })
+            .Should().Throw<LensConfigurationException>().WithMessage("*StoryExtraction prompt version*");
     }
 
     [Theory]

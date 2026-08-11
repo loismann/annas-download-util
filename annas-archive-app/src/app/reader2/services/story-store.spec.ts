@@ -10,6 +10,7 @@ import { Book, ChapterInfo, Lens, StoryModel } from '../reader2.models';
 
 const MODEL: StoryModel = {
   actors: [],
+  places: [],
   groups: [],
   edges: [],
   threads: [],
@@ -30,7 +31,9 @@ function lens(key: string, buildsStoryModel: boolean): Lens {
 }
 
 function chapter(id: number, hasSummary: boolean): ChapterInfo {
-  return { id, title: `Chapter ${id}`, level: 0, wordCount: 100, hasSummary };
+  return {
+    id, title: `Chapter ${id}`, level: 0, wordCount: 100, hasSummary, summaryIsStale: false
+  };
 }
 
 describe('StoryStore', () => {
@@ -116,8 +119,21 @@ describe('StoryStore', () => {
 
     await store.buildFromSummariesAsync('book-1');
 
-    expect(api.backFillStoryModel).toHaveBeenCalledWith('book-1');
+    expect(api.backFillStoryModel).toHaveBeenCalledWith('book-1', false);
     expect(store.model()).toEqual(MODEL);
+  });
+
+  /**
+   * A record gathered under extraction rules that have since changed cannot be
+   * corrected any other way: every chapter already folded in is walked past for
+   * free, so an ordinary build would re-read nothing.
+   */
+  it('passes the rebuild through, so a stale record can be discarded', async () => {
+    api.backFillStoryModel.and.returnValue(stream(MODEL) as never);
+
+    await store.buildFromSummariesAsync('book-1', true);
+
+    expect(api.backFillStoryModel).toHaveBeenCalledWith('book-1', true);
   });
 
   it('forgets the cast when the book or its type changes', async () => {
@@ -143,7 +159,7 @@ describe('StoryStore', () => {
     await store.offerBuildAsync('fiction');
 
     expect(confirm.confirmBackFillAsync).toHaveBeenCalledWith('2 chapters');
-    expect(api.backFillStoryModel).toHaveBeenCalledWith('book-1');
+    expect(api.backFillStoryModel).toHaveBeenCalledWith('book-1', false);
   });
 
   it('builds nothing when the reader says no', async () => {

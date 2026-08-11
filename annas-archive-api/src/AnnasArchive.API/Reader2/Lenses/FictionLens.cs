@@ -29,7 +29,14 @@ public sealed class FictionLens : IReaderLens
     /// Bump on any edit below. The golden tests refuse the edit otherwise, which
     /// is what stops artifacts outliving the wording that produced them.
     /// </summary>
-    public int PromptVersion => 1;
+    /// <summary>
+    /// One per prompt. Six of these have been byte-identical since version 1 and
+    /// were carried to 4 by a version they shared with the seventh; they start
+    /// here at 4 so that stored artifacts, which recorded that shared number, line
+    /// up rather than reading as newer than the build — see
+    /// <see cref="PromptVersions"/>.
+    /// </summary>
+    public PromptVersions Versions { get; } = PromptVersions.All(4);
 
     public bool BuildsStoryModel => true;
 
@@ -186,13 +193,14 @@ public sealed class FictionLens : IReaderLens
                 the record already holds.
                 """,
             kinds: """
-                - An actor is a named or clearly identifiable character. Its tier is "major",
-                  "secondary", "minor", or "mentioned", judged by their part in the story and
-                  not by how often this chapter names them.
+                - An actor is a named or clearly identifiable character. Judge their tier by
+                  their part in the story, not by how often this chapter names them.
                 - A group is a family, a household, a social circle, or a faction.
                 - An edge is a relationship between two characters: "family", "married",
                   "allied", "rival", "employs", "loves", "betrays".
                 - A thread is a strand of plot that runs across chapters.
+                - A place is somewhere the story happens: a house, an estate, a village, a
+                  city, a road, a country. A place named only as part of a title is not one.
                 - If a character already in the digest appears under another name - a given
                   name, a patronymic, a title, a nickname, a married name, a different
                   transliteration - report it under "aliasHints" with your confidence and the

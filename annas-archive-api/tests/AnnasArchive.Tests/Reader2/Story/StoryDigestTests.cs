@@ -122,4 +122,47 @@ public class StoryDigestTests
     {
         Cast.Digest(StoryModel.Empty, chapter: 0, maxActors: 50).Should().Contain("nothing recorded");
     }
+
+    // ─── relationships already recorded ─────────────────────────────────
+
+    /// <summary>
+    /// Without these the model cannot tell a relationship it is discovering from
+    /// one it reported forty chapters ago — and being told not to restate what the
+    /// record holds, it reported almost none. Five chapters of a large cast
+    /// produced three edges while the dossiers written in the same breath
+    /// described the encounters plainly.
+    /// </summary>
+    [Fact]
+    public void The_digest_names_the_relationships_already_held()
+    {
+        var model = Model(
+            [Actor("a1", "Pierre"), Actor("a2", "Helene")],
+            edges: [Edge("a1", "a2", "married", since: 3)]);
+
+        Digest(model, chapter: 9, maxActors: 20).Should().Contain("a1 married a2");
+    }
+
+    [Fact]
+    public void A_relationship_that_has_ended_is_not_offered_as_current()
+    {
+        var model = Model(
+            [Actor("a1", "Pierre"), Actor("a2", "Helene")],
+            edges: [Edge("a1", "a2", "married", since: 3, ended: 7)]);
+
+        Digest(model, chapter: 9, maxActors: 20).Should().NotContain("a1 married a2");
+    }
+
+    /// <summary>
+    /// An edge needs both ends in the digest to mean anything, so the actor cap
+    /// bounds the relationships too rather than each needing its own limit.
+    /// </summary>
+    [Fact]
+    public void A_relationship_reaching_an_elided_actor_is_left_out()
+    {
+        var model = Model(
+            [Actor("a1", "Pierre", ActorTier.Major), Actor("a2", "A Walk-On", ActorTier.Mentioned)],
+            edges: [Edge("a1", "a2", "employs", since: 1)]);
+
+        Digest(model, chapter: 90, maxActors: 1).Should().NotContain("a1 employs a2");
+    }
 }

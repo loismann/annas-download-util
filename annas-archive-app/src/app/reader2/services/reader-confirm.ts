@@ -108,6 +108,29 @@ export class ReaderConfirm {
   }
 
   /**
+   * Discarding the record and reading every summarised chapter again.
+   *
+   * <p>Separate from {@link confirmBackFillAsync} because it is a different
+   * question: that one offers work not yet done, this one throws away work
+   * already paid for. It is for when what the record holds was gathered under
+   * rules that have since changed, so the wording says that rather than implying
+   * the reader did something wrong.</p>
+   */
+  confirmRebuildAsync(chapterWord: string): Promise<boolean> {
+    return this.ask({
+      title: 'Build this record again from scratch?',
+      message:
+        `Everything recorded about who is who is discarded, and the ${chapterWord} you have `
+        + 'summarised are read again — one request each. Worth doing when the record is '
+        + 'missing relationships or descriptions it should have. Answers you gave to "are '
+        + 'these the same person" are not kept.',
+      confirmText: 'Build it again',
+      cancelText: 'Keep what I have',
+      isDanger: true
+    });
+  }
+
+  /**
    * @returns true only when the reader confirmed. Anything else — including
    *   dismissing with escape, which resolves to undefined — is a refusal.
    */

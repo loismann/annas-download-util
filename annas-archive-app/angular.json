@@ -42,6 +42,11 @@
                 "output": "/assets/"
               },
               {
+                "glob": "anychart-{core,graph}.min.js",
+                "input": "node_modules/anychart/dist/js",
+                "output": "/assets/anychart/"
+              },
+              {
                 "glob": ".htaccess",
                 "input": "src",
                 "output": "/"

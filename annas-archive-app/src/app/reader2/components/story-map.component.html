@@ -1,0 +1,32 @@
+<p class="empty" *ngIf="!graph().nodes.length">Nobody to draw yet.</p>
+
+<div class="frame" [class.hidden]="!graph().nodes.length">
+  <div class="canvas" #canvas (wheel)="onWheel($event)"></div>
+
+  <div class="controls" *ngIf="!failed()">
+    <button type="button" (click)="zoomBy(1)" title="Zoom in" aria-label="Zoom in">+</button>
+    <button type="button" (click)="zoomBy(-1)" title="Zoom out" aria-label="Zoom out">−</button>
+    <button type="button" class="fit" (click)="fit()" title="Fit everybody on screen">Fit</button>
+  </div>
+
+  <p class="failed" *ngIf="failed()">
+    The map could not be drawn. Everything on it is also in the
+    {{ castLabel }} tab.
+  </p>
+
+  <p class="hint" *ngIf="!failed() && !chosenActor() && !chosenEdge()">
+    Scroll to zoom, drag to pan. Click somebody, or the line between two people.
+  </p>
+
+  <app-reader2-map-detail
+    [actor]="chosenActor()"
+    [edge]="chosenEdge()"
+    [fromName]="nameOf(chosenEdge()?.from)"
+    [toName]="nameOf(chosenEdge()?.to)"
+    [groups]="groups"
+    [chapters]="chapters"
+    [others]="others()"
+    (dismiss)="clearChoice()"
+    (correct)="correct.emit($event)"
+    (hide)="hide.emit($event)" />
+</div>

@@ -26,6 +26,8 @@ internal static class StoryRoutes
         group.MapPost("/books/{bookId}/story-model/ingest", HandleIngest);
         group.MapPost("/books/{bookId}/story-model/back-fill", HandleBackFill);
         group.MapPost("/books/{bookId}/story-model/merges/{mergeId}/resolve", HandleResolve);
+        group.MapPut("/books/{bookId}/story-model/actors/{actorId}", HandleCorrect);
+        group.MapPut("/books/{bookId}/story-model/actors/{actorId}/hidden", HandleHide);
 
         return group;
     }
@@ -74,9 +76,13 @@ internal static class StoryRoutes
     /// <para>Streamed, because a three-hundred-chapter novel is a long wait and a
     /// spinner with no counter reads as a hang. Never runs on its own — switching a
     /// book's type offers this, and a reader presses it.</para>
+    ///
+    /// <para><c>rebuild=true</c> empties the model first, for when the extraction
+    /// contract has changed under a model already gathered. It re-extracts every
+    /// summarised chapter instead of walking past them, so it is opt-in.</para>
     /// </summary>
     private static Task<IResult> HandleBackFill(
-        string bookId, HttpContext http, IReaderContextResolver resolver,
+        string bookId, bool? rebuild, HttpContext http, IReaderContextResolver resolver,
         StoryModelService story, BookIngestor ingestor, ReaderStateStore state,
         ArtifactGateway gateway, CancellationToken ct) =>
         ReaderRequest.StreamingAsync(bookId, http, resolver, gateway, spends: true, ct, async (ctx, stream) =>
@@ -87,7 +93,8 @@ internal static class StoryRoutes
             if (await ingestor.CompleteIndexAsync(ctx.Ref, ct) is not { } index)
                 throw new ReaderAiException("This book has not been extracted yet.");
 
-            var model = await story.BackFillAsync(ctx, index.Chapters.Count, stream.Progress, ct);
+            var model = await story.BackFillAsync(
+                ctx, index.Chapters.Count, stream.Progress, rebuild is true, ct);
             var through = await ThroughAsync(ctx, state, null, ct);
 
             await stream.ResultAsync(StoryModelResponse.From(story.Through(model, through), ctx.Lens, through));
@@ -107,6 +114,87 @@ internal static class StoryRoutes
             var through = await ThroughAsync(ctx, state, null, ct);
 
             return Results.Ok(StoryModelResponse.From(story.Through(model, through), ctx.Lens, through));
+        });
+
+    /// <summary>
+    /// The reader's own correction to one entry: what to call them, a note of
+    /// their own, and which other entries are the same person.
+    /// </summary>
+    /// <remarks>
+    /// A <c>PUT</c> carrying the whole correction rather than three routes: it is
+    /// one row about one person, and an idempotent replace has no ordering
+    /// problem between a rename and a merge arriving at once. Sending it empty
+    /// clears the correction, so there is no fourth route for undoing either.
+    ///
+    /// <para>Free. Nothing here reaches a model, and a reader out of allowance
+    /// must still be able to fix a name.</para>
+    /// </remarks>
+    private static Task<IResult> HandleCorrect(
+        string bookId, string actorId, [FromBody] CorrectActorRequest request, HttpContext http,
+        IReaderContextResolver resolver, StoryModelService story, ReaderStateStore state,
+        CancellationToken ct) =>
+        WithStoryLensAsync(bookId, http, resolver, ct, async ctx =>
+        {
+            // Keyed by name, resolved from the id the client is looking at. The
+            // client holds an id because that is what it was served; the store
+            // holds a name because ids do not survive a rebuild.
+            var model = await story.ReadAsync(ctx, ct);
+
+            if (model.Actors.FirstOrDefault(a => a.Id == actorId) is not { } actor)
+                return Problem(404, "There is nobody by that id in this book's record.");
+
+            var sameAs = (request.SameAs ?? [])
+                .Select(id => model.Actors.FirstOrDefault(a => a.Id == id))
+                .OfType<Story.Actor>()
+                .Where(a => a.Id != actor.Id)
+                .Select(a => NameMatch.Key(a.CanonicalName))
+                .ToArray();
+
+            var corrected = await story.CorrectAsync(
+                ctx,
+                new CastOverride(
+                    NameMatch.Key(actor.CanonicalName),
+                    request.PreferredName, request.Note, sameAs),
+                ct);
+
+            var through = await ThroughAsync(ctx, state, null, ct);
+
+            return Results.Ok(StoryModelResponse.From(story.Through(corrected, through), ctx.Lens, through));
+        });
+
+    /// <summary>
+    /// Keeps somebody off the map, or puts them back.
+    /// </summary>
+    /// <remarks>
+    /// Apart from <see cref="HandleCorrect"/>, which replaces a correction whole.
+    /// Hiding is one press from a panel and the client cannot resend the rest of
+    /// the correction — a preferred name is projected onto the canonical one, so
+    /// nothing it was served tells it which is which. This merges instead.
+    ///
+    /// <para>Free, like every other correction.</para>
+    /// </remarks>
+    private static Task<IResult> HandleHide(
+        string bookId, string actorId, [FromBody] HideActorRequest request, HttpContext http,
+        IReaderContextResolver resolver, StoryModelService story, ReaderStateStore state,
+        CancellationToken ct) =>
+        WithStoryLensAsync(bookId, http, resolver, ct, async ctx =>
+        {
+            // Against the raw model, exactly as HandleCorrect does, because the
+            // key has to be the same one both routes write under. Reading the
+            // corrected model instead keys a renamed person under their new name
+            // and leaves two rows for one character, whereupon whichever is
+            // applied second wins and the other silently stops meaning anything.
+            var model = await story.ReadAsync(ctx, ct);
+
+            if (model.Actors.FirstOrDefault(a => a.Id == actorId) is not { } actor)
+                return Problem(404, "There is nobody by that id in this book's record.");
+
+            var hidden = await story.HideAsync(
+                ctx, NameMatch.Key(actor.CanonicalName), request.Hidden, ct);
+
+            var through = await ThroughAsync(ctx, state, null, ct);
+
+            return Results.Ok(StoryModelResponse.From(story.Through(hidden, through), ctx.Lens, through));
         });
 
     /// <summary>

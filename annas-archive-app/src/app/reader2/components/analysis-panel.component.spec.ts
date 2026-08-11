@@ -138,4 +138,36 @@ describe('AnalysisPanelComponent', () => {
     expect(render({ error: 'You have used your allowance.' }).querySelector('.failed')?.textContent)
       .toContain('allowance');
   });
+
+  // ─── written under an older prompt ──────────────────────────────────
+
+  /**
+   * <b>Offered, never taken.</b> A summary written under earlier wording still
+   * summarises prose that has not changed, and the reader has already paid for
+   * it. The store used to treat it as absent, so a one-line edit to an unrelated
+   * prompt made a whole book look unread and charged again to replace it.
+   */
+  it('says when what it is showing predates the current prompt', () => {
+    const page = render({ markdown: 'the summary', stale: true });
+
+    expect(page.querySelector('.stale')?.textContent).toContain('earlier version of the prompt');
+  });
+
+  it('says nothing when what it is showing is current', () => {
+    expect(render({ markdown: 'the summary', stale: false }).querySelector('.stale')).toBeNull();
+  });
+
+  it('says nothing about staleness when there is nothing to show', () => {
+    expect(render({ markdown: '', stale: true }).querySelector('.stale')).toBeNull();
+  });
+
+  it('offers the regenerate from the notice itself, so the cost is the reader’s choice', () => {
+    let asked: string | undefined;
+    fixture.componentInstance.regenerate.subscribe(k => (asked = k));
+
+    const page = render({ markdown: 'the summary', stale: true, kind: 'summary' });
+    page.querySelector<HTMLButtonElement>('.stale .link')!.click();
+
+    expect(asked).toBe('summary');
+  });
 });

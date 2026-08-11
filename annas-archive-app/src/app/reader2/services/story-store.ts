@@ -4,7 +4,7 @@ import { Reader2ApiService } from './reader2-api.service';
 import { ReaderConfirm } from './reader-confirm';
 import { ReaderStore } from './reader-store';
 import { ReaderTasks } from './reader-tasks';
-import { StoryModel } from '../reader2.models';
+import { ActorCorrection, StoryModel } from '../reader2.models';
 
 /**
  * The book's cast, as far as the reader has read.
@@ -45,6 +45,29 @@ export class StoryStore {
   }
 
   /**
+   * The reader's correction to one entry.
+   *
+   * <p>Free, and stored apart from the record it corrects — so a rebuild, which
+   * discards everything the extraction found, leaves it standing.</p>
+   */
+  async correctAsync(bookId: string, actorId: string, correction: ActorCorrection): Promise<void> {
+    const model = await this.tasks.run(
+      'Saving your correction',
+      () => firstValueFrom(this.api.correctActor(bookId, actorId, correction)));
+
+    if (model) this.model.set(model);
+  }
+
+  /** Free, and stored beside the correction it belongs to. */
+  async hideAsync(bookId: string, actorId: string, hidden: boolean): Promise<void> {
+    const model = await this.tasks.run(
+      hidden ? 'Hiding them from the map' : 'Putting them back on the map',
+      () => firstValueFrom(this.api.hideActor(bookId, actorId, hidden)));
+
+    if (model) this.model.set(model);
+  }
+
+  /**
    * Answers one open question, and holds what the server sends back.
    *
    * <p>Free, and the server returns the whole filtered model rather than the one
@@ -67,11 +90,16 @@ export class StoryStore {
    * switch leaves the model empty — the earlier chapters were never ingested
    * under it. One extraction per summarised chapter and no re-summarising, and
    * it is resumable, so pressing it twice costs only what was missing.</p>
+   *
+   * @param rebuild Discards what is recorded and reads every summarised chapter
+   *   again, for a record gathered under extraction rules that have since
+   *   changed. Chapters already folded in are walked past for free otherwise, so
+   *   without this a record cannot be corrected at all.
    */
-  async buildFromSummariesAsync(bookId: string): Promise<void> {
+  async buildFromSummariesAsync(bookId: string, rebuild = false): Promise<void> {
     await this.tasks.stream<StoryModel>(
-      'Building the story model',
-      this.api.backFillStoryModel(bookId),
+      rebuild ? 'Building the story model again' : 'Building the story model',
+      this.api.backFillStoryModel(bookId, rebuild),
       (model: StoryModel) => this.model.set(model));
   }
 

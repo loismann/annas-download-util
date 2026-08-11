@@ -42,7 +42,9 @@ public static class StoryExtraction
             Each(root, "groupUpdates", ReadGroupUpdate),
             Each(root, "edgeChanges", ReadEdge),
             Each(root, "newThreads", ReadThread),
-            Each(root, "threadBeats", ReadBeat));
+            Each(root, "threadBeats", ReadBeat),
+            Each(root, "newPlaces", ReadPlace),
+            Each(root, "placeUpdates", ReadPlaceUpdate));
     }
 
     /// <summary>
@@ -93,6 +95,17 @@ public static class StoryExtraction
         Text(e, "groupId", "id"),
         Has(e, "memberIds") ? Names(e, "memberIds") : null,
         Has(e, "rivalGroupIds") ? Names(e, "rivalGroupIds") : null);
+
+    private static NewPlace ReadPlace(JsonElement e) => new(
+        Text(e, "name"), Names(e, "aliases"), Where(Text(e, "kind")),
+        Text(e, "description"), Text(e, "partOf"));
+
+    private static PlaceUpdate ReadPlaceUpdate(JsonElement e) => new(
+        Text(e, "placeId", "id"),
+        Has(e, "kind") ? Where(Text(e, "kind")) : null,
+        Has(e, "description") ? Text(e, "description") : null,
+        Has(e, "partOf") ? Text(e, "partOf") : null,
+        Has(e, "aliases") ? Names(e, "aliases") : null);
 
     private static EdgeChange ReadEdge(JsonElement e) => new(
         Text(e, "from"), Text(e, "to"), Text(e, "type"), Text(e, "note"),
@@ -153,6 +166,16 @@ public static class StoryExtraction
     /// <summary>An unreadable tier is <c>mentioned</c> — the tier that claims least.</summary>
     private static ActorTier Tier(string text) =>
         Enum.TryParse<ActorTier>(text, ignoreCase: true, out var tier) ? tier : ActorTier.Mentioned;
+
+    /// <summary>
+    /// A place's kind, on the same rule as a group's: an unreadable answer becomes
+    /// <c>Other</c> rather than throwing, because one odd word in one array must
+    /// not cost the reader the whole chapter's extraction.
+    /// </summary>
+    private static PlaceKind Where(string text) =>
+        Enum.TryParse<PlaceKind>(text.Replace("-", "").Replace(" ", ""), ignoreCase: true, out var kind)
+            ? kind
+            : PlaceKind.Other;
 
     private static GroupKind Kind(string text) =>
         Enum.TryParse<GroupKind>(text.Replace("-", "").Replace(" ", ""), ignoreCase: true, out var kind)

@@ -7,8 +7,8 @@ function mark(id: string, chapter: number, wordOffset: number, label: string | n
 }
 
 const CHAPTERS: ChapterInfo[] = [
-  { id: 0, title: 'Opening', level: 0, wordCount: 900, hasSummary: false },
-  { id: 1, title: 'The turn', level: 0, wordCount: 900, hasSummary: false }
+  { id: 0, title: 'Opening', level: 0, wordCount: 900, hasSummary: false, summaryIsStale: false },
+  { id: 1, title: 'The turn', level: 0, wordCount: 900, hasSummary: false, summaryIsStale: false }
 ];
 
 describe('BookmarkBarComponent', () => {

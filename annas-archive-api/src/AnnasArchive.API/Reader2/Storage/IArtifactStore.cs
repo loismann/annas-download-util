@@ -24,8 +24,10 @@ public interface IArtifactStore
     /// Reads an artifact, applying the version gates.
     ///
     /// <list type="bullet">
-    /// <item><description><b>Stale prompt</b> — a miss. The content is valid but
-    /// an older prompt wrote it, so the caller regenerates and overwrites.</description></item>
+    /// <item><description><b>Stale prompt</b> — a <i>hit</i>, flagged
+    /// <see cref="Stored{T}.Stale"/>. The content is valid and already paid for;
+    /// only the wording that produced it has moved on. Whether to spend on a
+    /// replacement is the reader's to decide, not a cache's.</description></item>
     /// <item><description><b>Stale schema</b> — a miss, <i>and the row is
     /// deleted</i>. It can no longer be deserialised into the current record, so
     /// keeping it only invites a crash on the next read. There is deliberately no

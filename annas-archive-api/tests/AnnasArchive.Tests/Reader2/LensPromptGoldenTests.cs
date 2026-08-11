@@ -12,12 +12,18 @@ namespace AnnasArchive.Tests.Reader2;
 /// edit the prompt, re-record the golden, and ship silently reusing months of
 /// output from wording nobody has read.</para>
 ///
-/// <para>So the goldens live at <c>{key}.v{version}.{tier}.txt</c> and three
-/// rules run together: the current prompts must match the current version's
-/// files; every version from 1 up must still have its files; and no two
-/// consecutive versions may be identical. Editing without bumping fails the
-/// first. Bumping without editing fails the third. Passing requires doing both,
-/// which is the point.</para>
+/// <para>So the goldens live at <c>{key}.{tier}.v{version}.txt</c> — one history
+/// <i>per prompt</i>, because the version is now per prompt. Two rules run
+/// together: the current wording must match the file for its current version,
+/// and no two kept versions of a prompt may be identical. Editing without
+/// bumping fails the first. Bumping without editing fails the second. Passing
+/// requires doing both, which is the point.</para>
+///
+/// <para><b>Gaps in a prompt's history are expected and meaningful.</b> A file
+/// exists for every version at which <i>that</i> prompt changed, not for every
+/// version the lens has ever had. Six of fiction's seven prompts had four
+/// identical goldens each, purely because they shared one number with the
+/// seventh — which is exactly the confusion the split removed.</para>
 /// </summary>
 public class LensPromptGoldenTests
 {
@@ -37,7 +43,7 @@ public class LensPromptGoldenTests
     private static IReaderLens Lens(string key) => Lenses.Single(l => l.Key == key);
 
     private static string PathFor(string key, int version, CallKind tier) =>
-        Path.Combine(GoldenDirectory, $"{key}.v{version}.{Tier(tier)}.txt");
+        Path.Combine(GoldenDirectory, $"{key}.{Tier(tier)}.v{version}.txt");
 
     private static string Tier(CallKind tier) => tier.ToString().ToLowerInvariant();
 
@@ -84,44 +90,60 @@ public class LensPromptGoldenTests
             if (prompt is null) continue;
 
             Normalize(prompt).Should().Be(
-                ReadGolden(key, lens.PromptVersion, tier),
+                ReadGolden(key, lens.Versions[tier], tier),
                 $"{key}'s {tier} prompt changed without its golden being updated, or without "
-                + "PromptVersion being bumped alongside it");
+                + $"Versions.{tier} being bumped alongside it");
         }
     }
 
     /// <summary>
-    /// Every historical version keeps its files. Without this, bumping the version
-    /// and deleting the old goldens would satisfy every other rule here.
+    /// A prompt's history is kept. Without this, bumping a version and deleting
+    /// the old golden would satisfy every other rule here.
     /// </summary>
     [Theory]
     [MemberData(nameof(ProductionLenses))]
-    public void Every_version_from_one_upwards_still_has_its_goldens(string key)
+    public void Every_prompt_keeps_at_least_its_current_golden(string key)
     {
         var lens = Lens(key);
 
-        for (var version = 1; version <= lens.PromptVersion; version++)
-            foreach (var tier in CallKinds.RequiredOfEveryLens)
-                File.Exists(PathFor(key, version, tier)).Should().BeTrue(
-                    $"{key} v{version} {tier} must be kept — the version history is what makes "
-                    + "a stale artifact detectable");
+        foreach (var tier in CallKinds.Lens)
+        {
+            if (lens.Prompts[tier] is null) continue;
+
+            File.Exists(PathFor(key, lens.Versions[tier], tier)).Should().BeTrue(
+                $"{key}'s {tier} golden for v{lens.Versions[tier]} must be kept — the version "
+                + "history is what makes a stale artifact explainable");
+        }
     }
 
-    /// <summary>A version bump has to mean something changed.</summary>
+    /// <summary>
+    /// A version bump has to mean something changed — now judged per prompt.
+    /// </summary>
+    /// <remarks>
+    /// Under one version per lens this could not be judged at all: six of
+    /// fiction's seven prompts were carried from 1 to 4 without a word changing,
+    /// and the only way the rule passed was by comparing the whole set at once, so
+    /// one edited prompt excused six untouched ones.
+    /// </remarks>
     [Theory]
     [MemberData(nameof(ProductionLenses))]
-    public void No_two_consecutive_versions_are_identical(string key)
+    public void No_two_kept_versions_of_one_prompt_are_identical(string key)
     {
-        var lens = Lens(key);
-
-        for (var version = 2; version <= lens.PromptVersion; version++)
+        foreach (var tier in CallKinds.Lens)
         {
-            var previous = CallKinds.RequiredOfEveryLens.Select(t => ReadGolden(key, version - 1, t));
-            var current = CallKinds.RequiredOfEveryLens.Select(t => ReadGolden(key, version, t));
+            if (Lens(key).Prompts[tier] is null) continue;
 
-            current.Should().NotEqual(previous,
-                $"{key} v{version} is word for word v{version - 1}; a bump with no edit makes "
-                + "every artifact from the earlier version stale for nothing");
+            var kept = Directory
+                .GetFiles(GoldenDirectory, $"{key}.{Tier(tier)}.v*.txt")
+                .OrderBy(f => f)
+                .Select(f => (File: Path.GetFileName(f), Text: Normalize(File.ReadAllText(f))))
+                .ToArray();
+
+            kept.Should().NotBeEmpty($"{key}'s {tier} prompt must be pinned");
+
+            kept.Select(k => k.Text).Should().OnlyHaveUniqueItems(
+                $"two goldens for {key}'s {tier} prompt hold the same words; a bump with no "
+                + "edit makes every artifact from the earlier version stale for nothing");
         }
     }
 
@@ -138,7 +160,7 @@ public class LensPromptGoldenTests
 
         foreach (var (name, prompt) in SharedPrompts.All)
         {
-            var path = Path.Combine(GoldenDirectory, $"shared.v{SharedPrompts.Version}.{name}.txt");
+            var path = Path.Combine(GoldenDirectory, $"shared.{name}.v{SharedPrompts.Version}.txt");
 
             File.Exists(path).Should().BeTrue($"golden {Path.GetFileName(path)} must exist");
             Normalize(prompt).Should().Be(Normalize(File.ReadAllText(path)), $"shared {name} changed");

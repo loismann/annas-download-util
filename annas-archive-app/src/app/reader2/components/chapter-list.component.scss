@@ -1,4 +1,20 @@
-.chapters { display: flex; flex-direction: column; overflow-y: auto; }
+/* The list is the sidebar's one growing part, and the only one that scrolls.
+   Without `min-height: 0` a flex item refuses to shrink below its content, so
+   the nav's own `overflow-y` had no height to scroll against and a long book
+   simply ran off the bottom of the sidebar, which clips. Both rules are needed:
+   the host has to be allowed to shrink, and the nav has to fill what it gets. */
+:host { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+
+.chapters {
+  display: flex; flex-direction: column;
+  flex: 1; min-height: 0; overflow-y: auto;
+
+  /* Reserved whether or not the bar is showing. Without it the bar is drawn over
+     the right-hand column and clips the word count — and worse, the whole list
+     reflows by its width the moment a book is long enough to scroll. */
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+}
 
 .chapter {
   display: flex; justify-content: space-between; gap: 1rem; align-items: baseline;
@@ -9,7 +25,9 @@
 .chapter.current { border-left-color: currentColor; font-weight: 600; }
 
 .title { flex: 1; }
-.words { opacity: 0.55; font-size: 0.8em; font-variant-numeric: tabular-nums; }
+/* `flex-shrink: 0` so the count is never the thing that gives way to a long
+   chapter title — it is the column the reader scans down. */
+.words { opacity: 0.55; font-size: 0.8em; font-variant-numeric: tabular-nums; flex-shrink: 0; }
 .empty { opacity: 0.6; padding: 0.75rem; }
 
 /* Quiet on purpose: it marks what is already bought, and a loud tick would read

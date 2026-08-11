@@ -70,6 +70,32 @@ public sealed record EdgeChange(
 
 public sealed record NewThread(string Name, IReadOnlyList<string> ParticipantIds, string FirstBeat);
 
+/// <summary>
+/// Somewhere this chapter went, or first named.
+/// </summary>
+/// <param name="PartOf">
+/// What contains it, by id or by name. Resolved by the merge like every other
+/// reference — a place named for the first time in the same chapter as the city
+/// it sits in has no id yet when the model writes this.
+/// </param>
+public sealed record NewPlace(
+    string Name,
+    IReadOnlyList<string> Aliases,
+    PlaceKind Kind,
+    string Description,
+    string PartOf = "");
+
+/// <summary>
+/// A change to a place already in the model. Every field is optional, on the same
+/// rule as <see cref="ActorUpdate"/>: null means unchanged, not empty.
+/// </summary>
+public sealed record PlaceUpdate(
+    string PlaceId,
+    PlaceKind? Kind = null,
+    string? Description = null,
+    string? PartOf = null,
+    IReadOnlyList<string>? Aliases = null);
+
 public sealed record ThreadBeat(string ThreadId, string WhatMoved);
 
 /// <summary>
@@ -89,7 +115,10 @@ public sealed record StoryDelta(
     IReadOnlyList<GroupUpdate> GroupUpdates,
     IReadOnlyList<EdgeChange> EdgeChanges,
     IReadOnlyList<NewThread> NewThreads,
-    IReadOnlyList<ThreadBeat> ThreadBeats)
+    IReadOnlyList<ThreadBeat> ThreadBeats,
+    IReadOnlyList<NewPlace> NewPlaces,
+    IReadOnlyList<PlaceUpdate> PlaceUpdates)
 {
-    public static StoryDelta Empty(int chapter) => new(chapter, [], [], [], [], [], [], [], []);
+    public static StoryDelta Empty(int chapter) =>
+        new(chapter, [], [], [], [], [], [], [], [], [], []);
 }

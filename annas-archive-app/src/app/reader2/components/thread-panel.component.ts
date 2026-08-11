@@ -1,6 +1,8 @@
 import { ChangeDetectionStrategy, Component, Input } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { Actor, StoryThread, StoryVocabulary } from '../reader2.models';
+import { Actor, ChapterInfo, StoryThread, StoryVocabulary } from '../reader2.models';
+import { ChapterEntry, ChapterLogComponent } from './chapter-log.component';
+import { ChapterNamePipe } from '../chapter-name.pipe';
 
 /**
  * What is running, what has gone quiet, and what is finished.
@@ -18,7 +20,7 @@ import { Actor, StoryThread, StoryVocabulary } from '../reader2.models';
 @Component({
   selector: 'app-reader2-thread-panel',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, ChapterLogComponent, ChapterNamePipe],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './thread-panel.component.html',
   styleUrl: './thread-panel.component.scss'
@@ -30,6 +32,9 @@ export class ThreadPanelComponent {
 
   /** Where the reader is, so a gap can be stated in chapters rather than implied. */
   @Input() currentChapter = 0;
+
+  /** The contents list, so a chapter is named the way the sidebar names it. */
+  @Input() chapters: ChapterInfo[] = [];
 
   private readonly order: Record<string, number> = {
     Dormant: 0, Active: 1, Resolved: 2, Abandoned: 3
@@ -54,7 +59,10 @@ export class ThreadPanelComponent {
   }
 
   /** The most recent movements, newest first — the whole list is rarely wanted. */
-  protected recent(thread: StoryThread): { chapter: number; whatMoved: string }[] {
-    return [...thread.beats].sort((a, b) => b.chapter - a.chapter).slice(0, 4);
+  protected recent(thread: StoryThread): ChapterEntry[] {
+    return [...thread.beats]
+      .sort((a, b) => b.chapter - a.chapter)
+      .slice(0, 4)
+      .map(beat => ({ chapter: beat.chapter, what: beat.whatMoved }));
   }
 }

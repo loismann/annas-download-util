@@ -19,6 +19,7 @@ public enum ArtifactKind
     SectionVocab,
     LearnMore,
     StoryModel,
+    CastOverrides,
     Flashcards
 }
 
@@ -43,6 +44,7 @@ public static class ArtifactKinds
             [ArtifactKind.SectionVocab] = "section-vocab",
             [ArtifactKind.LearnMore] = "learn-more",
             [ArtifactKind.StoryModel] = "story-model",
+            [ArtifactKind.CastOverrides] = "cast-overrides",
             [ArtifactKind.Flashcards] = "flashcards"
         };
 

@@ -1,6 +1,7 @@
 using AnnasArchive.API.Reader2.Ai;
 using AnnasArchive.API.Reader2.Domain;
 using AnnasArchive.API.Reader2.Epub;
+using AnnasArchive.API.Reader2.Lenses;
 using AnnasArchive.API.Reader2.Storage;
 using static AnnasArchive.API.Reader2.Endpoints.Reader2Endpoints;
 
@@ -15,6 +16,7 @@ internal static class ChapterRoutes
         group.MapGet("/books/{bookId}/chapters", HandleChapters);
         group.MapGet("/books/{bookId}/chapters/{chapter:int}", HandleChapter);
         group.MapGet("/books/{bookId}/chapters/{chapter:int}/sections", HandleSections);
+        group.MapGet("/books/{bookId}/chapters/{chapter:int}/summary", HandlePeekSummary);
         group.MapGet("/books/{bookId}/search", HandleSearch);
         group.MapDelete("/books/{bookId}/index", HandleDropIndex);
 
@@ -40,9 +42,12 @@ internal static class ChapterRoutes
             var index = await labeller.ApplyAsync(ctx, extracted, ct);
 
             await books.TouchOpenedAsync(ctx.Ref, ct);
+
+            var (summarised, stale) = await SummarisedAsync(ctx, artifacts, ct);
+
             await stream.ResultAsync(new ChapterListResponse(
                 index.Title, ctx.Lens.Key,
-                ChapterInfo.ForList(index.Chapters, await SummarisedAsync(ctx, artifacts, ct))));
+                ChapterInfo.ForList(index.Chapters, summarised, stale)));
         });
 
     private static Task<IResult> HandleChapters(
@@ -60,26 +65,37 @@ internal static class ChapterRoutes
             // make opening a book cost money, which is the rule this reader keeps.
             var labelled = await labeller.StoredLabelsAsync(ctx, index, ct);
 
+            var (summarised, stale) = await SummarisedAsync(ctx, artifacts, ct);
+
             return Results.Ok(new ChapterListResponse(
                 labelled.Title, ctx.Lens.Key,
-                ChapterInfo.ForList(labelled.Chapters, await SummarisedAsync(ctx, artifacts, ct))));
+                ChapterInfo.ForList(labelled.Chapters, summarised, stale)));
         });
 
     /// <summary>
-    /// Which chapters already have a summary under this lens.
+    /// Which chapters already have a summary under this lens, and which of those
+    /// predate the current prompt.
     ///
-    /// <para>One read for the whole book, and it applies the same version gates a
-    /// generate would: a summary written by wording nobody uses any more is a
-    /// cache miss, so showing it as already bought would promise the reader
-    /// something the next click would charge them for.</para>
+    /// <para>One read for the whole book — the chapter list is the most-hit route
+    /// in the reader, and a per-chapter lookup would make opening a
+    /// three-hundred-chapter novel three hundred reads.</para>
+    ///
+    /// <para>A summary written under older wording counts as summarised, because
+    /// it is: the prose has not changed and the reader has already paid for it.
+    /// It used to count as absent, which turned one edit to an unrelated prompt
+    /// into a book that looked like it had never been read.</para>
     /// </summary>
-    private static async Task<IReadOnlySet<int>> SummarisedAsync(
-        ReaderContext ctx, IArtifactStore artifacts, CancellationToken ct) =>
-        (await artifacts.ListAsync<Prose>(
+    private static async Task<(IReadOnlySet<int> Summarised, IReadOnlySet<int> Stale)> SummarisedAsync(
+        ReaderContext ctx, IArtifactStore artifacts, CancellationToken ct)
+    {
+        var stored = await artifacts.ListAsync<Prose>(
             new ArtifactQuery(ctx.Ref, ctx.Lens.Key, ArtifactKind.ChapterSummary),
-            new ArtifactVersions(Prose.SchemaVersion, ctx.Lens.PromptVersion), ct))
-        .Select(a => a.Key.Chapter)
-        .ToHashSet();
+            new ArtifactVersions(Prose.SchemaVersion, ctx.Lens.Versions[CallKind.ChapterSummary]), ct);
+
+        return (
+            stored.Select(a => a.Key.Chapter).ToHashSet(),
+            stored.Where(a => a.Stale).Select(a => a.Key.Chapter).ToHashSet());
+    }
 
     private static Task<IResult> HandleChapter(
         string bookId, int chapter, HttpContext http, IReaderContextResolver resolver,
@@ -110,6 +126,31 @@ internal static class ChapterRoutes
             return Results.Ok(layout.Sections
                 .Select((s, i) => new SectionInfo(i, s.Start, s.WordCount))
                 .ToArray());
+        });
+
+    /// <summary>
+    /// Whatever chapter summary is already stored, or <c>204</c> when there is
+    /// none. Free — a peek, not a generate.
+    ///
+    /// <para>The chapter list's tick promises this exists; without a route that
+    /// reads it back, the tick was a promise the panel could not keep, and the
+    /// reader saw "Nothing generated for this chapter yet" beside a chapter the
+    /// list had just marked as already summarised.</para>
+    ///
+    /// <para><c>204</c> rather than a body holding <c>null</c>: minimal APIs
+    /// writes zero bytes for <c>Results.Ok</c> of a null value rather than the
+    /// JSON literal, which is not something a client should have to know.</para>
+    /// </summary>
+    private static Task<IResult> HandlePeekSummary(
+        string bookId, int chapter, HttpContext http, IReaderContextResolver resolver,
+        ArtifactGateway gateway, CancellationToken ct) =>
+        ReaderRequest.WithContextAsync(bookId, http, resolver, ct, async ctx =>
+        {
+            var stored = await gateway.PeekAsync<Prose>(
+                ArtifactKey.ChapterSummary(ctx.Ref, ctx.Lens.Key, chapter),
+                ctx.Lens.Versions[CallKind.ChapterSummary], ct);
+
+            return stored is null ? Results.NoContent() : Results.Ok(stored);
         });
 
     private static Task<IResult> HandleSearch(

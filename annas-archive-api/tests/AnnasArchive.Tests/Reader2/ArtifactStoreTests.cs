@@ -86,17 +86,54 @@ public sealed class ArtifactStoreTests : IDisposable
 
     // ─── version gates ───────────────────────────────────────────────────
 
+    /// <summary>
+    /// <b>A prompt bump is not a cache miss.</b> The prose has not changed and the
+    /// reader has already paid; only the wording that produced it has moved on. It
+    /// used to be a miss, which meant one edit to the story-extraction prompt
+    /// silently invalidated — and on the next press overwrote — every chapter
+    /// summary in the book.
+    /// </summary>
     [Fact]
-    public async Task A_stale_prompt_version_is_a_miss_but_the_row_survives_for_overwrite()
+    public async Task A_stale_prompt_version_is_still_served_and_marked_stale()
     {
         var book = await BookAsync();
         var key = ArtifactKey.ChapterSummary(book, Lens, 1);
         await _f.Artifacts.PutAsync(key, new TestPayload("old prompt"), new ArtifactProvenance(1, 1, "m"));
 
-        (await _f.Artifacts.GetAsync<TestPayload>(key, new ArtifactVersions(1, 2))).Should().BeNull();
+        var read = await _f.Artifacts.GetAsync<TestPayload>(key, new ArtifactVersions(1, 2));
 
-        // Still readable by the build that wrote it — a prompt bump is not a delete.
-        (await _f.Artifacts.GetAsync<TestPayload>(key, V1)).Should().NotBeNull();
+        read.Should().NotBeNull();
+        read!.Content.Text.Should().Be("old prompt");
+        read.Stale.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task An_artifact_from_the_current_prompt_is_not_marked_stale()
+    {
+        var book = await BookAsync();
+        var key = ArtifactKey.ChapterSummary(book, Lens, 1);
+        await _f.Artifacts.PutAsync(key, new TestPayload("current"), new ArtifactProvenance(1, 2, "m"));
+
+        (await _f.Artifacts.GetAsync<TestPayload>(key, new ArtifactVersions(1, 2)))!
+            .Stale.Should().BeFalse();
+    }
+
+    /// <summary>
+    /// The other half of the distinction. A stale <i>shape</i> cannot be read at
+    /// all, so it goes; a stale prompt is merely old, so it stays.
+    /// </summary>
+    [Fact]
+    public async Task A_newer_prompt_version_is_served_and_is_not_stale()
+    {
+        var book = await BookAsync();
+        var key = ArtifactKey.ChapterSummary(book, Lens, 1);
+        await _f.Artifacts.PutAsync(key, new TestPayload("from a newer build"),
+            new ArtifactProvenance(1, 5, "m"));
+
+        var read = await _f.Artifacts.GetAsync<TestPayload>(key, new ArtifactVersions(1, 2));
+
+        read!.Content.Text.Should().Be("from a newer build");
+        read.Stale.Should().BeFalse("a rollback must not label newer work as out of date");
     }
 
     [Fact]
@@ -159,8 +196,13 @@ public sealed class ArtifactStoreTests : IDisposable
         listed.Select(s => s.Content.Text).Should().Equal("s0", "s1", "s2");
     }
 
+    /// <summary>
+    /// A read-many keeps stale rows too, and says which they are. Dropping them
+    /// would leave a chapter's section summaries with a hole in the middle after
+    /// any prompt edit — worse than showing an older one.
+    /// </summary>
     [Fact]
-    public async Task List_skips_stale_rows_without_deleting_them()
+    public async Task List_returns_stale_rows_and_marks_them()
     {
         var book = await BookAsync();
         await _f.Artifacts.PutAsync(ArtifactKey.SectionSummary(book, Lens, 1, 0),
@@ -171,9 +213,8 @@ public sealed class ArtifactStoreTests : IDisposable
         var listed = await _f.Artifacts.ListAsync<TestPayload>(
             new ArtifactQuery(book, Lens, ArtifactKind.SectionSummary), new ArtifactVersions(1, 2));
 
-        listed.Select(s => s.Content.Text).Should().Equal("current");
-        (await _f.Artifacts.GetAsync<TestPayload>(ArtifactKey.SectionSummary(book, Lens, 1, 1), V1))
-            .Should().NotBeNull("a read-many should not silently delete");
+        listed.Select(s => s.Content.Text).Should().Equal("current", "stale");
+        listed.Select(s => s.Stale).Should().Equal(false, true);
     }
 
     // ─── deletion ────────────────────────────────────────────────────────

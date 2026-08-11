@@ -22,6 +22,24 @@ public sealed class VocabularyPipeline(
     ModelCalls model)
 {
     /// <summary>
+    /// Whatever is already stored for one section, minus what this reader has
+    /// filed. Free — a peek, not a generate.
+    ///
+    /// <para>The route this backs is a <c>GET</c>, and a <c>GET</c> that could
+    /// fall through to <see cref="ForSectionAsync"/> on a cache miss would spend
+    /// money on a request a browser can prefetch and a refresh can repeat.</para>
+    /// </summary>
+    public async Task<SectionVocabulary> PeekSectionAsync(
+        ReaderContext ctx, int chapter, int section, CancellationToken ct = default)
+    {
+        var stored = await gateway.PeekAsync<SectionVocabulary>(
+            ArtifactKey.SectionVocab(ctx.Ref, ctx.Lens.Key, chapter, section), SharedPrompts.Version, ct)
+            ?? new SectionVocabulary([]);
+
+        return stored.Excluding(await vocabulary.FiledAsync(ctx.UserId, ct));
+    }
+
+    /// <summary>
     /// The hard words in one section, minus what this reader has already filed.
     /// </summary>
     /// <param name="force">Regenerate and overwrite rather than reading the cache.</param>

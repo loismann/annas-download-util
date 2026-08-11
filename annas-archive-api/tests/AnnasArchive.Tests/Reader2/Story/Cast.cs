@@ -18,6 +18,11 @@ public static class Cast
         new(id, name, aliases ?? [], tier, [], Role: "", Dossier: "",
             firstSeen, lastSeen, Status: "", arc ?? []);
 
+    /// <summary>An edge with its history stated as plain text, chapter-tagged.</summary>
+    public static Edge Edge(
+        string from, string to, string type, int since = 0, int? ended = null, string note = "") =>
+        new(from, to, type, since, ended, note.Length > 0 ? [new EdgeNote(since, note)] : []);
+
     public static StoryThread StoryThread(
         string id, string name, int started = 0, int lastAdvanced = 0,
         ThreadStatus status = ThreadStatus.Active, IReadOnlyList<Beat>? beats = null) =>
@@ -29,13 +34,27 @@ public static class Cast
         IReadOnlyList<Edge>? edges = null,
         IReadOnlyList<Group>? groups = null,
         IReadOnlyList<CandidateMerge>? candidates = null,
-        IReadOnlyList<int>? ingested = null) =>
-        new(actors ?? [], groups ?? [], edges ?? [], threads ?? [], candidates ?? [], ingested ?? []);
+        IReadOnlyList<int>? ingested = null,
+        IReadOnlyList<Place>? places = null) =>
+        new(actors ?? [], groups ?? [], edges ?? [], threads ?? [], candidates ?? [], ingested ?? [],
+            places ?? []);
+
+    public static Place Place(
+        string id, string name, PlaceKind kind = PlaceKind.Settlement,
+        IReadOnlyList<string>? aliases = null, string partOf = "",
+        int firstSeen = 0, int lastSeen = 0, string description = "") =>
+        new(id, name, aliases ?? [], kind, description, partOf, firstSeen, lastSeen);
+
+    public static NewPlace Arriving(
+        string name, PlaceKind kind, IReadOnlyList<string>? aliases = null,
+        string description = "", string partOf = "") =>
+        new(name, aliases ?? [], kind, description, partOf);
 
     public static NewActor Arriving(
         string name, ActorTier tier = ActorTier.Secondary,
-        IReadOnlyList<string>? aliases = null, string arcChange = "") =>
-        new(name, aliases ?? [], tier, [], Role: "", Dossier: "", Status: "", arcChange);
+        IReadOnlyList<string>? aliases = null, string arcChange = "",
+        IReadOnlyList<string>? groups = null) =>
+        new(name, aliases ?? [], tier, groups ?? [], Role: "", Dossier: "", Status: "", arcChange);
 
     /// <summary>A delta carrying one kind of thing, so a test names only what it changes.</summary>
     public static StoryDelta Delta(
@@ -47,9 +66,12 @@ public static class Cast
         IReadOnlyList<NewThread>? newThreads = null,
         IReadOnlyList<ThreadBeat>? beats = null,
         IReadOnlyList<NewGroup>? groups = null,
-        IReadOnlyList<GroupUpdate>? groupUpdates = null) =>
+        IReadOnlyList<GroupUpdate>? groupUpdates = null,
+        IReadOnlyList<NewPlace>? newPlaces = null,
+        IReadOnlyList<PlaceUpdate>? placeUpdates = null) =>
         new(chapter, newActors ?? [], updates ?? [], hints ?? [], groups ?? [],
-            groupUpdates ?? [], edges ?? [], newThreads ?? [], beats ?? []);
+            groupUpdates ?? [], edges ?? [], newThreads ?? [], beats ?? [],
+            newPlaces ?? [], placeUpdates ?? []);
 
     /// <summary>The merge under its shipped thresholds unless a test needs otherwise.</summary>
     public static StoryModel Merge(StoryModel model, StoryDelta delta, StoryMergeRules? rules = null) =>

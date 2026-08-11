@@ -60,6 +60,18 @@ import { ProsePipe } from '../prose.pipe';
       </button>
     </header>
 
+    <!--
+      Offered, never taken. A summary written under older wording is still a
+      summary of prose that has not changed, so it is served as it always was and
+      the reader decides whether the newer wording is worth paying for.
+    -->
+    <p class="stale" *ngIf="stale && markdown && !busy">
+      Written under an earlier version of the prompt.
+      <button type="button" class="link" (click)="regenerate.emit(kind)">
+        Generate it again
+      </button>
+    </p>
+
     <section class="output" aria-live="polite">
       <div class="busy" *ngIf="busy">
         <p>{{ busy.what }}…</p>
@@ -84,6 +96,9 @@ import { ProsePipe } from '../prose.pipe';
 })
 export class AnalysisPanelComponent {
   @Input() kind: AnalysisKind = 'summary';
+
+  /** Whether what is shown predates the current prompt. Decided by the server. */
+  @Input() stale = false;
   @Input() markdown: string | null = null;
   @Input() busy: Busy | null = null;
   @Input() error: string | null = null;

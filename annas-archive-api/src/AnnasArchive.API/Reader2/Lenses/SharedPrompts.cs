@@ -35,12 +35,20 @@ public static class SharedPrompts
     /// <summary>
     /// The story-extraction prompt, around the wording a book type supplies.
     ///
-    /// <para><b>The JSON keys are the wire contract</b> between a lens's prompt and
-    /// <see cref="Story.StoryExtraction"/>, which parses them. Copied into each
-    /// story lens they were three statements of one fact that nothing checked, and
-    /// a lens whose list quietly lost <c>"aliasHints"</c> would simply stop
-    /// proposing aliases — no error, no failing test, just a cast list that grows
-    /// duplicates. They are written once here instead.</para>
+    /// <para><b>The JSON below is the wire contract</b> between a lens's prompt and
+    /// <see cref="Story.StoryExtraction"/>, which parses it. Copied into each story
+    /// lens it was three statements of one fact that nothing checked, and a lens
+    /// whose list quietly lost <c>"aliasHints"</c> would simply stop proposing
+    /// aliases — no error, no failing test, just a cast list that grows duplicates.
+    /// It is written once here instead.</para>
+    ///
+    /// <para><b>Every field is named, not just every array.</b> An earlier version
+    /// listed the eight array names and nothing inside them, and the result was a
+    /// model that answered with the only two fields the prose happened to mention —
+    /// a name and a tier. Thirty-two characters were recorded with no dossier, no
+    /// role, no arc, and not one relationship between them, and every test passed,
+    /// because the tests hand-wrote the JSON in the shape the parser wanted. A
+    /// contract only one end of it has read is not a contract.</para>
     ///
     /// <para>What is <i>not</i> shared is the wording either side of it. A campaign
     /// history and a novel mean different things by an actor, a group, an edge, and
@@ -53,25 +61,110 @@ public static class SharedPrompts
     /// </param>
     /// <param name="kinds">
     /// What an actor, a group, an edge, and a thread are here, and the forms a name
-    /// takes in this kind of book.
+    /// takes in this kind of book. Legal <i>values</i> — the tiers, the group kinds —
+    /// belong to the schema below rather than here, so that no lens can drift from
+    /// what the parser accepts.
     /// </param>
     public static string StoryExtraction(string opening, string kinds) =>
-        $"""
-         {opening}
+        $$"""
+          {{opening}}
 
-         Report only what appears in the provided summaries; infer nothing beyond them.
+          Report only what appears in the provided summaries; infer nothing beyond them.
 
-         Return a delta describing what this chapter adds, as JSON and nothing else,
-         with these keys: "newActors", "actorUpdates", "aliasHints", "newGroups",
-         "groupUpdates", "edgeChanges", "newThreads", "threadBeats". Use an empty array
-         for anything this chapter does not touch.
+          {{kinds}}
 
-         {kinds}
+          Return a delta describing what this chapter adds, as JSON and nothing else.
+          Every key below holds an array of objects; use an empty array for anything
+          this chapter does not touch, and give every field shown for each entry you
+          do report.
 
-         Every entry carries the chapter number it came from. Do not restate what the
-         digest already holds, do not remove anything, and do not rank, explain, or
-         editorialise.
-         """;
+          "newActors" - somebody appearing here for the first time:
+            {"canonicalName": "the fullest form of the name used for them",
+             "aliases": ["every other name, title, or short form used here"],
+             "tier": "major" | "secondary" | "minor" | "mentioned",
+             "role": "their standing or function, a few words",
+             "dossier": "who they are, in one or two sentences",
+             "status": "where they stand by the end of this chapter",
+             "groupIds": ["the groups they belong to"],
+             "arcChange": "what changed for them in this chapter"}
+
+          "actorUpdates" - somebody already in the digest:
+            {"actorId": "...", and any of "tier", "role", "dossier", "status",
+             "arcChange", "aliases", "groupIds"}
+            Leave a field out to leave it unchanged. An empty value is not a change.
+
+          "aliasHints" - a name you believe belongs to somebody already in the digest:
+            {"alias": "...", "actorId": "...", "confidence": "high" | "medium" | "low"}
+
+          "newGroups":
+            {"name": "...",
+             "kind": "family" | "household" | "military-unit" | "social-circle"
+                     | "political-faction" | "other",
+             "memberIds": ["..."], "rivalGroupIds": ["..."]}
+
+          "groupUpdates":
+            {"groupId": "...", "memberIds": ["..."], "rivalGroupIds": ["..."]}
+
+          "edgeChanges" - a relationship starting, changing, or ending:
+            {"from": "...", "to": "...", "type": "...",
+             "note": "what passed between them in this chapter",
+             "ended": true | false}
+
+          "newThreads":
+            {"name": "...", "participantIds": ["..."],
+             "firstBeat": "what moves in it here"}
+
+          "threadBeats":
+            {"threadId": "...", "whatMoved": "..."}
+
+          "newPlaces" - somewhere the book goes or names for the first time:
+            {"name": "the fullest form of the name used for it",
+             "aliases": ["every other name or short form used here"],
+             "kind": "settlement" | "building" | "region" | "vessel" | "realm"
+                     | "other",
+             "description": "what it is and what it is like, in one or two sentences",
+             "partOf": "the larger place it sits inside, if this chapter says"}
+
+          "placeUpdates" - somewhere already in the digest:
+            {"placeId": "...", and any of "kind", "description", "partOf", "aliases"}
+
+          Refer to an actor, a group, a thread, or a place by the id the digest gives it.
+          Something this chapter introduces has no id yet — name it instead, spelled
+          exactly as you spelled it above. Never invent an id.
+
+          RELATIONSHIPS ARE THE PART MOST OFTEN LEFT OUT, and a record of who
+          everybody is that cannot say how they know each other is the failure this
+          whole task exists to prevent. Give an "edgeChanges" entry for every pair of
+          actors this chapter puts in contact — travelling together, fighting,
+          serving, related, employed, protecting, deceiving, negotiating, or simply
+          in one conversation. The digest lists the relationships already recorded:
+          report one of those again only when this chapter changes it, and report
+          every pair that is not there. Before answering, read back your own
+          "newActors" and "actorUpdates" and check each one appears in at least one
+          edge; add the ones you left out. Someone connected to nobody is a name the
+          reader cannot place.
+
+          Fill in "memberIds" for every group you report. A group with no members
+          records nothing, and the reader is shown a faction with no faces in it.
+
+          Report a place only if the chapter treats it as somewhere, rather than as a
+          word in a name. A house somebody lives in, a city they travel to, a ship
+          they are aboard, a region a war is fought over — each of those is a place.
+          "The Duke of Ravensmarch" is not, unless Ravensmarch is also somewhere the
+          book has been.
+
+          GIVE "partOf" FOR EVERY PLACE THAT SITS INSIDE ANOTHER, and report the
+          containing places too, as their own entries, even when the chapter only
+          names them in passing. A palace is on a continent, a continent is on a
+          world, a world is in a system or a cluster; report each link you have and
+          each place it needs. A flat list of ninety names cannot answer "where was
+          that", which is the only question this part is for — and a place whose
+          container is missing from the record cannot be filed under it. Where the
+          digest already lists the container, use its id.
+
+          Beyond those, do not restate what the digest already holds, do not remove
+          anything, and do not rank, explain, or editorialise.
+          """;
 
     /// <summary>
     /// Turns a spine's worth of raw headings into a usable contents list.

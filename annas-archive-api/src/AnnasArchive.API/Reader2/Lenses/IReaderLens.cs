@@ -37,6 +37,57 @@ public sealed record LensPrompts(
 }
 
 /// <summary>
+/// One version per prompt, rather than one for the whole lens.
+///
+/// <para><b>Why this exists.</b> A lens used to carry a single
+/// <c>PromptVersion</c> gating every artifact it produced, so a one-line edit to
+/// the story-extraction prompt marked every chapter summary in every book as
+/// written under old wording. Six of this lens's seven prompts had been
+/// byte-identical since version 1 and had still been dragged to version 4 —
+/// which was not a versioning scheme, it was one number wearing seven hats.</para>
+///
+/// <para>Mirrors <see cref="LensPrompts"/> field for field on purpose: the thing
+/// being versioned and the version travel in the same shape, so a new prompt
+/// cannot be added without somewhere obvious to say what version it is at.</para>
+///
+/// <para><b>They start at 4, not 1.</b> Stored artifacts record the whole-lens
+/// version that wrote them, and the newest of those is 4. Starting a prompt at
+/// its "true" version — 1, for the six that never changed — would leave every
+/// stored row reading as <i>newer</i> than current, and the next three edits
+/// would be undetectable. Aligning with what is on disk is what makes the first
+/// bump after this change mean something.</para>
+/// </summary>
+public sealed record PromptVersions(
+    int PassageAnalysis = 1,
+    int ChunkSummary = 1,
+    int SectionSynthesis = 1,
+    int ChapterSummary = 1,
+    int SectionSummary = 1,
+    int ExplainSimply = 1,
+    int StoryExtraction = 1)
+{
+    /// <summary>Every prompt in this lens at one version — the state before the split.</summary>
+    public static PromptVersions All(int version) =>
+        new(version, version, version, version, version, version, version);
+
+    public int this[CallKind kind] => kind switch
+    {
+        CallKind.PassageAnalysis => PassageAnalysis,
+        CallKind.ChunkSummary => ChunkSummary,
+        CallKind.SectionSynthesis => SectionSynthesis,
+        CallKind.ChapterSummary => ChapterSummary,
+        CallKind.SectionSummary => SectionSummary,
+        CallKind.ExplainSimply => ExplainSimply,
+        CallKind.StoryExtraction => StoryExtraction,
+
+        // The three no lens owns carry SharedPrompts.Version instead; asking a
+        // lens for one is a mistake worth failing on rather than answering 0.
+        _ => throw new ArgumentOutOfRangeException(
+            nameof(kind), kind, "This call's wording belongs to SharedPrompts, not to a lens.")
+    };
+}
+
+/// <summary>
 /// What a story model's parts are called for this subject matter.
 ///
 /// <para>Fiction and military reading need the same machinery with different
@@ -68,14 +119,16 @@ public interface IReaderLens
     int SortOrder { get; }
 
     /// <summary>
-    /// Bumped whenever any prompt below changes.
+    /// One version per prompt, bumped when <i>that</i> prompt changes.
     ///
     /// <para>This is the whole point of the versioning: an artifact records the
     /// version that produced it, so a prompt edit makes existing rows detectably
     /// stale instead of silently serving output from wording nobody has used for
-    /// months.</para>
+    /// months. Per prompt rather than per lens, because a shared number made an
+    /// edit to one prompt say something false about the other six — see
+    /// <see cref="PromptVersions"/>.</para>
     /// </summary>
-    int PromptVersion { get; }
+    PromptVersions Versions { get; }
 
     LensPrompts Prompts { get; }
 

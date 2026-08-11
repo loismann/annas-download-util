@@ -1,5 +1,6 @@
 import {
-  Actor, ActorEdge, ActorGroup, ActorTier, CandidateMerge, StoryModel, StoryThread, ThreadStatus
+  Actor, ActorEdge, ActorGroup, ActorTier, CandidateMerge, ChapterInfo, StoryModel, StoryThread,
+  ThreadStatus
 } from '../reader2.models';
 
 /**
@@ -10,12 +11,13 @@ import {
 export function actor(id: string, name: string, tier: ActorTier = 'Secondary', extra?: Partial<Actor>): Actor {
   return {
     id, canonicalName: name, aliases: [], tier, groupIds: [], role: '', dossier: '',
-    firstSeenChapter: 0, lastSeenChapter: 0, status: '', arc: [], ...extra
+    firstSeenChapter: 0, lastSeenChapter: 0, status: '', arc: [], readerNote: '', hidden: false,
+    ...extra
   };
 }
 
 export function edge(from: string, to: string, type: string, extra?: Partial<ActorEdge>): ActorEdge {
-  return { from, to, type, sinceChapter: 0, endedChapter: null, note: '', ...extra };
+  return { from, to, type, sinceChapter: 0, endedChapter: null, notes: [], ...extra };
 }
 
 export function group(id: string, name: string, memberIds: string[] = []): ActorGroup {
@@ -31,13 +33,24 @@ export function thread(
   };
 }
 
+/**
+ * A contents list, indexed the way the story model indexes chapters — by
+ * position in the spine, front matter included. That offset is the whole reason
+ * chapters are named rather than counted, so specs that care want a list where
+ * the titles and the indices deliberately disagree.
+ */
+export function contents(...titles: string[]): ChapterInfo[] {
+  return titles.map((title, id) => ({ id, title, level: 0, wordCount: 100, hasSummary: false, summaryIsStale: false }));
+}
+
 export function question(id: string, actorId: string, alias: string, otherActorId: string | null = null): CandidateMerge {
   return { id, actorId, otherActorId, alias, reason: 'The extraction was not certain.', proposedInChapter: 1 };
 }
 
 export function model(extra?: Partial<StoryModel>): StoryModel {
   return {
-    actors: [], groups: [], edges: [], threads: [], openQuestions: [], chaptersIngested: [0],
+    actors: [], places: [], groups: [], edges: [], threads: [], openQuestions: [],
+    chaptersIngested: [0],
     vocabulary: { actors: 'Characters', groups: 'Factions', threads: 'Plot threads' },
     throughChapter: 5, ...extra
   };

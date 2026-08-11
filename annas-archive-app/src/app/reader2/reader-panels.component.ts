@@ -1,5 +1,5 @@
 import {
-  ChangeDetectionStrategy, Component, EventEmitter, Input, Output, inject
+  ChangeDetectionStrategy, Component, EventEmitter, Input, Output, computed, inject
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { AnalysisPanelComponent } from './components/analysis-panel.component';
@@ -40,6 +40,7 @@ import { PassageSelection } from './reader2.models';
       *ngIf="open === null"
       [kind]="analysis.kind()"
       [markdown]="analysis.markdown()"
+      [stale]="summaryIsStale()"
       [busy]="store.busy()"
       [error]="store.error()"
       [selection]="selection"
@@ -94,6 +95,18 @@ export class ReaderPanelsComponent {
 
   /** The last query actually run, so "nothing found" names the right thing. */
   protected searched: string | null = null;
+
+  /**
+   * Whether what the summary panel is showing predates the current prompt.
+   *
+   * <p>Only for the summary itself — "I'm a Dummy" is written from the summary
+   * rather than stored against a chapter, so the chapter list has nothing to say
+   * about it and claiming otherwise would be a marker that is sometimes a
+   * guess.</p>
+   */
+  protected readonly summaryIsStale = computed(() =>
+    this.analysis.kind() === 'summary'
+    && (this.store.currentChapter()?.summaryIsStale ?? false));
 
   private get bookId(): string | null {
     return this.store.book()?.bookId ?? null;
@@ -151,5 +164,6 @@ export class ReaderPanelsComponent {
     this.analysis.clear();
     await this.store.goToAsync(target.chapter, target.wordOffset);
     await this.store.rememberPositionAsync();
+    await this.analysis.refreshAsync();
   }
 }

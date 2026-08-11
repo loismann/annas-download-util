@@ -1,0 +1,70 @@
+:host {
+  display: block;
+}
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.tiers {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.chip {
+  border: 1px solid var(--reader2-border, #d0d0d0);
+  background: transparent;
+  border-radius: 999px;
+  padding: 0.15rem 0.65rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+
+  &.on {
+    background: var(--reader2-accent-soft, #e8effa);
+    border-color: var(--reader2-accent, #3b6ea5);
+  }
+}
+
+.pick select {
+  border: 1px solid var(--reader2-border, #d0d0d0);
+  border-radius: 999px;
+  padding: 0.15rem 0.5rem;
+  font-size: 0.8rem;
+  background: transparent;
+  max-width: 12rem;
+}
+
+.hidden-note {
+  font-size: 0.82rem;
+  opacity: 0.75;
+  margin: 0 0 0.5rem;
+}
+
+.link {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--reader2-accent, #3b6ea5);
+  cursor: pointer;
+  text-decoration: underline;
+  font: inherit;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* Set apart from the tier chips: those narrow a view, this one reviews a
+   decision the reader made about the record. */
+.hidden-chip {
+  font-style: italic;
+}

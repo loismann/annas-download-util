@@ -92,7 +92,7 @@ public class PipelineTests : IDisposable
 
         var rows = await _f.Store.Artifacts.ListAsync<Prose>(
             new ArtifactQuery(ctx.Ref, ctx.Lens.Key, ArtifactKind.ChapterSummary),
-            new ArtifactVersions(Prose.SchemaVersion, ctx.Lens.PromptVersion));
+            new ArtifactVersions(Prose.SchemaVersion, ctx.Lens.Versions[CallKind.ChapterSummary]));
 
         rows.Should().HaveCount(1, "force overwrites; it does not accumulate");
         rows[0].Content.Markdown.Should().Be("a different summary");
@@ -149,7 +149,7 @@ public class PipelineTests : IDisposable
 
         var stored = await _f.Store.Artifacts.GetAsync<Prose>(
             ArtifactKey.ChapterSummary(ctx.Ref, ctx.Lens.Key, 0),
-            new ArtifactVersions(Prose.SchemaVersion, ctx.Lens.PromptVersion));
+            new ArtifactVersions(Prose.SchemaVersion, ctx.Lens.Versions[CallKind.ChapterSummary]));
 
         stored.Should().BeNull();
     }

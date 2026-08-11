@@ -47,8 +47,37 @@ public sealed class StoryModelService(
     ArtifactGateway gateway,
     IArtifactStore artifacts,
     ModelCalls model,
-    Reader2Options options)
+    Reader2Options options,
+    CastOverrideStore corrections)
 {
+    /// <summary>What the reader has corrected. Owned by <see cref="CastOverrideStore"/>.</summary>
+    public Task<CastOverrides> CorrectionsAsync(ReaderContext ctx, CancellationToken ct = default) =>
+        corrections.ReadAsync(ctx, ct);
+
+    /// <summary>
+    /// The stored model with the reader's corrections laid over it.
+    ///
+    /// <para><b>Everything anybody reads goes through here; the merge does not.</b>
+    /// <see cref="ReadAsync"/> stays raw on purpose — merging into a corrected model
+    /// would write the correction back into storage on the next chapter, and a
+    /// projection that quietly becomes permanent is not a projection.</para>
+    /// </summary>
+    public async Task<StoryModel> ReadCorrectedAsync(
+        ReaderContext ctx, CancellationToken ct = default) =>
+        CastCorrections.Apply(await ReadAsync(ctx, ct), await corrections.ReadAsync(ctx, ct));
+
+    /// <summary>Saves one correction and returns the model as it now reads.</summary>
+    public async Task<StoryModel> CorrectAsync(
+        ReaderContext ctx, CastOverride correction, CancellationToken ct = default) =>
+        CastCorrections.Apply(
+            await ReadAsync(ctx, ct), await corrections.SaveAsync(ctx, correction, ct));
+
+    /// <summary>Keeps somebody off the map, or puts them back.</summary>
+    public async Task<StoryModel> HideAsync(
+        ReaderContext ctx, string nameKey, bool hidden, CancellationToken ct = default) =>
+        CastCorrections.Apply(
+            await ReadAsync(ctx, ct), await corrections.HideAsync(ctx, nameKey, hidden, ct));
+
     /// <summary>
     /// The stored model, unfiltered. Read with no prompt gate — see the note on
     /// this class, and note that the zero is the whole of that decision.
@@ -62,7 +91,7 @@ public sealed class StoryModelService(
     /// <summary>The model as it stood when the reader reached this chapter.</summary>
     public async Task<StoryModel> ReadThroughAsync(
         ReaderContext ctx, int throughChapter, CancellationToken ct = default) =>
-        Through(await ReadAsync(ctx, ct), throughChapter);
+        Through(await ReadCorrectedAsync(ctx, ct), throughChapter);
 
     /// <summary>
     /// The reading-position filter, applied under the configured thresholds.
@@ -102,7 +131,7 @@ public sealed class StoryModelService(
 
         var merged = await gateway.GetOrGenerateAsync(
             ArtifactKey.StoryModel(ctx.Ref, ctx.Lens.Key),
-            ctx, ctx.Lens.PromptVersion,
+            ctx, ctx.Lens.Versions[CallKind.StoryExtraction],
             async token =>
             {
                 // Re-read under the lock. The pre-check above raced; this one did
@@ -124,6 +153,30 @@ public sealed class StoryModelService(
     }
 
     /// <summary>
+    /// Empties the model, so that a back-fill behind it rebuilds from scratch.
+    ///
+    /// <para><b>For when the extraction contract itself changed</b>, not for a
+    /// wording tweak. The model is read without a prompt-version gate on purpose —
+    /// a rewording must never empty a cast list somebody spent a novel building —
+    /// so when a change means the stored model was gathered under a contract that
+    /// no longer holds, emptying it has to be something a person asks for.</para>
+    ///
+    /// <para>Answered merge questions do not survive this, and cannot: ids are
+    /// assigned as actors are admitted, so a rebuilt model numbers everybody
+    /// afresh and a refusal recorded against <c>a7</c> would come back attached to
+    /// whoever <c>a7</c> now happens to be. Losing the answer is the honest
+    /// outcome; re-pointing it at a stranger is not.</para>
+    ///
+    /// <para>Reaches no model, so it takes the gateway's un-gated path — an
+    /// exhausted allowance must not leave somebody stuck with a model they have
+    /// been told to rebuild.</para>
+    /// </summary>
+    public Task<StoryModel> ResetAsync(ReaderContext ctx, CancellationToken ct = default) =>
+        gateway.ReviseAsync(
+            ArtifactKey.StoryModel(ctx.Ref, ctx.Lens.Key), ctx.Lens.Versions[CallKind.StoryExtraction],
+            _ => Task.FromResult(StoryModel.Empty), ct);
+
+    /// <summary>
     /// Builds the model from every chapter already summarised, in order.
     ///
     /// <para>Offered after switching a book to a story-model type, and never run
@@ -131,10 +184,17 @@ public sealed class StoryModelService(
     /// it is the cheap half of the work — and it is resumable, because a chapter
     /// already in <c>chaptersIngested</c> costs nothing to walk past.</para>
     /// </summary>
+    /// <param name="rebuild">
+    /// Empties the model first. Every chapter is then re-extracted rather than
+    /// walked past, which costs one call per summarised chapter — so it is a
+    /// question the caller has to have answered, never a default.
+    /// </param>
     public async Task<StoryModel> BackFillAsync(
         ReaderContext ctx, int chapterCount, IProgress<ProgressStep>? progress = null,
-        CancellationToken ct = default)
+        bool rebuild = false, CancellationToken ct = default)
     {
+        if (rebuild) await ResetAsync(ctx, ct);
+
         var model = await ReadAsync(ctx, ct);
 
         for (var chapter = 0; chapter < chapterCount; chapter++)
@@ -162,7 +222,7 @@ public sealed class StoryModelService(
     public Task<StoryModel> ResolveAsync(
         ReaderContext ctx, string mergeId, bool accept, CancellationToken ct = default) =>
         gateway.ReviseAsync(
-            ArtifactKey.StoryModel(ctx.Ref, ctx.Lens.Key), ctx.Lens.PromptVersion,
+            ArtifactKey.StoryModel(ctx.Ref, ctx.Lens.Key), ctx.Lens.Versions[CallKind.StoryExtraction],
             async token => MergeResolution.Resolve(await ReadAsync(ctx, token), mergeId, accept),
             ct);
 
@@ -170,8 +230,12 @@ public sealed class StoryModelService(
     private async Task<Produced<StoryModel>> ExtractAsync(
         ReaderContext ctx, StoryModel current, int chapter, string summary, CancellationToken ct)
     {
+        // Corrected, so the digest offers the reader's preferred names and the
+        // extraction starts using them — otherwise the same entry is corrected
+        // forever. The merge below still folds into the raw model.
         var digest = StoryDigest.Build(
-            current, chapter, options.StoryDigestMaxActors, options.StoryDigestRecentChapters);
+            CastCorrections.Apply(current, await CorrectionsAsync(ctx, ct)),
+            chapter, options.StoryDigestMaxActors, options.StoryDigestRecentChapters);
         var produced = await model.AskLensAsync(ctx, CallKind.StoryExtraction, Compose(chapter, digest, summary), ct);
 
         // A model that answered with something unreadable has cost the household a
@@ -191,7 +255,7 @@ public sealed class StoryModelService(
     private async Task<string?> SummaryAsync(ReaderContext ctx, int chapter, CancellationToken ct) =>
         (await gateway.PeekAsync<Prose>(
             ArtifactKey.ChapterSummary(ctx.Ref, ctx.Lens.Key, chapter),
-            ctx.Lens.PromptVersion, ct))?.Markdown;
+            ctx.Lens.Versions[CallKind.ChapterSummary], ct))?.Markdown;
 
     private static string Compose(int chapter, string digest, string summary) =>
         $"""

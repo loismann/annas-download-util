@@ -46,7 +46,7 @@ describe('StoryPanelComponent', () => {
       providers: [
         StoryStore, ReaderTasks,
         { provide: Reader2ApiService, useValue: api },
-        { provide: ReaderConfirm, useValue: jasmine.createSpyObj<ReaderConfirm>('c', ['confirmBackFillAsync']) },
+        { provide: ReaderConfirm, useValue: jasmine.createSpyObj<ReaderConfirm>('c', ['confirmBackFillAsync', 'confirmRebuildAsync']) },
         { provide: ReaderStore, useValue: reader }
       ]
     }).compileComponents();
@@ -99,8 +99,8 @@ describe('StoryPanelComponent', () => {
   it('offers a build when nothing is ingested and summaries exist', async () => {
     api.storyModel.and.returnValue(of(model({ chaptersIngested: [] })));
     reader.chapters.set([
-      { id: 0, title: 'One', level: 0, wordCount: 100, hasSummary: true },
-      { id: 1, title: 'Two', level: 0, wordCount: 100, hasSummary: false }
+      { id: 0, title: 'One', level: 0, wordCount: 100, hasSummary: true, summaryIsStale: false },
+      { id: 1, title: 'Two', level: 0, wordCount: 100, hasSummary: false, summaryIsStale: false }
     ]);
 
     const page = await render();
@@ -112,13 +112,13 @@ describe('StoryPanelComponent', () => {
   it('builds on the button press without asking again', async () => {
     api.storyModel.and.returnValue(of(model({ chaptersIngested: [] })));
     api.backFillStoryModel.and.returnValue(of({ kind: 'result', value: model() }) as never);
-    reader.chapters.set([{ id: 0, title: 'One', level: 0, wordCount: 100, hasSummary: true }]);
+    reader.chapters.set([{ id: 0, title: 'One', level: 0, wordCount: 100, hasSummary: true, summaryIsStale: false }]);
 
     const page = await render();
     page.querySelector<HTMLButtonElement>('.build')!.click();
     await fixture.whenStable();
 
-    expect(api.backFillStoryModel).toHaveBeenCalledWith('book-1');
+    expect(api.backFillStoryModel).toHaveBeenCalledWith('book-1', false);
   });
 
   it('explains instead of offering when there is nothing to build from', async () => {
@@ -134,6 +134,43 @@ describe('StoryPanelComponent', () => {
     const tabs = Array.from((await render()).querySelectorAll('.views button'))
       .map(b => b.textContent?.trim());
 
-    expect(tabs).toEqual(['Characters', 'Threads', 'Map']);
+    expect(tabs).toEqual(['Characters', 'Threads', 'Places', 'Map']);
+  });
+
+  // ─── rebuilding a record gathered under older rules ──────────────────
+
+  /**
+   * The one way a record can be corrected. Chapters already folded in are walked
+   * past for free, so an ordinary build after an extraction change does nothing
+   * at all, and the reader is left looking at a cast list that cannot improve.
+   */
+  it('rebuilds only after asking, because it discards work already paid for', async () => {
+    const confirm = TestBed.inject(ReaderConfirm) as jasmine.SpyObj<ReaderConfirm>;
+    confirm.confirmRebuildAsync.and.resolveTo(true);
+    api.backFillStoryModel.and.returnValue(of({ kind: 'result', value: model() }) as never);
+    reader.chapters.set([{ id: 0, title: 'One', level: 0, wordCount: 100, hasSummary: true, summaryIsStale: false }]);
+
+    const page = await render();
+    page.querySelector<HTMLButtonElement>('.rebuild')!.click();
+    await fixture.whenStable();
+
+    expect(confirm.confirmRebuildAsync).toHaveBeenCalledWith('1 chapter');
+    expect(api.backFillStoryModel).toHaveBeenCalledWith('book-1', true);
+  });
+
+  it('discards nothing when the reader says no', async () => {
+    const confirm = TestBed.inject(ReaderConfirm) as jasmine.SpyObj<ReaderConfirm>;
+    confirm.confirmRebuildAsync.and.resolveTo(false);
+    reader.chapters.set([{ id: 0, title: 'One', level: 0, wordCount: 100, hasSummary: true, summaryIsStale: false }]);
+
+    const page = await render();
+    page.querySelector<HTMLButtonElement>('.rebuild')!.click();
+    await fixture.whenStable();
+
+    expect(api.backFillStoryModel).not.toHaveBeenCalled();
+  });
+
+  it('offers no rebuild when there are no summaries to rebuild from', async () => {
+    expect((await render()).querySelector('.rebuild')).toBeNull();
   });
 });

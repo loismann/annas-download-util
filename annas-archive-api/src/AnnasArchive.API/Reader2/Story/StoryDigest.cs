@@ -35,12 +35,62 @@ public static class StoryDigest
     public static string Build(StoryModel model, int chapter, int maxActors, int recentChapters)
     {
         var text = new StringBuilder();
+        var kept = Keep(model.Actors, chapter, maxActors, recentChapters);
 
-        Section(text, "Actors", Keep(model.Actors, chapter, maxActors, recentChapters).Select(Describe));
+        Section(text, "Actors", kept.Select(Describe));
         Section(text, "Groups", model.Groups.Select(g => $"{g.Id}: {g.Name}"));
         Section(text, "Threads", model.Threads.Select(t => $"{t.Id}: {t.Name}"));
+        Section(text, "Places", model.Places.Select(p => Where(model, p)));
+        Section(text, "Relationships already recorded", Relationships(model, kept));
 
         return text.Length == 0 ? "(nothing recorded yet)" : text.ToString().TrimEnd();
+    }
+
+    /// <summary>
+    /// A place, with the names it answers to.
+    ///
+    /// <para>Uncapped, unlike the cast. Places accumulate far more slowly than
+    /// people — a novel with four hundred named characters has perhaps forty
+    /// places — and the whole reason they are listed is so the model recognises
+    /// one it has already recorded rather than adding it again under the short
+    /// form of its name.</para>
+    /// </summary>
+    private static string Where(StoryModel model, Place place)
+    {
+        var names = place.Aliases.Count > 0 ? $" (also {string.Join(", ", place.Aliases)})" : "";
+        var parent = model.Places.FirstOrDefault(p => p.Id == place.PartOf);
+
+        // Named rather than given by id: the model is being asked to recognise a
+        // chain it half-remembers from prose, and "inside Anoosha" is something it
+        // can match against a chapter. "inside p7" is not.
+        var inside = parent is null ? "" : $" — inside {parent.Name}";
+
+        return $"{place.Id}: {place.Name}{names}{inside}";
+    }
+
+    /// <summary>
+    /// The relationships already held, between actors the digest still carries.
+    ///
+    /// <para><b>Without these the model cannot tell a new relationship from one it
+    /// reported forty chapters ago</b>, and being told not to restate what the
+    /// record holds, it reports almost none: five chapters of a large cast produced
+    /// three edges, while the dossiers it wrote in the same breath described the
+    /// encounters plainly. Naming what is recorded is what makes "only report what
+    /// is new" a rule the model can actually follow rather than guess at.</para>
+    ///
+    /// <para>Bounded by the actor cap rather than by one of its own — an edge needs
+    /// both ends in the digest to mean anything, so the actors that survive the cap
+    /// decide how many relationships can travel with them.</para>
+    /// </summary>
+    private static IEnumerable<string> Relationships(StoryModel model, IReadOnlyList<Actor> kept)
+    {
+        var visible = kept.Select(a => a.Id).ToHashSet(StringComparer.Ordinal);
+
+        // Ended ones are left out: the record keeps them so the reader can be told
+        // an alliance broke, but the model is being asked what is true now.
+        return model.Edges
+            .Where(e => e.EndedChapter is null && visible.Contains(e.From) && visible.Contains(e.To))
+            .Select(e => $"{e.From} {e.Type} {e.To}");
     }
 
     /// <summary>

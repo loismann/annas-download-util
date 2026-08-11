@@ -41,7 +41,6 @@ internal static class ActorMerge
                 Role = Prefer(existing.Role, arrival.Role),
                 Dossier = Prefer(existing.Dossier, arrival.Dossier),
                 Status = Prefer(existing.Status, arrival.Status),
-                GroupIds = MergeLists.Ids(existing.GroupIds, arrival.GroupIds),
                 Arc = Appended(existing.Arc, state.Chapter, arrival.ArcChange)
             });
 
@@ -58,7 +57,11 @@ internal static class ActorMerge
             // chapter, for the life of the book.
             Aliases: MergeLists.Names([], arrival.Aliases.Where(n => !NameMatch.Same(n, arrival.CanonicalName))),
             Tier: arrival.Tier,
-            GroupIds: [.. arrival.GroupIds.Distinct(StringComparer.Ordinal)],
+
+            // Empty, and filled by GroupEdgeMerge once the groups exist. A group
+            // founded in this same chapter has no id at this point in the merge,
+            // so resolving the reference here would silently drop it.
+            GroupIds: [],
             Role: arrival.Role,
             Dossier: arrival.Dossier,
             FirstSeenChapter: state.Chapter,
@@ -74,7 +77,7 @@ internal static class ActorMerge
     /// </summary>
     private static void Update(MergeState state, ActorUpdate update)
     {
-        if (state.Actor(update.ActorId) is not { } actor) return;
+        if (state.Actor(state.ResolveActor(update.ActorId)) is not { } actor) return;
 
         state.Replace(Touch(actor, state.Chapter) with
         {
@@ -82,7 +85,6 @@ internal static class ActorMerge
             Role = Prefer(actor.Role, update.Role),
             Dossier = Prefer(actor.Dossier, update.Dossier),
             Status = update.Status is { Length: > 0 } status ? status : actor.Status,
-            GroupIds = MergeLists.Ids(actor.GroupIds, update.GroupIds ?? []),
             Aliases = MergeLists.Names(
                 actor.Aliases, (update.Aliases ?? []).Where(n => !NameMatch.Same(n, actor.CanonicalName))),
             Arc = Appended(actor.Arc, state.Chapter, update.ArcChange)
@@ -101,7 +103,7 @@ internal static class ActorMerge
     private static void Consider(MergeState state, AliasHint hint)
     {
         if (string.IsNullOrWhiteSpace(hint.Alias)) return;
-        if (state.Actor(hint.ActorId) is not { } target) return;
+        if (state.Actor(state.ResolveActor(hint.ActorId)) is not { } target) return;
         if (NameMatch.Answers(target, hint.Alias)) return;
 
         // A refusal outranks any confidence the model reports. Without this the

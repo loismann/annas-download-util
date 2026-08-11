@@ -28,7 +28,8 @@ public sealed class LiteraryLens : IReaderLens
     /// Bump on any edit below. The golden tests refuse the edit otherwise, which
     /// is what stops artifacts outliving the wording that produced them.
     /// </summary>
-    public int PromptVersion => 1;
+    /// <summary>One per prompt. This lens has never had one edited, so all are at 1.</summary>
+    public PromptVersions Versions { get; } = PromptVersions.All(1);
 
     public bool BuildsStoryModel => false;
     public StoryVocabulary? StoryVocabulary => null;

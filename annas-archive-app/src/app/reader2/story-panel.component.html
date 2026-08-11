@@ -6,6 +6,16 @@
     [actors]="model.actors"
     (resolve)="answer($event)" />
 
+  <!--
+    A rebuild reads every summarised chapter and can run for a minute. Without
+    this it read as a button that did nothing, which is worse than a slow one.
+  -->
+  <p class="working" *ngIf="tasks.busy() as busy">
+    {{ busy.what }}<span *ngIf="busy.step">: {{ busy.step.message }}</span>
+  </p>
+
+  <p class="failed" *ngIf="tasks.error() as error">{{ error }}</p>
+
   <div class="empty-state" *ngIf="empty()">
     <p>
       No {{ model.vocabulary.actors.toLowerCase() }} recorded yet. The record is
@@ -33,26 +43,71 @@
         (click)="view.set(choice.key)">
         {{ choice.key === 'cast' ? model.vocabulary.actors : choice.label }}
       </button>
+
+      <!--
+        Last, and quiet. A record gathered under extraction rules that have since
+        changed cannot be corrected any other way, but throwing one away is not
+        something to put next to the tabs at the same weight.
+      -->
+      <button
+        type="button"
+        class="rebuild"
+        *ngIf="summarised() > 0"
+        [disabled]="!!tasks.busy()"
+        title="Discard this record and read the summarised chapters again"
+        (click)="rebuild()">
+        Rebuild
+      </button>
     </nav>
 
-    <app-reader2-character-table
-      *ngIf="view() === 'cast'"
-      [actors]="model.actors"
+    <!-- One bar over both views: the filter is about the book, not the tab. -->
+    <app-reader2-cast-filter
+      *ngIf="view() === 'cast' || view() === 'map'"
+      [filter]="filter()"
+      [vocabulary]="model.vocabulary"
       [groups]="model.groups"
       [threads]="model.threads"
+      [notShown]="model.actors.length - shown().length"
+      [hiddenCount]="hiddenCount()"
+      (change)="filter.set($event)" />
+
+    <!--
+      The contents list travels with the model so a chapter can be named the way
+      the sidebar names it. Chapter indices here are positions in the spine —
+      front matter and all — so numbering them produced "Ch 14" beside a sidebar
+      reading "Chapter Three".
+    -->
+    <app-reader2-character-table
+      *ngIf="view() === 'cast'"
+      [actors]="shown()"
+      [groups]="model.groups"
       [vocabulary]="model.vocabulary"
-      [currentChapter]="model.throughChapter" />
+      [chapters]="reader.chapters()"
+      [anybody]="model.actors.length > 0"
+      (correct)="correct($event)"
+      (hide)="hide($event)" />
 
     <app-reader2-thread-panel
       *ngIf="view() === 'threads'"
       [threads]="model.threads"
       [actors]="model.actors"
       [vocabulary]="model.vocabulary"
+      [chapters]="reader.chapters()"
       [currentChapter]="model.throughChapter" />
+
+    <app-reader2-place-list
+      *ngIf="view() === 'places'"
+      [places]="model.places"
+      [chapters]="reader.chapters()" />
 
     <app-reader2-story-map
       *ngIf="view() === 'map'"
-      [actors]="model.actors"
-      [edges]="model.edges" />
+      [actors]="onMap()"
+      [edges]="model.edges"
+      [castLabel]="model.vocabulary.actors"
+      [groups]="model.groups"
+      [chapters]="reader.chapters()"
+      (correct)="correct($event)"
+      (hide)="hide($event)" />
   </ng-container>
 </ng-container>

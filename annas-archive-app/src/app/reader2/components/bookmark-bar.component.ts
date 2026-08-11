@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, EventEmitter, Input, Output } from 
 import { CommonModule } from '@angular/common';
 import { MatIconModule } from '@angular/material/icon';
 import { Bookmark, ChapterInfo } from '../reader2.models';
+import { chapterName } from '../chapter-name.pipe';
 
 /**
  * The bookmark toggle and the list behind it.
@@ -76,10 +77,11 @@ export class BookmarkBarComponent {
 
   /**
    * Chapters are indexed by position in the list, which is the same number the
-   * bookmark stores — so a title is a lookup, and a missing one still names
-   * something rather than rendering blank.
+   * bookmark stores. The rule itself lives in {@link chapterName} — this panel
+   * had the only correct copy of it while the story panel counted instead, which
+   * is how the same chapter came to have two different names on one screen.
    */
   protected chapterTitle(chapter: number): string {
-    return this.chapters[chapter]?.title ?? `Chapter ${chapter + 1}`;
+    return chapterName(this.chapters, chapter);
   }
 }

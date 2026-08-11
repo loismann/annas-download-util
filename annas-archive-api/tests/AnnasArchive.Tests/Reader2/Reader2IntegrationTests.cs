@@ -1,5 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
+using AnnasArchive.API.Reader2.Ai;
 using AnnasArchive.API.Reader2.Endpoints;
 
 namespace AnnasArchive.Tests.Reader2;
@@ -122,6 +124,145 @@ public sealed class Reader2IntegrationTests : IDisposable
 
         after!.Chapters.Single(c => c.Id == 1).HasSummary.Should().BeTrue();
         after.Chapters.Where(c => c.Id != 1).Should().OnlyContain(c => !c.HasSummary);
+    }
+
+    /// <summary>
+    /// <b>A deploy that moves a prompt version must not cost the reader their
+    /// summaries.</b> This is the whole of it, over real HTTP: summarise, move the
+    /// version the way a deploy does, and read the book back.
+    ///
+    /// <para>It used to come back as though the book had never been read — the
+    /// store treated an older prompt as a miss, so the tick disappeared, and the
+    /// next press paid for a summary of prose that had not changed and overwrote
+    /// the one already bought.</para>
+    /// </summary>
+    [Fact]
+    public async Task A_summary_survives_the_prompt_version_moving_under_it()
+    {
+        var book = await EnrolAsync(TestLens.LensKey);
+        await _client.PostAsync($"/api/reader2/books/{book.BookId}/ingest", null);
+
+        _app.Ai.Answer = _ => "the summary";
+        await _client.PostAsync($"/api/reader2/books/{book.BookId}/chapters/1/summary", null);
+        var paidFor = _app.Ai.Calls.Count;
+
+        try
+        {
+            TestLens.Version = 2;
+
+            var after = await _client.GetFromJsonAsync<ChapterListResponse>(
+                $"/api/reader2/books/{book.BookId}/chapters");
+            var chapter = after!.Chapters.Single(c => c.Id == 1);
+
+            chapter.HasSummary.Should().BeTrue("the prose it summarises has not changed");
+            chapter.SummaryIsStale.Should().BeTrue("but a newer wording exists, and the reader may want it");
+
+            // The summary itself still reads back, and reading it spends nothing.
+            var summary = await _client.GetFromJsonAsync<Prose>(
+                $"/api/reader2/books/{book.BookId}/chapters/1/summary");
+
+            summary!.Markdown.Should().Be("the summary");
+            _app.Ai.Calls.Count.Should().Be(paidFor, "reading what is already owned is free");
+        }
+        finally
+        {
+            TestLens.Version = 1;
+        }
+    }
+
+    /// <summary>The reader can still choose to buy the newer wording.</summary>
+    [Fact]
+    public async Task A_stale_summary_is_replaced_only_when_the_reader_asks()
+    {
+        var book = await EnrolAsync(TestLens.LensKey);
+        await _client.PostAsync($"/api/reader2/books/{book.BookId}/ingest", null);
+
+        _app.Ai.Answer = _ => "the old summary";
+        await _client.PostAsync($"/api/reader2/books/{book.BookId}/chapters/1/summary", null);
+
+        try
+        {
+            TestLens.Version = 2;
+            _app.Ai.Answer = _ => "the new summary";
+
+            // Asking again without forcing keeps what is already owned.
+            await _client.PostAsync($"/api/reader2/books/{book.BookId}/chapters/1/summary", null);
+            (await _client.GetFromJsonAsync<Prose>(
+                $"/api/reader2/books/{book.BookId}/chapters/1/summary"))!
+                .Markdown.Should().Be("the old summary");
+
+            await _client.PostAsync(
+                $"/api/reader2/books/{book.BookId}/chapters/1/summary?force=true", null);
+
+            var after = await _client.GetFromJsonAsync<ChapterListResponse>(
+                $"/api/reader2/books/{book.BookId}/chapters");
+
+            (await _client.GetFromJsonAsync<Prose>(
+                $"/api/reader2/books/{book.BookId}/chapters/1/summary"))!
+                .Markdown.Should().Be("the new summary");
+            after!.Chapters.Single(c => c.Id == 1).SummaryIsStale.Should().BeFalse();
+        }
+        finally
+        {
+            TestLens.Version = 1;
+        }
+    }
+
+    /// <summary>
+    /// The other half of the tick: what the chapter list promises exists, the
+    /// summary route can read back — free, and without the reader clicking
+    /// "Summarise chapter" a second time to see it.
+    /// </summary>
+    [Fact]
+    public async Task A_stored_chapter_summary_can_be_read_back_for_nothing()
+    {
+        var book = await EnrolAsync();
+        await _client.PostAsync($"/api/reader2/books/{book.BookId}/ingest", null);
+
+        _app.Ai.Answer = _ => "what happened in chapter one";
+        await _client.PostAsync($"/api/reader2/books/{book.BookId}/chapters/1/summary", null);
+        _app.Ai.Calls.Clear();
+
+        var peeked = await _client.GetFromJsonAsync<Prose>(
+            $"/api/reader2/books/{book.BookId}/chapters/1/summary");
+
+        peeked!.Markdown.Should().Contain("what happened in chapter one");
+        _app.Ai.Calls.Should().BeEmpty("reading what is already stored must never cost money");
+    }
+
+    /// <summary>
+    /// A chapter the tick has not marked reads as nothing, not as an error — the
+    /// panel's "nothing generated yet" state depends on this.
+    /// </summary>
+    [Fact]
+    public async Task Peeking_a_chapter_with_no_summary_returns_nothing()
+    {
+        var book = await EnrolAsync();
+        await _client.PostAsync($"/api/reader2/books/{book.BookId}/ingest", null);
+
+        var response = await _client.GetAsync($"/api/reader2/books/{book.BookId}/chapters/1/summary");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+    }
+
+    /// <summary>
+    /// The bug this closes: <c>HandleSectionVocab</c> answered both verbs and
+    /// reached the generating path either way, so a <c>GET</c> to a section
+    /// nobody had asked about yet quietly billed the household. A <c>GET</c> for
+    /// an ungenerated section must now come back empty rather than paid for.
+    /// </summary>
+    [Fact]
+    public async Task Reading_uncached_section_vocabulary_spends_nothing()
+    {
+        var book = await EnrolAsync();
+        await _client.PostAsync($"/api/reader2/books/{book.BookId}/ingest", null);
+        _app.Ai.Calls.Clear(); // ingest's own chapter-labelling call is not what this test is about
+
+        var response = await _client.GetFromJsonAsync<JsonElement>(
+            $"/api/reader2/books/{book.BookId}/chapters/0/sections/0/vocabulary");
+
+        response.GetProperty("terms").GetArrayLength().Should().Be(0);
+        _app.Ai.Calls.Should().BeEmpty("a GET must never be the request that pays for something");
     }
 
     /// <summary>
@@ -318,4 +459,25 @@ public sealed class Reader2IntegrationTests : IDisposable
     private sealed record BookmarkDto(string Id, int Chapter, int WordOffset, string? Label);
 
     private sealed class JsonElementList : List<System.Text.Json.JsonElement>;
+
+    /// <summary>
+    /// The word lists come back naming their state, not numbering it.
+    ///
+    /// <para>Saving always worked — the request carries a string and the route
+    /// parses it by hand — so the failure was one-directional and quiet: terms
+    /// were filed correctly and then never appeared, because the panel filters on
+    /// <c>state === 'Known'</c> and was handed a <c>0</c>.</para>
+    /// </summary>
+    [Fact]
+    public async Task A_filed_term_comes_back_naming_its_state()
+    {
+        await _client.PostAsJsonAsync(
+            "/api/reader2/vocabulary",
+            new SaveTermRequest("reification", "Known", "treating an abstraction as a thing", null));
+
+        var body = await (await _client.GetAsync("/api/reader2/vocabulary")).Content.ReadAsStringAsync();
+
+        body.Should().Contain("\"state\":\"Known\"")
+            .And.NotMatchRegex(@"""state""\s*:\s*\d", "a number here matches no branch of the client's union");
+    }
 }

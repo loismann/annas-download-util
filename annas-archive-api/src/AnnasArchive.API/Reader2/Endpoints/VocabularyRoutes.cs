@@ -23,8 +23,8 @@ internal static class VocabularyRoutes
         group.MapDelete("/vocabulary/{term}", HandleRemove);
         group.MapDelete("/vocabulary", HandleClear);
 
-        group.MapGet("/books/{bookId}/chapters/{chapter:int}/sections/{section:int}/vocabulary", HandleSectionVocab);
-        group.MapPost("/books/{bookId}/chapters/{chapter:int}/sections/{section:int}/vocabulary", HandleSectionVocab);
+        group.MapGet("/books/{bookId}/chapters/{chapter:int}/sections/{section:int}/vocabulary", HandlePeekSectionVocab);
+        group.MapPost("/books/{bookId}/chapters/{chapter:int}/sections/{section:int}/vocabulary", HandleGenerateSectionVocab);
         group.MapPost("/books/{bookId}/chapters/{chapter:int}/vocabulary", HandleChapterVocab);
         group.MapPost("/books/{bookId}/vocabulary/learn-more", HandleLearnMore);
         group.MapDelete("/books/{bookId}/vocabulary", HandleForgetBook);
@@ -86,11 +86,19 @@ internal static class VocabularyRoutes
     // ─── definitions from the book ───────────────────────────────────────
 
     /// <summary>
-    /// One section's hard words. Mapped as both verbs on purpose: a `GET` serves
-    /// what is stored and a `POST` may generate, and the pipeline decides which
-    /// by whether the artifact is already there.
+    /// One section's hard words, as already stored. A <c>GET</c>, and free —
+    /// separate from <see cref="HandleGenerateSectionVocab"/> rather than one
+    /// handler serving both verbs, because a shared handler that could fall
+    /// through to generating on a cache miss would spend money on a request a
+    /// browser can prefetch and a refresh can repeat.
     /// </summary>
-    private static Task<IResult> HandleSectionVocab(
+    private static Task<IResult> HandlePeekSectionVocab(
+        string bookId, int chapter, int section, HttpContext http,
+        IReaderContextResolver resolver, VocabularyPipeline vocabulary, CancellationToken ct) =>
+        ReaderRequest.WithContextAsync(bookId, http, resolver, ct, async ctx =>
+            Results.Ok(await vocabulary.PeekSectionAsync(ctx, chapter, section, ct)));
+
+    private static Task<IResult> HandleGenerateSectionVocab(
         string bookId, int chapter, int section, bool? force, HttpContext http,
         IReaderContextResolver resolver, VocabularyPipeline vocabulary, CancellationToken ct) =>
         ReaderRequest.WithContextAsync(bookId, http, resolver, ct, async ctx =>

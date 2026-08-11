@@ -51,6 +51,16 @@ export interface ChapterInfo {
    * question only the store can answer.
    */
   hasSummary: boolean;
+
+  /**
+   * The summary exists but predates the current prompt.
+   *
+   * Separate from {@link hasSummary} on purpose: the chapter *is* summarised, and
+   * a newer wording merely exists for whoever wants to pay to apply it. Folding
+   * the two together is what used to make a prompt edit read as though the book
+   * had never been summarised at all.
+   */
+  summaryIsStale: boolean;
 }
 
 export interface ChapterList {
@@ -204,6 +214,25 @@ export interface Actor {
   lastSeenChapter: number;
   status: string;
   arc: ArcPoint[];
+
+  /** The reader's own words. Written only by them, never by extraction. */
+  readerNote: string;
+
+  /**
+   * Kept off the map, at the reader's word.
+   *
+   * Still in the cast list, marked — the extraction did find them in the book,
+   * and a record that silently forgot people would be worth less than one that
+   * is merely crowded.
+   */
+  hidden: boolean;
+}
+
+/** What the reader has corrected about one entry. Empty fields clear it. */
+export interface ActorCorrection {
+  preferredName: string | null;
+  note: string | null;
+  sameAs: string[];
 }
 
 export interface ActorGroup {
@@ -217,13 +246,27 @@ export interface ActorGroup {
   firstSeenChapter: number;
 }
 
+/** One chapter-tagged thing that passed between two actors. */
+export interface EdgeNote {
+  chapter: number;
+  what: string;
+}
+
 export interface ActorEdge {
   from: string;
   to: string;
   type: string;
   sinceChapter: number;
   endedChapter: number | null;
-  note: string;
+
+  /**
+   * How these two have got on, chapter by chapter and append-only. This is what
+   * the map shows when a line between two people is clicked — one overwritten
+   * string could not answer "how do these two know each other", because the
+   * chapter that made them allies and the chapter that strained it are both
+   * part of the answer.
+   */
+  notes: EdgeNote[];
 }
 
 export interface StoryThread {
@@ -256,8 +299,30 @@ export interface CandidateMerge {
  * model against the wrong reading position, and `vocabulary` is what this book
  * type calls the three parts — the client holds no table of its own.
  */
+/** What kind of place something is. Serialised by name, like every other enum. */
+export type PlaceKind = 'Settlement' | 'Building' | 'Region' | 'Vessel' | 'Realm' | 'Other';
+
+/**
+ * Somewhere the book goes.
+ *
+ * <p>`partOf` is the id of the place this one sits inside — a room in a house, a
+ * house in a city. Empty when nothing contains it, when the book has not said, or
+ * when the container is still ahead of the reader.</p>
+ */
+export interface Place {
+  id: string;
+  name: string;
+  aliases: string[];
+  kind: PlaceKind;
+  description: string;
+  partOf: string;
+  firstSeenChapter: number;
+  lastSeenChapter: number;
+}
+
 export interface StoryModel {
   actors: Actor[];
+  places: Place[];
   groups: ActorGroup[];
   edges: ActorEdge[];
   threads: StoryThread[];

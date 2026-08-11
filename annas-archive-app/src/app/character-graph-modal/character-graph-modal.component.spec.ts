@@ -30,6 +30,9 @@ describe('CharacterGraphModalComponent', () => {
     bookTitle: 'Test Book'
   };
 
+  /** The real library, put back after each test rather than deleted. */
+  let realAnychart: unknown;
+
   beforeEach(async () => {
     mockDialogRef = jasmine.createSpyObj('MatDialogRef', ['close']);
     mockAiApi = jasmine.createSpyObj('AiApiService', ['getCharacterGraph', 'generateCharacterGraph']);
@@ -39,7 +42,10 @@ describe('CharacterGraphModalComponent', () => {
     mockAiApi.getCharacterGraph.and.returnValue(throwError(() => new Error('Not found')));
     mockAiApi.generateCharacterGraph.and.returnValue(of(mockGraphData));
 
-    // Mock anychart global
+    // Mock anychart global. The real library is on Karma's `scripts` list —
+    // reader2's `story-chart.spec.ts` draws against it — so it is put back
+    // afterwards rather than deleted.
+    realAnychart = (window as any).anychart;
     (window as any).anychart = {
       graph: () => ({
         data: jasmine.createSpy('data'),
@@ -92,7 +98,7 @@ describe('CharacterGraphModalComponent', () => {
   });
 
   afterEach(() => {
-    delete (window as any).anychart;
+    (window as any).anychart = realAnychart;
   });
 
   it('should create', () => {

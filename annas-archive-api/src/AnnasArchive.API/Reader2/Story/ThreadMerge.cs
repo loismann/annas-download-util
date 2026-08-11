@@ -37,7 +37,10 @@ internal static class ThreadMerge
             Id: state.NextId('t', state.Threads.Select(t => t.Id)),
             Name: arrival.Name.Trim(),
             Status: ThreadStatus.Active,
-            ParticipantIds: [.. arrival.ParticipantIds.Where(state.IsKnownActor).Distinct(StringComparer.Ordinal)],
+            ParticipantIds: [.. arrival.ParticipantIds
+                .Select(state.ResolveActor)
+                .OfType<string>()
+                .Distinct(StringComparer.Ordinal)],
             StartedChapter: state.Chapter,
             LastAdvancedChapter: state.Chapter,
             Beats: Appended([], state.Chapter, arrival.FirstBeat),
@@ -46,7 +49,9 @@ internal static class ThreadMerge
 
     private static void Advance(MergeState state, ThreadBeat beat)
     {
-        if (state.Threads.FirstOrDefault(t => t.Id == beat.ThreadId) is { } thread)
+        if (state.ResolveThread(beat.ThreadId) is not { } id) return;
+
+        if (state.Threads.FirstOrDefault(t => t.Id == id) is { } thread)
             Advance(state, thread, beat.WhatMoved);
     }
 

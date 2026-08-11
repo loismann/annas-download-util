@@ -43,7 +43,7 @@ public class StoryModelServiceTests : IDisposable
         _f.Store.Artifacts.PutAsync(
             ArtifactKey.ChapterSummary(ctx.Ref, ctx.Lens.Key, chapter),
             new Prose($"What happens in chapter {chapter}."),
-            new ArtifactProvenance(Prose.SchemaVersion, ctx.Lens.PromptVersion, "deep-model"));
+            new ArtifactProvenance(Prose.SchemaVersion, ctx.Lens.Versions[CallKind.ChapterSummary], "deep-model"));
 
     // ─── what it refuses ────────────────────────────────────────────────
 
@@ -206,6 +206,55 @@ public class StoryModelServiceTests : IDisposable
         await _story.BackFillAsync(ctx, chapterCount: 2);
 
         Extractions.Should().Be(2, "the chapter already in costs nothing to walk past");
+    }
+
+    /// <summary>
+    /// The escape hatch for a model gathered under an extraction contract that no
+    /// longer holds. Without it a book is stuck: the model is read with no
+    /// prompt-version gate — deliberately, so a rewording cannot empty a cast list
+    /// — and every chapter in <c>chaptersIngested</c> is walked past for free, so a
+    /// plain back-fill after a contract change does exactly nothing.
+    /// </summary>
+    [Fact]
+    public async Task A_rebuild_extracts_again_where_a_back_fill_would_walk_past()
+    {
+        var ctx = await BookAsync();
+        await SummarisedAsync(ctx, 0);
+        await SummarisedAsync(ctx, 1);
+        await _story.BackFillAsync(ctx, chapterCount: 2);
+
+        var already = Extractions;
+        var model = await _story.BackFillAsync(ctx, chapterCount: 2, rebuild: true);
+
+        Extractions.Should().Be(already + 2, "a rebuild re-reads every summarised chapter");
+        model.ChaptersIngested.Should().Equal(0, 1);
+    }
+
+    [Fact]
+    public async Task A_rebuild_keeps_nothing_the_old_contract_produced()
+    {
+        var ctx = await BookAsync();
+        await SummarisedAsync(ctx, 0);
+
+        _f.Ai.Answer = _ => """{"newActors": [{"canonicalName": "A Name And Nothing Else"}]}""";
+        await _story.BackFillAsync(ctx, chapterCount: 1);
+
+        _f.Ai.Answer = _ => """{"newActors": [{"canonicalName": "Pierre", "dossier": "the heir"}]}""";
+        var model = await _story.BackFillAsync(ctx, chapterCount: 1, rebuild: true);
+
+        model.Actors.Should().ContainSingle().Which.Dossier.Should().Be("the heir");
+    }
+
+    [Fact]
+    public async Task A_rebuild_spends_nothing_of_its_own()
+    {
+        var ctx = await BookAsync();
+        await _story.ResetAsync(ctx);
+
+        // Emptying a row reaches no model, so it must not be billed and must not be
+        // refusable at the spending limit — somebody told to rebuild has to be able to.
+        Extractions.Should().Be(0);
+        (await _story.ReadAsync(ctx)).Actors.Should().BeEmpty();
     }
 
     [Fact]

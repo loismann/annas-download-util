@@ -32,7 +32,13 @@ public sealed class MilitaryLens : IReaderLens
     /// Bump on any edit below. The golden tests refuse the edit otherwise, which
     /// is what stops artifacts outliving the wording that produced them.
     /// </summary>
-    public int PromptVersion => 1;
+    /// <summary>
+    /// One per prompt. They start at 4 rather than 1 because stored artifacts
+    /// recorded the whole-lens version that wrote them, and starting lower would
+    /// leave every one of those rows reading as newer than the build — see
+    /// <see cref="PromptVersions"/>.
+    /// </summary>
+    public PromptVersions Versions { get; } = PromptVersions.All(4);
 
     public bool BuildsStoryModel => true;
 
@@ -199,13 +205,14 @@ public sealed class MilitaryLens : IReaderLens
                 a compacted digest of what the record already holds.
                 """,
             kinds: """
-                - An actor is a named commander or an identifiable formation. Its tier is
-                  "major", "secondary", "minor", or "mentioned", judged by its part in the
-                  campaign and not by how often the chapter names it.
+                - An actor is a named commander or an identifiable formation. Judge its tier
+                  by its part in the campaign, not by how often the chapter names it.
                 - A group is a belligerent, a coalition, an army, or a service arm.
                 - An edge is a relationship between two actors: "commands", "subordinate-to",
                   "liaison", "rival", "relieved-by", "opposes".
                 - A thread is an operation, an offensive, a siege, or a campaign phase.
+                - A place is ground the campaign turns on: a town, a river line, a fortress,
+                  a port, a theatre, a headquarters, a ship.
                 - If an actor already in the digest appears under another designation - a
                   different transliteration, a title, a formation renumbered, a headquarters
                   named for its commander - report it under "aliasHints" with your confidence

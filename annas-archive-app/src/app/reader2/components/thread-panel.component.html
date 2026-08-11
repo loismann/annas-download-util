@@ -15,21 +15,21 @@
 
     <!-- The sentence this panel exists for: how long, said in chapters. -->
     <p class="quiet" *ngIf="thread.status === 'Dormant'">
-      Nothing since chapter {{ thread.lastAdvancedChapter + 1 }} —
+      Nothing since {{ thread.lastAdvancedChapter | chapterName: chapters }} —
       {{ silence(thread) }} chapters ago.
     </p>
 
     <p class="returned" *ngIf="thread.returnedInChapter !== null">
-      Picked back up in chapter {{ thread.returnedInChapter + 1 }}
+      Picked back up in {{ thread.returnedInChapter | chapterName: chapters }}
       after {{ thread.returnedAfterChapters }} chapters quiet.
     </p>
 
     <p class="who" *ngIf="participants(thread)">{{ participants(thread) }}</p>
 
-    <ol class="beats" *ngIf="recent(thread).length">
-      <li *ngFor="let beat of recent(thread)">
-        <span class="at">Ch {{ beat.chapter + 1 }}</span> {{ beat.whatMoved }}
-      </li>
-    </ol>
+    <app-reader2-chapter-log
+      *ngIf="recent(thread).length"
+      class="beats"
+      [entries]="recent(thread)"
+      [chapters]="chapters" />
   </li>
 </ul>

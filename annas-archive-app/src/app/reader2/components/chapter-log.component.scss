@@ -1,0 +1,21 @@
+:host {
+  display: block;
+}
+
+.log {
+  margin: 0.4rem 0 0.5rem;
+  padding: 0;
+  list-style: none;
+
+  li {
+    margin-bottom: 0.35rem;
+    line-height: 1.35;
+  }
+}
+
+/* Named, not numbered — so it is quiet enough to skim past and legible enough
+   to line up against the contents list. */
+.when {
+  opacity: 0.6;
+  font-size: 0.78em;
+}

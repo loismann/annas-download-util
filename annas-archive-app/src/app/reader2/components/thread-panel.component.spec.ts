@@ -1,10 +1,17 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ThreadPanelComponent } from './thread-panel.component';
 import { StoryThread } from '../reader2.models';
-import { actor, thread } from '../testing/cast';
+import { actor, contents, thread } from '../testing/cast';
 
 describe('ThreadPanelComponent', () => {
   let fixture: ComponentFixture<ThreadPanelComponent>;
+
+  /** Two front-matter entries first, so a chapter's index and its number disagree. */
+  const CONTENTS = contents(
+    'Cover', 'Copyright', 'Chapter One', 'Chapter Two', 'Chapter Three', 'Chapter Four',
+    'Chapter Five', 'Chapter Six', 'Chapter Seven', 'Chapter Eight', 'Chapter Nine',
+    'Chapter Ten', 'Chapter Eleven', 'Chapter Twelve', 'Chapter Thirteen', 'Chapter Fourteen',
+    'Chapter Fifteen', 'Chapter Sixteen', 'Chapter Seventeen', 'Chapter Eighteen');
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({ imports: [ThreadPanelComponent] }).compileComponents();
@@ -17,6 +24,7 @@ describe('ThreadPanelComponent', () => {
     fixture.componentRef.setInput('vocabulary',
       { actors: 'Characters', groups: 'Factions', threads: 'Plot threads' });
     fixture.componentRef.setInput('currentChapter', currentChapter);
+    fixture.componentRef.setInput('chapters', CONTENTS);
     fixture.detectChanges();
 
     return fixture.nativeElement as HTMLElement;
@@ -26,7 +34,7 @@ describe('ThreadPanelComponent', () => {
     const page = render([thread('t1', "Dolokhov's debt", 'Dormant', { lastAdvancedChapter: 5 })]);
 
     expect(page.querySelector('.thread.dormant')).not.toBeNull();
-    expect(page.querySelector('.quiet')?.textContent).toContain('chapter 6');
+    expect(page.querySelector('.quiet')?.textContent).toContain('Chapter Four');
     expect(page.querySelector('.quiet')?.textContent).toContain('15 chapters ago');
   });
 
@@ -35,7 +43,7 @@ describe('ThreadPanelComponent', () => {
       returnedInChapter: 18, returnedAfterChapters: 12
     })]);
 
-    expect(page.querySelector('.returned')?.textContent).toContain('chapter 19');
+    expect(page.querySelector('.returned')?.textContent).toContain('Chapter Seventeen');
     expect(page.querySelector('.returned')?.textContent).toContain('after 12 chapters');
   });
 

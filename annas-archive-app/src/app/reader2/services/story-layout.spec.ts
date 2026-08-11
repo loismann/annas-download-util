@@ -1,76 +1,155 @@
-import { layOutStory } from './story-layout';
+import { positions, room } from './story-layout';
+import { graphOf } from './story-graph';
 import { actor, edge } from '../testing/cast';
 
-describe('layOutStory', () => {
-  it('lays disconnected groups side by side rather than on top of each other', () => {
-    const laid = layOutStory(
-      [actor('a1', 'Pierre'), actor('a2', 'Natasha'), actor('a3', 'Kutuzov'), actor('a4', 'Bagration')],
-      [edge('a1', 'a2', 'family'), edge('a3', 'a4', 'commands')]);
+/**
+ * Where everybody goes.
+ *
+ * <p>Testable precisely because it is ours. The vendored build's layout has two
+ * settings and no way to ask it for room between things, and what it produced
+ * was every unconnected person in a horizontal line with their names written
+ * across each other. These are the properties that arrangement failed.</p>
+ */
+describe('positions', () => {
+  const SIZE = 12;
 
-    expect(laid.clusters.length).toBe(2);
+  function laid(actors: Parameters<typeof graphOf>[0], edges: Parameters<typeof graphOf>[1]) {
+    const graph = graphOf(actors, edges);
+    const at = positions(graph.nodes, graph.edges, SIZE);
 
-    const [first, second] = laid.clusters;
-    const apart = first.x + first.width <= second.x || second.x + second.width <= first.x
-      || first.y + first.height <= second.y || second.y + second.height <= first.y;
+    return {
+      of: (id: string) => at.get(id)!,
+      gap: (a: string, b: string) =>
+        Math.hypot(at.get(a)!.x - at.get(b)!.x, at.get(a)!.y - at.get(b)!.y),
+      nodes: graph.nodes,
+      at
+    };
+  }
 
-    expect(apart).toBeTrue();
+  const CAST = [
+    actor('a1', 'Finn'), actor('a2', 'Ellie'), actor('a3', 'Josias'),
+    actor('a4', 'Helena'), actor('a5', 'Bekket')
+  ];
+
+  it('places everybody', () => {
+    const { at } = laid(CAST, [edge('a1', 'a2', 'travels-with')]);
+
+    expect(at.size).toBe(CAST.length);
   });
 
-  it('stacks a chain of command into ranks, commander on top', () => {
-    const laid = layOutStory(
-      [actor('a1', 'Kutuzov'), actor('a2', 'Bagration'), actor('a3', 'Tushin')],
-      [edge('a1', 'a2', 'commands'), edge('a3', 'a2', 'subordinate-to')]);
+  it('puts nobody on top of anybody else', () => {
+    const { nodes, at } = laid(CAST, [edge('a1', 'a2', 'travels-with')]);
+    const spots = nodes.map(n => `${Math.round(at.get(n.id)!.x)},${Math.round(at.get(n.id)!.y)}`);
 
-    const placed = laid.clusters[0].actors;
-    const at = (name: string) => placed.find(p => p.name === name)!;
-
-    expect(at('Kutuzov').rank).toBe(0);
-    expect(at('Bagration').rank).toBe(1);
-    expect(at('Tushin').rank).toBe(2);
-    expect(at('Kutuzov').y).toBeLessThan(at('Tushin').y);
+    expect(new Set(spots).size).toBe(nodes.length);
   });
 
-  it('keeps rivalry lateral rather than folding it into the tree', () => {
-    const laid = layOutStory(
-      [actor('a1', 'Kutuzov'), actor('a2', 'Bennigsen')],
-      [edge('a1', 'a2', 'rival')]);
+  /**
+   * The complaint this file exists for. Unconnected nodes came out in a straight
+   * horizontal row, which is both unreadable and a lie about them — they are not
+   * a sequence.
+   */
+  it('does not lay the unconnected out in a line', () => {
+    const alone = Array.from({ length: 8 }, (_, i) => actor(`a${i}`, `Person ${i}`));
+    const { at } = laid(alone, []);
+    const ys = new Set([...at.values()].map(p => Math.round(p.y / 10)));
 
-    expect(laid.clusters[0].edges[0].kind).toBe('lateral');
-    expect(laid.clusters[0].actors.every(a => a.rank === 0))
-      .withContext('a rivalry says nothing about who is above whom')
-      .toBeTrue();
+    expect(ys.size).toBeGreaterThan(2);
   });
 
-  /** A model reading one chapter at a time will eventually report a cycle. */
-  it('places every member of a command cycle rather than dropping them', () => {
-    const laid = layOutStory(
-      [actor('a1', 'A'), actor('a2', 'B')],
-      [edge('a1', 'a2', 'commands'), edge('a2', 'a1', 'commands')]);
+  it('spirals the islands out from the middle rather than stacking them', () => {
+    const alone = Array.from({ length: 12 }, (_, i) => actor(`a${i}`, `Person ${i}`));
+    const { at } = laid(alone, []);
+    const out = [...at.values()].map(p => Math.hypot(p.x, p.y));
 
-    expect(laid.clusters[0].actors.length)
-      .withContext('a diagram missing somebody is worse than one drawing them at the wrong height')
-      .toBe(2);
+    // Something at the centre, something well out, and a spread in between.
+    expect(Math.min(...out)).toBeLessThan(20);
+    expect(Math.max(...out)).toBeGreaterThan(100);
   });
 
-  it('drops an edge whose end the filter has hidden', () => {
-    const laid = layOutStory([actor('a1', 'Pierre')], [edge('a1', 'a9', 'loves')]);
+  /** Names are far wider than the circles under them, and names are the map. */
+  it('leaves room for a long name, not just for the circle', () => {
+    const long = laid([actor('a1', 'Finbar Charles Louis Griffin Jalgori-Tobu'), actor('a2', 'Jaks')], []);
+    const short = laid([actor('a1', 'Finn'), actor('a2', 'Jaks')], []);
 
-    expect(laid.clusters[0].edges).toEqual([]);
-    expect(laid.clusters[0].actors.length).toBe(1);
+    expect(long.gap('a1', 'a2')).toBeGreaterThan(short.gap('a1', 'a2') * 1.5);
   });
 
-  it('draws the same model as the same picture every time', () => {
-    const cast = [actor('a2', 'B'), actor('a1', 'A'), actor('a3', 'C')];
+  /**
+   * The other half of the overlap complaint, and the one a fixed rest length
+   * could never fix: two people who know each other are pulled together, so if
+   * the spring does not know how wide their names are it pulls them until the
+   * names collide.
+   */
+  it('gives two connected long names more room than two connected short ones', () => {
+    const near = laid([actor('a1', 'Ann'), actor('a2', 'Bob')], [edge('a1', 'a2', 'x')]);
+    const far = laid(
+      [actor('a1', 'Finbar Charles Louis Griffin'), actor('a2', 'Princess Thi-Congreve')],
+      [edge('a1', 'a2', 'x')]);
 
-    expect(layOutStory(cast, [])).toEqual(layOutStory([...cast].reverse(), []));
+    expect(far.gap('a1', 'a2')).toBeGreaterThan(near.gap('a1', 'a2') * 1.5);
   });
 
-  it('wraps a wide cast onto another row instead of running off the page', () => {
-    const cast = Array.from({ length: 30 }, (_, i) => actor(`a${i}`, `Person ${i}`));
+  /** The complaint itself, stated as a property over a cast shaped like the real one. */
+  it('leaves no two names written across each other', () => {
+    const cast = [
+      actor('a1', 'Finbar Charles Louis Griffin Jalgori-Tobu'), actor('a2', 'Eleanor'),
+      actor('a3', 'Josias Aponi'), actor('a4', 'Yatras'), actor('a5', 'Kavee'),
+      actor('a6', 'Lord Valdier-Mímir'), actor('a7', 'Helena-Chione'),
+      actor('a8', 'Lord Gahiji-Calder'), actor('a9', 'Count Bekket'),
+      actor('a10', 'Princess Thi-Congreve'), actor('a11', 'Lord Sterling'),
+      actor('a12', 'Ramona-Iressa'), actor('a13', 'Marcela')
+    ];
 
-    const laid = layOutStory(cast, []);
+    const { nodes, at } = laid(cast, [
+      edge('a1', 'a2', 'x'), edge('a1', 'a3', 'x'), edge('a1', 'a4', 'x'),
+      edge('a1', 'a5', 'x'), edge('a2', 'a3', 'x'), edge('a1', 'a6', 'x'),
+      edge('a7', 'a8', 'x'), edge('a7', 'a9', 'x')
+    ]);
 
-    expect(laid.width).toBeLessThanOrEqual(900 + 150);
-    expect(laid.height).toBeGreaterThan(90);
+    const collisions = nodes.flatMap((one, i) => nodes.slice(i + 1).map(two => {
+      const a = room(one, SIZE);
+      const b = room(two, SIZE);
+      const apart = { x: Math.abs(at.get(one.id)!.x - at.get(two.id)!.x),
+        y: Math.abs(at.get(one.id)!.y - at.get(two.id)!.y) };
+
+      return apart.x < a.x + b.x && apart.y < a.y + b.y ? `${one.name} / ${two.name}` : null;
+    })).filter(Boolean);
+
+    expect(collisions).toEqual([]);
+  });
+
+  /**
+   * A map that rearranged itself every time a chapter was folded in would be a
+   * different picture of the same book each time the reader looked at it.
+   */
+  it('is deterministic, so the same cast is the same picture', () => {
+    const once = laid(CAST, [edge('a1', 'a2', 'x')]);
+    const twice = laid(CAST, [edge('a1', 'a2', 'x')]);
+
+    expect(once.of('a3')).toEqual(twice.of('a3'));
+  });
+
+  it('copes with nobody at all', () => {
+    expect(positions([], [], SIZE).size).toBe(0);
+  });
+
+  it('puts a lone person at the middle rather than off in a corner', () => {
+    const { of } = laid([actor('a1', 'Finn')], []);
+
+    expect(of('a1')).toEqual({ x: 0, y: 0 });
+  });
+});
+
+describe('room', () => {
+  it('is wider for a longer name', () => {
+    const wide = room({ name: 'Finbar Charles Louis Griffin', width: 20, height: 20 } as never, 12);
+    const narrow = room({ name: 'Jaks', width: 20, height: 20 } as never, 12);
+
+    expect(wide.x).toBeGreaterThan(narrow.x);
+  });
+
+  it('is never narrower than the circle itself', () => {
+    expect(room({ name: 'A', width: 52, height: 52 } as never, 12).x).toBeGreaterThanOrEqual(26);
   });
 });

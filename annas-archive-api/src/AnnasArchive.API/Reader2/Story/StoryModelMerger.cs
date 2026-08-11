@@ -49,6 +49,7 @@ public static class StoryModelMerger
         ActorMerge.Apply(state, delta);
         GroupEdgeMerge.Apply(state, delta);
         ThreadMerge.Apply(state, delta);
+        PlaceMerge.Apply(state, delta);
 
         return state.Result();
     }
@@ -111,12 +112,14 @@ internal sealed class MergeState(StoryModel current, int chapter, StoryMergeRule
     public List<Edge> Edges { get; } = [.. current.Edges];
     public List<StoryThread> Threads { get; } = [.. current.Threads];
     public List<CandidateMerge> Candidates { get; } = [.. current.CandidateMerges];
+    public List<Place> Places { get; } = [.. current.Places];
 
     private readonly IReadOnlyList<int> _ingested = current.ChaptersIngested;
 
     public StoryModel Result() => new(
         Actors, Groups, Edges, Threads, Candidates,
-        [.. _ingested.Append(Chapter).Distinct().Order()]);
+        [.. _ingested.Append(Chapter).Distinct().Order()],
+        Places);
 
     /// <summary>The actor with this id, or null. Model-supplied ids are not trusted.</summary>
     public Actor? Actor(string? id) =>
@@ -125,12 +128,76 @@ internal sealed class MergeState(StoryModel current, int chapter, StoryMergeRule
     public bool IsKnownActor(string? id) => Actor(id) is not null;
 
     /// <summary>
-    /// Whether a group with this id exists. Model-supplied group ids are trusted
-    /// no further than actor ids are: one that names nothing is a group the model
-    /// did not find in the digest.
+    /// The id of the actor a reference names, or null when it names nobody.
+    ///
+    /// <para><b>An id or a name, because an id alone cannot work.</b> Ids are
+    /// assigned here and travel to the model only in the digest, so somebody this
+    /// chapter introduces has no id the extraction could possibly have used. When
+    /// only ids were accepted, every relationship between two people who arrive in
+    /// the same chapter was dropped — which on a book's first ingest is every
+    /// relationship there is, and the record came back a list of strangers.</para>
+    ///
+    /// <para>A name matching two actors resolves to neither. Actors who answer to
+    /// one name are normally fused on admission, so a surviving pair is one the
+    /// reader has already refused to merge, and picking either would put a
+    /// relationship on a person the material never gave it to.</para>
     /// </summary>
-    public bool IsKnownGroup(string? id) =>
-        id is not null && Groups.Any(g => g.Id == id);
+    public string? ResolveActor(string? reference) =>
+        Resolve(reference, Actors, a => a.Id, NameMatch.Answers);
+
+    /// <summary>
+    /// The id of the group a reference names, resolved exactly as an actor's is,
+    /// and for the same reason: a group founded this chapter has no id yet.
+    /// </summary>
+    public string? ResolveGroup(string? reference) =>
+        Resolve(reference, Groups, g => g.Id, (g, name) => NameMatch.Same(g.Name, name));
+
+    public string? ResolveThread(string? reference) =>
+        Resolve(reference, Threads, t => t.Id, (t, name) => NameMatch.Same(t.Name, name));
+
+    /// <summary>
+    /// The id of the place a reference names. Same rule again: a room named in the
+    /// same chapter as the house it is in has no id when the model writes it down.
+    /// </summary>
+    public string? ResolvePlace(string? reference) =>
+        Resolve(reference, Places, p => p.Id, (p, name) => p.AllNames.Any(n => NameMatch.Same(n, name)));
+
+    /// <summary>
+    /// Id first, then an unambiguous name. Shared because "what does this
+    /// reference point at" is one question, and three copies of the answer would
+    /// be three chances for one of them to start guessing.
+    /// </summary>
+    private static string? Resolve<T>(
+        string? reference, List<T> among, Func<T, string> id, Func<T, string, bool> answers)
+    {
+        if (string.IsNullOrWhiteSpace(reference)) return null;
+
+        if (among.FirstOrDefault(item => id(item) == reference) is { } exact) return id(exact);
+
+        var named = among.Where(item => answers(item, reference)).ToArray();
+
+        return named.Length == 1 ? id(named[0]) : null;
+    }
+
+    /// <summary>
+    /// Puts an actor in a group, on both sides.
+    ///
+    /// <para>Membership is written in two places — <see cref="Story.Actor.GroupIds"/>
+    /// and <see cref="Group.MemberIds"/> — and the cast list reads one while the
+    /// filters read the other. One method writes both, so the two can never
+    /// disagree about who is in a household.</para>
+    /// </summary>
+    public void Enrol(string actorId, string groupId)
+    {
+        if (Actor(actorId) is not { } actor) return;
+        if (Groups.FirstOrDefault(g => g.Id == groupId) is not { } group) return;
+
+        Replace(actor with { GroupIds = MergeLists.Ids(actor.GroupIds, [groupId]) });
+        Groups[Groups.IndexOf(group)] = group with
+        {
+            MemberIds = MergeLists.Ids(group.MemberIds, [actorId])
+        };
+    }
 
     /// <summary>
     /// Whether the reader has already said this name is not this actor's.

@@ -1,6 +1,4 @@
-import {
-  ChangeDetectionStrategy, Component, HostListener, OnInit, inject, signal
-} from '@angular/core';
+import { ChangeDetectionStrategy, Component, HostListener, OnInit, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute } from '@angular/router';
 import { ChapterListComponent } from './components/chapter-list.component';
@@ -95,7 +93,9 @@ export class ReaderShellComponent implements OnInit {
     this.story.clear();
 
     await this.store.openAsync(bookId);
-    await Promise.all([this.bookmarks.loadAsync(bookId), this.flashcards.loadAsync(bookId)]);
+    await Promise.all([
+      this.bookmarks.loadAsync(bookId), this.flashcards.loadAsync(bookId), this.analysis.refreshAsync()
+    ]);
 
     this.markPlace();
     this.measure();
@@ -118,9 +118,8 @@ export class ReaderShellComponent implements OnInit {
     this.markPlace();
   }
 
+  /** Costs and destroys nothing: artifacts are keyed by lens, so switching back finds it all. */
   protected async changeLens(lensKey: string): Promise<void> {
-    // Costs nothing and destroys nothing: artifacts are keyed by lens, so the
-    // previous reading is still there if the reader switches back.
     await this.store.setLensAsync(lensKey);
     this.analysis.clear();
     this.story.clear();
@@ -132,6 +131,7 @@ export class ReaderShellComponent implements OnInit {
     // A type that keeps a cast starts with an empty one. The store asks; nothing
     // is built without an answer.
     await this.story.offerBuildAsync(lensKey);
+    await this.analysis.refreshAsync();
   }
 
   /** Un-enrols a book: its artifacts and extracted text go with it. */
@@ -160,12 +160,13 @@ export class ReaderShellComponent implements OnInit {
     await this.moveTo(mark.chapter, mark.wordOffset);
   }
 
-  /** Every navigation drops the selection and analysis and re-marks the place. */
+  /** Every navigation drops the selection, re-marks the place, and reloads the analysis. */
   private async moveTo(chapter: number, wordOffset: number): Promise<void> {
     this.selection.set(null);
     this.analysis.clear();
     await this.store.goToAsync(chapter, wordOffset);
     this.markPlace();
+    await this.analysis.refreshAsync();
   }
 
   /**

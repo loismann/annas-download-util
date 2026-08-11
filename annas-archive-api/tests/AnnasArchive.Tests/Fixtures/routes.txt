@@ -117,6 +117,7 @@ GET /api/reader2/books/{bookId}/chapters [api] auth:default
 GET /api/reader2/books/{bookId}/chapters/{chapter:int} [api] auth:default
 GET /api/reader2/books/{bookId}/chapters/{chapter:int}/sections [api] auth:default
 GET /api/reader2/books/{bookId}/chapters/{chapter:int}/sections/{section:int}/vocabulary [api] auth:default
+GET /api/reader2/books/{bookId}/chapters/{chapter:int}/summary [api] auth:default
 GET /api/reader2/books/{bookId}/export [api] auth:default
 GET /api/reader2/books/{bookId}/flashcards [api] auth:default
 GET /api/reader2/books/{bookId}/position [api] auth:default
@@ -271,6 +272,8 @@ POST /api/vocab/study [api] auth:default
 POST /api/vpn/settings [api] auth:default
 PUT /api/quiz/subjects/{subjectId} [api] auth:AdminOnly
 PUT /api/reader2/books/{bookId}/position [api] auth:default
+PUT /api/reader2/books/{bookId}/story-model/actors/{actorId} [api] auth:default
+PUT /api/reader2/books/{bookId}/story-model/actors/{actorId}/hidden [api] auth:default
 PUT /api/reader2/preferences [api] auth:default
 PUT /api/spotify/known-music/override [api] auth:default
 PUT /api/spotify/playback/pause [api] auth:default

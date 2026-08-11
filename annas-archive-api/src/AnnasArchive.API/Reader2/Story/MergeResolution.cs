@@ -47,15 +47,24 @@ public static class MergeResolution
                     : a with { Aliases = MergeLists.Names(a.Aliases, [candidate.Alias]) })]
             };
 
+    private static StoryModel Fuse(StoryModel model, CandidateMerge candidate) =>
+        Fuse(model, candidate.ActorId, candidate.OtherActorId ?? "");
+
     /// <summary>
     /// Two entries become one. The kept actor absorbs everything the other had
     /// and every reference to the other is repointed, because a fused actor whose
     /// edges still name a deleted id is worse than the duplicate was.
     /// </summary>
-    private static StoryModel Fuse(StoryModel model, CandidateMerge candidate)
+    /// <remarks>
+    /// Public because the reader can now say two entries are one person directly,
+    /// without the merger having raised the question. That is the same operation
+    /// and must not become a second implementation of it — fusing is exactly where
+    /// two spellings of one person meet, and two rules for it would disagree.
+    /// </remarks>
+    public static StoryModel Fuse(StoryModel model, string keepId, string goneId)
     {
-        var keep = model.Actors.FirstOrDefault(a => a.Id == candidate.ActorId);
-        var absorbed = model.Actors.FirstOrDefault(a => a.Id == candidate.OtherActorId);
+        var keep = model.Actors.FirstOrDefault(a => a.Id == keepId);
+        var absorbed = model.Actors.FirstOrDefault(a => a.Id == goneId);
 
         if (keep is null || absorbed is null || keep.Id == absorbed.Id) return model;
 
@@ -124,7 +133,11 @@ public static class MergeResolution
                 EndedChapter = a.EndedChapter is null || b.EndedChapter is null
                     ? null
                     : Math.Max(a.EndedChapter.Value, b.EndedChapter.Value),
-                Note = a.Note.Length > 0 ? a.Note : b.Note
+
+                // Both histories, in chapter order. Two entries for one pair are
+                // one relationship recorded twice, and keeping whichever half had
+                // something to say would throw away the other half of it.
+                Notes = [.. a.Notes.Union(b.Notes).OrderBy(n => n.Chapter)]
             }))];
     }
 }

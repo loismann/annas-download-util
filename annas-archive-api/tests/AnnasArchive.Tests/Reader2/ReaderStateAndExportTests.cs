@@ -179,5 +179,5 @@ public class ExportTests : IDisposable
                 ? ArtifactKey.ChapterSummary(ctx.Ref, ctx.Lens.Key, chapter)
                 : ArtifactKey.ExplainSimply(ctx.Ref, ctx.Lens.Key, chapter),
             new Prose(body),
-            new ArtifactProvenance(Prose.SchemaVersion, ctx.Lens.PromptVersion, "test-model"));
+            new ArtifactProvenance(Prose.SchemaVersion, ctx.Lens.Versions[CallKind.ChapterSummary], "test-model"));
 }

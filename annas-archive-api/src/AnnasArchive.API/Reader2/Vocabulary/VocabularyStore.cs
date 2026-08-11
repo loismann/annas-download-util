@@ -6,6 +6,14 @@ using Microsoft.Data.Sqlite;
 namespace AnnasArchive.API.Reader2.Vocabulary;
 
 /// <summary>Where a term stands for one reader.</summary>
+/// <remarks>
+/// Serialised by name. Saving already worked — the request carries a string and
+/// is parsed by hand — but the list came back numbered, so the panel's own
+/// <c>state === 'Known'</c> filter emptied both lists. See the note on
+/// <see cref="Story.ActorTier"/>.
+/// </remarks>
+[System.Text.Json.Serialization.JsonConverter(
+    typeof(System.Text.Json.Serialization.JsonStringEnumConverter))]
 public enum TermState
 {
     /// <summary>Excluded from generated definitions. The reader is done with it.</summary>

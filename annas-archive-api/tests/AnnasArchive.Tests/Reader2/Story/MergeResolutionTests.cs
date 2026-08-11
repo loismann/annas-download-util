@@ -69,7 +69,7 @@ public class MergeResolutionTests
     {
         var model = TwoEntries() with
         {
-            Edges = [new Edge("a2", "a1", "married", 6, null, "")],
+            Edges = [Edge("a2", "a1", "married", 6)],
             Groups = [new Group("g1", "The Bezukhovs", GroupKind.Family, ["a1", "a2"], [])],
             Threads = [StoryThread("t1", "The inheritance", started: 5) with { ParticipantIds = ["a2"] }]
         };
@@ -92,8 +92,8 @@ public class MergeResolutionTests
         {
             Actors = [.. TwoEntries().Actors, Actor("a3", "Natasha")],
             Edges = [
-                new Edge("a1", "a3", "loves", 10, EndedChapter: 15, ""),
-                new Edge("a2", "a3", "loves", 12, EndedChapter: null, "")
+                Edge("a1", "a3", "loves", 10, ended: 15),
+                Edge("a2", "a3", "loves", 12)
             ]
         };
 

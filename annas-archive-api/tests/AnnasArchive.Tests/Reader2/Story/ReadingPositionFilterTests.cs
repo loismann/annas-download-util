@@ -25,7 +25,7 @@ public class ReadingPositionFilterTests
             StoryThread("t2", "The Moscow salons", started: 0, lastAdvanced: 12,
                 status: ThreadStatus.Resolved, beats: [new Beat(0, "the soirée")])
         ],
-        edges: [new Edge("a1", "a2", "befriends", SinceChapter: 30, EndedChapter: 38, Note: "")],
+        edges: [Edge("a1", "a2", "befriends", since: 30, ended: 38)],
         groups: [new Group("g1", "The Bezukhovs", GroupKind.Family, ["a1", "a2"], [])],
         candidates: [new CandidateMerge("m1", "a1", "a2", "Karataev", "unsure", ProposedInChapter: 33)],
         ingested: [0, 2, 30, 38, 40]);

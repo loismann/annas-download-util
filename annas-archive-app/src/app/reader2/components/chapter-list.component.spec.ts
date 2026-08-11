@@ -2,8 +2,10 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ChapterListComponent } from './chapter-list.component';
 import { ChapterInfo } from '../reader2.models';
 
-function chapter(id: number, title: string, hasSummary = false): ChapterInfo {
-  return { id, title, level: 0, wordCount: 1200, hasSummary };
+function chapter(
+  id: number, title: string, hasSummary = false, summaryIsStale = false
+): ChapterInfo {
+  return { id, title, level: 0, wordCount: 1200, hasSummary, summaryIsStale };
 }
 
 describe('ChapterListComponent', () => {

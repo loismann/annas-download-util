@@ -1,6 +1,42 @@
+/**
+ * A column, so the map can fill what is left below the tabs. Everything else
+ * here scrolls on its own content; the map is the one view whose size is the
+ * space it is given rather than the other way round.
+ */
 :host {
-  display: block;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
   padding: 0.5rem 0.75rem;
+}
+
+/**
+ * Every view fills what is left below the tabs, and the lists scroll inside it.
+ *
+ * <p>Stated here rather than in each component because it is a fact about this
+ * panel's layout, not about a cast list. It was missing entirely: the views were
+ * `display: block`, took their natural height, and a book with thirty characters
+ * simply ran off the bottom of a container whose overflow is hidden — no
+ * scrollbar, no way down, and the last twenty people unreachable.
+ *
+ * <p>`min-height: 0` is the load-bearing half. A flex item will not shrink below
+ * its content without it, so `overflow-y` would have had no height to scroll
+ * against.</p>
+ */
+app-reader2-character-table,
+app-reader2-thread-panel,
+app-reader2-place-list,
+app-reader2-story-map {
+  flex: 1;
+  min-height: 0;
+}
+
+app-reader2-character-table,
+app-reader2-thread-panel,
+app-reader2-place-list {
+  overflow-y: auto;
+  scrollbar-gutter: stable;
 }
 
 .empty-state {
@@ -41,6 +77,17 @@
     &.on {
       border-bottom-color: var(--reader2-accent, #3b6ea5);
       font-weight: 600;
+    }
+  }
+
+  // Pushed right and dimmed: reachable, but never mistaken for a fourth view.
+  .rebuild {
+    margin-left: auto;
+    opacity: 0.6;
+    font-size: 0.78rem;
+
+    &:hover {
+      opacity: 1;
     }
   }
 }

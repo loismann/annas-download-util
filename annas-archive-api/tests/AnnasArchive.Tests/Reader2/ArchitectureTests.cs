@@ -274,22 +274,66 @@ public class ArchitectureTests
 
     /// <summary>
     /// Nothing generates on open, on scroll, or ahead of the reader. A route that
-    /// spends money on a <c>GET</c> is one a browser can prefetch and a refresh
-    /// can re-bill.
+    /// spends money on a <c>GET</c>, <c>DELETE</c>, <c>PUT</c>, or <c>PATCH</c> is
+    /// one a browser can prefetch and a refresh can re-bill.
     /// </summary>
+    /// <remarks>
+    /// Checks what the handler actually does rather than guessing from its path.
+    /// A path-keyword blacklist (the previous version of this test) missed
+    /// <c>HandleSectionVocab</c>, which was mapped to both a <c>GET</c> and a
+    /// <c>POST</c> and reached the gateway's generating path either way — a
+    /// section nobody had summarised yet was one a mere page
+    /// load could bill for, because "vocabulary" was never on the blacklist. This
+    /// version reads the handler's own body, so the same class of bug fails here
+    /// however the route happens to be named.
+    /// </remarks>
     [Fact]
     public void Only_post_routes_can_spend_money()
     {
-        var routes = Path.Combine(Path.GetDirectoryName(SourceFiles.First(f => f.EndsWith("AiRoutes.cs")))!, "");
+        var routes = Path.GetDirectoryName(SourceFiles.First(f => f.EndsWith("AiRoutes.cs")))!;
 
         foreach (var file in Directory.GetFiles(routes, "*Routes.cs"))
         {
             var text = File.ReadAllText(file);
 
-            foreach (System.Text.RegularExpressions.Match match in Regex.Matches(text, @"group\.Map(Get|Delete|Put|Patch)\(""([^""]+)"""))
-                match.Groups[2].Value.Should().NotMatch("*summary*")
-                    .And.NotMatch("*explain*").And.NotMatch("*analysis*");
+            foreach (System.Text.RegularExpressions.Match route in Regex.Matches(
+                         text, @"group\.Map(Get|Delete|Put|Patch)\(""[^""]+"",\s*(\w+)\)"))
+            {
+                var verb = route.Groups[1].Value;
+                var handler = route.Groups[2].Value;
+                var body = HandlerBody(text, handler);
+
+                body.Should().NotBeEmpty($"{handler} should be a handler declared in {Path.GetFileName(file)}");
+
+                foreach (var spend in SpendSymbols)
+                    body.Should().NotContain(
+                        spend, $"{handler} answers a {verb}, and nothing may spend money on one");
+            }
         }
+    }
+
+    /// <summary>
+    /// Anything reaching one of these has bought something: generated a chapter's
+    /// worth of AI output, or run the model-facing half of an ingest.
+    /// </summary>
+    private static readonly string[] SpendSymbols =
+        ["GetOrGenerateAsync(", ".IngestAsync(", ".BackFillAsync(", "AskLensAsync(", "AskSharedAsync("];
+
+    /// <summary>
+    /// The source from a handler's declaration up to whatever comes next — the
+    /// next <c>private static</c> member, or the end of the file. Text-based
+    /// rather than a real parser, matching how the rest of this file already
+    /// scans; every handler here is a single expression- or block-bodied method,
+    /// which is what makes "the next declaration" a safe stopping point.
+    /// </summary>
+    private static string HandlerBody(string source, string handlerName)
+    {
+        var start = source.IndexOf($" {handlerName}(", StringComparison.Ordinal);
+        if (start < 0) return "";
+
+        var next = Regex.Match(source[(start + 1)..], @"\n    (private|internal|public) static \S");
+
+        return next.Success ? source.Substring(start, next.Index + 1) : source[start..];
     }
 
     /// <summary>

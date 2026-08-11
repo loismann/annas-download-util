@@ -4,7 +4,7 @@ import { Observable } from 'rxjs';
 import { apiBase } from '../../services/api-base';
 import { AuthService } from '../../services/auth.service';
 import {
-  Book, Bookmark, Chapter, ChapterList, DeepDive, Flashcards, Lens, ProgressStep, Prose,
+  ActorCorrection, Book, Bookmark, Chapter, ChapterList, DeepDive, Flashcards, Lens, ProgressStep, Prose,
   ReadingPosition, ReadingPreferences, SearchHit, SectionInfo, SectionVocabulary,
   StoryModel, TermState, VocabularyTerm
 } from '../reader2.models';
@@ -209,6 +209,18 @@ export class Reader2ApiService {
       `${this.base}/books/${bookId}/chapters/${chapter}/summary${force ? '?force=true' : ''}`);
   }
 
+  /**
+   * Whatever chapter summary is already stored, or `null`. Free — the `GET` half
+   * of the same route the streamed `POST` above answers.
+   *
+   * <p>The server answers `204` for "nothing yet" rather than a body holding
+   * `null`, and `HttpClient` resolves a `204` to a `null` body on its own — there
+   * is nothing here to unwrap.</p>
+   */
+  peekChapterSummary(bookId: string, chapter: number): Observable<Prose | null> {
+    return this.http.get<Prose | null>(`${this.base}/books/${bookId}/chapters/${chapter}/summary`);
+  }
+
   chapterVocabulary(bookId: string, chapter: number, force = false): Observable<StreamEvent<SectionVocabulary>> {
     return this.stream(
       `${this.base}/books/${bookId}/chapters/${chapter}/vocabulary${force ? '?force=true' : ''}`);
@@ -221,8 +233,35 @@ export class Reader2ApiService {
    * the cheap half of the work — but a three-hundred-chapter novel is still a
    * long wait, which is why it streams.
    */
-  backFillStoryModel(bookId: string): Observable<StreamEvent<StoryModel>> {
-    return this.stream(`${this.base}/books/${bookId}/story-model/back-fill`);
+  backFillStoryModel(bookId: string, rebuild = false): Observable<StreamEvent<StoryModel>> {
+    return this.stream(
+      `${this.base}/books/${bookId}/story-model/back-fill${rebuild ? '?rebuild=true' : ''}`);
+  }
+
+  /**
+   * The reader's own correction to one entry — what to call them, a note, and
+   * which other entries are the same person.
+   *
+   * A `PUT` of the whole correction: it is one row about one person, and sending
+   * it empty is how an edit is undone. Free, like everything else that only reads
+   * or writes what is already stored.
+   */
+  correctActor(bookId: string, actorId: string, correction: ActorCorrection): Observable<StoryModel> {
+    return this.http.put<StoryModel>(
+      `${this.base}/books/${bookId}/story-model/actors/${actorId}`, correction);
+  }
+
+  /**
+   * Keeps somebody off the map, or puts them back.
+   *
+   * <p>Its own route rather than a field on the correction above, which replaces
+   * whole: this client cannot reconstruct the rest of a correction, because a
+   * preferred name is projected onto the canonical one and nothing it was served
+   * tells the two apart. The server merges this into whatever is stored.</p>
+   */
+  hideActor(bookId: string, actorId: string, hidden: boolean): Observable<StoryModel> {
+    return this.http.put<StoryModel>(
+      `${this.base}/books/${bookId}/story-model/actors/${actorId}/hidden`, { hidden });
   }
 
   storyModel(bookId: string, throughChapter: number): Observable<StoryModel> {

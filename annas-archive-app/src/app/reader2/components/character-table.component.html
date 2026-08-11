@@ -1,58 +1,10 @@
-<div class="filters">
-  <div class="tiers" role="group" attr.aria-label="Filter {{ vocabulary.actors }} by importance">
-    <button
-      *ngFor="let tier of allTiers"
-      type="button"
-      class="tier"
-      [class.on]="tiers().includes(tier)"
-      [attr.aria-pressed]="tiers().includes(tier)"
-      (click)="toggleTier(tier)">
-      {{ tier }}
-    </button>
-  </div>
-
-  <label class="pick" *ngIf="groups.length">
-    <span class="visually-hidden">{{ vocabulary.groups }}</span>
-    <select [value]="groupId() ?? ''" (change)="groupId.set(pick($any($event.target).value))">
-      <option value="">All {{ vocabulary.groups.toLowerCase() }}</option>
-      <option *ngFor="let group of groups" [value]="group.id">{{ group.name }}</option>
-    </select>
-  </label>
-
-  <label class="pick" *ngIf="threadChoices.length">
-    <span class="visually-hidden">{{ vocabulary.threads }}</span>
-    <select [value]="threadId() ?? ''" (change)="threadId.set(pick($any($event.target).value))">
-      <option value="">All {{ vocabulary.threads.toLowerCase() }}</option>
-      <option *ngFor="let thread of threadChoices" [value]="thread.id">{{ thread.name }}</option>
-    </select>
-  </label>
-
-  <button
-    type="button"
-    class="tier"
-    [class.on]="hereOnly()"
-    [attr.aria-pressed]="hereOnly()"
-    (click)="hereOnly.set(!hereOnly())">
-    In this chapter
-  </button>
-</div>
-
-<!--
-  The count is the point of the default view: it says there are more, and
-  offers the one press that shows them.
--->
-<p class="hidden-note" *ngIf="hidden() > 0">
-  {{ hidden() }} not shown.
-  <button type="button" class="link" (click)="showEverybody()">Show everybody</button>
-</p>
-
-<p class="empty" *ngIf="!shown().length">
-  <ng-container *ngIf="filtered(); else nobody">Nothing matches those filters.</ng-container>
+<p class="empty" *ngIf="!actors.length">
+  <ng-container *ngIf="anybody; else nobody">Nothing matches those filters.</ng-container>
   <ng-template #nobody>No {{ vocabulary.actors.toLowerCase() }} recorded yet.</ng-template>
 </p>
 
-<ul class="cast" *ngIf="shown().length">
-  <li *ngFor="let actor of shown()" class="actor" [class.open]="openId() === actor.id">
+<ul class="cast" *ngIf="actors.length">
+  <li *ngFor="let actor of actors" class="actor" [class.open]="openId() === actor.id">
     <button
       type="button"
       class="row"
@@ -68,20 +20,15 @@
       <span class="role">{{ actor.role }}</span>
     </button>
 
-    <div class="dossier" *ngIf="openId() === actor.id">
-      <p *ngIf="actor.dossier">{{ actor.dossier }}</p>
-      <p class="meta">
-        <span *ngIf="groupNames(actor)">{{ groupNames(actor) }}</span>
-        <span>First seen in chapter {{ actor.firstSeenChapter + 1 }}</span>
-        <span>Last seen in chapter {{ actor.lastSeenChapter + 1 }}</span>
-        <span *ngIf="actor.status">{{ actor.status }}</span>
-      </p>
+    <app-reader2-actor-dossier
+      *ngIf="openId() === actor.id"
+      class="dossier"
+      [actor]="actor"
+      [groups]="groups"
+      [chapters]="chapters"
+      [others]="others(actor)"
+      (correct)="correct.emit({ actorId: actor.id, correction: $event })"
+      (hide)="hide.emit({ actorId: actor.id, hidden: $event })" />
 
-      <ol class="arc" *ngIf="actor.arc.length">
-        <li *ngFor="let point of actor.arc">
-          <span class="at">Ch {{ point.chapter + 1 }}</span> {{ point.change }}
-        </li>
-      </ol>
-    </div>
   </li>
 </ul>

@@ -84,6 +84,19 @@ public sealed record ArtifactKey
         BookScoped(book, Lens(lensKey), ArtifactKind.StoryModel);
 
     /// <summary>
+    /// The reader's own corrections to the cast — renames, notes, and "these two
+    /// are one person".
+    /// </summary>
+    /// <remarks>
+    /// Its own artifact rather than a field on the story model, and that is the
+    /// whole point: a rebuild writes <c>StoryModel.Empty</c>, so anything living
+    /// inside the model dies with it. Kept apart, reader edits survive a rebuild
+    /// by construction rather than by somebody remembering to preserve them.
+    /// </remarks>
+    public static ArtifactKey CastOverrides(BookRef book, string lensKey) =>
+        BookScoped(book, Lens(lensKey), ArtifactKind.CastOverrides);
+
+    /// <summary>
     /// Keyed by the normalised term, so the same word asked twice is one row.
     /// Lens-scoped on purpose: what matters about a term differs by book type.
     /// </summary>

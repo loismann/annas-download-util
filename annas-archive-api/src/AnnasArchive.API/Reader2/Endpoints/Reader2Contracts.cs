@@ -59,21 +59,36 @@ public sealed record SetLensRequest(string? LensKey);
 /// or ask per chapter, and a reader with no way to see what is already bought
 /// buys it twice.</para>
 /// </param>
-public sealed record ChapterInfo(int Id, string Title, int Level, int WordCount, bool HasSummary = false)
+/// <param name="SummaryIsStale">
+/// The summary exists but was written under an older prompt.
+///
+/// <para>Reported rather than hidden, and reported <i>separately</i> from
+/// <paramref name="HasSummary"/>, because the two say different things: the
+/// chapter is summarised, and a newer wording exists for whoever wants to pay to
+/// apply it. Folding staleness into "has no summary" is what used to make a
+/// prompt edit read as though the reader had never summarised the book.</para>
+/// </param>
+public sealed record ChapterInfo(
+    int Id, string Title, int Level, int WordCount,
+    bool HasSummary = false, bool SummaryIsStale = false)
 {
-    public static ChapterInfo From(Chapter chapter, bool hasSummary = false) =>
-        new(chapter.Id, chapter.Title, chapter.Level, chapter.WordCount, hasSummary);
+    public static ChapterInfo From(Chapter chapter, bool hasSummary = false, bool stale = false) =>
+        new(chapter.Id, chapter.Title, chapter.Level, chapter.WordCount, hasSummary, stale);
 
     /// <summary>
-    /// A whole contents list, told which chapters are already summarised.
+    /// A whole contents list, told which chapters are already summarised and
+    /// which of those predate the current prompt.
     ///
     /// <para>One query for the book rather than one per chapter — the chapter
     /// list is the most-hit route in the reader, and a per-chapter lookup would
     /// make opening a three-hundred-chapter novel three hundred reads.</para>
     /// </summary>
     public static IReadOnlyList<ChapterInfo> ForList(
-        IReadOnlyList<Chapter> chapters, IReadOnlySet<int> summarised) =>
-        [.. chapters.Select(c => From(c, summarised.Contains(c.Id)))];
+        IReadOnlyList<Chapter> chapters,
+        IReadOnlySet<int> summarised,
+        IReadOnlySet<int>? stale = null) =>
+        [.. chapters.Select(c =>
+            From(c, summarised.Contains(c.Id), stale?.Contains(c.Id) ?? false))];
 }
 
 /// <summary>
@@ -130,6 +145,27 @@ public sealed record ResolveMergeRequest(bool Accept);
 /// The horizon this response was filtered to, echoed back so a client cannot
 /// display a model against the wrong reading position.
 /// </param>
+/// <summary>
+/// One entry corrected by the reader. Every field optional: omitting all of them
+/// clears the correction, which is how an edit is undone.
+/// </summary>
+/// <param name="SameAs">
+/// Actor ids the reader says are this same person. Resolved to names before
+/// storing, because ids are reassigned by a rebuild and names are not.
+/// </param>
+public sealed record CorrectActorRequest(
+    string? PreferredName, string? Note, IReadOnlyList<string>? SameAs);
+
+/// <summary>
+/// Whether somebody is kept off the map.
+///
+/// <para>Its own request, and its own route, because it is the one correction
+/// made in a single press from a panel rather than by filling in a form — see
+/// <see cref="Story.StoryModelService.HideAsync"/> for why it cannot ride along
+/// with the rest.</para>
+/// </summary>
+public sealed record HideActorRequest(bool Hidden);
+
 public sealed record StoryModelResponse(
     IReadOnlyList<Story.Actor> Actors,
     IReadOnlyList<Story.Group> Groups,
@@ -138,12 +174,14 @@ public sealed record StoryModelResponse(
     IReadOnlyList<Story.CandidateMerge> OpenQuestions,
     IReadOnlyList<int> ChaptersIngested,
     Lenses.StoryVocabulary Vocabulary,
-    int ThroughChapter)
+    int ThroughChapter,
+    IReadOnlyList<Story.Place> Places)
 {
     public static StoryModelResponse From(Story.StoryModel model, Lenses.IReaderLens lens, int throughChapter) =>
         new(model.Actors, model.Groups, model.Edges, model.Threads,
             [.. model.CandidateMerges.Where(m => !m.Declined)],
             model.ChaptersIngested,
             lens.StoryVocabulary ?? new Lenses.StoryVocabulary("Actors", "Groups", "Threads"),
-            throughChapter);
+            throughChapter,
+            model.Places);
 }

@@ -26,7 +26,14 @@ public sealed class TestLens : IReaderLens
     /// <summary>Last in the picker, so it never becomes the default by accident.</summary>
     public int SortOrder => 9999;
 
-    public int PromptVersion => 1;
+    /// <summary>
+    /// Settable, unlike a production lens's, so a test can do what a deploy does:
+    /// move the version under an artifact that is already stored. It is the only
+    /// way to exercise staleness over HTTP without shipping a second build.
+    /// </summary>
+    public static int Version { get; set; } = 1;
+
+    public PromptVersions Versions => PromptVersions.All(Version);
     public bool BuildsStoryModel => true;
     public StoryVocabulary? StoryVocabulary => new("Subjects", "Sets", "Strands");
 
@@ -48,7 +55,7 @@ public sealed record BrokenLens : IReaderLens
     public string Description { get; init; } = "A deliberately invalid lens.";
     public string Icon { get; init; } = "bug_report";
     public int SortOrder { get; init; } = 500;
-    public int PromptVersion { get; init; } = 1;
+    public PromptVersions Versions { get; init; } = PromptVersions.All(1);
     public bool BuildsStoryModel { get; init; }
     public StoryVocabulary? StoryVocabulary { get; init; }
 

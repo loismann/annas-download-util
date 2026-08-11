@@ -31,11 +31,27 @@ public sealed record ArtifactProvenance(
 }
 
 /// <summary>An artifact read back from the store, with its provenance.</summary>
+/// <param name="Stale">
+/// Written under an older prompt than the one running now.
+///
+/// <para><b>Still served.</b> A stale artifact is <i>old</i>, not wrong: the
+/// prose it summarises has not changed, and the reader has already paid for it.
+/// Treating staleness as absence is what made a one-line edit to the story
+/// extraction prompt silently invalidate — and then, on the next press,
+/// overwrite — every chapter summary in the book.
+/// </para>
+///
+/// <para>A stale <i>schema</i> is a different thing entirely and is not this: that
+/// row cannot be deserialised at all, so it is dropped on read. The two version
+/// numbers have always meant different things, and this is where they finally
+/// behave differently.</para>
+/// </param>
 public sealed record Stored<T>(
     ArtifactKey Key,
     T Content,
     ArtifactProvenance Provenance,
-    DateTime CreatedAtUtc);
+    DateTime CreatedAtUtc,
+    bool Stale = false);
 
 /// <summary>An artifact just produced, ready to be written.</summary>
 public sealed record Generated<T>(T Content, ArtifactProvenance Provenance);

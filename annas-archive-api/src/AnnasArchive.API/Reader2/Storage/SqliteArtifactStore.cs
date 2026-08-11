@@ -48,9 +48,11 @@ public sealed class SqliteArtifactStore(AppDatabase db) : IArtifactStore
             return null;
         }
 
-        if (row.PromptVersion < current.Prompt) return null;
-
-        return Materialise<T>(key, row);
+        // Older prompt: a hit, marked. See Stored<T>.Stale — the content is valid
+        // and already paid for, and the caller decides whether to replace it.
+        return Materialise<T>(key, row) is { } stored
+            ? stored with { Stale = row.PromptVersion < current.Prompt }
+            : null;
     }
 
     public async Task PutAsync<T>(
@@ -115,12 +117,14 @@ public sealed class SqliteArtifactStore(AppDatabase db) : IArtifactStore
 
             // Same gates as GetAsync, minus the delete: silently removing rows
             // during a read-many is a surprise nobody asked for.
-            if (row.SchemaVersion < current.Schema || row.PromptVersion < current.Prompt) continue;
+            if (row.SchemaVersion < current.Schema) continue;
 
             var stored = Materialise<T>(
                 ArtifactKey.FromRow(query.Book, row.LensKey, row.Kind, row.Chapter, row.Ordinal, row.Subkey),
                 row);
-            if (stored is not null) results.Add(stored);
+
+            if (stored is not null)
+                results.Add(stored with { Stale = row.PromptVersion < current.Prompt });
         }
 
         return results;

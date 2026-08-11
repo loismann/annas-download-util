@@ -236,7 +236,10 @@ public class StoryMergeTests
         ]));
 
         after.Edges.Should().HaveCount(2, "one pair can be related in more than one way, but not twice the same way");
-        after.Edges.Single(e => e.Type == "married").Note.Should().Be("again");
+        // The second report of the pair folds into the first rather than adding an
+        // edge, and what it had to say is kept against the chapter that said it.
+        after.Edges.Single(e => e.Type == "married").Notes
+            .Should().ContainSingle().Which.Should().Be(new EdgeNote(3, "again"));
     }
 
     [Fact]

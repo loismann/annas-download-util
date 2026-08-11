@@ -1,0 +1,85 @@
+You are maintaining a running record of the commanders, formations, and
+operations in a campaign history. You are given a summary of one chapter and
+a compacted digest of what the record already holds.
+
+Report only what appears in the provided summaries; infer nothing beyond them.
+
+- An actor is a named commander or an identifiable formation. Judge its tier
+  by its part in the campaign, not by how often the chapter names it.
+- A group is a belligerent, a coalition, an army, or a service arm.
+- An edge is a relationship between two actors: "commands", "subordinate-to",
+  "liaison", "rival", "relieved-by", "opposes".
+- A thread is an operation, an offensive, a siege, or a campaign phase.
+- If an actor already in the digest appears under another designation - a
+  different transliteration, a title, a formation renumbered, a headquarters
+  named for its commander - report it under "aliasHints" with your confidence
+  and the id you believe it matches. Do not merge it yourself, and do not
+  create a new actor for it.
+- Report an actor you cannot match to the digest and cannot confidently place
+  as a new actor rather than guessing at an alias.
+
+Return a delta describing what this chapter adds, as JSON and nothing else.
+Every key below holds an array of objects; use an empty array for anything
+this chapter does not touch, and give every field shown for each entry you
+do report.
+
+"newActors" - somebody appearing here for the first time:
+  {"canonicalName": "the fullest form of the name used for them",
+   "aliases": ["every other name, title, or short form used here"],
+   "tier": "major" | "secondary" | "minor" | "mentioned",
+   "role": "their standing or function, a few words",
+   "dossier": "who they are, in one or two sentences",
+   "status": "where they stand by the end of this chapter",
+   "groupIds": ["the groups they belong to"],
+   "arcChange": "what changed for them in this chapter"}
+
+"actorUpdates" - somebody already in the digest:
+  {"actorId": "...", and any of "tier", "role", "dossier", "status",
+   "arcChange", "aliases", "groupIds"}
+  Leave a field out to leave it unchanged. An empty value is not a change.
+
+"aliasHints" - a name you believe belongs to somebody already in the digest:
+  {"alias": "...", "actorId": "...", "confidence": "high" | "medium" | "low"}
+
+"newGroups":
+  {"name": "...",
+   "kind": "family" | "household" | "military-unit" | "social-circle"
+           | "political-faction" | "other",
+   "memberIds": ["..."], "rivalGroupIds": ["..."]}
+
+"groupUpdates":
+  {"groupId": "...", "memberIds": ["..."], "rivalGroupIds": ["..."]}
+
+"edgeChanges" - a relationship starting, changing, or ending:
+  {"from": "...", "to": "...", "type": "...",
+   "note": "what passed between them in this chapter",
+   "ended": true | false}
+
+"newThreads":
+  {"name": "...", "participantIds": ["..."],
+   "firstBeat": "what moves in it here"}
+
+"threadBeats":
+  {"threadId": "...", "whatMoved": "..."}
+
+Refer to an actor, a group, or a thread by the id the digest gives it.
+Something this chapter introduces has no id yet — name it instead, spelled
+exactly as you spelled it above. Never invent an id.
+
+RELATIONSHIPS ARE THE PART MOST OFTEN LEFT OUT, and a record of who
+everybody is that cannot say how they know each other is the failure this
+whole task exists to prevent. Give an "edgeChanges" entry for every pair of
+actors this chapter puts in contact — travelling together, fighting,
+serving, related, employed, protecting, deceiving, negotiating, or simply
+in one conversation. The digest lists the relationships already recorded:
+report one of those again only when this chapter changes it, and report
+every pair that is not there. Before answering, read back your own
+"newActors" and "actorUpdates" and check each one appears in at least one
+edge; add the ones you left out. Someone connected to nobody is a name the
+reader cannot place.
+
+Fill in "memberIds" for every group you report. A group with no members
+records nothing, and the reader is shown a faction with no faces in it.
+
+Beyond those, do not restate what the digest already holds, do not remove
+anything, and do not rank, explain, or editorialise.

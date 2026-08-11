@@ -76,6 +76,7 @@ public sealed class PipelineFixture : IDisposable
     public ArtifactGateway Gateway { get; }
     public ModelCalls Model { get; }
     public StoryModelService Story { get; }
+    public CastOverrideStore Corrections { get; }
 
     public PipelineFixture(Dictionary<string, string?>? settings = null)
     {
@@ -86,7 +87,8 @@ public sealed class PipelineFixture : IDisposable
         Gateway = new ArtifactGateway(Store.Artifacts, new KeyedLocks(), Usage, configuration);
 
         Model = new ModelCalls(Options, new FakeModels(), Ai);
-        Story = new StoryModelService(Gateway, Store.Artifacts, Model, Options);
+        Corrections = new CastOverrideStore(Gateway, Store.Artifacts);
+        Story = new StoryModelService(Gateway, Store.Artifacts, Model, Options, Corrections);
         Pipeline = new ReaderAiPipeline(Gateway, Store.Artifacts, Store.Text, Model, Story, Options);
     }
 

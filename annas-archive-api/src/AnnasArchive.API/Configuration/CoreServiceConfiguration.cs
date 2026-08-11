@@ -99,6 +99,7 @@ public static class CoreServiceConfiguration
         services.AddSingleton<Reader2.Domain.IBookRegistry, Reader2.Domain.BookRegistry>();
         services.AddSingleton<Reader2.Epub.BookIngestor>();
         services.AddSingleton<Reader2.Domain.IReaderContextResolver, Reader2.Domain.ReaderContextResolver>();
+        services.AddSingleton<Reader2.Story.CastOverrideStore>();
         services.AddSingleton<Reader2.Story.StoryModelService>();
 
         // Book types. Adding one is this line and its class — nothing else in the

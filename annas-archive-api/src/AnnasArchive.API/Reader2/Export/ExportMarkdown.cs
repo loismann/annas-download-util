@@ -2,6 +2,7 @@ using System.Text;
 using AnnasArchive.API.Reader2.Ai;
 using AnnasArchive.API.Reader2.Domain;
 using AnnasArchive.API.Reader2.Epub;
+using AnnasArchive.API.Reader2.Lenses;
 using AnnasArchive.API.Reader2.Storage;
 
 namespace AnnasArchive.API.Reader2.Export;
@@ -19,11 +20,10 @@ public static class ExportMarkdown
     public static async Task<string> BuildAsync(
         ReaderContext ctx, ChapterIndex index, IArtifactStore artifacts, CancellationToken ct)
     {
-        var versions = new ArtifactVersions(Prose.SchemaVersion, ctx.Lens.PromptVersion);
-
-        var summaries = await ByChapterAsync(ArtifactKind.ChapterSummary);
-        var explanations = await ByChapterAsync(ArtifactKind.ExplainSimply);
-        var sections = await ByChapterAsync(ArtifactKind.SectionSummary, keepAll: true);
+        var summaries = await ByChapterAsync(ArtifactKind.ChapterSummary, CallKind.ChapterSummary);
+        var explanations = await ByChapterAsync(ArtifactKind.ExplainSimply, CallKind.ExplainSimply);
+        var sections = await ByChapterAsync(
+            ArtifactKind.SectionSummary, CallKind.SectionSummary, keepAll: true);
 
         var doc = new StringBuilder()
             .AppendLine($"# {index.Title}")
@@ -58,10 +58,15 @@ public static class ExportMarkdown
                     yield return ($"Section {i + 1}", perSection[i]);
         }
 
-        async Task<Dictionary<int, List<string>>> ByChapterAsync(ArtifactKind kind, bool keepAll = false)
+        // The version is per prompt, so each kind is read under its own rather than
+        // under one shared number — which is what used to make an edit to any prompt
+        // drop every other kind out of the export.
+        async Task<Dictionary<int, List<string>>> ByChapterAsync(
+            ArtifactKind kind, CallKind wording, bool keepAll = false)
         {
             var rows = await artifacts.ListAsync<Prose>(
-                new ArtifactQuery(ctx.Ref, ctx.Lens.Key, kind), versions, ct);
+                new ArtifactQuery(ctx.Ref, ctx.Lens.Key, kind),
+                new ArtifactVersions(Prose.SchemaVersion, ctx.Lens.Versions[wording]), ct);
 
             var byChapter = new Dictionary<int, List<string>>();
 

@@ -1,0 +1,59 @@
+# Components that still fetch their own data — the allowlist.
+#
+# The rule: a component renders and decides; a store or an API service fetches.
+# Reader II has been held to this since it was built, which is why none of its
+# components appear below. Everything else was never checked, so 39 of the app's
+# 95 components inject HttpClient or an *ApiService directly.
+#
+#   - A component NOT listed here may not inject HttpClient or an *ApiService.
+#     That is the half that matters: the number can no longer grow.
+#   - When you move one onto a store, DELETE its line. An entry that no longer
+#     names a fetching component fails the build, so the list cannot rot.
+#   - There is no way to "temporarily" add a line without it showing up in review.
+#
+# Lines marked [raw] inject HttpClient itself rather than a typed API service.
+# Those are the sharper violation — the component owns the URL, the headers and
+# the error contract — and they are the ones worth moving first.
+#
+# Detection ignores comments, so naming an API service in a doc comment is fine.
+#
+# Format: <repo-relative path>, optionally followed by a TAB and [raw].
+
+annas-archive-app/src/app/app.component.ts	[raw]
+annas-archive-app/src/app/audiobook-search/audiobook-release-picker/audiobook-release-picker.component.ts
+annas-archive-app/src/app/audiobook-search/audiobook-request-confirm-dialog/audiobook-request-confirm-dialog.component.ts
+annas-archive-app/src/app/audiobook-search/audiobook-search.component.ts
+annas-archive-app/src/app/audiobook-search/audiobook-series-request-dialog/audiobook-series-request-dialog.component.ts
+annas-archive-app/src/app/audiobooks/audiobooks.component.ts
+annas-archive-app/src/app/book-search/book-search.component.ts	[raw]
+annas-archive-app/src/app/components/audiobook-player-dialog/audiobook-player-dialog.component.ts
+annas-archive-app/src/app/components/book-edit-dialog/book-edit-dialog.component.ts
+annas-archive-app/src/app/components/bulk-import-movies-dialog/bulk-import-movies-dialog.component.ts
+annas-archive-app/src/app/components/date-night-countdown/date-night-countdown.component.ts
+annas-archive-app/src/app/components/date-night-flyer/date-night-flyer.component.ts
+annas-archive-app/src/app/components/date-night-schedule-modal/date-night-schedule-modal.component.ts
+annas-archive-app/src/app/components/file-upload-dialog/file-upload-dialog.component.ts
+annas-archive-app/src/app/components/library-review-modal/library-review-modal.component.ts
+annas-archive-app/src/app/components/media-edit-dialog/media-edit-dialog.component.ts
+annas-archive-app/src/app/components/pdf-viewer-dialog/pdf-viewer-dialog.component.ts
+annas-archive-app/src/app/components/search-form/search-form.component.ts
+annas-archive-app/src/app/components/shared/cover-picker/cover-picker.component.ts
+annas-archive-app/src/app/components/storage-footer/storage-footer.component.ts
+annas-archive-app/src/app/components/video-edit-dialog/video-edit-dialog.component.ts
+annas-archive-app/src/app/components/vpn-toggle/vpn-toggle.component.ts
+annas-archive-app/src/app/date-night/date-night-pool.component.ts
+annas-archive-app/src/app/date-night/date-night.component.ts
+annas-archive-app/src/app/gaming-control/gaming-control.component.ts
+annas-archive-app/src/app/library/library.component.ts
+annas-archive-app/src/app/media-library/media-library.component.ts
+annas-archive-app/src/app/media-library/series-detail/series-detail.component.ts
+annas-archive-app/src/app/media-search/media-search.component.ts
+annas-archive-app/src/app/photo-prints/photo-prints.component.ts
+annas-archive-app/src/app/quiz/quiz.component.ts
+annas-archive-app/src/app/related-books-modal/related-books-modal.component.ts
+annas-archive-app/src/app/spotifinator/connection-panel/connection-panel.component.ts
+annas-archive-app/src/app/spotifinator/draft-panel/draft-panel.component.ts
+annas-archive-app/src/app/spotifinator/library-pane/library-pane.component.ts
+annas-archive-app/src/app/spotifinator/plan-review-dialog/plan-review-dialog.component.ts
+annas-archive-app/src/app/spotifinator/spotifinator.component.ts
+annas-archive-app/src/app/video-library/video-library.component.ts

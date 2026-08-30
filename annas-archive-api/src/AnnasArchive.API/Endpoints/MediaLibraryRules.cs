@@ -12,8 +12,14 @@ namespace AnnasArchive.API.Endpoints;
 /// </summary>
 public static class MediaLibraryRules
 {
+    /// <summary>
+    /// The household, from the one place that defines it. This was a second
+    /// hand-written copy of <c>{ "Paul", "Mom", "Dad" }</c>, and the audiobook
+    /// endpoints carried a third — so adding a member changed one list and left
+    /// two edits silently rejecting them.
+    /// </summary>
     private static readonly HashSet<string> ValidOwners =
-        new(StringComparer.OrdinalIgnoreCase) { "Paul", "Mom", "Dad" };
+        new(Constants.HouseholdOwners.Names, StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// Points every segment URI in a Jellyfin HLS playlist back at this API, carrying an

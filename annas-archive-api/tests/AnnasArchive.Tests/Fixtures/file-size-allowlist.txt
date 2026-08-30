@@ -1,0 +1,105 @@
+# File size allowlist — the ratchet.
+#
+# Every file listed here is over its limit (300 lines for a backend .cs, 200 for
+# a frontend .component.ts) and is allowed to stay that way at EXACTLY the
+# recorded size.
+#
+#   - It grows  -> the build fails. This is the point.
+#   - It shrinks -> the build also fails, asking you to record the new number.
+#     That is what makes the list ratchet downward instead of drifting, and what
+#     puts every improvement in the diff where a reviewer sees it.
+#   - A file NOT listed here may not cross its limit at all.
+#
+# Nothing here is a defect. Size is a tripwire, not a verdict — see
+# DOCS/ASSERTIONS_AND_ASSUMPTIONS.md §1.4, which found that size ranks almost
+# opposite to movability. Crossing the line means someone should look, not that
+# the file is wrong.
+#
+# Regenerate the counts (from the repo root):
+#
+#   { find annas-archive-api/src -name '*.cs' -not -path '*/obj/*' -not -path '*/bin/*'; \
+#     find annas-archive-app/src/app -name '*.component.ts' -not -name '*.spec.ts'; } \
+#   | while read -r f; do n=$(wc -l < "$f" | tr -d ' '); \
+#       case "$f" in *.cs) lim=300;; *) lim=200;; esac; \
+#       [ "$n" -gt "$lim" ] && printf '%s\t%s\n' "$n" "$f"; done | LC_ALL=C sort -t$'\t' -k2,2
+#
+# Format: <lines><TAB><repo-relative path>. Blank lines and # comments ignored.
+
+384	annas-archive-api/src/AnnasArchive.API/Configuration/CoreServiceConfiguration.cs
+324	annas-archive-api/src/AnnasArchive.API/Configuration/HttpClientConfiguration.cs
+400	annas-archive-api/src/AnnasArchive.API/Configuration/MiddlewareExtensions.cs
+324	annas-archive-api/src/AnnasArchive.API/Configuration/ServiceConfiguration.cs
+369	annas-archive-api/src/AnnasArchive.API/Data/AppDatabase.cs
+419	annas-archive-api/src/AnnasArchive.API/Data/PhotoPrintOrderStore.cs
+327	annas-archive-api/src/AnnasArchive.API/Endpoints/AiBookSearchEndpoints.cs
+528	annas-archive-api/src/AnnasArchive.API/Endpoints/AnnaDownloadEndpoints.cs
+455	annas-archive-api/src/AnnasArchive.API/Endpoints/AudiobookLibraryEndpoints.cs
+597	annas-archive-api/src/AnnasArchive.API/Endpoints/AudiobookRequestEndpoints.cs
+376	annas-archive-api/src/AnnasArchive.API/Endpoints/BookSearchEndpoints.cs
+749	annas-archive-api/src/AnnasArchive.API/Endpoints/DateNightEndpoints.cs
+389	annas-archive-api/src/AnnasArchive.API/Endpoints/LibraryCoverEndpoints.cs
+332	annas-archive-api/src/AnnasArchive.API/Endpoints/LibraryMetadataEndpoints.cs
+790	annas-archive-api/src/AnnasArchive.API/Endpoints/MediaLibraryEndpoints.cs
+351	annas-archive-api/src/AnnasArchive.API/Endpoints/MediaRequestEndpoints.cs
+680	annas-archive-api/src/AnnasArchive.API/Endpoints/SpotifyEndpoints.cs
+407	annas-archive-api/src/AnnasArchive.API/Helpers/AnnaDownloadHelpers.cs
+385	annas-archive-api/src/AnnasArchive.API/Helpers/BookTitleExtractionHelpers.cs
+445	annas-archive-api/src/AnnasArchive.API/Models/ListenarrModels.cs
+886	annas-archive-api/src/AnnasArchive.API/Services/AudiobookEnrichmentService.cs
+780	annas-archive-api/src/AnnasArchive.API/Services/AudiobookRequestService.cs
+339	annas-archive-api/src/AnnasArchive.API/Services/BookDiscovery/BookDiscoveryResponses.cs
+348	annas-archive-api/src/AnnasArchive.API/Services/CloudflareBypassService.cs
+392	annas-archive-api/src/AnnasArchive.API/Services/DateNightAvailabilityService.cs
+1396	annas-archive-api/src/AnnasArchive.API/Services/DateNightCycleService.cs
+683	annas-archive-api/src/AnnasArchive.API/Services/JellyfinService.cs
+321	annas-archive-api/src/AnnasArchive.API/Services/Library/DuplicateDetectionService.cs
+301	annas-archive-api/src/AnnasArchive.API/Services/Library/MetadataExtractionService.cs
+440	annas-archive-api/src/AnnasArchive.API/Services/LibraryIndexCache.cs
+755	annas-archive-api/src/AnnasArchive.API/Services/LibraryWatcherService.cs
+326	annas-archive-api/src/AnnasArchive.API/Services/ListenarrService.cs
+313	annas-archive-api/src/AnnasArchive.API/Services/PhotoPrint/ImmichService.cs
+817	annas-archive-api/src/AnnasArchive.API/Services/Spotify/SpotifyConversationService.cs
+344	annas-archive-api/src/AnnasArchive.API/Services/Spotify/SpotifyDiscoveryService.cs
+420	annas-archive-api/src/AnnasArchive.API/Services/Spotify/SpotifyInventoryStore.cs
+742	annas-archive-api/src/AnnasArchive.API/Services/Spotify/SpotifyPlanBuilder.cs
+650	annas-archive-api/src/AnnasArchive.API/Services/Spotify/SpotifyPlanExecutor.cs
+325	annas-archive-api/src/AnnasArchive.API/Services/Spotify/SpotifyPlanService.cs
+638	annas-archive-api/src/AnnasArchive.API/Services/SpotifyAuthorizationService.cs
+1004	annas-archive-api/src/AnnasArchive.API/Services/SpotifyService.cs
+347	annas-archive-api/src/AnnasArchive.Core/Helpers/LruCache.cs
+312	annas-archive-api/src/AnnasArchive.Core/Services/EbookCoverService.cs
+331	annas-archive-api/src/AnnasArchive.Core/Services/GoogleBooksService.cs
+584	annas-archive-api/src/AnnasArchive.Core/Services/LibGenService.cs
+517	annas-archive-api/src/AnnasArchive.Core/Services/OpenLibraryService.cs
+
+681	annas-archive-app/src/app/app.component.ts
+591	annas-archive-app/src/app/audiobook-search/audiobook-search.component.ts
+642	annas-archive-app/src/app/audiobooks/audiobooks.component.ts
+868	annas-archive-app/src/app/book-search/book-search.component.ts
+301	annas-archive-app/src/app/components/audiobook-player-dialog/audiobook-player-dialog.component.ts
+237	annas-archive-app/src/app/components/book-card/book-card.component.ts
+625	annas-archive-app/src/app/components/book-edit-dialog/book-edit-dialog.component.ts
+372	annas-archive-app/src/app/components/bulk-import-movies-dialog/bulk-import-movies-dialog.component.ts
+267	annas-archive-app/src/app/components/date-night-flyer/date-night-flyer.component.ts
+210	annas-archive-app/src/app/components/date-night-poster/date-night-poster.component.ts
+208	annas-archive-app/src/app/components/date-night-schedule-form/date-night-schedule-form.component.ts
+304	annas-archive-app/src/app/components/jellyfin-player-modal/jellyfin-player-modal.component.ts
+249	annas-archive-app/src/app/components/library-review-modal/library-review-modal.component.ts
+247	annas-archive-app/src/app/components/media-edit-dialog/media-edit-dialog.component.ts
+218	annas-archive-app/src/app/components/release-picker-dialog/release-picker-dialog.component.ts
+304	annas-archive-app/src/app/components/shared/cover-picker/cover-picker.component.ts
+255	annas-archive-app/src/app/components/shared/media-tile/media-tile.component.ts
+359	annas-archive-app/src/app/components/sidebar-nav/sidebar-nav.component.ts
+280	annas-archive-app/src/app/components/video-edit-dialog/video-edit-dialog.component.ts
+560	annas-archive-app/src/app/date-night/date-night-pool.component.ts
+975	annas-archive-app/src/app/date-night/date-night.component.ts
+411	annas-archive-app/src/app/gaming-control/gaming-control.component.ts
+1133	annas-archive-app/src/app/library/library.component.ts
+729	annas-archive-app/src/app/media-library/media-library.component.ts
+262	annas-archive-app/src/app/media-library/series-detail/series-detail.component.ts
+366	annas-archive-app/src/app/media-search/media-search.component.ts
+310	annas-archive-app/src/app/photo-prints/photo-prints.component.ts
+566	annas-archive-app/src/app/quiz/quiz.component.ts
+676	annas-archive-app/src/app/related-books-modal/related-books-modal.component.ts
+693	annas-archive-app/src/app/spotifinator/spotifinator.component.ts
+588	annas-archive-app/src/app/video-library/video-library.component.ts

@@ -31,8 +31,6 @@ public record SetAudiobookCoverRequest(string CoverUrl);
 /// </summary>
 public static class AudiobookLibraryEndpoints
 {
-    private static readonly HashSet<string> ValidOwners = new(StringComparer.OrdinalIgnoreCase) { "Paul", "Mom", "Dad" };
-
     /// <summary>Caps concurrent cover fetches against Audiobookshelf. Covers are
     /// lazy-loaded client-side, but a fast scroll can still burst dozens of
     /// requests at once and an ABS instance on NAS hardware folds under that —
@@ -103,7 +101,7 @@ public static class AudiobookLibraryEndpoints
             ApplyMetadata(items, metadata);
             return Results.Json(items);
         }
-        catch (Exception ex) when (IsUpstreamFailure(ex))
+        catch (Exception ex) when (AudiobookLibraryRules.IsUpstreamFailure(ex))
         {
             Log.Warning(ex, "[Audiobooks] Audiobookshelf catalog fetch failed");
             return Results.Json(new { error = "Audiobookshelf is unavailable" }, statusCode: StatusCodes.Status502BadGateway);
@@ -112,7 +110,7 @@ public static class AudiobookLibraryEndpoints
 
     private static async Task<IResult> HandleGetItem([FromRoute] string id, IAudiobookshelfService abs, IMediaMetadataService metadata)
     {
-        var safeId = SanitizeId(id);
+        var safeId = AudiobookLibraryRules.SanitizeId(id);
         if (safeId is null) return ApiResponse.BadRequest("Invalid id.");
 
         try
@@ -124,7 +122,7 @@ public static class AudiobookLibraryEndpoints
             ApplyMetadata(items, metadata);
             return Results.Json(items[0]);
         }
-        catch (Exception ex) when (IsUpstreamFailure(ex))
+        catch (Exception ex) when (AudiobookLibraryRules.IsUpstreamFailure(ex))
         {
             Log.Warning(ex, "[Audiobooks] Audiobookshelf item fetch failed for {Id}", safeId);
             return Results.Json(new { error = "Audiobookshelf is unavailable" }, statusCode: StatusCodes.Status502BadGateway);
@@ -133,14 +131,14 @@ public static class AudiobookLibraryEndpoints
 
     private static async Task<IResult> HandleDelete([FromRoute] string id, IAudiobookshelfService abs, IMediaMetadataService metadata)
     {
-        var safeId = SanitizeId(id);
+        var safeId = AudiobookLibraryRules.SanitizeId(id);
         if (safeId is null) return ApiResponse.BadRequest("Invalid id.");
 
         try
         {
             await abs.DeleteItemAsync(safeId);
         }
-        catch (Exception ex) when (IsUpstreamFailure(ex))
+        catch (Exception ex) when (AudiobookLibraryRules.IsUpstreamFailure(ex))
         {
             Log.Warning(ex, "[Audiobooks] Audiobookshelf delete failed for {Id}", safeId);
             return Results.Json(new { error = "Audiobookshelf rejected the delete request" }, statusCode: StatusCodes.Status502BadGateway);
@@ -163,13 +161,13 @@ public static class AudiobookLibraryEndpoints
 
     private static IResult HandleSetMetadata([FromRoute] string id, [FromBody] SetMediaMetadataRequest request, IMediaMetadataService metadata)
     {
-        var safeId = SanitizeId(id);
+        var safeId = AudiobookLibraryRules.SanitizeId(id);
         if (safeId is null) return ApiResponse.BadRequest("Invalid id.");
 
         var titleValidation = ValidationHelpers.ValidateStringLength(request.Title, "title", 500);
         if (titleValidation != null) return titleValidation;
 
-        var validated = ValidateMetadata(request);
+        var validated = AudiobookLibraryRules.ValidateMetadata(request);
         if (validated is null)
             return ApiResponse.BadRequest("owners may only contain Paul, Mom, Dad");
 
@@ -190,7 +188,7 @@ public static class AudiobookLibraryEndpoints
     private static IResult HandleSetFavorite(
         [FromRoute] string id, [FromBody] SetMediaFavoriteRequest request, HttpContext context, IMediaMetadataService metadata)
     {
-        var safeId = SanitizeId(id);
+        var safeId = AudiobookLibraryRules.SanitizeId(id);
         if (safeId is null) return ApiResponse.BadRequest("Invalid id.");
 
         // Who's favoriting is resolved from the authenticated session, not a client-supplied
@@ -215,7 +213,7 @@ public static class AudiobookLibraryEndpoints
     private static IResult HandleSetProgress(
         [FromRoute] string id, [FromBody] SetAudiobookProgressRequest request, HttpContext context, IMediaMetadataService metadata)
     {
-        var safeId = SanitizeId(id);
+        var safeId = AudiobookLibraryRules.SanitizeId(id);
         if (safeId is null) return ApiResponse.BadRequest("Invalid id.");
         if (request.PositionSeconds < 0) return ApiResponse.BadRequest("positionSeconds must be >= 0");
 
@@ -237,7 +235,7 @@ public static class AudiobookLibraryEndpoints
 
     private static async Task HandleGetCover(HttpContext context, [FromRoute] string id, IAudiobookshelfService abs, IMediaMetadataService metadata)
     {
-        var safeId = SanitizeId(id);
+        var safeId = AudiobookLibraryRules.SanitizeId(id);
         if (safeId is null)
         {
             context.Response.StatusCode = 400;
@@ -251,7 +249,7 @@ public static class AudiobookLibraryEndpoints
         if (overridePath is not null)
         {
             context.Response.Headers.CacheControl = "private, max-age=86400";
-            context.Response.ContentType = ContentTypeForCoverFile(overridePath);
+            context.Response.ContentType = AudiobookLibraryRules.ContentTypeForCoverFile(overridePath);
             await context.Response.SendFileAsync(overridePath, context.RequestAborted);
             return;
         }
@@ -277,7 +275,7 @@ public static class AudiobookLibraryEndpoints
         {
             // Browser gave up on the image (scrolled away, page navigation) — routine, not an error.
         }
-        catch (Exception ex) when (IsUpstreamFailure(ex))
+        catch (Exception ex) when (AudiobookLibraryRules.IsUpstreamFailure(ex))
         {
             Log.Warning(ex, "[Audiobooks] Cover proxy failed for {Id}", safeId);
             if (!context.Response.HasStarted)
@@ -296,7 +294,7 @@ public static class AudiobookLibraryEndpoints
         IHttpClientFactory httpFactory,
         IMediaMetadataService metadata)
     {
-        var safeId = SanitizeId(id);
+        var safeId = AudiobookLibraryRules.SanitizeId(id);
         if (safeId is null) return ApiResponse.BadRequest("Invalid id.");
 
         if (request is null || string.IsNullOrWhiteSpace(request.CoverUrl))
@@ -367,20 +365,11 @@ public static class AudiobookLibraryEndpoints
         return File.Exists(fullPath) ? fullPath : null;
     }
 
-    private static string ContentTypeForCoverFile(string path) =>
-        Path.GetExtension(path).ToLowerInvariant() switch
-        {
-            ".jpg" or ".jpeg" => "image/jpeg",
-            ".png" => "image/png",
-            ".gif" => "image/gif",
-            ".webp" => "image/webp",
-            _ => "application/octet-stream"
-        };
 
     private static async Task HandleStream(HttpContext context, [FromRoute] string id, [FromRoute] string ino, IAudiobookshelfService abs)
     {
-        var safeId = SanitizeId(id);
-        var safeIno = SanitizeId(ino);
+        var safeId = AudiobookLibraryRules.SanitizeId(id);
+        var safeIno = AudiobookLibraryRules.SanitizeId(ino);
         if (safeId is null || safeIno is null)
         {
             context.Response.StatusCode = 400;
@@ -398,7 +387,7 @@ public static class AudiobookLibraryEndpoints
             // Player paused/seeked/closed mid-stream — the browser aborts the
             // in-flight range request every time. Routine, not an error.
         }
-        catch (Exception ex) when (IsUpstreamFailure(ex))
+        catch (Exception ex) when (AudiobookLibraryRules.IsUpstreamFailure(ex))
         {
             Log.Warning(ex, "[Audiobooks] Stream proxy failed for {Id}/{Ino}", safeId, safeIno);
             if (!context.Response.HasStarted)
@@ -461,53 +450,6 @@ public static class AudiobookLibraryEndpoints
         }
     }
 
-    private static MediaItemMetadata? ValidateMetadata(SetMediaMetadataRequest request)
-    {
-        var owners = (request.Owners ?? new List<string>())
-            .Select(o => o.Trim())
-            .Where(o => o.Length > 0)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
 
-        if (owners.Any(o => !ValidOwners.Contains(o)))
-            return null;
 
-        var genres = (request.Genres ?? new List<string>())
-            .Select(g => g.Trim())
-            .Where(g => g.Length > 0)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-        // null/empty means "not part of this save" — MediaMetadataService.Set() merges
-        // it forward from whatever title override (if any) already existed, rather than
-        // clearing it. There's no way to explicitly revert to Audiobookshelf's own title
-        // once overridden; not needed yet, same tradeoff as the cover override.
-        var title = request.Title?.Trim();
-
-        return new MediaItemMetadata(owners, genres, Title: string.IsNullOrEmpty(title) ? null : title);
-    }
-
-    /// <summary>True for the failure shapes an unreachable/slow Audiobookshelf
-    /// produces through the resilience pipeline: connection errors, the
-    /// pipeline's per-attempt timeout (TimeoutRejectedException), and
-    /// HttpClient's own timeout (TaskCanceledException). These become a
-    /// friendly 502 rather than an unhandled 500.</summary>
-    private static bool IsUpstreamFailure(Exception ex) =>
-        ex is HttpRequestException
-        or Polly.Timeout.TimeoutRejectedException
-        or TaskCanceledException;
-
-    /// <summary>Audiobookshelf ids are UUID-shaped strings — reject anything
-    /// containing path-traversal or separator characters before it's used to
-    /// build an outbound Audiobookshelf request or a MediaMetadataService key,
-    /// same defensive intent as the filename traversal guards elsewhere in
-    /// this codebase, adapted for an id forwarded into an upstream API call
-    /// rather than a filesystem path.</summary>
-    private static string? SanitizeId(string id)
-    {
-        if (string.IsNullOrWhiteSpace(id)) return null;
-        if (id.Any(c => c is '/' or '\\' or ':') || id.Contains(".."))
-            return null;
-        return id;
-    }
 }

@@ -116,15 +116,10 @@ public class ArchitectureTests
             .Should().BeEmpty("the picker renders whatever GET /lenses returns");
     }
 
-    [Fact]
-    public void No_reader_two_component_exceeds_two_hundred_lines()
-    {
-        FrontendSources
-            .Where(s => s.File.EndsWith(".component.ts"))
-            .Where(s => s.Text.Split('\n').Length > 200)
-            .Select(s => s.File)
-            .Should().BeEmpty();
-    }
+    // The 200-line component rule moved to Architecture/FileSizeRatchetTests.cs,
+    // which applies it to every component in the app rather than to Reader II's.
+    // Reader II is on no allowlist, so it is held to exactly what it was held to
+    // here; the rule simply covers the other 90% of the frontend now.
 
     /// <summary>
     /// Components render and decide; stores fetch. No component talks to the
@@ -296,16 +291,10 @@ public class ArchitectureTests
             .Should().ContainSingle().Which.Should().Be("ILibraryBookSource.cs");
     }
 
-    [Fact]
-    public void No_reader_two_file_exceeds_three_hundred_lines()
-    {
-        var tooLong = SourceFiles
-            .Select(f => (Name: Path.GetFileName(f), Lines: File.ReadAllLines(f).Length))
-            .Where(f => f.Lines > 300)
-            .Select(f => $"{f.Name} ({f.Lines})");
-
-        tooLong.Should().BeEmpty();
-    }
+    // The 300-line rule moved to Architecture/FileSizeRatchetTests.cs, which
+    // applies it to the whole backend. Same limit, same effect on Reader II —
+    // it is on no allowlist — but it now sees the 46 files outside Reader2/ that
+    // were the reason the rule existed in the first place.
 
     /// <summary>
     /// Nothing generates on open, on scroll, or ahead of the reader. A route that

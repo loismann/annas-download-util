@@ -32,8 +32,18 @@ public abstract class MetaIndexCache<TDto> : IHostedService, IDisposable where T
         InitializeWatcher();
     }
 
-    /// <summary>Builds the full index from disk. baseUrl is null during startup warm-up.</summary>
-    protected abstract List<TDto> BuildIndex(string? baseUrl);
+    /// <summary>
+    /// Builds the full index from disk, with asset URLs left <b>relative</b>.
+    ///
+    /// <para>Deliberately takes no base URL. It used to take the calling request's,
+    /// which meant the first request after an invalidation baked its own hostname
+    /// into the shared cache — and <see cref="NormalizeUrls"/> returns anything
+    /// already absolute untouched, so every other caller was then served covers
+    /// pointing at that host until the next rebuild. Only the startup warm-up was
+    /// safe, because it passed null. Removing the parameter makes the whole class
+    /// of bug unrepresentable rather than merely absent.</para>
+    /// </summary>
+    protected abstract List<TDto> BuildIndex();
 
     /// <summary>Rewrites relative asset URLs (covers/thumbnails) against the request's base URL.</summary>
     protected abstract List<TDto> NormalizeUrls(List<TDto> items, string baseUrl);
@@ -56,7 +66,7 @@ public abstract class MetaIndexCache<TDto> : IHostedService, IDisposable where T
                 Log.Information("[{Name}] Warming cache on startup...", _name);
                 var sw = System.Diagnostics.Stopwatch.StartNew();
 
-                var items = BuildIndex(baseUrl: null);
+                var items = BuildIndex();
 
                 lock (_lock)
                 {
@@ -162,10 +172,12 @@ public abstract class MetaIndexCache<TDto> : IHostedService, IDisposable where T
     {
         lock (_lock)
         {
-            // Double-check after acquiring lock
+            // Double-check after acquiring lock. Normalised on the way out, the
+            // same as the fast path above — returning the raw cache here handed the
+            // loser of a cold-cache race a set of relative, unusable URLs.
             if (_cached != null)
             {
-                return _cached;
+                return NormalizeUrls(_cached, baseUrl);
             }
 
             if (_isRebuilding)
@@ -182,7 +194,7 @@ public abstract class MetaIndexCache<TDto> : IHostedService, IDisposable where T
 
         try
         {
-            var items = BuildIndex(baseUrl);
+            var items = BuildIndex();
 
             lock (_lock)
             {
@@ -195,7 +207,8 @@ public abstract class MetaIndexCache<TDto> : IHostedService, IDisposable where T
             Log.Information("[{Name}] Cache rebuilt in {ElapsedMs}ms with {Count} items",
                 _name, sw.ElapsedMilliseconds, items.Count);
 
-            return items;
+            // The cache is host-agnostic; the host is applied per request.
+            return NormalizeUrls(items, baseUrl);
         }
         catch (Exception ex)
         {
@@ -230,6 +243,33 @@ public abstract class MetaIndexCache<TDto> : IHostedService, IDisposable where T
                 _cached.Add(updated);
                 _cached = SortIndex(_cached);
             }
+        }
+    }
+
+    /// <summary>
+    /// Applies <paramref name="change"/> to the one cached item with this key and
+    /// leaves the rest of the index alone. Returns <c>false</c> if the cache is cold
+    /// or does not hold the key, so the caller can decide whether that is a harmless
+    /// no-op or needs an <see cref="InvalidateCache"/> to stop the index and the
+    /// item's store disagreeing.
+    ///
+    /// <para>The change runs against the <b>stored</b> item, whose asset URLs are
+    /// relative. Taking an item back out of <see cref="GetItems"/> and passing it to
+    /// <see cref="UpdateItem"/> instead would write one request's hostname into the
+    /// shared cache — the bug <see cref="BuildIndex"/> was reshaped to prevent.</para>
+    /// </summary>
+    protected bool TryUpdateItem(string key, Func<TDto, TDto> change)
+    {
+        lock (_lock)
+        {
+            var index = _cached?.FindIndex(item =>
+                string.Equals(KeyOf(item), key, StringComparison.OrdinalIgnoreCase)) ?? -1;
+
+            if (index < 0)
+                return false;
+
+            _cached![index] = change(_cached[index]);
+            return true;
         }
     }
 

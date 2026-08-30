@@ -109,7 +109,7 @@ public class VideoIndexCache : MetaIndexCache<VideoDto>
         }).ToList();
     }
 
-    protected override List<VideoDto> BuildIndex(string? baseUrl)
+    protected override List<VideoDto> BuildIndex()
     {
         var videoRoot = VideoHelpers.ResolveVideoRoot();
         if (!Directory.Exists(videoRoot))
@@ -132,8 +132,8 @@ public class VideoIndexCache : MetaIndexCache<VideoDto>
                         return;
 
                     metaLookup.TryAdd(meta.FileName, true);
-                    var thumbnailUrl = VideoHelpers.NormalizeThumbnailUrl(meta.ThumbnailUrl, baseUrl ?? "")
-                        ?? VideoHelpers.FindLocalThumbnailUrl(videoRoot, meta.FileName, baseUrl ?? "");
+                    var thumbnailUrl = VideoHelpers.NormalizeThumbnailUrl(meta.ThumbnailUrl, "")
+                        ?? VideoHelpers.FindLocalThumbnailUrl(videoRoot, meta.FileName, "");
 
                     videos.Add(new VideoDto(
                         meta.Title ?? Path.GetFileNameWithoutExtension(meta.FileName),
@@ -175,7 +175,7 @@ public class VideoIndexCache : MetaIndexCache<VideoDto>
                     continue;
 
                 var info = new FileInfo(filePath);
-                var thumbnailUrl = VideoHelpers.FindLocalThumbnailUrl(videoRoot, fileName, baseUrl ?? "");
+                var thumbnailUrl = VideoHelpers.FindLocalThumbnailUrl(videoRoot, fileName, "");
 
                 videos.Add(new VideoDto(
                     Path.GetFileNameWithoutExtension(fileName),

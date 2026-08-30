@@ -30,14 +30,14 @@ public class LibraryIndexCache : MetaIndexCache<LibraryBookDto>
     public List<LibraryBookDto> GetBooks(string baseUrl) => GetItems(baseUrl);
 
     /// <summary>
-    /// Updates a single book in the cache without full rebuild.
+    /// Incremental maintenance, so one changed book does not cost a full rebuild.
+    /// <see cref="TryUpdateBook"/> edits the stored (relative-URL) row in place and
+    /// reports whether it found one; see <see cref="MetaIndexCache{TDto}"/>.
     /// </summary>
     public void UpdateBook(LibraryBookDto updatedBook) => UpdateItem(updatedBook);
-
-    /// <summary>
-    /// Removes a book from the cache without full rebuild.
-    /// </summary>
     public void RemoveBook(string fileName) => RemoveItem(fileName);
+    public bool TryUpdateBook(string fileName, Func<LibraryBookDto, LibraryBookDto> change) =>
+        TryUpdateItem(fileName, change);
 
     protected override string KeyOf(LibraryBookDto item) => item.FileName;
 
@@ -319,7 +319,7 @@ public class LibraryIndexCache : MetaIndexCache<LibraryBookDto>
         }).ToList();
     }
 
-    protected override List<LibraryBookDto> BuildIndex(string? baseUrl)
+    protected override List<LibraryBookDto> BuildIndex()
     {
         var libraryRoot = LibraryHelpers.ResolveLibraryRoot();
         if (!Directory.Exists(libraryRoot))
@@ -351,8 +351,8 @@ public class LibraryIndexCache : MetaIndexCache<LibraryBookDto>
                     metaLookup.TryAdd(meta.FileName, true);
                     // An absent base URL means "emit relative", which is what both
                     // helpers already do with an empty string — see NormalizeUrls.
-                    var coverUrl = LibraryHelpers.NormalizeLibraryCoverUrl(meta.CoverUrl, baseUrl ?? string.Empty)
-                        ?? LibraryHelpers.FindLocalCoverUrl(libraryRoot, meta.FileName, baseUrl ?? string.Empty);
+                    var coverUrl = LibraryHelpers.NormalizeLibraryCoverUrl(meta.CoverUrl, string.Empty)
+                        ?? LibraryHelpers.FindLocalCoverUrl(libraryRoot, meta.FileName, string.Empty);
 
                     var p = overlays.GetValueOrDefault(meta.FileName);
                     var genres = meta.Genres ?? Array.Empty<string>();

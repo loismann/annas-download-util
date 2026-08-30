@@ -412,32 +412,14 @@ public static class DateNightEndpoints
 
     private const string ImpersonationHeader = "X-Date-Night-As";
 
-    /// <summary>Admin-only "view as" override so Paul can click through the real
-    /// Mom/Dad voting/scheduling UI from his own logged-in session instead of the
-    /// admin bypass panel. Only takes effect when the *real*, JWT-verified identity
-    /// is Paul — Mom/Dad cannot spoof each other by sending this header themselves,
-    /// since it never overrides an already-resolved Mom/Dad identity.
-    ///
-    /// Impersonating doubles as "this is a dry run": <c>IsTest</c> is true exactly
-    /// when the override applied, which callers use to route every action at the
-    /// completely separate test cycle/lists instead of the real household state —
-    /// see DateNightCycleService's isTest-parametrized methods. Real Mom/Dad sessions
-    /// can never produce IsTest=true.</summary>
-    private static (string? Person, bool IsTest) ResolveDateNightContext(HttpContext context)
-    {
-        var real = LibraryHelpers.ResolveUserDisplayName(context);
-        if (!string.Equals(real, "Paul", StringComparison.OrdinalIgnoreCase))
-            return (real, false);
-
-        if (context.Request.Headers.TryGetValue(ImpersonationHeader, out var impersonate) &&
-            (string.Equals(impersonate, "Mom", StringComparison.OrdinalIgnoreCase) ||
-             string.Equals(impersonate, "Dad", StringComparison.OrdinalIgnoreCase)))
-        {
-            return (impersonate.ToString(), true);
-        }
-
-        return (real, false);
-    }
+    /// <summary>Reads the two inputs off the request; the rule itself is
+    /// <see cref="DateNightPolicy.ResolveViewer"/>.</summary>
+    private static (string? Person, bool IsTest) ResolveDateNightContext(HttpContext context) =>
+        DateNightPolicy.ResolveViewer(
+            LibraryHelpers.ResolveUserDisplayName(context),
+            context.Request.Headers.TryGetValue(ImpersonationHeader, out var header)
+                ? header.ToString()
+                : null);
 
     private static async Task<IResult> HandleGetCycle(
         HttpContext context, DateNightAvailabilityService availability, DateNightCycleService cycles, DateNightSummaryService summaries)

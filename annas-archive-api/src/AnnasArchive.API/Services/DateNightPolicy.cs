@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using AnnasArchive.API.Constants;
 
 namespace AnnasArchive.API.Services;
@@ -87,6 +88,37 @@ public static class DateNightPolicy
             !string.Equals(n, "Paul", StringComparison.OrdinalIgnoreCase) &&
             string.Equals(n, person, StringComparison.OrdinalIgnoreCase));
 
+    /// <summary>
+    /// Who is acting, and whether this is a dry run — from the JWT-verified identity
+    /// and the raw <c>X-Date-Night-As</c> header.
+    ///
+    /// <para>Admin-only "view as", so Paul can click through the real Mom/Dad UI from
+    /// his own session instead of the admin bypass panel. It only applies when the
+    /// <b>real</b> identity is Paul, so Mom and Dad cannot spoof each other by sending
+    /// the header themselves.</para>
+    ///
+    /// <para>The header is <b>canonicalized, never echoed back raw</b>. It is matched
+    /// case-insensitively, so a header of "mom" used to return "mom" — and that string
+    /// became the key of this person's ballot, flyer and reminder maps, which every
+    /// other lookup reads as "Mom". The vote was stored and then invisible.</para>
+    ///
+    /// <para>Impersonating doubles as "this is a dry run": <c>IsTest</c> is true exactly
+    /// when the override applied, which callers use to route every action at the
+    /// separate test cycle and lists instead of real household state. A real Mom or Dad
+    /// session can never produce IsTest=true.</para>
+    /// </summary>
+    public static (string? Person, bool IsTest) ResolveViewer(string? real, string? impersonation)
+    {
+        if (!string.Equals(real, "Paul", StringComparison.OrdinalIgnoreCase))
+            return (real, false);
+
+        // IsAudience rather than a literal Mom/Dad pair, so a fourth household member
+        // is viewable the day they are added rather than silently unimpersonatable.
+        return HouseholdOwners.ResolveName(impersonation) is { } viewAs && IsAudience(viewAs)
+            ? (viewAs, true)
+            : (real, false);
+    }
+
     /// <summary>Whether every audience member has voted on every one of this week's
     /// drawn movies — decides Resolved vs. Cancelled at the deadline, and whether a
     /// just-cast vote was the last one needed to resolve immediately.</summary>
@@ -99,6 +131,41 @@ public static class DateNightPolicy
     /// <summary>Whether this person has voted on every movie in the draw.</summary>
     public static bool BallotComplete(string person, WeeklyCycle cycle) =>
         cycle.Votes.TryGetValue(person, out var votes) && cycle.MovieIds.All(votes.ContainsKey);
+
+    // ─── The storage boundary ─────────────────────────────────────────────
+
+    /// <summary>
+    /// Re-keys a cycle's four person-keyed dictionaries case-insensitively, on the
+    /// way back from storage.
+    ///
+    /// <para><b>A comparer does not survive JSON.</b> Every one of these maps is
+    /// written through <c>StringComparer.OrdinalIgnoreCase</c>, but
+    /// <c>Deserialize</c> hands back plain, case-sensitive dictionaries — so the
+    /// comparer only ever protected the write, never a later read. Any key stored
+    /// under a casing other than the canonical one was then unreachable: the data
+    /// was there and the cycle behaved as though it were not.</para>
+    ///
+    /// <para>Applied at the single point a cycle is loaded, so no caller has to
+    /// remember to. Canonicalizing identities at the edges (see
+    /// <see cref="ResolveViewer"/>) stops odd casings arriving; this stops the ones
+    /// already stored, and both are needed.</para>
+    /// </summary>
+    public static WeeklyCycle? WithCanonicalPeople(WeeklyCycle? cycle) =>
+        cycle is null ? null : cycle with
+        {
+            Votes = ByPerson(cycle.Votes),
+            LastFlyerShownUtc = ByPerson(cycle.LastFlyerShownUtc),
+            FlyerReminderCounts = ByPerson(cycle.FlyerReminderCounts),
+            Schedule = cycle.Schedule is null ? null : cycle.Schedule with
+            {
+                LastReminderShownUtc = ByPerson(cycle.Schedule.LastReminderShownUtc)
+            }
+        };
+
+    /// <summary>Null in, null out — the optional maps stay optional.</summary>
+    [return: NotNullIfNotNull(nameof(map))]
+    private static Dictionary<string, T>? ByPerson<T>(Dictionary<string, T>? map) =>
+        map is null ? null : new Dictionary<string, T>(map, StringComparer.OrdinalIgnoreCase);
 
     // ─── Reminders ────────────────────────────────────────────────────────
 

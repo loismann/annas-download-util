@@ -306,19 +306,31 @@ public class StoryModelServiceTests : IDisposable
         (await _story.ReadAsync(ctx)).Actors.Should().BeEmpty();
     }
 
+    /// <summary>
+    /// Collects progress on the thread that reports it.
+    ///
+    /// <para><see cref="Progress{T}"/> posts to the thread pool, so a test using it
+    /// has to guess how long to wait — and reads a <c>List&lt;T&gt;</c> another thread
+    /// is still writing. That guess held on an idle machine and lost under a loaded
+    /// full-suite run, which is a failing build that says nothing about the code.
+    /// Reporting inline makes the assertion about what happened.</para>
+    /// </summary>
+    private sealed class InlineProgress<T> : IProgress<T>
+    {
+        public List<T> Reported { get; } = new();
+        public void Report(T value) => Reported.Add(value);
+    }
+
     [Fact]
     public async Task A_back_fill_reports_a_step_for_every_chapter()
     {
         var ctx = await BookAsync();
-        var steps = new List<ProgressStep>();
+        var progress = new InlineProgress<ProgressStep>();
 
-        await _story.BackFillAsync(
-            ctx, chapterCount: 3, new Progress<ProgressStep>(steps.Add));
+        await _story.BackFillAsync(ctx, chapterCount: 3, progress);
 
-        // Progress<T> posts asynchronously; the count is what matters, not the timing.
-        await Task.Delay(50);
-        steps.Should().HaveCountGreaterThanOrEqualTo(1);
-        steps.Should().OnlyContain(s => s.Total == 3);
+        progress.Reported.Should().HaveCount(3, "every chapter reports before it is ingested");
+        progress.Reported.Should().OnlyContain(s => s.Total == 3);
     }
 
     // ─── reading and resolving ──────────────────────────────────────────

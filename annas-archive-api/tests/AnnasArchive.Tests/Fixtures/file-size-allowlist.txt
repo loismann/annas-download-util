@@ -29,14 +29,14 @@
 324	annas-archive-api/src/AnnasArchive.API/Configuration/HttpClientConfiguration.cs
 400	annas-archive-api/src/AnnasArchive.API/Configuration/MiddlewareExtensions.cs
 324	annas-archive-api/src/AnnasArchive.API/Configuration/ServiceConfiguration.cs
-369	annas-archive-api/src/AnnasArchive.API/Data/AppDatabase.cs
+317	annas-archive-api/src/AnnasArchive.API/Data/AppDatabase.cs
 419	annas-archive-api/src/AnnasArchive.API/Data/PhotoPrintOrderStore.cs
 327	annas-archive-api/src/AnnasArchive.API/Endpoints/AiBookSearchEndpoints.cs
 528	annas-archive-api/src/AnnasArchive.API/Endpoints/AnnaDownloadEndpoints.cs
 455	annas-archive-api/src/AnnasArchive.API/Endpoints/AudiobookLibraryEndpoints.cs
 597	annas-archive-api/src/AnnasArchive.API/Endpoints/AudiobookRequestEndpoints.cs
 376	annas-archive-api/src/AnnasArchive.API/Endpoints/BookSearchEndpoints.cs
-749	annas-archive-api/src/AnnasArchive.API/Endpoints/DateNightEndpoints.cs
+731	annas-archive-api/src/AnnasArchive.API/Endpoints/DateNightEndpoints.cs
 389	annas-archive-api/src/AnnasArchive.API/Endpoints/LibraryCoverEndpoints.cs
 332	annas-archive-api/src/AnnasArchive.API/Endpoints/LibraryMetadataEndpoints.cs
 790	annas-archive-api/src/AnnasArchive.API/Endpoints/MediaLibraryEndpoints.cs
@@ -48,7 +48,7 @@
 886	annas-archive-api/src/AnnasArchive.API/Services/AudiobookEnrichmentService.cs
 780	annas-archive-api/src/AnnasArchive.API/Services/AudiobookRequestService.cs
 339	annas-archive-api/src/AnnasArchive.API/Services/BookDiscovery/BookDiscoveryResponses.cs
-348	annas-archive-api/src/AnnasArchive.API/Services/CloudflareBypassService.cs
+340	annas-archive-api/src/AnnasArchive.API/Services/CloudflareBypassService.cs
 392	annas-archive-api/src/AnnasArchive.API/Services/DateNightAvailabilityService.cs
 1396	annas-archive-api/src/AnnasArchive.API/Services/DateNightCycleService.cs
 683	annas-archive-api/src/AnnasArchive.API/Services/JellyfinService.cs

@@ -150,8 +150,13 @@ public class LibraryReviewService : ILibraryReviewService
         {
             case "keep":
                 // User decision → personalization store, never the enrichment sidecar.
-                _personalization.Update(safeFileName, p => p.CullReviewedAt = DateTime.UtcNow);
-                _cache.InvalidateCache();
+                // The index only mirrors that store, so patch the one row rather than
+                // dropping all of it; a book the index does not hold falls back to a
+                // rebuild so the two can never silently disagree (assertions).
+                var reviewedAt = DateTime.UtcNow;
+                _personalization.Update(safeFileName, p => p.CullReviewedAt = reviewedAt);
+                if (!_cache.TryUpdateBook(safeFileName, b => b with { CullReviewedAt = reviewedAt }))
+                    _cache.InvalidateCache();
                 break;
 
             case "delete":

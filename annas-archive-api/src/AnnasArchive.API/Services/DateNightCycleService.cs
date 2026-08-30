@@ -1379,7 +1379,7 @@ public class DateNightCycleService
         if (string.IsNullOrWhiteSpace(json) || json == "null") return null;
         try
         {
-            return JsonSerializer.Deserialize<WeeklyCycle>(json, JsonOptions);
+            return DateNightPolicy.WithCanonicalPeople(JsonSerializer.Deserialize<WeeklyCycle>(json, JsonOptions));
         }
         catch (JsonException ex)
         {

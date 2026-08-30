@@ -85,7 +85,7 @@ public class CloudflareBypassService : ICloudflareBypassService
 
     public async Task<IReadOnlyList<Cookie>> GetCookiesAsync(string domain, CancellationToken cancellationToken = default)
     {
-        var normalizedDomain = NormalizeDomain(domain);
+        var normalizedDomain = CloudflareBypassRules.NormalizeDomain(domain);
 
         // Check cache first
         if (_cookieCache.TryGetValue(normalizedDomain, out var cached) && cached.ExpiresAt > DateTime.UtcNow)
@@ -105,7 +105,7 @@ public class CloudflareBypassService : ICloudflareBypassService
 
     public async Task RefreshCookiesAsync(string domain, CancellationToken cancellationToken = default)
     {
-        var normalizedDomain = NormalizeDomain(domain);
+        var normalizedDomain = CloudflareBypassRules.NormalizeDomain(domain);
         var url = domain.StartsWith("http") ? domain : $"https://{domain}";
 
         Log.Information("[CloudflareBypass] Refreshing cookies for {Domain}...", normalizedDomain);
@@ -311,7 +311,7 @@ public class CloudflareBypassService : ICloudflareBypassService
             TimezoneId = "America/New_York"
         };
 
-        if (!string.IsNullOrWhiteSpace(_proxyUrl) && _vpnSettings.Current.Enabled)
+        if (CloudflareBypassRules.ShouldRouteThroughProxy(_proxyUrl, _vpnSettings.Current.Enabled))
         {
             options.Proxy = new Proxy { Server = _proxyUrl };
         }
@@ -319,14 +319,6 @@ public class CloudflareBypassService : ICloudflareBypassService
         return options;
     }
 
-    private static string NormalizeDomain(string domain)
-    {
-        if (Uri.TryCreate(domain, UriKind.Absolute, out var uri))
-        {
-            return uri.Host.Replace("www.", "");
-        }
-        return domain.Replace("www.", "").Replace("https://", "").Replace("http://", "").TrimEnd('/');
-    }
 
     public async ValueTask DisposeAsync()
     {

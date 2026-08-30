@@ -35,7 +35,7 @@ public class AppDatabase
             PRAGMA journal_mode=WAL;
 
             CREATE TABLE IF NOT EXISTS book_personalization (
-                file_name         TEXT PRIMARY KEY,
+                file_name         TEXT PRIMARY KEY COLLATE NOCASE,
                 title             TEXT,
                 authors_json      TEXT,
                 primary_genre     TEXT,
@@ -255,18 +255,7 @@ public class AppDatabase
             );
             """;
         cmd.ExecuteNonQuery();
-        EnsureColumn(conn, "spotify_inventory_meta", "full_inventory_at", "TEXT");
-
-        // Per-person dismissal of a finished-but-unwanted request. Lives on the
-        // attribution row rather than the request, so one person clearing a failed
-        // download from their own library view does not hide it from everyone else
-        // who asked for the same book.
-        EnsureColumn(conn, "audiobook_request_user", "dismissed_at", "TEXT");
-
-        // Reader I is retired. Its per-book "show this in the reader" flag has no
-        // reader left to mean anything to — the reader now keeps its own shelf in
-        // r2_book — so drop it rather than leave a column nothing reads or writes.
-        DropColumn(conn, "book_personalization", "reader_enabled");
+        SchemaMigrations.Apply(conn);
     }
 
     /// <summary>
@@ -287,47 +276,6 @@ public class AppDatabase
         pragma.ExecuteNonQuery();
 
         return conn;
-    }
-
-    /// <summary>
-    /// Removes a column if the database still has one. The inverse of
-    /// <see cref="EnsureColumn"/>: taking it out of the CREATE statement above only
-    /// changes what a <i>fresh</i> database gets, because every table there is
-    /// CREATE TABLE IF NOT EXISTS — an existing database would keep the column
-    /// forever without this.
-    /// </summary>
-    private static void DropColumn(SqliteConnection connection, string table, string column)
-    {
-        if (!HasColumn(connection, table, column))
-            return;
-
-        using var alter = connection.CreateCommand();
-        alter.CommandText = $"ALTER TABLE {table} DROP COLUMN {column}";
-        alter.ExecuteNonQuery();
-    }
-
-    private static bool HasColumn(SqliteConnection connection, string table, string column)
-    {
-        using var inspect = connection.CreateCommand();
-        inspect.CommandText = $"PRAGMA table_info({table})";
-        using var reader = inspect.ExecuteReader();
-        while (reader.Read())
-        {
-            if (string.Equals(reader.GetString(1), column, StringComparison.OrdinalIgnoreCase))
-                return true;
-        }
-        return false;
-    }
-
-    private static void EnsureColumn(
-        SqliteConnection connection, string table, string column, string declaration)
-    {
-        if (HasColumn(connection, table, column))
-            return;
-
-        using var alter = connection.CreateCommand();
-        alter.CommandText = $"ALTER TABLE {table} ADD COLUMN {column} {declaration}";
-        alter.ExecuteNonQuery();
     }
 
     /// <summary>Gets a JSON document from the app_state key/value table, or null if absent.</summary>

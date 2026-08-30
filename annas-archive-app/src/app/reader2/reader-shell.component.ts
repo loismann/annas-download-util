@@ -19,6 +19,7 @@ import { BookmarkStore } from './services/bookmark-store';
 import { StoryStore } from './services/story-store';
 import { ReaderMeasure } from './services/reader-measure';
 import { ReaderChrome } from './services/reader-chrome';
+import { ViewportLock } from './services/viewport-lock';
 import { Bookmark, PassageSelection } from './reader2.models';
 
 /**
@@ -42,7 +43,7 @@ import { Bookmark, PassageSelection } from './reader2.models';
   ],
   providers: [
     ReaderTasks, ReaderStore, AnalysisStore, VocabularyStore, FlashcardStore, BookmarkStore,
-    StoryStore, ReaderMeasure, ReaderChrome
+    StoryStore, ReaderMeasure, ReaderChrome, ViewportLock
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './reader-shell.component.html',

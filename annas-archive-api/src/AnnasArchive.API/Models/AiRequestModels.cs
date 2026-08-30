@@ -6,42 +6,6 @@ namespace AnnasArchive.API.Models;
 /// Request/response models for AI-powered endpoints.
 /// </summary>
 
-// ─── Summarization ───────────────────────────────────────────────────────
-public record SummarizeRequest(
-    string Text,
-    string? BookTitle,
-    string? Author,
-    int? Year,
-    string? Premise,
-    string? DropboxPath,
-    int? ChapterId,
-    int? WordOffset,
-    List<string>? KnownWords);
-
-public record SummarizeResponse(string Summary);
-
-// ─── Learn More ──────────────────────────────────────────────────────────
-public record LearnMoreRequest(
-    string Term,
-    string? Definition,
-    string? DropboxPath,
-    string? BookTitle,
-    string? Context);
-
-public record LearnMoreResponse(string Detail);
-
-// ─── Flashcards ──────────────────────────────────────────────────────────
-public record FlashcardRequest(
-    string Term,
-    string? Definition,
-    string? DropboxPath,
-    string? BookTitle,
-    string? Context,
-    List<string>? KnownWords,
-    bool? SaveToLibrary);
-
-public record FlashcardResult(List<FlashcardItem> Cards);
-
 // ─── Author Suggestions ──────────────────────────────────────────────────
 public record SuggestAuthorsRequest(string BookTitle);
 public record SuggestAuthorsResponse(List<AuthorSuggestion> Authors);
@@ -146,27 +110,6 @@ public record GroupableBook(
 /// with no duplicates (a singleton group of one).</summary>
 public record GroupSearchResultsResponse(List<List<string>> Groups);
 
-// ─── Chapter Summaries ───────────────────────────────────────────────────
-public record FullChapterSummaryRequest(
-    string DropboxPath,
-    int ChapterId,
-    string? BookTitle,
-    string? Author,
-    int? Year,
-    string? Premise,
-    int? DisplayChapterNumber = null,
-    bool ForceRegenerate = false);
-
-public record UltraChapterSummaryRequest(
-    string DropboxPath,
-    int ChapterId,
-    string? BookTitle,
-    string? Author,
-    int? Year,
-    string? Premise,
-    int? DisplayChapterNumber = null,
-    bool ForceRegenerate = false);
-
 // ─── Token Usage ─────────────────────────────────────────────────────────
 public record TokenUsageResponse(
     long PromptTokens,
@@ -190,20 +133,3 @@ public record UserTokenUsage(
     DateTime ResetsAtUtc,
     bool IsOverLimit);
 
-// ─── Section Summaries ───────────────────────────────────────────────────
-public record ChunkBoundary(int Start, int End, int WordCount);
-public record ChunkBoundariesResponse(int ChapterId, List<ChunkBoundary> Chunks, DateTime CachedAt);
-public record SectionSummaryRequest(string DropboxPath, int ChapterId, int SectionIndex, string? BookTitle, string? Author);
-public record SectionSummaryResponse(string Summary, int SectionIndex, int PromptTokens, int CompletionTokens, int TotalTokens, DateTime CachedAt, List<FlashcardItem>? Vocab = null);
-public record SaveSectionVocabRequest(string DropboxPath, int ChapterId, int SectionIndex, List<FlashcardItem> Vocab);
-
-// ─── Vocabulary Tracking ─────────────────────────────────────────────────
-public record AddVocabWordRequest(string Term, string? BookId);
-public record AddStudyWordRequest(string Term, string? Definition, string? BookId);
-
-// ─── Character Graph ─────────────────────────────────────────────────────
-public record CharacterGraphRequest(string DropboxPath, string? BookTitle, string? Context);
-public record CharacterGraphUpdateRequest(string DropboxPath, string NewContent);
-public record CharacterNode(string Id, string Label, string Description, string? DetailedDescription);
-public record CharacterEdge(string From, string To, string Label, string? DetailedDescription);
-public record CharacterGraphResponse(List<CharacterNode> Nodes, List<CharacterEdge> Edges, int SummaryCount, DateTime CachedAt);

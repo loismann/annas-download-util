@@ -375,10 +375,8 @@ public static class CoreServiceConfiguration
         services.AddSingleton<ITextProcessingService, TextProcessingService>();
 
         // EPUB cache path provider
-        services.AddSingleton<IEpubCachePathProvider>(provider => new EpubCachePathProviderAdapter());
 
         // Flashcard service
-        services.AddSingleton<IFlashcardService, FlashcardService>();
 
         // User activity tracking
         services.AddSingleton<IUserActivityService, UserActivityService>();

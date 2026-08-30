@@ -12,16 +12,13 @@ public class CoverLookupService : ICoverLookupService
 {
     private readonly IOpenLibraryService _openLibraryService;
     private readonly IGoogleBooksService _googleBooksService;
-    private readonly AnnasArchiveService _annaArchiveService;
 
     public CoverLookupService(
         IOpenLibraryService openLibraryService,
-        IGoogleBooksService googleBooksService,
-        AnnasArchiveService annaArchiveService)
+        IGoogleBooksService googleBooksService)
     {
         _openLibraryService = openLibraryService;
         _googleBooksService = googleBooksService;
-        _annaArchiveService = annaArchiveService;
     }
 
     public async Task<CoverLookupResult> GetCoverAsync(string title, string? author = null)
@@ -31,27 +28,22 @@ public class CoverLookupService : ICoverLookupService
 
         Log.Information("[CoverLookup] Searching for cover: '{Title}' by '{Author}'", title, author ?? "unknown");
 
-        // Anna's Archive search (free thumbnail already in the listing HTML)
-        // is the primary path now — Open Library's search API has been down
-        // and Google Books' unauthenticated quota exhausted for a while, so
-        // both of the below are effectively dead ends kept only in case
-        // either recovers; they're tried after, not before, to avoid paying
-        // their latency/failure cost on every single lookup.
-        try
-        {
-            var coverUrl = await _annaArchiveService.GetCoverByTitleAuthorAsync(title, author);
-            if (!string.IsNullOrWhiteSpace(coverUrl))
-            {
-                Log.Information("[CoverLookup] Found cover from Anna's Archive");
-                return new CoverLookupResult(coverUrl, "Anna's Archive");
-            }
-        }
-        catch (Exception ex)
-        {
-            Log.Warning(ex, "[CoverLookup] Anna's Archive lookup failed");
-        }
+        // Open Library first, and the comment this replaces is worth keeping in
+        // mind: it said Open Library's search API "has been down" and put Anna's
+        // Archive thumbnails in front of it for that reason. Measured on
+        // 2026-08-20, Open Library answers this exact query in 0.39s, and Anna's
+        // cannot answer at all — its HTML went behind DDoS-Guard on 2026-08-13.
+        // The ladder had quietly inverted, and nobody re-measured it because a
+        // cover that does not load looks like a book without a cover.
+        //
+        // Anna's rung is gone rather than demoted. It reaches the site through
+        // Playwright, so it does not fail quickly — it spends up to thirty
+        // seconds per book behind a single shared browser lock, which is what
+        // turned "covers are missing" into "the page takes a minute". A rung
+        // that cannot succeed and is expensive to try is worse than no rung.
 
-        // 1. Try Open Library first (usually higher quality covers)
+        // 1. Open Library — free, no key, and the only one of the three
+        //    currently answering.
         try
         {
             var coverUrl = await _openLibraryService.GetCoverUrlAsync(title, author);

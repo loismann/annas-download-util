@@ -1,0 +1,1096 @@
+﻿<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+	<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+	<META HTTP-EQUIV="CACHE-CONTROL" CONTENT="max-age=604800, must-revalidate">
+	<meta name="rating" content="general">
+	<!--<link href="/rss/index.php" rel="alternate" type="application/rss+xml" title="News" />-->
+	<link rel="shortcut icon" href="/img/favicon.ico" type="image/x-icon">
+	<title>Library Genesis</title>
+		
+	<!--[if IE 6]>
+	<style>
+		body {behavior: url("/csshover3.htc");}
+		#menu li .drop {background:url("img/drop.gif") no-repeat right 8px; 
+	</style>
+	<![endif]-->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.5.3/dist/css/bootstrap.min.css">	
+	
+<link href="/css/font.min.css" rel="stylesheet">	
+<style>
+nav.navbar .dropdown:hover > .dropdown-menu {
+ display: block; 
+}
+.bd-placeholder-img {
+	font-size: 1.125rem;
+	text-anchor: middle;
+	-webkit-user-select: none;
+	-moz-user-select: none;
+	-ms-user-select: none;
+	user-select: none;
+}
+@media (min-width: 768px) {
+			.bd-placeholder-img-lg {
+			font-size: 3.5rem;
+		}
+	}
+
+.panel-heading .accordion-toggle:after {
+    font-family: "Glyphicons Halflings";  
+    content: "\e114";    
+    float: right;       
+    color: grey;         
+}
+.panel-heading .accordion-toggle.collapsed:after {
+    content: "\e080";   
+}
+.tooltip-inner {
+    max-width: 350px;
+    width: 350px; 
+}
+h1 {
+	display: block; 
+	font-size: 1.8rem; 
+	font-weight: bold; 
+	font-family: Georgia, "Times New Roman", Times, serif;  color: #A00000; 
+}
+#tablelibgen td { 
+	font-family: "Pt Sans", Tahoma, Helvetica, sans-serif; 
+	margin: 0; 
+	padding: 0em 3px; 
+	font-size: 1rem;
+}
+
+#tablelibgen1 td { 
+	font-family: "Pt Sans", Tahoma, Helvetica, sans-serif; 
+	margin: 0; 
+	padding: 0em 3px; 
+	font-size: 1rem;
+}
+
+.taghide {
+    display: none; 
+}
+.taghide + label ~ div {
+    display: none;
+}
+/* оформляем текст label */
+.taghide + label {
+    display: inline-block; 
+}
+/* вид текста label при активном переключателе */
+
+/* когда чекбокс активен показываем блоки с содержанием  */
+.taghide:checked + label + div {
+    display: block; 
+}
+
+
+
+/*.navbar {
+	background-color: #BBBBBB;
+}*/
+	</style>
+
+	<link rel="stylesheet" href="/css/dark-mode.css">
+	<script src="https://code.jquery.com/jquery-3.6.0.min.js" integrity="sha256-/xUj+3OJU5yExlq6GSYGSHk7tPXikynS7ogEvDej/m4=" crossorigin="anonymous"></script>
+<link rel="stylesheet" type="text/css" href="../css/paginator3000.css" />
+<script type="text/javascript" src="../js/paginator3000.js"></script>
+
+
+
+
+</head>
+<body>    
+<nav class="navbar navbar-expand-md navbar-dark bg-secondary  mb-1">
+  
+   <a class="navbar-brand" href="/index.php">
+    <img src="/img/logo.png"  height="30" alt="">
+  </a>
+  <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarCollapse" aria-controls="navbarCollapse" aria-expanded="false" aria-label="Toggle navigation">
+    <span class="navbar-toggler-icon"></span>
+  </button>
+  <div class="collapse navbar-collapse" id="navbarCollapse">
+    <ul class="navbar-nav mr-auto">
+      <li class="nav-item active">
+        <a class="nav-link" href="/community/app.php/article/news">NEWS <span class="sr-only">(current)</span></a>
+      </li>
+      <li class="nav-item active">
+        <a class="nav-link" href="/community/">FORUM <span class="sr-only">(current)</span></a>
+      </li>
+	
+      <li class="nav-item dropdown">
+<a class="btn btn-secondary dropdown-toggle" href="/community/ucp.php?mode=login" role="button" id="dropdownMenuLink"  aria-haspopup="true" aria-expanded="false">
+          LOGIN
+        </a>
+        <div class="dropdown-menu" aria-labelledby="dropdown01">    
+          <a class="dropdown-item" href="/community/ucp.php?mode=register">Register</a>
+        </div>
+      </li>
+      <li class="nav-item dropdown">
+        <a class="btn btn-secondary dropdown-toggle" href="#" role="button" id="dropdownMenuLink"  aria-haspopup="true" aria-expanded="false">
+          DOWNLOAD
+        </a>
+        <div class="dropdown-menu" aria-labelledby="dropdown01">      
+
+          <a class="dropdown-item" href="/mirrors.php">Mirrors</a>
+          <a class="dropdown-item" href="http://libgenfrialc7tguyjywa36vtrdcplwpxaw43h6o63dmmwhvavo5rqqd.onion/">TOR</a>
+
+	<div class="dropdown-divider"></div>
+         <h6 class="dropdown-header">P2P</h6>
+          <a class="dropdown-item" href="/torrents/">Torrents</a>
+          <a class="dropdown-item" href="https://ipdl.cat/data/torrents.html">Torrents status</a>
+          <a class="dropdown-item" href="/nzb/">Usenet (*.nzb)</a>
+          <a class="dropdown-item" href="/soft/">Soft</a>
+	<!--https://phillm.net/libgen-stats-table.php-->
+
+
+
+
+	<div class="dropdown-divider"></div>
+         <h6 class="dropdown-header">DB Dumps</h6>
+          <a class="dropdown-item" href="/dirlist.php?dir=dbdumps">Libgen</a>
+          <a class="dropdown-item" href="http://libgen.rs/dbdumps/">libgen.rs (gen.lib.rus.ec)</a>
+
+	<!--<div class="dropdown-divider"></div>
+ 	 <a class="dropdown-item" href="/magz0/">Unsorted magz</a>
+ 	 <a class="dropdown-item" href="/fict0/">Unsorted fiction</a>
+
+	 <a class="dropdown-item" href="/comics4/">Unsorted comics</a>
+        </div>-->
+
+      </li>
+
+      <li class="nav-item dropdown">
+        <a class="btn btn-secondary dropdown-toggle" href="librarian.php" role="button" id="dropdownMenuLink"  aria-haspopup="true" aria-expanded="false">
+          UPLOAD
+        </a>
+        <div class="dropdown-menu" aria-labelledby="dropdown01">  
+          <a class="dropdown-item" href="ftp://ftp.libgen.bz/upload/">FTP</a> 
+        </div>
+      </li>
+
+      <li class="nav-item dropdown">
+        <a class="btn btn-secondary dropdown-toggle" href="/index.php?req=fmode:last&topics1=all" role="button" id="dropdownMenuLink"  aria-haspopup="true" aria-expanded="false">
+          LAST
+        </a>
+
+        <div class="dropdown-menu" aria-labelledby="dropdown01">
+	<a class="dropdown-item" href="/index.php?req=fmode:last&topics1=all"><b>Files</b></a>
+
+          <a class="dropdown-item" href="/index.php?req=fmode:last&topics%5B%5D=l">Libgen</a>
+          <a class="dropdown-item" href="/index.php?req=fmode:last&topics%5B%5D=a">Scientific Articles</a> 
+          <a class="dropdown-item" href="/index.php?req=fmode:last&topics%5B%5D=f">Fiction</a> 
+          <a class="dropdown-item" href="/index.php?req=fmode:last&topics%5B%5D=c">Comics</a> 
+          <a class="dropdown-item" href="/index.php?req=fmode:last&topics%5B%5D=m">Magazines</a> 
+          <a class="dropdown-item" href="/index.php?req=fmode:last&topics%5B%5D=s">Standards</a> 
+          <a class="dropdown-item" href="/index.php?req=fmode:last&topics%5B%5D=r">Fiction RUS</a>
+	<div class="dropdown-divider"></div>
+          <a class="dropdown-item" href="/index.php?req=mode:last&curtab=e">Editions</a> 
+          <a class="dropdown-item" href="/index.php?req=mode:last&curtab=s">Series</a>
+          <a class="dropdown-item" href="/index.php?req=mode:last&curtab=p">Publishers</a> 
+        <!--  <a class="dropdown-item" href="/index.php?req=mode:last&curtab=f">Files</a> -->
+          <a class="dropdown-item" href="/index.php?req=mode:last&curtab=a">Authors</a> 
+          <a class="dropdown-item" href="/index.php?req=mode:last&curtab=w">Works</a>
+
+
+  
+        </div>
+
+
+      </li>
+
+      <li class="nav-item dropdown">
+        <a class="btn btn-secondary dropdown-toggle" href="#" role="button" id="dropdownMenuLink"  aria-haspopup="true" aria-expanded="false">
+          OTHERS
+        </a>
+
+        <div class="dropdown-menu" aria-labelledby="dropdown01">  
+          <a class="dropdown-item" href="json.php">API</a> 
+          <a class="dropdown-item" href="rss.php">RSS</a> 
+          <a class="dropdown-item" href="top.php">Top 100 users</a> 
+          <a class="dropdown-item" href="stat.php">Stats</a>
+
+	<a class="dropdown-item" href="topics.php">Topics</a>
+
+          <a class="dropdown-item" href="batchsearchindex.php">Batch search</a>  
+          <a class="dropdown-item" href="biblioservice.php">Bibliographic services</a>
+          <a class="dropdown-item" href="https://wiki.mhut.org/software:libgen_desktop">Libgen librarian for desktop</a>
+
+
+          <a class="dropdown-item" href="/code/">Source (PHP)</a>
+          <a class="dropdown-item" href="/soft/">LG soft</a>
+          <!--<a class="dropdown-item" href="/import/">Import local files in LG format</a>-->
+          <a class="dropdown-item" href="https://z-library.se/fulltext/">Full text search</a>
+
+
+
+        </div>
+      </li>
+
+
+
+     <!-- <li class="nav-item dropdown">
+        <a class="btn btn-secondary dropdown-toggle" href="topics.php" role="button" id="dropdownMenuLink"  aria-haspopup="true" aria-expanded="false">
+          Topics
+        </a>
+      </li>
+-->
+
+      <li class="nav-item dropdown">
+        <a class="btn btn-secondary dropdown-toggle" href="#" role="button" id="dropdownMenuLink"  aria-haspopup="true" aria-expanded="false">
+          LINKS
+        </a>
+
+        <div class="dropdown-menu" aria-labelledby="dropdown01">  
+
+
+          
+          <a class="dropdown-item" href="http://sci-hub.ru">Sci-hub</a> 
+          <a class="dropdown-item" href="http://magzdb.org">Magzdb.org</a>
+
+          <a class="dropdown-item" href="http://nlr.ru/rlin/Periodika_rus.php">РНБ</a>
+          <a class="dropdown-item" href="http://rsl.ru/">РГБ</a>
+          <a class="dropdown-item" href="http://loc.gov/">LOC</a>
+          <a class="dropdown-item" href="https://comicvine.gamespot.com/">ComicVine</a>
+          <a class="dropdown-item" href="http://cyberleninka.ru/">Cyberleninka</a>
+          <a class="dropdown-item" href="http://lib.rus.ec/">Lib.rus.ec</a>
+          <a class="dropdown-item" href="http://flibusta.net/">Flibusta.net</a>
+          <a class="dropdown-item" href="http://goodreads.com/">Goodreads.com</a>
+          <a class="dropdown-item" href="http://worldcat.org/">Worldcat.org</a>
+          <a class="dropdown-item" href="https://wiki.archiveteam.org/">Archive team</a>
+          <a class="dropdown-item" href="https://www.reddit.com/r/libgen/">Reddit</a>
+          <a class="dropdown-item" href="http://annas-archive.org/">Anna's Archive</a>
+          <a class="dropdown-item" href="https://welib.org/">Welib</a>
+          <a class="dropdown-item" href="https://open-slum.org/">The Shadow Library Uptime Monitor</a>
+
+        </div>
+
+      </li>
+
+
+      <li class="nav-item dropdown">
+        <a class="btn btn-secondary" href="index.php?req=mode:req&curtab=e" role="button" id="dropdownMenuLink"  aria-haspopup="true" aria-expanded="false">
+          WANTED
+        </a>
+      </li>
+
+    </ul>
+  </div>
+
+  <div class="nav-link">
+
+    <div class="custom-control custom-switch">
+      <input type="checkbox" class="custom-control-input" id="darkSwitch">
+      <label class="custom-control-label" for="darkSwitch">🌓</label>
+    </div>
+    <script src="/js/dark-mode-switch.js"></script>
+  </div>
+   <a class="navbar-brand" href="setlang.php?req=no%20country%20for%20old%20men&lg_topic=libgen&open=0&view=simple&res=25&phrase=1&column=def&lang=ru">RU</a>
+</nav>
+<form class="card p-2 needs-validation" novalidate id="formlibgen" action="index.php" enctype="multipart/form-data" METHOD="GET">
+<div class="input-group mb-3" >
+	<input autofocus type="text" class="form-control" placeholder="Input value" name="req" aria-label="input text" aria-describedby="button-addon2" value="no country for old men" required>
+	<div class="input-group-append">
+	<button class="btn btn-outline-secondary"  id="button-addon2" type="submit">&nbsp;&nbsp;&nbsp;&nbsp;&#128269;&nbsp;&nbsp;&nbsp;&nbsp;</button>
+	</div>
+
+	<div class="invalid-feedback">Input value</div>
+</div>
+
+<div class="container-fluid">
+	<div class="row">
+		<div class="col-8">	
+			<div class="d-block" id="topic">
+				<strong>Search in fields:</strong>
+				<input type="checkbox" checked class="column-input" id="colt" name="columns[]" value="t">
+				<label class="column-label" for="coltitle">Title</label>
+				<input type="checkbox" checked class="column-input" id="cola" name="columns[]" value="a">
+				<label class="column-label" for="colauthor">Author(s)</label>
+				<input type="checkbox" checked class="column-input" id="cols" name="columns[]" value="s">
+				<label class="column-label" for="colseries">Series</label>
+				<input type="checkbox" checked class="column-input" id="coly" name="columns[]" value="y">
+				<label class="column-label" for="colyear">Year</label>
+				<input type="checkbox" checked class="column-input" id="colp" name="columns[]" value="p">
+				<label class="column-label" for="colpublisher">Publisher</label>
+				<input type="checkbox" checked class="column-input" id="coli" name="columns[]" value="i">
+				<label class="column-label" for="colisbn">ISBN</label>
+	  		</div>
+	
+	  		<div class="d-block" id="object">
+				<strong>Search in objects:</strong>
+				<input type="checkbox" checked class="column-input" id="objf" name="objects[]" value="f">
+				<label class="column-label" for="objf">Files</label>
+				<input type="checkbox" checked class="column-input" id="obje" name="objects[]" value="e">
+				<label class="column-label" for="obje">Editions</label>
+				<input type="checkbox" checked class="column-input" id="objs" name="objects[]" value="s">
+				<label class="column-label" for="objs">Series</label>
+				<input type="checkbox" checked class="column-input" id="obja" name="objects[]" value="a">
+				<label class="column-label" for="obja">Authors</label>
+				<input type="checkbox" checked class="column-input" id="objp" name="objects[]" value="p">
+				<label class="column-label" for="objp">Publishers</label>
+				<input type="checkbox" checked class="column-input" id="objw" name="objects[]" value="w">
+				<label class="column-label" for="objw">Works</label>
+			</div>
+			<div class="d-block" id="column">
+				<strong>Search in topics :</strong>
+				<input type="checkbox" checked class="column-input" id="topl" name="topics[]" value="l" >
+				<label class="column-label" for="topl">Libgen</label>
+				<input type="checkbox" checked class="column-input" id="topc" name="topics[]" value="c" >
+				<label class="column-label" for="topc">Comics</label>
+				<input type="checkbox" checked class="column-input" id="topf" name="topics[]" value="f" >
+				<label class="column-label" for="topf">Fiction</label>
+				<input type="checkbox" checked class="column-input" id="topa" name="topics[]" value="a" >
+				<label class="column-label" for="topa">Scientific Articles</label>
+				<input type="checkbox" checked class="column-input" id="topm" name="topics[]" value="m" >
+				<label class="column-label" for="topm">Magazines</label>
+				<input type="checkbox" checked class="column-input" id="topr" name="topics[]" value="r" >
+				<label class="column-label" for="topr">Fiction RUS</label>
+				<input type="checkbox" checked class="column-input" id="tops" name="topics[]" value="s" >
+				<label class="column-label" for="tops">Standards</label>
+			</div>
+ 		</div>
+		<div class="col-4">
+
+			<div >
+				<strong>Results per page:</strong>
+
+				<div class="custom-control custom-radio custom-control-inline">
+				<input type="radio" id="res25" name="res" class="custom-control-input" value="25" checked>
+				<label class="custom-control-label" for="res25">25</label>
+				</div>
+				<div class="custom-control custom-radio custom-control-inline">
+				<input type="radio" id="res50" name="res" class="custom-control-input" value="50" >
+				<label class="custom-control-label" for="res50">50</label>
+				</div>
+				<div class="custom-control custom-radio custom-control-inline">
+				<input type="radio" id="res100" name="res" class="custom-control-input" value="100" >
+				<label class="custom-control-label" for="res100">100</label>
+
+				</div>
+ 			</div>
+			<div class="d-block">
+				<table><tr><td>
+					<div class="custom-control custom-switch">
+						<input type="checkbox" class="custom-control-input" id="covers" name="covers" >
+						<label class="custom-control-label" for="covers"><strong>Show Covers</strong></label>
+						<script type="text/javascript">
+						$("input[id=covers]").change(function(){
+							if($(this).is(":checked")==false)
+							{
+								document.cookie = "covers=; expires=Thu 01-Jan-70 00:00:01 GMT;";
+							}
+						});				
+						</script>
+					</div>
+					</td><td> 
+					<div class="custom-control custom-switch">
+						<input type="checkbox" class="custom-control-input" id="showch" name="showch" >
+						<label class="custom-control-label" for="showch"><strong>Show chapters</strong></label>
+						<script type="text/javascript">
+						$("input[id=showch]").change(function(){
+							if($(this).is(":checked")==false)
+							{
+								document.cookie = "showch=; expires=Thu 01-Jan-70 00:00:01 GMT;";
+							}
+						});				
+						</script>
+					</div>
+				</td></tr></table>
+
+ 			</div>
+
+			<div class="d-block">
+
+				<div class="custom-control custom-switch">
+					<input type="checkbox" class="custom-control-input" id="gmode" name="gmode" >
+					<label class="custom-control-label" for="gmode" ><strong>Google mode <a href="#" data-toggle="modal" data-target="#googlemodemodal">?</a></strong></label>
+					<script type="text/javascript">
+					$("input[id=gmode]").change(function(){
+						if($(this).is(":checked")==false)
+						{
+							document.cookie = "gmode=; expires=Thu 01-Jan-70 00:00:01 GMT;";
+						}
+					});
+					</script>
+					
+				</div>
+ 			</div>
+
+			<div >
+
+
+				<strong>Seach in files:</strong>
+
+				<div class="custom-control custom-radio custom-control-inline">
+				<input type="radio" id="all" name="filesuns" class="custom-control-input" value="all" checked>
+				<label class="custom-control-label" for="all">All</label>
+				</div>
+				<div class="custom-control custom-radio custom-control-inline">
+				<input type="radio" id="sort" name="filesuns" class="custom-control-input" value="sort" >
+				<label class="custom-control-label" for="sort">Only sorted</label>
+				</div>
+				<div class="custom-control custom-radio custom-control-inline">
+				<input type="radio" id="unsort" name="filesuns" class="custom-control-input" value="unsort" >
+				<label class="custom-control-label" for="unsort">Only uns.</label>
+				</div>
+
+
+
+ 			</div>
+
+ 		</div>
+	</div>
+</div>
+</form><ul class="nav nav-tabs "><li class="nav-item">
+ <a class="nav-link active " href="/index.php?req=no%20country%20for%20old%20men&lg_topic=libgen&open=0&view=simple&res=25&phrase=1&column=def&curtab=f">Files <span class="badge badge-primary">164</span></a>
+</li><li class="nav-item">
+ <a class="nav-link  " href="/index.php?req=no%20country%20for%20old%20men&lg_topic=libgen&open=0&view=simple&res=25&phrase=1&column=def&curtab=e">Editions <span class="badge badge-primary">243</span></a>
+</li><li class="nav-item">
+ <a class="nav-link  " href="/index.php?req=no%20country%20for%20old%20men&lg_topic=libgen&open=0&view=simple&res=25&phrase=1&column=def&curtab=s">Series <span class="badge badge-primary">0</span></a>
+</li><li class="nav-item">
+ <a class="nav-link  " href="/index.php?req=no%20country%20for%20old%20men&lg_topic=libgen&open=0&view=simple&res=25&phrase=1&column=def&curtab=a">Authors <span class="badge badge-primary">0</span></a>
+</li><li class="nav-item">
+ <a class="nav-link  " href="/index.php?req=no%20country%20for%20old%20men&lg_topic=libgen&open=0&view=simple&res=25&phrase=1&column=def&curtab=p">Publishers <span class="badge badge-primary">0</span></a>
+</li><li class="nav-item">
+ <a class="nav-link  " href="/index.php?req=no%20country%20for%20old%20men&lg_topic=libgen&open=0&view=simple&res=25&phrase=1&column=def&curtab=w">Works <span class="badge badge-primary">2</span></a>
+</li><li class="navbar-right" style="float: right !important;"><a class="nav-link" href="/json.php?object=f&ids=93642377,79658060,48983291,72185255,77943258,110386380,37450927,64519012,109001158,2634149,3178981,3545213,4281408,4281409,4281420,4433068,4451339,4451340,4451341,4451342,4451343,4451344,4451345,4514463,4573493,4575111,4599773,4605430,4606944,4704921,4738992,4739002,5457947,5457948,5457949,5457950,5583163,5791798,6141073,6280635,6280636,6394378,6394379,6394380,6394381,6394382,6394383,6394384,6394385,6394386,6394387,6394388,6558349,6651372,14918371,16190308,16624860,17486923,25948890,28681954,30960008,35608996,35802322,36011158,36375374,38898949,40888942,42910087,45564007,49498171,55037229,56911957,58750071,61446502,61663294,64568087,65240958,67798324,69416192,69445602,73683272,75523498,78534087,79272333,80415922,85939024,88712806,89387041,91482005,91678406,91818299,94701992,96169303,96794476,96881042,97520382,97520384,98487662,98608191,98622295,98630762,98684110,98701454,98704326,98757451,98824835,98850878,98931033,99556991,99561250,99859666,99896008,99901095,100299993,100641133,100750151,100750152,100750155,100753007,100760234,101059631,101128583,101332806,102705595,102853565,103645591,104999923,106126225,107891516,108290056,108641324,108646321,108995505,109410433,110141037,110389790,110395801,112606564,112713667,112899223,113116684,113116685,113178930,113232652,113232974,113233186,113361831,113515134,113754882,113912914,113912915,113912933,113912934,113912935,113912936,114491645,114565691,114732262,115016493,115967948,96154744,87457318,106412205,33281988"><font color="black">JSON</font></a></li> </ul><div style="text-align: center;" class="paginator" id="paginator_example_top"></div><script type="text/javascript">paginator_example_top = new Paginator("paginator_example_top", 7, 25, 1, "/index.php?req=no%20country%20for%20old%20men&lg_topic=libgen&open=0&view=simple&res=25&phrase=1&column=def&curtab=f&order=&ordermode=desc&filesuns=all&page=" );</script><table class="table  table-striped" id="tablelibgen"><thead><tr>
+
+<th scope="col" class="first_col"><nobr>
+ID <a href="/index.php?req=no%20country%20for%20old%20men&lg_topic=libgen&open=0&view=simple&res=25&phrase=1&column=def&curtab=f&order=f_id&ordermode=asc">&#8597</a> 
+Time add. <a href="/index.php?req=no%20country%20for%20old%20men&lg_topic=libgen&open=0&view=simple&res=25&phrase=1&column=def&curtab=f&order=time_added&ordermode=asc">&#8597</a> 
+Title <a href="/index.php?req=no%20country%20for%20old%20men&lg_topic=libgen&open=0&view=simple&res=25&phrase=1&column=def&curtab=f&order=title&ordermode=asc">&#8597</a> 
+Series <a href="/index.php?req=no%20country%20for%20old%20men&lg_topic=libgen&open=0&view=simple&res=25&phrase=1&column=def&curtab=f&order=series&ordermode=asc">&#8597</a></nobr></th>
+<th scope="col"><nobr>Author(s) <a href="/index.php?req=no%20country%20for%20old%20men&lg_topic=libgen&open=0&view=simple&res=25&phrase=1&column=def&curtab=f&order=author&ordermode=asc">&#8597</a></nobr></th>
+<th scope="col"><nobr>Publisher <a href="/index.php?req=no%20country%20for%20old%20men&lg_topic=libgen&open=0&view=simple&res=25&phrase=1&column=def&curtab=f&order=publisher&ordermode=asc">&#8597</a></nobr></th>
+<th scope="col"><nobr>Year <a href="/index.php?req=no%20country%20for%20old%20men&lg_topic=libgen&open=0&view=simple&res=25&phrase=1&column=def&curtab=f&order=year&ordermode=asc">&#8597</a></nobr></th>
+<th scope="col">Language</th>
+<th scope="col">Pages</th>
+<th scope="col"><nobr>Size  <a href="/index.php?req=no%20country%20for%20old%20men&lg_topic=libgen&open=0&view=simple&res=25&phrase=1&column=def&curtab=f&order=filesize&ordermode=asc">&#8597</a></nobr></th>
+<th scope="col"><nobr>Ext. <a href="/index.php?req=no%20country%20for%20old%20men&lg_topic=libgen&open=0&view=simple&res=25&phrase=1&column=def&curtab=f&order=extension&ordermode=asc">&#8597</a></nobr></th>
+<th scope="col">Mirrors</th>
+</tr></thead><tbody><tr>
+
+<td><b>Continuum studies in contemporary North American fiction</b><br><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2020-07-26/2020-07-27; ID: 93642377<br>Cormac McCarthy_ All the Pretty - Spurgeon, Sara" href="edition.php?id=138439626">Cormac McCarthy: All the Pretty Horses, No Country for Old Men, The Road <i></i></a><br><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2020-07-26/2020-07-27; ID: 93642377<br>Cormac McCarthy_ All the Pretty - Spurgeon, Sara" href="edition.php?id=138439626"><i><font color="green"> 9781441193001; 1441193006; 9781472542380; 147254238X</font></a></i> 
+<nobr><span class="badge badge-primary"><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Book">b</a></span> 
+<span class="badge badge-secondary"">l 2662326</span></nobr>
+
+</td>
+<td>McCarthy, Cormac;Spurgeon, Sara L</td>
+<td>Continuum UK - Academic;Bloomsbury Publishing</td>
+<td><nobr>2014;2011</nobr></td>
+<td>English</td>
+<td>0 / 1  (viii, 214 Seiten)</td>
+<td><nobr><a href="/file.php?id=93642377">549 kB</a></nobr></td>
+<td>mobi</td>
+<td><nobr><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen" href="/ads.php?md5=fdd4fbec7e3cb0be5e6c705d556eb246"><span class="badge badge-primary">1</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen.xyz" href="https://libgen.xyz/book/fdd4fbec7e3cb0be5e6c705d556eb246"><span class="badge badge-primary">2</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="anna's archive" href="https://en.annas-archive.gl/md5/fdd4fbec7e3cb0be5e6c705d556eb246?r=Ax2w6jC"><span class="badge badge-primary">3</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen.pw" href="https://libgen.pw/book/fdd4fbec7e3cb0be5e6c705d556eb246"><span class="badge badge-primary">4</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="randombook.org" href="https://randombook.org/book/fdd4fbec7e3cb0be5e6c705d556eb246"><span class="badge badge-primary">5</span></a> </nobr></td>
+</tr><tr>
+
+<td><b><a href="series.php?id=19287">Perspectives in Biology and Medicine   </a><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2019-01-19/2021-07-21; ID: 79658060<br>" href="edition.php?id=80038736"><i> vol. 60 iss. 4</i></a> pp.607—614</b><br><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2019-01-19/2021-07-21; ID: 79658060<br>" href="edition.php?id=80038736">No Country for Old Men: Four Challenges for Men Facing the Fourth Age <i></i></a><br><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2019-01-19/2021-07-21; ID: 79658060<br>" href="edition.php?id=80038736"><i><font color="green">DOI: 10.1353/pbm.2017.0046</font></a></i> 
+<nobr><span class="badge badge-primary"><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Journal article">a</a></span> 
+<span class="badge badge-secondary"">a 73790340</span></nobr>
+
+</td>
+<td>Cole, Thomas R.; Saxton, Ben </td>
+<td></td>
+<td><nobr>2017</nobr></td>
+<td>English</td>
+<td>0</td>
+<td><nobr><a href="/file.php?id=79658060">368 kB</a></nobr></td>
+<td>pdf</td>
+<td><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen" href="/ads.php?md5=39d94230dcf274650025a494ed6a63d3&downloadname=10.1353/pbm.2017.0046"><span class="badge badge-primary">Libgen</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="sci-hub" href="http://sci-hub.ru/10.1353/pbm.2017.0046"><span class="badge badge-primary">Sci-Hub</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen.xyz" href="https://libgen.xyz/book/39d94230dcf274650025a494ed6a63d3"><span class="badge badge-primary">libgen.xyz</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen.pw" href="https://libgen.pw/book/39d94230dcf274650025a494ed6a63d3"><span class="badge badge-primary">libgen.pw</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="anna's archive" href="https://en.annas-archive.gl/md5/39d94230dcf274650025a494ed6a63d3?r=Ax2w6jC"><span class="badge badge-primary">Anna's arch</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Randombook" href="https://randombook.org/book/39d94230dcf274650025a494ed6a63d3"><span class="badge badge-primary">Randombook</span></a> </td>
+</tr><tr>
+
+<td><b><a href="series.php?id=24514">The Review of English Studies   </a><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2015-06-20/2021-07-21; ID: 48983291<br>" href="edition.php?id=49036998"><i> 2011-feb 03 vol. 62 iss. 257</i></a> pp.716—737</b><br><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2015-06-20/2021-07-21; ID: 48983291<br>" href="edition.php?id=49036998">No Country for Old Men? Ciceronian Friendship and Old Age in Shakespeare's Second Tetralogy and Beyond <i></i></a><br><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2015-06-20/2021-07-21; ID: 48983291<br>" href="edition.php?id=49036998"><i><font color="green">DOI: 10.1093/res/hgq093</font></a></i> 
+<nobr><span class="badge badge-primary"><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Journal article">a</a></span> 
+<span class="badge badge-secondary"">a 42656257</span></nobr>
+
+</td>
+<td>Lees-Jeffries, H.</td>
+<td></td>
+<td><nobr>2011 February 03</nobr></td>
+<td>English</td>
+<td>0</td>
+<td><nobr><a href="/file.php?id=48983291">150 kB</a></nobr></td>
+<td>pdf</td>
+<td><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen" href="/ads.php?md5=d377b19306b0981aa8f993dfb95a8671&downloadname=10.1093/res/hgq093"><span class="badge badge-primary">Libgen</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="sci-hub" href="http://sci-hub.ru/10.1093/res/hgq093"><span class="badge badge-primary">Sci-Hub</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen.xyz" href="https://libgen.xyz/book/d377b19306b0981aa8f993dfb95a8671"><span class="badge badge-primary">libgen.xyz</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen.pw" href="https://libgen.pw/book/d377b19306b0981aa8f993dfb95a8671"><span class="badge badge-primary">libgen.pw</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="anna's archive" href="https://en.annas-archive.gl/md5/d377b19306b0981aa8f993dfb95a8671?r=Ax2w6jC"><span class="badge badge-primary">Anna's arch</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Randombook" href="https://randombook.org/book/d377b19306b0981aa8f993dfb95a8671"><span class="badge badge-primary">Randombook</span></a> </td>
+</tr><tr>
+
+<td><b><a href="series.php?id=2793">Bioethics Quarterly   </a><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2021-07-12/2021-07-21; ID: 72185255<br>" href="edition.php?id=72520524"><i> 2017-aug 17 vol. 40 iss. 3</i></a> pp.395—415</b><br><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2021-07-12/2021-07-21; ID: 72185255<br>" href="edition.php?id=72520524">“No Country for Old Men”: Huxley’s Brave New World and the Value of Old Age <i></i></a><br><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2021-07-12/2021-07-21; ID: 72185255<br>" href="edition.php?id=72520524"><i><font color="green">DOI: 10.1007/s10912-017-9469-x</font></a></i> 
+<nobr><span class="badge badge-primary"><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Journal article">a</a></span> 
+<span class="badge badge-secondary"">a 66262993</span></nobr>
+
+</td>
+<td>Linett, Maren</td>
+<td></td>
+<td><nobr>2017 August 17</nobr></td>
+<td>English</td>
+<td>0</td>
+<td><nobr><a href="/file.php?id=72185255">537 kB</a></nobr></td>
+<td>pdf</td>
+<td><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen" href="/ads.php?md5=4437c930dc8b02d540fd51d10f5f769f&downloadname=10.1007/s10912-017-9469-x"><span class="badge badge-primary">Libgen</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="sci-hub" href="http://sci-hub.ru/10.1007/s10912-017-9469-x"><span class="badge badge-primary">Sci-Hub</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen.xyz" href="https://libgen.xyz/book/4437c930dc8b02d540fd51d10f5f769f"><span class="badge badge-primary">libgen.xyz</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen.pw" href="https://libgen.pw/book/4437c930dc8b02d540fd51d10f5f769f"><span class="badge badge-primary">libgen.pw</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="anna's archive" href="https://en.annas-archive.gl/md5/4437c930dc8b02d540fd51d10f5f769f?r=Ax2w6jC"><span class="badge badge-primary">Anna's arch</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Randombook" href="https://randombook.org/book/4437c930dc8b02d540fd51d10f5f769f"><span class="badge badge-primary">Randombook</span></a> </td>
+</tr><tr>
+
+<td><b><a href="series.php?id=12097">Journal of AESTHETICS & CULTURE   </a><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2018-10-09/2021-07-21; ID: 77943258<br>" href="edition.php?id=78323924"><i> 2018-apr 02 vol. 10 iss. 2</i></a> pp.1438732</b><br><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2018-10-09/2021-07-21; ID: 77943258<br>" href="edition.php?id=78323924">No country for old men: utopian stories of welfare society’s shortcomings in               <i>A Man Called Ove</i>               and               <i>The 100-Year-Old Man</i> <i></i></a><br><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2018-10-09/2021-07-21; ID: 77943258<br>" href="edition.php?id=78323924"><i><font color="green">DOI: 10.1080/20004214.2018.1438732</font></a></i> 
+<nobr><span class="badge badge-primary"><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Journal article">a</a></span> 
+<span class="badge badge-secondary"">a 72075528</span></nobr>
+
+</td>
+<td>Marklund, Anders</td>
+<td></td>
+<td><nobr>2018 April 02</nobr></td>
+<td>English</td>
+<td>0</td>
+<td><nobr><a href="/file.php?id=77943258">939 kB</a></nobr></td>
+<td>pdf</td>
+<td><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen" href="/ads.php?md5=6d0fa016adca771e107a70ad23287c5c&downloadname=10.1080/20004214.2018.1438732"><span class="badge badge-primary">Libgen</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="sci-hub" href="http://sci-hub.ru/10.1080/20004214.2018.1438732"><span class="badge badge-primary">Sci-Hub</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen.xyz" href="https://libgen.xyz/book/6d0fa016adca771e107a70ad23287c5c"><span class="badge badge-primary">libgen.xyz</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen.pw" href="https://libgen.pw/book/6d0fa016adca771e107a70ad23287c5c"><span class="badge badge-primary">libgen.pw</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="anna's archive" href="https://en.annas-archive.gl/md5/6d0fa016adca771e107a70ad23287c5c?r=Ax2w6jC"><span class="badge badge-primary">Anna's arch</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Randombook" href="https://randombook.org/book/6d0fa016adca771e107a70ad23287c5c"><span class="badge badge-primary">Randombook</span></a> </td>
+</tr><tr>
+
+<td><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2025-08-04/2025-08-04; ID: 110386380<br>10.0000%2Fmuse.jhu.edu%2Farticle%2F651036" href="edition.php?id=153420740">"There is no God and we are his prophets": The Visionary Potential of Memory and Nostalgia in Cormac McCarthy's No Country for Old Men and The Road <i></i></a> 
+<nobr><span class="badge badge-primary"><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Report">rep</a></span> 
+<span class="badge badge-secondary"">a 89658540</span></nobr>
+
+</td>
+<td>Pugh, Marie-Reine (author)</td>
+<td></td>
+<td><nobr>2017</nobr></td>
+<td></td>
+<td>21</td>
+<td><nobr><a href="/file.php?id=110386380">513 kB</a></nobr></td>
+<td>pdf</td>
+<td><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen" href="/ads.php?md5=95f2a06a87e7afbd07c9ceafb358b0f9&downloadname=10.0000/95f2a06a87e7afbd07c9ceafb358b0f9"><span class="badge badge-primary">Libgen</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="sci-hub" href="http://sci-hub.ru/10.0000/95f2a06a87e7afbd07c9ceafb358b0f9"><span class="badge badge-primary">Sci-Hub</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen.xyz" href="https://libgen.xyz/book/95f2a06a87e7afbd07c9ceafb358b0f9"><span class="badge badge-primary">libgen.xyz</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen.pw" href="https://libgen.pw/book/95f2a06a87e7afbd07c9ceafb358b0f9"><span class="badge badge-primary">libgen.pw</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="anna's archive" href="https://en.annas-archive.gl/md5/95f2a06a87e7afbd07c9ceafb358b0f9?r=Ax2w6jC"><span class="badge badge-primary">Anna's arch</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Randombook" href="https://randombook.org/book/95f2a06a87e7afbd07c9ceafb358b0f9"><span class="badge badge-primary">Randombook</span></a> </td>
+</tr><tr>
+
+<td><b><a href="series.php?id=17929">Nature Reviews Clinical Oncology (formerly Nature Clinical Practice Oncology)   </a><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2015-09-24/2021-07-20; ID: 37450927<br>" href="edition.php?id=37406932"><i> 2009-jan 20 vol. 6 iss. 3</i></a> pp.130—131</b><br><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2015-09-24/2021-07-20; ID: 37450927<br>" href="edition.php?id=37406932">Fludarabine, cyclophosphamide and rituximab for chronic lymphocytic leukemia: no country for old men? <i></i></a><br><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2015-09-24/2021-07-20; ID: 37450927<br>" href="edition.php?id=37406932"><i><font color="green">DOI: 10.1038/ncponc1318</font></a></i> 
+<nobr><span class="badge badge-primary"><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Journal article">a</a></span> 
+<span class="badge badge-secondary"">a 31016435</span></nobr>
+
+</td>
+<td>Hamblin, Terry J </td>
+<td></td>
+<td><nobr>2009 January 20</nobr></td>
+<td>English</td>
+<td>0</td>
+<td><nobr><a href="/file.php?id=37450927">455 kB</a></nobr></td>
+<td>pdf</td>
+<td><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen" href="/ads.php?md5=1bcddf8afdb03d214b40701f9156007e&downloadname=10.1038/ncponc1318"><span class="badge badge-primary">Libgen</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="sci-hub" href="http://sci-hub.ru/10.1038/ncponc1318"><span class="badge badge-primary">Sci-Hub</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen.xyz" href="https://libgen.xyz/book/1bcddf8afdb03d214b40701f9156007e"><span class="badge badge-primary">libgen.xyz</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen.pw" href="https://libgen.pw/book/1bcddf8afdb03d214b40701f9156007e"><span class="badge badge-primary">libgen.pw</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="anna's archive" href="https://en.annas-archive.gl/md5/1bcddf8afdb03d214b40701f9156007e?r=Ax2w6jC"><span class="badge badge-primary">Anna's arch</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Randombook" href="https://randombook.org/book/1bcddf8afdb03d214b40701f9156007e"><span class="badge badge-primary">Randombook</span></a> </td>
+</tr><tr>
+
+<td><b><a href="series.php?id=13792">Journal of Hypertension   </a><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2016-07-17/2021-07-21; ID: 64519012<br>" href="edition.php?id=64738968"><i> 2013-jun vol. 31 iss. 6</i></a> pp.1091—1093</b><br><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2016-07-17/2021-07-21; ID: 64519012<br>" href="edition.php?id=64738968">Renal angioplasty for treatment of hypertensive patients with fibromuscular dysplasia. No country for old men <i></i></a><br><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2016-07-17/2021-07-21; ID: 64519012<br>" href="edition.php?id=64738968"><i><font color="green">DOI: 10.1097/hjh.0b013e32836163d9</font></a></i> 
+<nobr><span class="badge badge-primary"><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Journal article">a</a></span> 
+<span class="badge badge-secondary"">a 58480979</span></nobr>
+
+</td>
+<td>Morganti, Alberto; Lonati, Chiara </td>
+<td></td>
+<td><nobr>2013 June</nobr></td>
+<td>English</td>
+<td>0</td>
+<td><nobr><a href="/file.php?id=64519012">117 kB</a></nobr></td>
+<td>pdf</td>
+<td><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen" href="/ads.php?md5=a2174ac2e345074e1ddbbb79cb584c1b&downloadname=10.1097/hjh.0b013e32836163d9"><span class="badge badge-primary">Libgen</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="sci-hub" href="http://sci-hub.ru/10.1097/hjh.0b013e32836163d9"><span class="badge badge-primary">Sci-Hub</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen.xyz" href="https://libgen.xyz/book/a2174ac2e345074e1ddbbb79cb584c1b"><span class="badge badge-primary">libgen.xyz</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen.pw" href="https://libgen.pw/book/a2174ac2e345074e1ddbbb79cb584c1b"><span class="badge badge-primary">libgen.pw</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="anna's archive" href="https://en.annas-archive.gl/md5/a2174ac2e345074e1ddbbb79cb584c1b?r=Ax2w6jC"><span class="badge badge-primary">Anna's arch</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Randombook" href="https://randombook.org/book/a2174ac2e345074e1ddbbb79cb584c1b"><span class="badge badge-primary">Randombook</span></a> </td>
+</tr><tr>
+
+<td><b><a href="series.php?id=48730">The Cormac McCarthy Journal   </a><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2025-08-03/2025-08-03; ID: 109001158<br>10.0000%2Fmuse.jhu.edu%2Farticle%2F751604" href="edition.php?id=124484125"><i> 2020-apr 6 vol. 18 iss. 1</i></a> pp.37—55</b><br><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2025-08-03/2025-08-03; ID: 109001158<br>10.0000%2Fmuse.jhu.edu%2Farticle%2F751604" href="edition.php?id=124484125">Death and the Search for Heideggerian Authenticity in <em>No Country for Old Men</em> <i></i></a><br><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2025-08-03/2025-08-03; ID: 109001158<br>10.0000%2Fmuse.jhu.edu%2Farticle%2F751604" href="edition.php?id=124484125"><i><font color="green">DOI: 10.5325/cormmccaj.18.1.0037</font></a></i> 
+<nobr><span class="badge badge-primary"><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Journal article">a</a></span> 
+<span class="badge badge-secondary"">a 88274472</span></nobr>
+
+</td>
+<td>Phipps, Gregory (author)</td>
+<td>The Pennsylvania State University Press</td>
+<td><nobr>2020 April 6</nobr></td>
+<td></td>
+<td>20</td>
+<td><nobr><a href="/file.php?id=109001158">517 kB</a></nobr></td>
+<td>pdf</td>
+<td><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen" href="/ads.php?md5=21a5125651fdf1e3874a772870c7d840&downloadname=10.5325/cormmccaj.18.1.0037"><span class="badge badge-primary">Libgen</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="sci-hub" href="http://sci-hub.ru/10.5325/cormmccaj.18.1.0037"><span class="badge badge-primary">Sci-Hub</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen.xyz" href="https://libgen.xyz/book/21a5125651fdf1e3874a772870c7d840"><span class="badge badge-primary">libgen.xyz</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen.pw" href="https://libgen.pw/book/21a5125651fdf1e3874a772870c7d840"><span class="badge badge-primary">libgen.pw</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="anna's archive" href="https://en.annas-archive.gl/md5/21a5125651fdf1e3874a772870c7d840?r=Ax2w6jC"><span class="badge badge-primary">Anna's arch</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Randombook" href="https://randombook.org/book/21a5125651fdf1e3874a772870c7d840"><span class="badge badge-primary">Randombook</span></a> </td>
+</tr><tr>
+
+<td><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2016-01-19/2026-06-14; ID: 2634149<br>McCarthy - No Country For Old Men.fb2" href="edition.php?id=3077217">No Country For Old Men <i></i></a> 
+<nobr><span class="badge badge-primary"><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Book">b</a></span> 
+<span class="badge badge-secondary"">r 113933</span></nobr>
+
+</td>
+<td><a href="author.php?id=231018">McCarthy, Cormac (Author)</a>; <a href="author.php?id=230968">McCarthy, Cormac(Author)</a></td>
+<td></td>
+<td><nobr></nobr></td>
+<td>English</td>
+<td>0 / 207</td>
+<td><nobr><a href="/file.php?id=2634149">422 kB</a></nobr></td>
+<td>fb2</td>
+<td><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen" href="/ads.php?md5=f302beba58474c90885b3964fea9ad3c"><span class="badge badge-primary">Libgen</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Randombook" href="https://randombook.org/book/f302beba58474c90885b3964fea9ad3c"><span class="badge badge-primary">Randombook</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen.me" href="https://libgen.me/book/f302beba58474c90885b3964fea9ad3c"><span class="badge badge-primary">libgen.me</span></a> </td>
+</tr><tr>
+
+<td><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2016-01-21/2026-06-13; ID: 3178981<br>" href="edition.php?id=2836426">No Country For Old Men <i></i></a> 
+<nobr><span class="badge badge-primary"><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Book">b</a></span> 
+<span class="badge badge-secondary"">r 677433</span></nobr>
+
+</td>
+<td><a href="author.php?id=231018">McCarthy, Cormac (Author)</a></td>
+<td></td>
+<td><nobr></nobr></td>
+<td>English</td>
+<td>0</td>
+<td><nobr><a href="/file.php?id=3178981">440 kB</a></nobr></td>
+<td>fb2</td>
+<td><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen" href="/ads.php?md5=2987f0a09a3bd4a8d13824792a1887f1"><span class="badge badge-primary">Libgen</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Randombook" href="https://randombook.org/book/2987f0a09a3bd4a8d13824792a1887f1"><span class="badge badge-primary">Randombook</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen.me" href="https://libgen.me/book/2987f0a09a3bd4a8d13824792a1887f1"><span class="badge badge-primary">libgen.me</span></a> </td>
+</tr><tr>
+
+<td><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2016-02-01/2026-06-13; ID: 3545213<br>McCarthy_Cormac_No_Country_For_Old_Men_Litmir.net_bid101217_original_013cc.fb2" href="edition.php?id=3675602">No Country For Old Men <i></i></a> 
+<nobr><span class="badge badge-primary"><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Book">b</a></span> 
+<span class="badge badge-secondary"">r 1044521</span></nobr>
+
+</td>
+<td><a href="author.php?id=231018">McCarthy, Cormac (Author)</a></td>
+<td></td>
+<td><nobr></nobr></td>
+<td>English</td>
+<td>0</td>
+<td><nobr><a href="/file.php?id=3545213">481 kB</a></nobr></td>
+<td>fb2</td>
+<td><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen" href="/ads.php?md5=8ef1106ccd085c7986dde539b7083eda"><span class="badge badge-primary">Libgen</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Randombook" href="https://randombook.org/book/8ef1106ccd085c7986dde539b7083eda"><span class="badge badge-primary">Randombook</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen.me" href="https://libgen.me/book/8ef1106ccd085c7986dde539b7083eda"><span class="badge badge-primary">libgen.me</span></a> </td>
+</tr><tr>
+
+<td><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2021-06-18/2026-06-12; ID: 4281408<br>Cormac McCarthy - No Country For Old Men (v1.0) (html)" href="edition.php?id=3992896">No Country For Old Men <i></i></a> 
+<nobr><span class="badge badge-primary"><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Book">b</a></span> 
+<span class="badge badge-secondary"">f 231864</span></nobr>
+
+</td>
+<td>McCarthy, Cormac </td>
+<td></td>
+<td><nobr></nobr></td>
+<td>English</td>
+<td>0</td>
+<td><nobr><a href="/file.php?id=4281408">147 kB</a></nobr></td>
+<td>rar</td>
+<td><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen" href="/ads.php?md5=33310dd98179f0ad4d25faaef7d67e49"><span class="badge badge-primary">1</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Randombook" href="https://randombook.org/book/33310dd98179f0ad4d25faaef7d67e49"><span class="badge badge-primary">2</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="anna's archive" href="https://en.annas-archive.gl/md5/33310dd98179f0ad4d25faaef7d67e49?r=Ax2w6jC"><span class="badge badge-primary">3</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen.pw" href="https://libgen.pw/book/33310dd98179f0ad4d25faaef7d67e49"><span class="badge badge-primary">4</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen.me" href="https://libgen.me/book/33310dd98179f0ad4d25faaef7d67e49"><span class="badge badge-primary">5</span></a> </td>
+</tr><tr>
+
+<td><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2021-06-18/2021-06-18; ID: 4281409<br>Cormac McCarthy - No Country for Old Men (lit)" href="edition.php?id=3992897">No Country for Old Men <i></i></a> 
+<nobr><span class="badge badge-primary"><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Book">b</a></span> 
+<span class="badge badge-secondary"">f 231865</span></nobr>
+
+</td>
+<td>McCarthy, Cormac </td>
+<td></td>
+<td><nobr></nobr></td>
+<td>English</td>
+<td>0</td>
+<td><nobr><a href="/file.php?id=4281409">256 kB</a></nobr></td>
+<td>lit</td>
+<td><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen" href="/ads.php?md5=df12016d3087224e855d7f7ebbc4730b"><span class="badge badge-primary">1</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Randombook" href="https://randombook.org/book/df12016d3087224e855d7f7ebbc4730b"><span class="badge badge-primary">2</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="anna's archive" href="https://en.annas-archive.gl/md5/df12016d3087224e855d7f7ebbc4730b?r=Ax2w6jC"><span class="badge badge-primary">3</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen.pw" href="https://libgen.pw/book/df12016d3087224e855d7f7ebbc4730b"><span class="badge badge-primary">4</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen.me" href="https://libgen.me/book/df12016d3087224e855d7f7ebbc4730b"><span class="badge badge-primary">5</span></a> </td>
+</tr><tr>
+
+<td><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2021-06-18/2026-06-12; ID: 4281420<br>Cormac McCarthy - No Country for Old Men (v4.0) (epub)" href="edition.php?id=3992908">No Country for Old Men <i></i></a> 
+<nobr><span class="badge badge-primary"><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Book">b</a></span> 
+<span class="badge badge-secondary"">f 231876</span></nobr>
+
+</td>
+<td>McCarthy, Cormac </td>
+<td></td>
+<td><nobr></nobr></td>
+<td>English</td>
+<td>0</td>
+<td><nobr><a href="/file.php?id=4281420">273 kB</a></nobr></td>
+<td>epub</td>
+<td><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen" href="/ads.php?md5=efd8758f0b71e005b4765763cc16d5b1"><span class="badge badge-primary">1</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Randombook" href="https://randombook.org/book/efd8758f0b71e005b4765763cc16d5b1"><span class="badge badge-primary">2</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="anna's archive" href="https://en.annas-archive.gl/md5/efd8758f0b71e005b4765763cc16d5b1?r=Ax2w6jC"><span class="badge badge-primary">3</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen.pw" href="https://libgen.pw/book/efd8758f0b71e005b4765763cc16d5b1"><span class="badge badge-primary">4</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen.me" href="https://libgen.me/book/efd8758f0b71e005b4765763cc16d5b1"><span class="badge badge-primary">5</span></a> </td>
+</tr><tr>
+
+<td><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2021-06-18/2025-09-20; ID: 4433068<br>No country for old men - Cormac McCarthy" href="edition.php?id=4146436">No Country for Old Men <i></i></a><br><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2021-06-18/2025-09-20; ID: 4433068<br>No country for old men - Cormac McCarthy" href="edition.php?id=4146436"><i><font color="green"> 9780307390530; 0307390535</font></a></i> 
+<nobr><span class="badge badge-primary"><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Book">b</a></span> 
+<span class="badge badge-secondary"">f 385404</span></nobr>
+
+</td>
+<td>McCarthy, Cormac </td>
+<td>Knopf Doubleday Publishing Group</td>
+<td><nobr>2007</nobr></td>
+<td>English</td>
+<td>0</td>
+<td><nobr><a href="/file.php?id=4433068">267 kB</a></nobr></td>
+<td>epub</td>
+<td><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen" href="/ads.php?md5=bdca2cab5dbaea286446c8c7ca55d5ea"><span class="badge badge-primary">1</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Randombook" href="https://randombook.org/book/bdca2cab5dbaea286446c8c7ca55d5ea"><span class="badge badge-primary">2</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="anna's archive" href="https://en.annas-archive.gl/md5/bdca2cab5dbaea286446c8c7ca55d5ea?r=Ax2w6jC"><span class="badge badge-primary">3</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen.pw" href="https://libgen.pw/book/bdca2cab5dbaea286446c8c7ca55d5ea"><span class="badge badge-primary">4</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen.me" href="https://libgen.me/book/bdca2cab5dbaea286446c8c7ca55d5ea"><span class="badge badge-primary">5</span></a> </td>
+</tr><tr>
+
+<td><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2021-06-18/2021-06-18; ID: 4451339<br>No Country for Old Men - Cormac McCarthy" href="edition.php?id=4164834">No Country for Old Men <i></i></a><br><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2021-06-18/2021-06-18; ID: 4451339<br>No Country for Old Men - Cormac McCarthy" href="edition.php?id=4164834"><i><font color="green"> 9780375706677; 0375706674</font></a></i> 
+<nobr><span class="badge badge-primary"><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Book">b</a></span> 
+<span class="badge badge-secondary"">f 403802</span></nobr>
+
+</td>
+<td>McCarthy, Cormac </td>
+<td>Random House, Inc.</td>
+<td><nobr>2006</nobr></td>
+<td>English</td>
+<td>0</td>
+<td><nobr><a href="/file.php?id=4451339">180 kB</a></nobr></td>
+<td>epub</td>
+<td><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen" href="/ads.php?md5=ef8a57964478baaddd0e0d04fa110664"><span class="badge badge-primary">1</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Randombook" href="https://randombook.org/book/ef8a57964478baaddd0e0d04fa110664"><span class="badge badge-primary">2</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="anna's archive" href="https://en.annas-archive.gl/md5/ef8a57964478baaddd0e0d04fa110664?r=Ax2w6jC"><span class="badge badge-primary">3</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen.pw" href="https://libgen.pw/book/ef8a57964478baaddd0e0d04fa110664"><span class="badge badge-primary">4</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen.me" href="https://libgen.me/book/ef8a57964478baaddd0e0d04fa110664"><span class="badge badge-primary">5</span></a> </td>
+</tr><tr>
+
+<td><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2021-06-18/2021-06-18; ID: 4451340<br>No country for old men - Cormac McCarthy" href="edition.php?id=4164835">No country for old men <i></i></a><br><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2021-06-18/2021-06-18; ID: 4451340<br>No country for old men - Cormac McCarthy" href="edition.php?id=4164835"><i><font color="green"> 9780375406775; 0375406778</font></a></i> 
+<nobr><span class="badge badge-primary"><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Book">b</a></span> 
+<span class="badge badge-secondary"">f 403803</span></nobr>
+
+</td>
+<td>McCarthy, Cormac </td>
+<td>Knopf</td>
+<td><nobr>2005</nobr></td>
+<td>English</td>
+<td>0</td>
+<td><nobr><a href="/file.php?id=4451340">371 kB</a></nobr></td>
+<td>mobi</td>
+<td><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen" href="/ads.php?md5=62d8b96645235ae6d75d74dd0d1fd5ff"><span class="badge badge-primary">1</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Randombook" href="https://randombook.org/book/62d8b96645235ae6d75d74dd0d1fd5ff"><span class="badge badge-primary">2</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="anna's archive" href="https://en.annas-archive.gl/md5/62d8b96645235ae6d75d74dd0d1fd5ff?r=Ax2w6jC"><span class="badge badge-primary">3</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen.pw" href="https://libgen.pw/book/62d8b96645235ae6d75d74dd0d1fd5ff"><span class="badge badge-primary">4</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen.me" href="https://libgen.me/book/62d8b96645235ae6d75d74dd0d1fd5ff"><span class="badge badge-primary">5</span></a> </td>
+</tr><tr>
+
+<td><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2021-06-18/2021-06-18; ID: 4451341<br>No Country for Old Men - Cormac McCarthy" href="edition.php?id=4164836">No Country for Old Men <i></i></a><br><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2021-06-18/2021-06-18; ID: 4451341<br>No Country for Old Men - Cormac McCarthy" href="edition.php?id=4164836"><i><font color="green"> 9780375706677; 0375706674</font></a></i> 
+<nobr><span class="badge badge-primary"><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Book">b</a></span> 
+<span class="badge badge-secondary"">f 403804</span></nobr>
+
+</td>
+<td>McCarthy, Cormac </td>
+<td>Random House, Inc.</td>
+<td><nobr>2006</nobr></td>
+<td>English</td>
+<td>0</td>
+<td><nobr><a href="/file.php?id=4451341">300 kB</a></nobr></td>
+<td>mobi</td>
+<td><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen" href="/ads.php?md5=571f98e1154e50dceba7aaed68a42101"><span class="badge badge-primary">1</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Randombook" href="https://randombook.org/book/571f98e1154e50dceba7aaed68a42101"><span class="badge badge-primary">2</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="anna's archive" href="https://en.annas-archive.gl/md5/571f98e1154e50dceba7aaed68a42101?r=Ax2w6jC"><span class="badge badge-primary">3</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen.pw" href="https://libgen.pw/book/571f98e1154e50dceba7aaed68a42101"><span class="badge badge-primary">4</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen.me" href="https://libgen.me/book/571f98e1154e50dceba7aaed68a42101"><span class="badge badge-primary">5</span></a> </td>
+</tr><tr>
+
+<td><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2021-06-18/2021-06-18; ID: 4451342<br>No Country for Old Men - Cormac McCarthy" href="edition.php?id=4164837">No Country for Old Men <i></i></a><br><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2021-06-18/2021-06-18; ID: 4451342<br>No Country for Old Men - Cormac McCarthy" href="edition.php?id=4164837"><i><font color="green"> 9780375706677; 0375706674</font></a></i> 
+<nobr><span class="badge badge-primary"><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Book">b</a></span> 
+<span class="badge badge-secondary"">f 403805</span></nobr>
+
+</td>
+<td>McCarthy, Cormac </td>
+<td>Random House, Inc.</td>
+<td><nobr>2006</nobr></td>
+<td>English</td>
+<td>0</td>
+<td><nobr><a href="/file.php?id=4451342">298 kB</a></nobr></td>
+<td>mobi</td>
+<td><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen" href="/ads.php?md5=04371a955e00d30072e67936d07a3442"><span class="badge badge-primary">1</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Randombook" href="https://randombook.org/book/04371a955e00d30072e67936d07a3442"><span class="badge badge-primary">2</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="anna's archive" href="https://en.annas-archive.gl/md5/04371a955e00d30072e67936d07a3442?r=Ax2w6jC"><span class="badge badge-primary">3</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen.pw" href="https://libgen.pw/book/04371a955e00d30072e67936d07a3442"><span class="badge badge-primary">4</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen.me" href="https://libgen.me/book/04371a955e00d30072e67936d07a3442"><span class="badge badge-primary">5</span></a> </td>
+</tr><tr>
+
+<td><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2021-06-18/2021-06-18; ID: 4451343<br>No country for old men - Cormac McCarthy" href="edition.php?id=4164838">No country for old men <i></i></a><br><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2021-06-18/2021-06-18; ID: 4451343<br>No country for old men - Cormac McCarthy" href="edition.php?id=4164838"><i><font color="green"> 9780375406775; 0375406778</font></a></i> 
+<nobr><span class="badge badge-primary"><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Book">b</a></span> 
+<span class="badge badge-secondary"">f 403806</span></nobr>
+
+</td>
+<td>McCarthy, Cormac </td>
+<td>Knopf</td>
+<td><nobr>2005</nobr></td>
+<td>English</td>
+<td>0</td>
+<td><nobr><a href="/file.php?id=4451343">212 kB</a></nobr></td>
+<td>epub</td>
+<td><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen" href="/ads.php?md5=080425a606b940bffeb6c26eeff474a3"><span class="badge badge-primary">1</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Randombook" href="https://randombook.org/book/080425a606b940bffeb6c26eeff474a3"><span class="badge badge-primary">2</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="anna's archive" href="https://en.annas-archive.gl/md5/080425a606b940bffeb6c26eeff474a3?r=Ax2w6jC"><span class="badge badge-primary">3</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen.pw" href="https://libgen.pw/book/080425a606b940bffeb6c26eeff474a3"><span class="badge badge-primary">4</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen.me" href="https://libgen.me/book/080425a606b940bffeb6c26eeff474a3"><span class="badge badge-primary">5</span></a> </td>
+</tr><tr>
+
+<td><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2021-06-18/2021-06-18; ID: 4451344<br>No Country for Old Men - Cormac McCarthy" href="edition.php?id=4164839">No Country for Old Men <i></i></a><br><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2021-06-18/2021-06-18; ID: 4451344<br>No Country for Old Men - Cormac McCarthy" href="edition.php?id=4164839"><i><font color="green"> 9780375706677; 0375706674</font></a></i> 
+<nobr><span class="badge badge-primary"><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Book">b</a></span> 
+<span class="badge badge-secondary"">f 403807</span></nobr>
+
+</td>
+<td>McCarthy, Cormac </td>
+<td>Random House, Inc.</td>
+<td><nobr>2006</nobr></td>
+<td>English</td>
+<td>0</td>
+<td><nobr><a href="/file.php?id=4451344">181 kB</a></nobr></td>
+<td>epub</td>
+<td><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen" href="/ads.php?md5=e776ea6eec1c049161d1080b07b75032"><span class="badge badge-primary">1</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Randombook" href="https://randombook.org/book/e776ea6eec1c049161d1080b07b75032"><span class="badge badge-primary">2</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="anna's archive" href="https://en.annas-archive.gl/md5/e776ea6eec1c049161d1080b07b75032?r=Ax2w6jC"><span class="badge badge-primary">3</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen.pw" href="https://libgen.pw/book/e776ea6eec1c049161d1080b07b75032"><span class="badge badge-primary">4</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen.me" href="https://libgen.me/book/e776ea6eec1c049161d1080b07b75032"><span class="badge badge-primary">5</span></a> </td>
+</tr><tr>
+
+<td><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2021-06-18/2021-06-18; ID: 4451345<br>No Country for Old Men - Cormac McCarthy" href="edition.php?id=4164840">No Country for Old Men <i></i></a><br><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2021-06-18/2021-06-18; ID: 4451345<br>No Country for Old Men - Cormac McCarthy" href="edition.php?id=4164840"><i><font color="green"> 9780375706677; 0375706674</font></a></i> 
+<nobr><span class="badge badge-primary"><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Book">b</a></span> 
+<span class="badge badge-secondary"">f 403808</span></nobr>
+
+</td>
+<td>McCarthy, Cormac </td>
+<td>Random House, Inc.</td>
+<td><nobr>2006</nobr></td>
+<td>English</td>
+<td>0</td>
+<td><nobr><a href="/file.php?id=4451345">180 kB</a></nobr></td>
+<td>epub</td>
+<td><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen" href="/ads.php?md5=836640d65e80e4ecdac8687b9c761557"><span class="badge badge-primary">1</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Randombook" href="https://randombook.org/book/836640d65e80e4ecdac8687b9c761557"><span class="badge badge-primary">2</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="anna's archive" href="https://en.annas-archive.gl/md5/836640d65e80e4ecdac8687b9c761557?r=Ax2w6jC"><span class="badge badge-primary">3</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen.pw" href="https://libgen.pw/book/836640d65e80e4ecdac8687b9c761557"><span class="badge badge-primary">4</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen.me" href="https://libgen.me/book/836640d65e80e4ecdac8687b9c761557"><span class="badge badge-primary">5</span></a> </td>
+</tr><tr>
+
+<td><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2021-06-18/2021-06-18; ID: 4514463<br>No Country For Old Men - McCarthy_ Cormac" href="edition.php?id=4228261">No Country For Old Men <i></i></a> 
+<nobr><span class="badge badge-primary"><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Book">b</a></span> 
+<span class="badge badge-secondary"">f 467229</span></nobr>
+
+</td>
+<td>Cormac, McCarthy </td>
+<td></td>
+<td><nobr></nobr></td>
+<td>English</td>
+<td>0</td>
+<td><nobr><a href="/file.php?id=4514463">171 kB</a></nobr></td>
+<td>epub</td>
+<td><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen" href="/ads.php?md5=e52426ddcf0f76cc3bdbe9c3dde36c4d"><span class="badge badge-primary">1</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Randombook" href="https://randombook.org/book/e52426ddcf0f76cc3bdbe9c3dde36c4d"><span class="badge badge-primary">2</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="anna's archive" href="https://en.annas-archive.gl/md5/e52426ddcf0f76cc3bdbe9c3dde36c4d?r=Ax2w6jC"><span class="badge badge-primary">3</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen.pw" href="https://libgen.pw/book/e52426ddcf0f76cc3bdbe9c3dde36c4d"><span class="badge badge-primary">4</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen.me" href="https://libgen.me/book/e52426ddcf0f76cc3bdbe9c3dde36c4d"><span class="badge badge-primary">5</span></a> </td>
+</tr><tr>
+
+<td><a data-toggle="tooltip" data-placement="right" data-html="true" title="Add/Edit : 2021-06-18/2021-06-18; ID: 4573493<br>No Country For Old Men - McCarthy_ Cormac" href="edition.php?id=4288076">No Country For Old Men <i></i></a> 
+<nobr><span class="badge badge-primary"><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Book">b</a></span> 
+<span class="badge badge-secondary"">f 527044</span></nobr>
+
+</td>
+<td>Cormac, McCarthy </td>
+<td></td>
+<td><nobr>2010</nobr></td>
+<td>English</td>
+<td>0</td>
+<td><nobr><a href="/file.php?id=4573493">171 kB</a></nobr></td>
+<td>epub</td>
+<td><a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen" href="/ads.php?md5=d6a68c5d9ac84af521c347f4fd96eb16"><span class="badge badge-primary">1</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="Randombook" href="https://randombook.org/book/d6a68c5d9ac84af521c347f4fd96eb16"><span class="badge badge-primary">2</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="anna's archive" href="https://en.annas-archive.gl/md5/d6a68c5d9ac84af521c347f4fd96eb16?r=Ax2w6jC"><span class="badge badge-primary">3</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen.pw" href="https://libgen.pw/book/d6a68c5d9ac84af521c347f4fd96eb16"><span class="badge badge-primary">4</span></a> <a data-toggle="tooltip" data-placement="bottom" data-html="true" title="libgen.me" href="https://libgen.me/book/d6a68c5d9ac84af521c347f4fd96eb16"><span class="badge badge-primary">5</span></a> </td>
+</tr></tbody></table><table>
+  <tr>
+    <td><script type="text/javascript">
+	atOptions = {
+		'key' : '80ff16b446cdd16fda9f69edcec465d4',
+		'format' : 'iframe',
+		'height' : 60,
+		'width' : 468,
+		'params' : {}
+	};
+</script>
+<script src="https://raisinggrannyexplode.com/80ff16b446cdd16fda9f69edcec465d4/invoke.js"></script>
+
+</td>
+    <td><script type="text/javascript">
+	atOptions = {
+		'key' : '80ff16b446cdd16fda9f69edcec465d4',
+		'format' : 'iframe',
+		'height' : 60,
+		'width' : 468,
+		'params' : {}
+	};
+</script>
+<script src="https://raisinggrannyexplode.com/80ff16b446cdd16fda9f69edcec465d4/invoke.js"></script>
+
+</td>
+  </tr> 
+  <tr>
+    <td><script type="text/javascript">
+	atOptions = {
+		'key' : '80ff16b446cdd16fda9f69edcec465d4',
+		'format' : 'iframe',
+		'height' : 60,
+		'width' : 468,
+		'params' : {}
+	};
+</script>
+<script src="https://raisinggrannyexplode.com/80ff16b446cdd16fda9f69edcec465d4/invoke.js"></script>
+
+</td>
+    <td><script type="text/javascript">
+	atOptions = {
+		'key' : '80ff16b446cdd16fda9f69edcec465d4',
+		'format' : 'iframe',
+		'height' : 60,
+		'width' : 468,
+		'params' : {}
+	};
+</script>
+<script src="https://raisinggrannyexplode.com/80ff16b446cdd16fda9f69edcec465d4/invoke.js"></script>
+
+</td>
+  </tr> 
+  <tr>
+    <td><script type="text/javascript">
+	atOptions = {
+		'key' : '80ff16b446cdd16fda9f69edcec465d4',
+		'format' : 'iframe',
+		'height' : 60,
+		'width' : 468,
+		'params' : {}
+	};
+</script>
+<script src="https://raisinggrannyexplode.com/80ff16b446cdd16fda9f69edcec465d4/invoke.js"></script>
+
+</td>
+    <td><script type="text/javascript">
+	atOptions = {
+		'key' : '80ff16b446cdd16fda9f69edcec465d4',
+		'format' : 'iframe',
+		'height' : 60,
+		'width' : 468,
+		'params' : {}
+	};
+</script>
+<script src="https://raisinggrannyexplode.com/80ff16b446cdd16fda9f69edcec465d4/invoke.js"></script>
+
+</td>
+  </tr> 
+</table><div style="text-align: center;" class="paginator" id="paginator_example_bottom"></div><script type="text/javascript">paginator_example_bottom = new Paginator("paginator_example_bottom", 7, 25, 1, "/index.php?req=no%20country%20for%20old%20men&lg_topic=libgen&open=0&view=simple&res=25&phrase=1&column=def&curtab=f&order=&ordermode=desc&filesuns=all&page=" );</script><div class="modal fade text-dark" id="googlemodemodal" tabindex="-1" aria-labelledby="googlemodemodalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="googlemodemodalLabel">Google mode</h5>
+        <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body">
+        
+By default, the search searches for a set of marked fields containing all the words specified in the query in no particular order<br>
+Advanced search mode (Google mode), allows you to set more precise search terms:<br>
+- Quotes: "" - search exactly for the phrase as it is written in the database<br>
+- Mask: * (min 3 chars)- search by part of a word<br>
+- Excluding words: - (minus) - does not display records containing this word, also, these conditions can be combined.<br>
+Example:<br>
+"Physics and Chemistry" Basi * -technology<br>
+means the title of the book contains the exact phrase "Physics and Chemistry", contains the word starting with Basi and does not contain the word technology.<br>
+You can also search for a specific field or view mode that is not displayed for selection in the interface, syntax: field_name:value<br>
+List of add. fields:<br>
+For the Files tab:<br>
+<i>md5</i><br>
+<i>tth</i><br>
+<i>sha1</i><br>
+<i>sha256</i><br>
+<i>crc32</i><br>
+<i>edonkey</i><br>
+<i>doi</i><br>
+
+View modes:<br>
+<i>mode:last</i> - last added entries (for a given object - series, authors, editions, etc.)<br>
+<br>
+<i>fmode:last</i> - last added files (for the given repository)<br>
+<br>
+Add. fields for object "editions" and "files":<br>
+<i>issuevolume</i> - periodical volume<br>
+<i>issuesid</i> - serial ID of the periodical<br>
+<i>issuenumber</i> - the number (within the volume) of the periodical<br>
+<i>issuetnumber</i> is the gross number of the periodical<br>
+<i>issueynumber</i> - intra-annual issue of the periodical<br>
+<i>year</i> - year<br>
+<i>publisherid</i> - Publisher ID<br>
+<i>authorid</i> - Author's ID<br>
+<i>lang</i> - three-letter language code (ISO 639)<br>
+<i>fsize</i> - filesize (MBytes), for example: fsize&gt;10, fsize&lt;20, fsize=15<br>
+<i>ext</i> - File extenstion <br>
+<i>booktopicid</i> - ID of the classifier for books<br>
+<i>tags</i> - Теги (издание, работы, серия)<br>
+<br>
+Add. fields for object "series"<br>
+<i>comtopicid</i> - ID of the classifier for comics<br>
+<i>smtopicid</i> - ID of the classifier for scientific journals<br>
+<i>magtopicid</i> - ID of the classifier for magazines<br>
+<i>issn</i> - ISSN
+
+      </div>
+    </div>
+  </div>
+</div><nav class="navbar sticky-bottom navbar-expand-sm navbar-dark bg-secondary">
+  <div class="collapse navbar-collapse" id="navbarCollapse">
+    <ul class="navbar-nav mr-auto">
+      <li class="nav-item">
+	    <a class="nav-link" href="#" data-toggle="modal" data-target="#dmcamodal">DMCA</a>
+      </li>
+      <li class="nav-item">
+	    <a class="nav-link" href="#" data-toggle="modal" data-target="#aboutmodal">ABOUT</a>
+      </li>
+      <li class="nav-item">
+	    <a class="nav-link" href="#" data-toggle="modal" data-target="#donatemodal" >DONATE</a>
+      </li>
+	
+    </ul>
+	<span class="navbar-text">Users online 7328</span>
+  </div>
+</nav>
+
+<!-- Modal Donate -->
+<div class="modal fade text-dark" id="donatemodal" tabindex="-1" aria-labelledby="donatemodalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="donatemodalLabel">Donate</h5>
+        <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body">
+        <a href="bitcoin://bc1qlv9lwa5vncm2jjrxyhddfcvu0z3u5vn0s9672r">Bitcoin</a>
+	<br>
+        <a href="monero:48WhyKv4D9x53SyDFNYuMsHsDzuHXEcht4mWoFtXtE3k4KZ3A7goi3CQWBQQZ3A8PSK7CpwnAFKLnfGiZTAbEpcaCQCghvN">Monero</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal About -->
+<div class="modal fade text-dark" id="aboutmodal" tabindex="-1" aria-labelledby="aboutmodalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="aboutmodalLabel">About</h5>
+        <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body">
+
+
+<div id="about">
+The Library Genesis aggregator is a community aiming at collecting and cataloging items descriptions for the most part of scientific, 
+scientific and technical directions, as well as file metadata. In addition to the descriptions, 
+the aggregator contains only links to third-party resources hosted by users. 
+All information posted on the website is collected from publicly available public Internet resources and is intended solely for informational purposes.  
+</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal DMCA -->
+<div class="modal fade text-dark" id="dmcamodal" tabindex="-1" aria-labelledby="dmcamodalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="dmcamodalLabel">About</h5>
+        <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body">
+
+<div id="dmca">
+Library Genesis - aggregator items is a website that collects and organizes online items from users. 
+Item aggregation is done for fact-finding purposes, and website Library Genesis respects the rights of copyright holders and respect dcma.
+
+     Removing Content From Library Genesis / DMCA Policy
+     Library Genesis respects the intellectual property of others.
+</div>
+
+    <div class="dmca">
+     If you believe that your copyrighted work has been copied in a way that constitutes copyright infringement and is accessible on this site, you may notify our copyright agent, as set forth in the Digital Millennium Copyright Act of 1998 (DMCA). For your complaint to be valid under the DMCA, you must provide the following information when providing notice of the claimed copyright infringement:
+</div>
+    <div class="dmca">
+     * A physical or electronic signature of a person authorized to act on behalf of the copyright owner Identification of the copyrighted work claimed to have been infringed <br />
+     * Identification of the material that is claimed to be infringing or to be the subject of the infringing activity and that is to be removed <br />
+     * Information reasonably sufficient to permit the service provider to contact the complaining party, such as an address, telephone number, and, if available, an electronic mail address <br />
+     * A statement that the complaining party "in good faith believes that use of the material in the manner complained of is not authorized by the copyright owner, its agent, or law" <br />
+     * A statement that the "information in the notification is accurate", and "under penalty of perjury, the complaining party is authorized to act on behalf of the owner of an exclusive right that is allegedly infringed" <br />
+     The above information must be submitted as a written, faxed or emailed notification to the following Designated Agent: <a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="84ede5eafee8ede6c4f4f6ebf0ebeae9e5ede8aae7ebe9">[email&#160;protected]</a>. Appeals will be reviewed within 72 hours.</div>
+
+
+      </div>
+    </div>
+  </div>
+</div>
+
+
+	<script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script src="https://cdn.jsdelivr.net/npm/popper.js@1.12.5/dist/popper.min.js"></script>
+	<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.5.3/dist/js/bootstrap.min.js" integrity="sha384-w1Q4orYjBQndcko6MimVbzY0tgp4pWB4lZ7lr30WKz0vr/aWKhXdBNmNb5D92v7s" crossorigin="anonymous"></script>
+	<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.5.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-ho+j7jyWK8fNQe+A12Hb8AhRq26LrZ/JpcUGGOn+Y7RsweNrtN/tE3MoK7ZeZDyx" crossorigin="anonymous"></script>
+	<script src="/js/form-validation.js"></script>
+	<script>
+$('[data-toggle="tooltip"]').tooltip();
+$('.btn-tooltip-bottom').tooltip({
+    placement: 'bottom'
+});
+</script>
+
+</body>
+</html>

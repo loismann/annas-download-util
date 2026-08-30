@@ -68,17 +68,16 @@ public class AnnasArchiveDownloads
                 + $"&key={Uri.EscapeDataString(key)}"
                 + "&path_index=0&domain_index=0";
 
-        try
-        {
-            var doc = await _transport.GetJsonElementAsync(url);
-            if (doc.ValueKind == JsonValueKind.Undefined)
-                throw new InvalidOperationException("Failed to fetch download document.");
-            return doc;
-        }
-        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
-        {
-            throw new InvalidOperationException("Rate limit exceeded. Please wait before trying again.", ex);
-        }
+        // No catch here on purpose. This used to translate a 429 into an
+        // InvalidOperationException whose *message* the caller then string-matched,
+        // which was both fragile and dead: the transport threw with a null
+        // StatusCode, so the filter never matched and the translation never ran.
+        // The transport now carries the status, so the caller classifies on it
+        // directly and there is one notion of "why the download failed".
+        var doc = await _transport.GetJsonElementAsync(url);
+        if (doc.ValueKind == JsonValueKind.Undefined)
+            throw new InvalidOperationException("Failed to fetch download document.");
+        return doc;
     }
 
     public Task<HttpResponseMessage?> GetDownloadResponseWithFallbackAsync(

@@ -162,18 +162,6 @@
 
 /* source toggle row — left-aligned, same as the VPN toggle row below it,
    rather than centered off on its own */
-.source-toggle-row {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  padding: 8px 0;
-}
-
-.source-toggle-row mat-slide-toggle {
-  font-weight: 500;
-}
-
 /* Buttons inside the extras panel (Find Related Books) stay full-width;
    the primary Search button above has its own sizing (.search-button). */
 .form-extras button {

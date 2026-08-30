@@ -379,7 +379,6 @@ public class LibraryIndexCache : MetaIndexCache<LibraryBookDto>
                         meta.Pages,
                         p?.GoodreadsRating ?? meta.GoodreadsRating,
                         p?.PersonalRating ?? meta.PersonalRating,
-                        p?.ReaderEnabled ?? meta.ReaderEnabled,
                         p?.FavoritedBy ?? meta.FavoritedBy ?? Array.Empty<string>(),
                         p?.CullReviewedAt ?? meta.CullReviewedAt
                     ));
@@ -426,7 +425,6 @@ public class LibraryIndexCache : MetaIndexCache<LibraryBookDto>
                     null,
                     p?.GoodreadsRating,
                     p?.PersonalRating,
-                    p?.ReaderEnabled,
                     p?.FavoritedBy ?? Array.Empty<string>(),
                     p?.CullReviewedAt
                 ));

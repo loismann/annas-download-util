@@ -65,6 +65,60 @@ body {
   overflow: visible;
 }
 
+/* ── A pane's scroll stops at the pane ─────────────────────────────────────
+   The reader is a column of boxes that scroll independently — the summary, the
+   contents, the cast, the search hits. Reach the end of one and keep swiping and
+   the browser passes the rest of the gesture up to whatever is behind it, which
+   on an iPad means Safari: the address bar slides in and everything shifts under
+   the reader's finger. The pane was never the problem. The gesture simply did not
+   stop where it should.
+
+   Here rather than in each pane's stylesheet, and as a descendant of the reader
+   rather than a list of classes, because the property is only ever read on a box
+   that scrolls and does nothing on one that does not. That makes it safe to say
+   once for the whole reader, and — more to the point — it means a pane added next
+   year is covered without anyone remembering this. The failure it prevents is
+   invisible on a desktop, so nobody would. */
+app-reader2-shell * {
+  overscroll-behavior: contain;
+}
+
+/* ── …and when that is not enough, the page simply does not move ───────────
+   Added by `Reader2/services/viewport-lock.ts` while the reader has the screen,
+   and by nothing else.
+
+   `overscroll-behavior` above is the polite mechanism and the right one where it
+   is honoured. It was not enough on the device this was reported from: the panes
+   still handed their leftovers to Safari, the address bar still arrived, and the
+   whole app still slid under a reading finger. Rather than keep guessing at which
+   gesture Safari will claim next, this removes the thing it claims — a page with
+   no scroll position of its own has nothing to give.
+
+   `position: fixed` on the body, not merely `overflow: hidden`, and that is the
+   whole point of the rule: `overflow: hidden` stops the document scrolling and
+   iOS will still rubber-band the whole page. Pinning the body is the technique
+   that holds on every version rather than the ones new enough for the property
+   above. `inset` and `width` are what keep a fixed body the size of the window
+   instead of the size of its own contents.
+
+   Applied by a class rather than globally on purpose. It has a real cost — a
+   pinned body cannot scroll a focused input clear of the on-screen keyboard —
+   and the reader is a page with almost no typing in it and a hard requirement to
+   hold still. That trade is worth making there and nowhere else, which is why
+   this is not `html, body` with no qualifier. */
+html.reader-locked,
+html.reader-locked body {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+html.reader-locked body {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+}
+
 /* Make Material form fields responsive */
 .mat-form-field {
   width: 100%;

@@ -22,7 +22,6 @@ public class BookMetaDocumentTests
             Authors = ["Peter F. Hamilton"],
             Tags = ["Paul's Books", "space opera"],
             PersonalRating = 5,
-            ReaderEnabled = true,
             FavoritedBy = ["Paul", "Mom"],
             CullReviewedAt = new DateTime(2026, 3, 1, 12, 0, 0, DateTimeKind.Utc)
         };
@@ -31,7 +30,6 @@ public class BookMetaDocumentTests
 
         meta["tags"].Should().BeEquivalentTo(new[] { "Paul's Books", "space opera" });
         meta["personalRating"].Should().Be(5);
-        meta["readerEnabled"].Should().Be(true);
         meta["favoritedBy"].Should().BeEquivalentTo(new[] { "Paul", "Mom" });
         meta["cullReviewedAt"].Should().Be("2026-03-01T12:00:00.0000000Z");
     }

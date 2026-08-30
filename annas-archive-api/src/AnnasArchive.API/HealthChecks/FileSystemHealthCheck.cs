@@ -49,23 +49,6 @@ public class FileSystemHealthCheck : IHealthCheck
                 }
             }
 
-            // Check EPUB cache root
-            var epubCacheRoot = DropboxEpubCache.GetCacheRoot();
-            data["epubCacheRoot"] = epubCacheRoot;
-
-            if (!Directory.Exists(epubCacheRoot))
-            {
-                try
-                {
-                    Directory.CreateDirectory(epubCacheRoot);
-                    data["epubCacheRootCreated"] = true;
-                }
-                catch (Exception ex)
-                {
-                    issues.Add($"Cannot create EPUB cache root: {ex.Message}");
-                }
-            }
-
             // Check covers directory
             var coversDir = Path.Combine(libraryRoot, "_covers");
             data["coversDir"] = coversDir;

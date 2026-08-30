@@ -96,28 +96,19 @@ if (app.Configuration.GetValue<bool>("PhotoPrint:Enabled", false))
 app.MapVideoLibraryBrowserEndpoints();
 app.MapVideoLibraryMetadataEndpoints();
 app.MapQuizEndpoints();
-app.MapVocabEndpoints();
-app.MapDropboxReaderEndpoints();
 
-// Ebook Reader II (DOCS/features/EBOOK_READER_II.md). Runs alongside the reader
-// above, sharing nothing with it, until that one is retired.
+// The ebook reader (DOCS/features/EBOOK_READER_II.md).
 app.MapReader2Endpoints();
 app.MapLibraryKindleEndpoints();
 app.MapLibraryCoverEndpoints();
 app.MapLibraryBrowserEndpoints();
 app.MapLibraryMetadataEndpoints();
 app.MapLibraryReviewEndpoints();
-app.MapLibraryReaderEndpoints();
 app.MapLibraryUploadEndpoints();
 app.MapAiUsageEndpoints();
-app.MapAiFlashcardsEndpoints();
-app.MapAiVocabEndpoints();
 app.MapAiBookSearchEndpoints();
 app.MapAiMediaSearchEndpoints();
 app.MapAiAudiobookSearchEndpoints();
-app.MapAiCharacterEndpoints();
-app.MapAiSummarizeEndpoints();
-app.MapAiSectionSummaryEndpoints();
 app.MapVpnSettingsEndpoints();
 app.MapMediaRequestEndpoints();
 app.MapDateNightEndpoints();

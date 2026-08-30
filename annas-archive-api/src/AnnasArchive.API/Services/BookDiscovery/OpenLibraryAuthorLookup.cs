@@ -27,7 +27,7 @@ public static class OpenLibraryAuthorLookup
         new(capacity: 500, ttl: HttpTimeouts.AuthorCacheTtl, keyComparer: StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
-    /// Applies the configured capacity. Mirrors LibraryEpubCache.ConfigureCache
+    /// Applies the configured capacity, the same way the other bounded caches do
     /// and is called from ServiceConfiguration.ConfigureCaches at startup.
     /// </summary>
     public static void ConfigureCache(int capacity)

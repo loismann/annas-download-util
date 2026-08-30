@@ -126,8 +126,11 @@ services:
       - gluetun
     environment:
       - LIBRARY_ROOT=/data/library
-      - EPUB_CACHE_ROOT=/data/epub-cache
-      - AI_CACHE_ROOT=/data/ai-cache
+      # The reader's extracted chapter text, content-addressed by hash. It
+      # defaults to the working directory, which is inside the image — so
+      # without this every redeploy would throw the extraction away and make
+      # the next open of each book re-ingest it.
+      - READER2_TEXT_ROOT=/data/reader2-text
       - YouTube__DownloadRoot=/data/youtube
       - DownloadTracking__StoragePath=/app/state/download-tracking.json
       - Quiz__StoragePath=/app/state/quiz-data
@@ -277,8 +280,7 @@ services:
       # ../data lives outside this synced source directory on purpose — a
       # repo re-sync (rsync --delete) must never be able to touch it.
       - ../data/library:/data/library
-      - ../data/epub-cache:/data/epub-cache
-      - ../data/ai-cache:/data/ai-cache
+      - ../data/reader2-text:/data/reader2-text
       - ../data/youtube:/data/youtube
       - ../data/logs:/app/logs
       - ../data/state:/app/state

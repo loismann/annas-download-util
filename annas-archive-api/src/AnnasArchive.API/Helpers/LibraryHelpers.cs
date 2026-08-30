@@ -83,14 +83,13 @@ public static class LibraryHelpers
             DateTime.UtcNow,
             null,
             tags,
-            null,
-            Array.Empty<string>(),
-            null,
-            null,
-            null,
-            null,
-            null,
-            description
+            Series: null,
+            Genres: Array.Empty<string>(),
+            PublishedDate: null,
+            Pages: null,
+            GoodreadsRating: null,
+            PersonalRating: null,
+            Description: description
         );
 
         var jsonOptions = CreateLibraryJsonOptions();

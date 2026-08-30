@@ -267,10 +267,6 @@ test.describe('Authentication Flow', () => {
     // Try another protected route
     await page.goto('/library');
     await expect(page).toHaveURL(/#\/login/, { timeout: 5000 });
-
-    // Try reader route
-    await page.goto('/reader');
-    await expect(page).toHaveURL(/#\/login/, { timeout: 5000 });
   });
 
   test('should allow admin access code to access admin-only routes', async ({ page }) => {

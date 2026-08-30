@@ -38,41 +38,6 @@ public static class DevEndpoints
         .RequireRateLimiting("login");
 #endif
 
-        // ─── Cache Management Endpoints ────────────────────────────────────────────
-        // These are available in all builds for production monitoring
-
-        app.MapGet("/api/dev/cache/stats", [Authorize(Roles = "Admin")] () =>
-        {
-            var stats = new Dictionary<string, object>
-            {
-                ["libraryChapterContent"] = LibraryEpubCache.GetCacheStatistics()
-            };
-
-            return Results.Ok(stats);
-        })
-        .WithName("GetCacheStats")
-        .WithTags("Dev")
-        .RequireRateLimiting("api");
-
-        app.MapDelete("/api/dev/cache", [Authorize(Roles = "Admin")] (string? name) =>
-        {
-            if (string.IsNullOrEmpty(name) || name == "all")
-            {
-                // Clear all caches
-                LibraryEpubCache.ClearCache();
-                return Results.Ok(new { message = "All caches cleared" });
-            }
-
-            // Clear specific cache
-            return name.ToLowerInvariant() switch
-            {
-                "librarychaptercontent" or "library" => ClearAndRespond("libraryChapterContent", LibraryEpubCache.ClearCache),
-                _ => ApiResponse.NotFound($"Unknown cache: {name}")
-            };
-        })
-        .WithName("ClearCache")
-        .WithTags("Dev")
-        .RequireRateLimiting("api");
 
         return app;
     }

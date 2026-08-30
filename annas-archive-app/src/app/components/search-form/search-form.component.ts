@@ -6,7 +6,6 @@ import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
-import { MatSlideToggleModule } from '@angular/material/slide-toggle';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 
 import { Subject } from 'rxjs';
@@ -28,7 +27,6 @@ export interface DomainHealth {
 export interface SearchFormSubmitEvent {
   searchTerm: string;
   selectedAuthor: string;
-  useLibGen: boolean;
   isAiSearch: boolean;
   aiSearchQuery?: string;
 }
@@ -44,7 +42,6 @@ export interface SearchFormSubmitEvent {
     MatSelectModule,
     MatButtonModule,
     MatIconModule,
-    MatSlideToggleModule,
     MatProgressSpinnerModule,
     SearchFiltersComponent,
     VpnToggleComponent
@@ -70,7 +67,6 @@ export class SearchFormComponent implements OnDestroy {
   aiSearchQuery = '';
   aiSearchExpanded = false;
   selectedAuthor = '';
-  useLibGen = false;
 
   // Author suggestions
   authorSuggestions: AuthorSuggestion[] = [];
@@ -103,7 +99,6 @@ export class SearchFormComponent implements OnDestroy {
       this.search.emit({
         searchTerm: this.searchTerm.trim(),
         selectedAuthor: this.selectedAuthor,
-        useLibGen: this.useLibGen,
         isAiSearch: true,
         aiSearchQuery: this.aiSearchQuery.trim()
       });
@@ -111,7 +106,6 @@ export class SearchFormComponent implements OnDestroy {
       this.search.emit({
         searchTerm: this.searchTerm.trim(),
         selectedAuthor: this.selectedAuthor,
-        useLibGen: this.useLibGen,
         isAiSearch: false
       });
     }

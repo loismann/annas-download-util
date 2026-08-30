@@ -10,7 +10,7 @@
    properties inherit down the DOM and nowhere else, so a palette declared on
    `.reader` cannot reach the sidebar sitting beside it — and a sepia page beside
    a white sidebar reads as a rendering fault rather than a theme. Declared here
-   and set on `.app-shell` (see `ChromeToneService`), one attribute colours both.
+   and set on `.app-shell` (see `AppChromeService`), one attribute colours both.
 
    `plain` is deliberately absent: it means "no reading tone", so it matches
    nothing here and the :root defaults below stand.

@@ -336,79 +336,6 @@ public class EndpointIntegrationTests : IClassFixture<WebApplicationFactory<Prog
     }
 
     [Fact]
-    public async Task DropboxEpubs_WithoutAuth_ShouldReturnUnauthorized()
-    {
-        // Act - No auth token set
-        var response = await _client.GetAsync("/api/anna/dropbox/epubs");
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-    }
-
-    [Fact]
-    public async Task DropboxEpubs_WithAuth_ShouldReturnOkOrError()
-    {
-        // Arrange
-        SetAuthToken();
-
-        // Act
-        var response = await _client.GetAsync("/api/anna/dropbox/epubs");
-
-        // Assert - May get auth error if token not properly validated
-        response.StatusCode.Should().BeOneOf(
-            HttpStatusCode.OK,
-            HttpStatusCode.Unauthorized,
-            HttpStatusCode.ServiceUnavailable,
-            HttpStatusCode.InternalServerError
-        );
-    }
-
-    [Fact]
-    public async Task ChaptersList_WithoutPath_ShouldReturnBadRequest()
-    {
-        // Arrange
-        SetAuthToken();
-
-        // Act
-        var response = await _client.GetAsync("/api/anna/dropbox/epub/chapters");
-
-        // Assert - Auth middleware may run before validation, or Dropbox may be unavailable/error in test
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.BadRequest, HttpStatusCode.Unauthorized, HttpStatusCode.ServiceUnavailable, HttpStatusCode.InternalServerError);
-    }
-
-    [Fact]
-    public async Task ChapterContent_WithoutRequiredParameters_ShouldReturnBadRequest()
-    {
-        // Arrange
-        SetAuthToken();
-
-        // Act - Missing both path and chapterId
-        var response = await _client.GetAsync("/api/anna/dropbox/epub/chapter");
-
-        // Assert - Auth middleware may run before validation, or Dropbox may be unavailable/error in test
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.BadRequest, HttpStatusCode.Unauthorized, HttpStatusCode.ServiceUnavailable, HttpStatusCode.InternalServerError);
-    }
-
-    [Fact]
-    public async Task EpubSearch_WithShortQuery_ShouldReturnBadRequest()
-    {
-        // Arrange
-        SetAuthToken();
-
-        // Act - Query too short (min 10 characters)
-        var response = await _client.GetAsync("/api/anna/dropbox/epub/search?path=/test.epub&query=short");
-
-        // Assert - Auth middleware may run before validation, or Dropbox may be unavailable/error in test
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.BadRequest, HttpStatusCode.Unauthorized, HttpStatusCode.ServiceUnavailable, HttpStatusCode.InternalServerError);
-
-        if (response.StatusCode == HttpStatusCode.BadRequest)
-        {
-            var content = await response.Content.ReadAsStringAsync();
-            content.Should().Contain("10 characters");
-        }
-    }
-
-    [Fact]
     public async Task TokenUsage_WithAuth_ShouldReturnUsageStats()
     {
         // Arrange
@@ -490,25 +417,6 @@ public class EndpointIntegrationTests : IClassFixture<WebApplicationFactory<Prog
         response.Headers.Should().Contain(h => h.Key == "X-Frame-Options");
         response.Headers.Should().Contain(h => h.Key == "X-XSS-Protection");
     }
-
-    [Theory]
-    [InlineData("/api/ai/summarize")]
-    [InlineData("/api/ai/flashcards")]
-    [InlineData("/api/ai/vocab/learn-more")]
-    [InlineData("/api/ai/section-summary")]
-    [InlineData("/api/ai/characters/graph")]
-    public async Task AiEndpoints_WithoutAuth_ShouldReturnUnauthorized(string endpoint)
-    {
-        // Act
-        var response = await _client.PostAsync(endpoint, new StringContent("{}", Encoding.UTF8, "application/json"));
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-    }
-
-    // ─── Send to Kindle Endpoint Tests ────────────────────────────────────────
-    // Note: Heavy DI services (DropboxClient, AnnasArchiveService, IEmailService) are now mocked
-    // in ConfigureTestServices, enabling these tests to run without hanging.
 
     [Fact]
     public async Task SendToBoox_WithInvalidMd5_ShouldReturnBadRequest()
@@ -721,56 +629,6 @@ public class EndpointIntegrationTests : IClassFixture<WebApplicationFactory<Prog
     }
 
     [Fact]
-    public async Task ChapterSummaryStream_ShouldReturnServerSentEvents()
-    {
-        // Arrange
-        SetAuthToken();
-        var request = new
-        {
-            dropboxPath = "/test.epub",
-            chapterId = 1,
-            bookTitle = "Test Book"
-        };
-
-        // Act
-        var response = await _client.PostAsJsonAsync("/api/ai/summarize/chapter/stream", request);
-
-        // Assert
-        if (response.StatusCode == HttpStatusCode.OK)
-        {
-            response.Content.Headers.ContentType?.MediaType.Should().Be("text/event-stream");
-        }
-        else
-        {
-            // Expect error due to missing EPUB or token limits
-            response.StatusCode.Should().BeOneOf(
-                HttpStatusCode.BadRequest,
-                HttpStatusCode.NotFound,
-                HttpStatusCode.TooManyRequests,
-                HttpStatusCode.InternalServerError,
-                HttpStatusCode.Unauthorized
-            );
-        }
-    }
-
-    [Fact]
-    public async Task DeleteEndpoints_WithAuth_ShouldAcceptDeleteMethod()
-    {
-        // Arrange
-        SetAuthToken();
-
-        // Act - Test DELETE endpoints exist and accept DELETE method
-        var epubIndexResponse = await _client.DeleteAsync("/api/anna/dropbox/epub/index?path=/test.epub");
-        var summaryResponse = await _client.DeleteAsync("/api/ai/summarize/chapter?dropboxPath=/test.epub&chapterId=1");
-        var flashcardsResponse = await _client.DeleteAsync("/api/ai/flashcards?path=/test.epub");
-
-        // Assert - All should respond (even if with errors due to missing data)
-        epubIndexResponse.StatusCode.Should().NotBe(HttpStatusCode.MethodNotAllowed);
-        summaryResponse.StatusCode.Should().NotBe(HttpStatusCode.MethodNotAllowed);
-        flashcardsResponse.StatusCode.Should().NotBe(HttpStatusCode.MethodNotAllowed);
-    }
-
-    [Fact]
     public async Task GamingPcEndpoints_WithAuth_ShouldBeAccessible()
     {
         // Arrange
@@ -971,36 +829,6 @@ public class EndpointIntegrationTests : IClassFixture<WebApplicationFactory<Prog
     // ─── Reader/Dropbox Endpoint Tests ────────────────────────────────────────
 
     [Fact]
-    public async Task DropboxEpubStatus_WithoutAuth_ShouldReturnUnauthorized()
-    {
-        // Act - No auth token set
-        var response = await _client.GetAsync("/api/anna/dropbox/epub/status?path=/test.epub");
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-    }
-
-    [Fact]
-    public async Task DropboxEpubStatus_WithInvalidPath_ShouldReturnOkWithNotCached()
-    {
-        // Arrange
-        SetAuthToken();
-
-        // Act - Invalid path (doesn't start with /) - status endpoint doesn't validate, just returns status
-        var response = await _client.GetAsync("/api/anna/dropbox/epub/status?path=invalid-path.epub");
-
-        // Assert - Status endpoint returns OK with cached=false for any path, or Dropbox may be unavailable/error in test
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.Unauthorized, HttpStatusCode.ServiceUnavailable, HttpStatusCode.InternalServerError);
-
-        if (response.StatusCode == HttpStatusCode.OK)
-        {
-            var content = await response.Content.ReadAsStringAsync();
-            // Should indicate not cached
-            content.ToLower().Should().Contain("cached");
-        }
-    }
-
-    [Fact]
     public async Task DropboxEpubStatus_WithValidPath_ShouldReturnOkOrError()
     {
         // Arrange
@@ -1016,144 +844,6 @@ public class EndpointIntegrationTests : IClassFixture<WebApplicationFactory<Prog
             HttpStatusCode.NotFound,
             HttpStatusCode.InternalServerError
         );
-    }
-
-    [Fact]
-    public async Task DropboxEpubIndex_WithoutAuth_ShouldReturnUnauthorized()
-    {
-        // Act - No auth token set
-        var response = await _client.PostAsync("/api/anna/dropbox/epub/index?path=/test.epub", null);
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-    }
-
-    [Fact]
-    public async Task DropboxEpubIndex_WithInvalidPath_ShouldReturnBadRequest()
-    {
-        // Arrange
-        SetAuthToken();
-
-        // Act - Invalid path (not .epub extension)
-        var response = await _client.PostAsync("/api/anna/dropbox/epub/index?path=/test.pdf", null);
-
-        // Assert - Dropbox may be unavailable/error in test environment
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.BadRequest, HttpStatusCode.Unauthorized, HttpStatusCode.ServiceUnavailable, HttpStatusCode.InternalServerError);
-    }
-
-    [Fact]
-    public async Task DropboxEpubIndexDelete_WithoutAuth_ShouldReturnUnauthorized()
-    {
-        // Act - No auth token set
-        var response = await _client.DeleteAsync("/api/anna/dropbox/epub/index?path=/test.epub");
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-    }
-
-    [Fact]
-    public async Task DropboxEpubIndexDelete_WithValidPath_ShouldReturnOk()
-    {
-        // Arrange
-        SetAuthToken();
-
-        // Act - Delete index for a path (may not exist, but should not error)
-        var response = await _client.DeleteAsync("/api/anna/dropbox/epub/index?path=/test-delete.epub");
-
-        // Assert - Should succeed even if nothing to delete
-        response.StatusCode.Should().BeOneOf(
-            HttpStatusCode.OK,
-            HttpStatusCode.Unauthorized
-        );
-    }
-
-    [Fact]
-    public async Task DropboxEpubChapters_WithInvalidPath_ShouldReturnBadRequest()
-    {
-        // Arrange
-        SetAuthToken();
-
-        // Act - Invalid path (missing leading /)
-        var response = await _client.GetAsync("/api/anna/dropbox/epub/chapters?path=invalid.epub");
-
-        // Assert - Dropbox may be unavailable/error in test environment
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.BadRequest, HttpStatusCode.Unauthorized, HttpStatusCode.ServiceUnavailable, HttpStatusCode.InternalServerError);
-    }
-
-    [Fact]
-    public async Task DropboxEpubChapter_WithInvalidPath_ShouldReturnBadRequest()
-    {
-        // Arrange
-        SetAuthToken();
-
-        // Act - Invalid path
-        var response = await _client.GetAsync("/api/anna/dropbox/epub/chapter?path=invalid.epub&chapterId=1");
-
-        // Assert - Dropbox may be unavailable/error in test environment
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.BadRequest, HttpStatusCode.Unauthorized, HttpStatusCode.ServiceUnavailable, HttpStatusCode.InternalServerError);
-    }
-
-    [Fact]
-    public async Task DropboxEpubSearch_WithoutAuth_ShouldReturnUnauthorized()
-    {
-        // Act - No auth token set
-        var response = await _client.GetAsync("/api/anna/dropbox/epub/search?path=/test.epub&query=searchterm123");
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-    }
-
-    [Fact]
-    public async Task DropboxEpubSearch_WithInvalidPath_ShouldReturnBadRequest()
-    {
-        // Arrange
-        SetAuthToken();
-
-        // Act - Invalid path
-        var response = await _client.GetAsync("/api/anna/dropbox/epub/search?path=invalid&query=searchterm123");
-
-        // Assert - Dropbox may be unavailable/error in test environment
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.BadRequest, HttpStatusCode.Unauthorized, HttpStatusCode.ServiceUnavailable, HttpStatusCode.InternalServerError);
-    }
-
-    [Theory]
-    [InlineData("/api/anna/dropbox/epubs")]
-    [InlineData("/api/anna/dropbox/epub/chapters?path=/test.epub")]
-    [InlineData("/api/anna/dropbox/epub/chapter?path=/test.epub&chapterId=1")]
-    [InlineData("/api/anna/dropbox/epub/status?path=/test.epub")]
-    [InlineData("/api/anna/dropbox/epub/search?path=/test.epub&query=searchterm123")]
-    public async Task DropboxEndpoints_WithoutAuth_ShouldReturnUnauthorized(string endpoint)
-    {
-        // Act - No auth token
-        var response = await _client.GetAsync(endpoint);
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-    }
-
-    // ─── Library Reader Endpoint Tests ────────────────────────────────────────
-
-    [Fact]
-    public async Task LibraryReaderChapters_WithoutAuth_ShouldReturnUnauthorized()
-    {
-        // Act - No auth token set
-        var response = await _client.GetAsync("/api/library/reader/epub/chapters?filePath=test.epub");
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-    }
-
-    [Fact]
-    public async Task LibraryReaderChapters_WithoutFilePath_ShouldReturnBadRequest()
-    {
-        // Arrange
-        SetAuthToken();
-
-        // Act - Missing filePath parameter
-        var response = await _client.GetAsync("/api/library/reader/epub/chapters");
-
-        // Assert
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.BadRequest, HttpStatusCode.Unauthorized);
     }
 
     [Fact]
@@ -1175,207 +865,6 @@ public class EndpointIntegrationTests : IClassFixture<WebApplicationFactory<Prog
     }
 
     // ─── Vocabulary Endpoint Tests ────────────────────────────────────────────
-
-    [Fact]
-    public async Task VocabKnown_WithoutAuth_ShouldReturnUnauthorized()
-    {
-        // Act - No auth token set
-        var response = await _client.GetAsync("/api/vocab/known");
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-    }
-
-    [Fact]
-    public async Task VocabKnown_WithAuth_ShouldReturnOk()
-    {
-        // Arrange
-        SetAuthToken();
-
-        // Act
-        var response = await _client.GetAsync("/api/vocab/known");
-
-        // Assert
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.Unauthorized);
-
-        if (response.StatusCode == HttpStatusCode.OK)
-        {
-            var content = await response.Content.ReadAsStringAsync();
-            // Should return JSON array or object
-            (content.StartsWith("[") || content.StartsWith("{")).Should().BeTrue("response should be valid JSON");
-        }
-    }
-
-    [Fact]
-    public async Task VocabKnownPost_WithoutAuth_ShouldReturnUnauthorized()
-    {
-        // Arrange
-        var request = new { term = "test-word", bookId = "test-book" };
-
-        // Act - No auth token set
-        var response = await _client.PostAsJsonAsync("/api/vocab/known", request);
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-    }
-
-    [Fact]
-    public async Task VocabKnownPost_WithMissingTerm_ShouldReturnBadRequest()
-    {
-        // Arrange
-        SetAuthToken();
-        var request = new { term = "", bookId = "test-book" };
-
-        // Act
-        var response = await _client.PostAsJsonAsync("/api/vocab/known", request);
-
-        // Assert
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.BadRequest, HttpStatusCode.Unauthorized);
-    }
-
-    [Fact]
-    public async Task VocabKnownDelete_WithoutAuth_ShouldReturnUnauthorized()
-    {
-        // Act - No auth token set
-        var response = await _client.DeleteAsync("/api/vocab/known/test-word");
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-    }
-
-    [Fact]
-    public async Task VocabKnownDelete_WithEmptyTerm_ShouldReturnBadRequest()
-    {
-        // Arrange
-        SetAuthToken();
-
-        // Act - Empty term in URL (will be URL encoded)
-        var response = await _client.DeleteAsync("/api/vocab/known/%20");
-
-        // Assert - Should reject whitespace-only terms
-        response.StatusCode.Should().BeOneOf(
-            HttpStatusCode.BadRequest,
-            HttpStatusCode.NotFound,
-            HttpStatusCode.Unauthorized
-        );
-    }
-
-    [Fact]
-    public async Task VocabStudy_WithoutAuth_ShouldReturnUnauthorized()
-    {
-        // Act - No auth token set
-        var response = await _client.GetAsync("/api/vocab/study");
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-    }
-
-    [Fact]
-    public async Task VocabStudy_WithAuth_ShouldReturnOk()
-    {
-        // Arrange
-        SetAuthToken();
-
-        // Act
-        var response = await _client.GetAsync("/api/vocab/study");
-
-        // Assert
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.Unauthorized);
-
-        if (response.StatusCode == HttpStatusCode.OK)
-        {
-            var content = await response.Content.ReadAsStringAsync();
-            // Should return JSON array or object
-            (content.StartsWith("[") || content.StartsWith("{")).Should().BeTrue("response should be valid JSON");
-        }
-    }
-
-    [Fact]
-    public async Task VocabStudyPost_WithoutAuth_ShouldReturnUnauthorized()
-    {
-        // Arrange
-        var request = new { term = "test-word", definition = "test definition", bookId = "test-book" };
-
-        // Act - No auth token set
-        var response = await _client.PostAsJsonAsync("/api/vocab/study", request);
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-    }
-
-    [Fact]
-    public async Task VocabStudyPost_WithMissingTerm_ShouldReturnBadRequest()
-    {
-        // Arrange
-        SetAuthToken();
-        var request = new { term = "", definition = "test definition", bookId = "test-book" };
-
-        // Act
-        var response = await _client.PostAsJsonAsync("/api/vocab/study", request);
-
-        // Assert
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.BadRequest, HttpStatusCode.Unauthorized);
-    }
-
-    [Fact]
-    public async Task VocabStudyDelete_WithoutAuth_ShouldReturnUnauthorized()
-    {
-        // Act - No auth token set
-        var response = await _client.DeleteAsync("/api/vocab/study/test-word");
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-    }
-
-    [Fact]
-    public async Task VocabBookDelete_WithoutAuth_ShouldReturnUnauthorized()
-    {
-        // Act - No auth token set
-        var response = await _client.DeleteAsync("/api/vocab/book/test-book-id");
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-    }
-
-    [Fact]
-    public async Task VocabBookDelete_WithAuth_ShouldReturnOk()
-    {
-        // Arrange
-        SetAuthToken();
-
-        // Act - Delete vocab for a non-existent book (should still succeed)
-        var response = await _client.DeleteAsync("/api/vocab/book/non-existent-book-id");
-
-        // Assert
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.Unauthorized);
-    }
-
-    [Fact]
-    public async Task VocabLearnMore_WithoutAuth_ShouldReturnUnauthorized()
-    {
-        // Arrange
-        var request = new { term = "ephemeral", context = "The ephemeral nature of fame" };
-
-        // Act - No auth token set
-        var response = await _client.PostAsJsonAsync("/api/ai/vocab/learn-more", request);
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-    }
-
-    [Theory]
-    [InlineData("/api/vocab/known")]
-    [InlineData("/api/vocab/study")]
-    public async Task VocabEndpoints_WithoutAuth_ShouldReturnUnauthorized(string endpoint)
-    {
-        // Act - No auth token
-        var response = await _client.GetAsync(endpoint);
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-    }
-
-    // ─── Gaming Endpoint Tests ───────────────────────────────────────────────
 
     [Fact]
     public async Task GamingStatus_WithoutAuth_ShouldReturnUnauthorized()
@@ -1527,79 +1016,6 @@ public class EndpointIntegrationTests : IClassFixture<WebApplicationFactory<Prog
     }
 
     [Fact]
-    public async Task AiFlashcards_WithoutAuth_ShouldReturnUnauthorized()
-    {
-        // Act - No auth token set
-        var response = await _client.GetAsync("/api/ai/flashcards?path=/test.epub");
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-    }
-
-    [Fact]
-    public async Task AiFlashcards_WithMissingPath_ShouldReturnBadRequest()
-    {
-        // Arrange
-        SetAuthToken();
-
-        // Act - Missing path parameter
-        var response = await _client.GetAsync("/api/ai/flashcards");
-
-        // Assert
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.BadRequest, HttpStatusCode.Unauthorized);
-    }
-
-    [Fact]
-    public async Task AiFlashcardsPost_WithoutAuth_ShouldReturnUnauthorized()
-    {
-        // Arrange
-        var request = new { term = "test term", dropboxPath = "/test.epub" };
-
-        // Act - No auth token set
-        var response = await _client.PostAsJsonAsync("/api/ai/flashcards", request);
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-    }
-
-    [Fact]
-    public async Task AiFlashcardsPost_WithMissingTerm_ShouldReturnBadRequest()
-    {
-        // Arrange
-        SetAuthToken();
-        var request = new { term = "", dropboxPath = "/test.epub" };
-
-        // Act
-        var response = await _client.PostAsJsonAsync("/api/ai/flashcards", request);
-
-        // Assert
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.BadRequest, HttpStatusCode.Unauthorized);
-    }
-
-    [Fact]
-    public async Task AiFlashcardsDelete_WithoutAuth_ShouldReturnUnauthorized()
-    {
-        // Act - No auth token set
-        var response = await _client.DeleteAsync("/api/ai/flashcards?path=/test.epub");
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-    }
-
-    [Fact]
-    public async Task AiSummarize_WithoutAuth_ShouldReturnUnauthorized()
-    {
-        // Arrange
-        var request = new { dropboxPath = "/test.epub", chapterId = 1 };
-
-        // Act - No auth token set
-        var response = await _client.PostAsJsonAsync("/api/ai/summarize", request);
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-    }
-
-    [Fact]
     public async Task AiRelatedBooks_WithoutAuth_ShouldReturnUnauthorized()
     {
         // Arrange
@@ -1633,154 +1049,6 @@ public class EndpointIntegrationTests : IClassFixture<WebApplicationFactory<Prog
 
         // Act - No auth token set
         var response = await _client.PostAsJsonAsync("/api/ai/book-search", request);
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-    }
-
-    [Fact]
-    public async Task AiSectionSummary_WithoutAuth_ShouldReturnUnauthorized()
-    {
-        // Act - No auth token set
-        var response = await _client.GetAsync("/api/ai/section-summary?dropboxPath=/test.epub&chapterId=1&sectionIndex=0");
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-    }
-
-    [Theory]
-    [InlineData("/api/ai/usage")]
-    [InlineData("/api/ai/usage/all-users")]
-    [InlineData("/api/ai/flashcards?path=/test.epub")]
-    [InlineData("/api/ai/section-summary?dropboxPath=/test.epub&chapterId=1&sectionIndex=0")]
-    public async Task AiGetEndpoints_WithoutAuth_ShouldReturnUnauthorized(string endpoint)
-    {
-        // Act - No auth token
-        var response = await _client.GetAsync(endpoint);
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-    }
-
-    // ─── Cache Admin Endpoint Tests ───────────────────────────────────────────
-
-    [Fact]
-    public async Task CacheStats_WithoutAuth_ShouldReturnUnauthorized()
-    {
-        // Act - No auth token set
-        var response = await _client.GetAsync("/api/dev/cache/stats");
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-    }
-
-    [Fact]
-    public async Task CacheStats_WithNonAdminAuth_ShouldReturnForbidden()
-    {
-        // Arrange - Fresh client with regular user auth
-        using var client = CreateAuthenticatedClient(isAdmin: false);
-
-        // Act
-        var response = await client.GetAsync("/api/dev/cache/stats");
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
-    }
-
-    [Fact]
-    public async Task CacheStats_WithAdminAuth_ShouldReturnOk()
-    {
-        // Arrange - Fresh client with admin auth
-        using var client = CreateAuthenticatedClient(isAdmin: true);
-
-        // Act
-        var response = await client.GetAsync("/api/dev/cache/stats");
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-
-        var content = await response.Content.ReadAsStringAsync();
-        // Should return cache statistics with libraryChapterContent
-        content.Should().Contain("libraryChapterContent");
-    }
-
-    [Fact]
-    public async Task CacheClear_WithoutAuth_ShouldReturnUnauthorized()
-    {
-        // Act - No auth token set
-        var response = await _client.DeleteAsync("/api/dev/cache");
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-    }
-
-    [Fact]
-    public async Task CacheClear_WithNonAdminAuth_ShouldReturnForbidden()
-    {
-        // Arrange - Fresh client with regular user auth
-        using var client = CreateAuthenticatedClient(isAdmin: false);
-
-        // Act
-        var response = await client.DeleteAsync("/api/dev/cache");
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
-    }
-
-    [Fact]
-    public async Task CacheClear_WithAdminAuth_ShouldReturnOk()
-    {
-        // Arrange - Fresh client with admin auth
-        using var client = CreateAuthenticatedClient(isAdmin: true);
-
-        // Act - Clear all caches
-        var response = await client.DeleteAsync("/api/dev/cache");
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-
-        var content = await response.Content.ReadAsStringAsync();
-        content.Should().Contain("cleared");
-    }
-
-    [Fact]
-    public async Task CacheClearSpecific_WithAdminAuth_ShouldReturnOk()
-    {
-        // Arrange - Fresh client with admin auth
-        using var client = CreateAuthenticatedClient(isAdmin: true);
-
-        // Act - Clear specific cache
-        var response = await client.DeleteAsync("/api/dev/cache?name=library");
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-
-        var content = await response.Content.ReadAsStringAsync();
-        content.Should().Contain("cleared");
-    }
-
-    [Fact]
-    public async Task CacheClearUnknown_WithAdminAuth_ShouldReturnNotFound()
-    {
-        // Arrange - Fresh client with admin auth
-        using var client = CreateAuthenticatedClient(isAdmin: true);
-
-        // Act - Try to clear unknown cache
-        var response = await client.DeleteAsync("/api/dev/cache?name=unknowncache");
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-
-        var content = await response.Content.ReadAsStringAsync();
-        content.Should().Contain("Unknown cache");
-    }
-
-    [Theory]
-    [InlineData("/api/dev/cache/stats")]
-    public async Task CacheEndpoints_WithoutAuth_ShouldReturnUnauthorized(string endpoint)
-    {
-        // Act - No auth token
-        var response = await _client.GetAsync(endpoint);
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
@@ -1846,7 +1114,7 @@ public class EndpointIntegrationTests : IClassFixture<WebApplicationFactory<Prog
         using var client = CreateAuthenticatedClient(isAdmin: false);
 
         // Act - Try to access admin-only endpoint
-        var response = await client.GetAsync("/api/dev/cache/stats");
+        var response = await client.GetAsync("/api/quiz/subjects");
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
@@ -1859,7 +1127,7 @@ public class EndpointIntegrationTests : IClassFixture<WebApplicationFactory<Prog
         using var client = CreateAuthenticatedClient(isAdmin: true);
 
         // Act - Access admin endpoint
-        var response = await client.GetAsync("/api/dev/cache/stats");
+        var response = await client.GetAsync("/api/quiz/subjects");
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -2043,27 +1311,6 @@ public class EndpointIntegrationTests : IClassFixture<WebApplicationFactory<Prog
     }
 
     [Fact]
-    public async Task LibraryReader_GetChapterContent_WithMissingParams_ShouldReturnBadRequest()
-    {
-        // Arrange
-        SetAuthToken();
-
-        // Act - Missing chapterId
-        var response = await _client.GetAsync("/api/library/reader/epub/chapter?filePath=test.epub");
-
-        // Assert
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.BadRequest, HttpStatusCode.Unauthorized);
-    }
-
-    #endregion
-
-    // ═══════════════════════════════════════════════════════════════════════════
-    // AI FEATURES INTEGRATION TESTS
-    // ═══════════════════════════════════════════════════════════════════════════
-
-    #region AI Features Tests
-
-    [Fact]
     public async Task AI_GetUsage_WithAuth_ShouldReturnUsageStats()
     {
         // Arrange
@@ -2081,34 +1328,6 @@ public class EndpointIntegrationTests : IClassFixture<WebApplicationFactory<Prog
             content.Should().Contain("promptTokens");
             content.Should().Contain("completionTokens");
         }
-    }
-
-    [Fact]
-    public async Task AI_GenerateFlashcards_WithMissingPath_ShouldReturnBadRequest()
-    {
-        // Arrange
-        SetAuthToken();
-        var request = new { term = "test term" }; // Missing dropboxPath
-
-        // Act
-        var response = await _client.PostAsJsonAsync("/api/ai/flashcards", request);
-
-        // Assert
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.BadRequest, HttpStatusCode.Unauthorized);
-    }
-
-    [Fact]
-    public async Task AI_Summarize_WithMissingParams_ShouldReturnBadRequest()
-    {
-        // Arrange
-        SetAuthToken();
-        var request = new { }; // Missing required parameters
-
-        // Act
-        var response = await _client.PostAsJsonAsync("/api/ai/summarize", request);
-
-        // Assert
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.BadRequest, HttpStatusCode.Unauthorized);
     }
 
     [Fact]
@@ -2174,26 +1393,6 @@ public class EndpointIntegrationTests : IClassFixture<WebApplicationFactory<Prog
     }
 
     [Fact]
-    public async Task AI_VocabLearnMore_WithValidTermAndContext_ShouldReturnOkOrError()
-    {
-        // Arrange
-        SetAuthToken();
-        var request = new { term = "ephemeral", context = "The ephemeral nature of fame in modern society" };
-
-        // Act
-        var response = await _client.PostAsJsonAsync("/api/ai/vocab/learn-more", request);
-
-        // Assert
-        response.StatusCode.Should().BeOneOf(
-            HttpStatusCode.OK,
-            HttpStatusCode.TooManyRequests,
-            HttpStatusCode.InternalServerError,
-            HttpStatusCode.ServiceUnavailable,
-            HttpStatusCode.Unauthorized
-        );
-    }
-
-    [Fact]
     public async Task AI_UsageReset_WithNonAdminAuth_ShouldReturnForbidden()
     {
         // Arrange - Regular user, not admin
@@ -2238,12 +1437,19 @@ public class EndpointIntegrationTests : IClassFixture<WebApplicationFactory<Prog
         // Act
         var response = await _client.PostAsync($"/api/anna/book/{validMd5}/send-to-kindle?target=dad", null);
 
-        // Assert - Will fail without actual book, but should get past validation
+        // InternalServerError is allowed *here only*, and for a reason that has
+        // nothing to do with the download path: `DropboxClient` is not registered
+        // in the test host, so this endpoint fails at parameter binding before its
+        // body runs. Its sibling tests (send-to-library, download/member) do reach
+        // the download path and are asserted strictly. Registering a fake Dropbox
+        // client would let this one be strict too — see the to-do.
         response.StatusCode.Should().BeOneOf(
             HttpStatusCode.OK,
             HttpStatusCode.NotFound,
-            HttpStatusCode.InternalServerError,
+            HttpStatusCode.BadGateway,
+            HttpStatusCode.TooManyRequests,
             HttpStatusCode.ServiceUnavailable,
+            HttpStatusCode.InternalServerError,
             HttpStatusCode.Unauthorized
         );
     }
@@ -2258,11 +1464,16 @@ public class EndpointIntegrationTests : IClassFixture<WebApplicationFactory<Prog
         // Act
         var response = await _client.PostAsync($"/api/anna/book/{validMd5}/send-to-library?title=TestBook", null);
 
-        // Assert - Will fail without actual book, but should get past validation
+        // Gets past validation and then fails upstream — but in a *classified* way.
+        // InternalServerError is deliberately not on this list: an unhandled
+        // exception from the Anna's download path is the defect that made a book
+        // Anna's does not index read as a broken button, and 404/502/429 are the
+        // three honest answers that replaced it.
         response.StatusCode.Should().BeOneOf(
             HttpStatusCode.OK,
             HttpStatusCode.NotFound,
-            HttpStatusCode.InternalServerError,
+            HttpStatusCode.BadGateway,
+            HttpStatusCode.TooManyRequests,
             HttpStatusCode.ServiceUnavailable,
             HttpStatusCode.Unauthorized
         );
@@ -2278,11 +1489,16 @@ public class EndpointIntegrationTests : IClassFixture<WebApplicationFactory<Prog
         // Act
         var response = await _client.PostAsync($"/api/anna/book/{validMd5}/download/member?title=TestBook", null);
 
-        // Assert - Will fail without actual book, but should get past validation
+        // Gets past validation and then fails upstream — but in a *classified* way.
+        // InternalServerError is deliberately not on this list: an unhandled
+        // exception from the Anna's download path is the defect that made a book
+        // Anna's does not index read as a broken button, and 404/502/429 are the
+        // three honest answers that replaced it.
         response.StatusCode.Should().BeOneOf(
             HttpStatusCode.OK,
             HttpStatusCode.NotFound,
-            HttpStatusCode.InternalServerError,
+            HttpStatusCode.BadGateway,
+            HttpStatusCode.TooManyRequests,
             HttpStatusCode.ServiceUnavailable,
             HttpStatusCode.Unauthorized
         );

@@ -8,7 +8,7 @@ namespace AnnasArchive.Tests.Configuration;
 ///
 /// <see cref="GlobalExceptionHandlerTests"/> proves the middleware maps
 /// <see cref="ArgumentException"/> to a 400. It cannot prove that the endpoints
-/// still *let it reach* the middleware — that depends on 29 separate
+/// still *let it reach* the middleware — that depends on 15 separate
 /// <c>when (ex is not ArgumentException)</c> filters, and deleting one is a
 /// silent 400-to-500 regression that no behavioural test would notice without
 /// standing up all 29 endpoints and forcing an argument failure through each.
@@ -19,8 +19,12 @@ namespace AnnasArchive.Tests.Configuration;
 /// </summary>
 public class ErrorContractConventionTests
 {
-    /// <summary>The one place this pattern is still allowed, and why.</summary>
-    private const string SseException = "AiSectionSummaryEndpoints.cs";
+    // There is no longer an exemption. The single one that existed covered Reader
+    // I's SSE summary endpoint, where the response had already started and the
+    // middleware could only log. That endpoint is deleted, and Reader II's streams
+    // go through SseStream/ReaderRequest, which turn a failure into one error event
+    // rather than catching ArgumentException themselves. So the rules below are now
+    // unconditional — which is the stronger claim, and the one worth keeping.
 
     private static DirectoryInfo SourceRoot()
     {
@@ -92,18 +96,20 @@ public class ErrorContractConventionTests
     }
 
     /// <summary>
-    /// Every remaining use of that string must be the documented SSE case, where
-    /// the response has already started and the middleware can only log.
+    /// The string is now gone entirely: the one endpoint allowed to use it was
+    /// Reader I's, and it is deleted.
     /// </summary>
     [Fact]
-    public void TheOnlyRemainingInvalidParameterStringIsTheDocumentedSseCase()
+    public void NoEndpointUsesTheInvalidParameterStringAtAll()
     {
         var files = EndpointSources()
             .Where(f => f.Text.Contains("Invalid parameter: {ex.ParamName"))
             .Select(f => f.Name)
             .ToList();
 
-        files.Should().BeEquivalentTo(new[] { SseException });
+        files.Should().BeEmpty(
+            "every ArgumentException now reaches UseGlobalExceptionHandler, which "
+            + "answers with the exception's own sentence");
     }
 
     /// <summary>
@@ -112,10 +118,9 @@ public class ErrorContractConventionTests
     /// body. The SSE handler is exempt for the reason documented above it.
     /// </summary>
     [Fact]
-    public void NoEndpointCatchesArgumentExceptionExceptTheSseHandler()
+    public void NoEndpointCatchesArgumentException()
     {
         var offenders = EndpointSources()
-            .Where(f => f.Name != SseException)
             .Where(f => Regex.IsMatch(f.Text, @"catch\s*\(\s*ArgumentException"))
             .Select(f => f.Name)
             .ToList();
@@ -132,8 +137,8 @@ public class ErrorContractConventionTests
     ///
     /// <para>Asserted as an <b>exact count per file</b>, not as "contains at least
     /// one". The first version of this test used <c>Contains</c> and a mutation
-    /// proved it worthless: deleting one of DropboxReaderEndpoints' seven filters
-    /// left six, so the assertion passed against code that had the regression.
+    /// proved it worthless: deleting one of AiBookSearchEndpoints' five filters
+    /// left four, so the assertion passed against code that had the regression.
     /// A file with N filtered catch-alls needs all N.</para>
     ///
     /// <para>If you legitimately add or remove an endpoint, update the number here
@@ -145,15 +150,9 @@ public class ErrorContractConventionTests
         var expected = new Dictionary<string, int>
         {
             ["AiBookSearchEndpoints.cs"] = 5,
-            ["AiCharacterEndpoints.cs"] = 2,
-            ["AiFlashcardsEndpoints.cs"] = 3,
             ["AiMediaSearchEndpoints.cs"] = 1,
-            ["AiSectionSummaryEndpoints.cs"] = 1,
-            ["AiSummarizeEndpoints.cs"] = 1,
-            ["AiVocabEndpoints.cs"] = 1,
             ["AnnaDownloadEndpoints.cs"] = 2,
             ["BookSearchEndpoints.cs"] = 1,
-            ["DropboxReaderEndpoints.cs"] = 7,
             ["GamingEndpoints.cs"] = 2,
             ["QuizEndpoints.cs"] = 1,
             ["VideoLibraryMetadataEndpoints.cs"] = 2,

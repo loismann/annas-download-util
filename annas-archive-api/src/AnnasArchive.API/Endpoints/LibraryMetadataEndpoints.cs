@@ -36,12 +36,6 @@ public static class LibraryMetadataEndpoints
         // PATCH /api/library/book/{fileName}/ratings - Update book ratings
         group.MapPatch("/book/{fileName}/ratings", HandleUpdateRatings);
 
-        // POST /api/library/book/{fileName}/reader - Toggle reader inclusion (route param)
-        group.MapPost("/book/{fileName}/reader", HandleToggleReaderByRoute);
-
-        // POST /api/library/book/reader - Toggle reader inclusion (query param)
-        group.MapPost("/book/reader", HandleToggleReaderByQuery);
-
         // POST /api/library/books/genres/wipe - Wipe all genres
         group.MapPost("/books/genres/wipe", HandleWipeGenres);
 
@@ -214,52 +208,6 @@ public static class LibraryMetadataEndpoints
         {
             Log.Warning(ex, "[library] Failed to update ratings for {SafeFileName}", safeFileName);
             return Results.Problem("Failed to update ratings.");
-        }
-    }
-
-    private static IResult HandleToggleReaderByRoute(
-        [FromRoute] string fileName,
-        [FromBody] LibraryBookReaderUpdate update,
-        BookPersonalizationStore store,
-        LibraryIndexCache cache) =>
-        SetReaderFlag(fileName, update, store, cache, requireEpub: false);
-
-    private static IResult HandleToggleReaderByQuery(
-        [FromQuery] string? fileName,
-        [FromBody] LibraryBookReaderUpdate update,
-        BookPersonalizationStore store,
-        LibraryIndexCache cache) =>
-        SetReaderFlag(fileName, update, store, cache, requireEpub: true);
-
-    private static IResult SetReaderFlag(
-        string? fileName,
-        LibraryBookReaderUpdate update,
-        BookPersonalizationStore store,
-        LibraryIndexCache cache,
-        bool requireEpub)
-    {
-        var safeFileName = SafeName(fileName);
-        if (safeFileName == null)
-            return ApiResponse.BadRequest("Invalid fileName.");
-
-        if (requireEpub && !string.Equals(Path.GetExtension(safeFileName), ".epub", StringComparison.OrdinalIgnoreCase))
-            return ApiResponse.BadRequest("Reader supports EPUB files only.");
-
-        var libraryRoot = LibraryHelpers.ResolveLibraryRoot();
-        if (!BookExists(libraryRoot, safeFileName))
-            return ApiResponse.NotFound("Book not found.");
-
-        try
-        {
-            var enabled = update?.Enabled ?? true;
-            store.Update(safeFileName, p => p.ReaderEnabled = enabled);
-            cache.InvalidateCache();
-            return Results.Ok(new { success = true, enabled });
-        }
-        catch (Exception ex)
-        {
-            Log.Warning(ex, "[library] Failed to update reader flag for {SafeFileName}", safeFileName);
-            return Results.Problem("Failed to update reader flag.");
         }
     }
 

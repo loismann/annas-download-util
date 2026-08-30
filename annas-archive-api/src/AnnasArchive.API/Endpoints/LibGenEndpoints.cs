@@ -97,7 +97,25 @@ public static class LibGenEndpoints
 
         var searchLimit = cfg.GetValue<int>("Anna:SearchLimit", 25);
         Log.Information("[API LibGen Search] Calling LibGenService.SearchAsync...");
-        var books = (await svc.SearchAsync(name, searchLimit, exact)).ToList();
+
+        List<BookDto> books;
+        try
+        {
+            books = (await svc.SearchAsync(name, searchLimit, exact)).ToList();
+        }
+        // The search no longer reports an unreachable LibGen as an empty result,
+        // so this arm has to exist: without it the exception reaches the global
+        // handler as a 500, which says "this endpoint is broken" rather than
+        // "the site it asks is down". Same mapping as /api/anna/book, because it
+        // is now the same failure.
+        catch (HttpRequestException ex)
+        {
+            Log.Warning(ex, "[API LibGen Search] Every LibGen domain refused");
+            return Results.Json(
+                new { error = "External search service unavailable", details = ex.Message },
+                statusCode: StatusCodes.Status503ServiceUnavailable);
+        }
+
         Log.Information("[API LibGen Search] Service returned {BooksCount} books", books.Count);
 
         if (exact)

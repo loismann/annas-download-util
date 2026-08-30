@@ -83,8 +83,20 @@ export type ToolPanel = 'sections' | 'story' | 'vocabulary' | 'flashcards' | 'se
         <mat-icon>download</mat-icon>
       </a>
 
-      <button type="button" class="icon" title="Fullscreen" (click)="toggleFullscreen.emit()">
-        <mat-icon>fullscreen</mat-icon>
+      <!--
+        The way back. Worth stating plainly because on a tablet it may be the
+        only one: there is no Esc key, and if the browser refused the fullscreen
+        request the reader is filling the page without the browser knowing it, so
+        no native exit control appears either.
+      -->
+      <button
+        type="button"
+        class="icon"
+        [class.selected]="immersive"
+        [attr.aria-pressed]="immersive"
+        [title]="immersive ? 'Leave fullscreen' : 'Fullscreen'"
+        (click)="toggleFullscreen.emit()">
+        <mat-icon>{{ immersive ? 'fullscreen_exit' : 'fullscreen' }}</mat-icon>
       </button>
 
       <!--
@@ -116,6 +128,9 @@ export class ReaderToolsComponent {
   @Input() open: ToolPanel | null = null;
   @Input() sidebarOpen = true;
   @Input() exportUrl: string | null = null;
+
+  /** Whether the reader currently has the screen to itself. */
+  @Input() immersive = false;
 
   @Output() openChange = new EventEmitter<ToolPanel | null>();
   @Output() changeType = new EventEmitter<void>();

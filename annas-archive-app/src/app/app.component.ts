@@ -18,7 +18,7 @@ import { DateNightAnnouncementService } from './services/date-night-announcement
 import { DateNightShowtimeService } from './services/date-night-showtime.service';
 import { DateNightReminderService } from './services/date-night-reminder.service';
 import { LoggerService } from './services/logger.service';
-import { ChromeToneService } from './services/chrome-tone.service';
+import { AppChromeService } from './services/app-chrome.service';
 import { EMPTY, Observable, Subscription, fromEvent, interval, merge, of, timer } from 'rxjs';
 import { switchMap, filter, throttleTime, startWith } from 'rxjs/operators';
 
@@ -86,6 +86,11 @@ import { switchMap, filter, throttleTime, startWith } from 'rxjs/operators';
       /* Material's toolbar is 56px tall below this width, not 64px. */
       .app-shell { height: calc(100dvh - 56px); }
     }
+
+    /* No toolbar above it, so nothing to subtract — the page gets the display.
+       Two classes outrank both rules above, phone included; a media query adds
+       no specificity of its own, so this needs no duplicate inside one. */
+    .app-shell.no-toolbar { height: 100dvh; }
 
     .app-nav {
       flex: 0 0 auto;
@@ -260,7 +265,10 @@ import { switchMap, filter, throttleTime, startWith } from 'rxjs/operators';
     }
   `],
   template: `
-    <mat-toolbar color="primary">
+    <!-- Gone entirely when a page asks for the room, not merely hidden: the
+         shell below measures itself against this bar's height, so leaving an
+         invisible one in the layout would leave the page it was asked to give up. -->
+    <mat-toolbar color="primary" *ngIf="appChrome.showsToolbar()">
       <div class="toolbar-column">
         <div class="toolbar-row">
           <!-- Leftmost, ahead of the title: the toggle is the anchor of the nav,
@@ -338,11 +346,13 @@ import { switchMap, filter, throttleTime, startWith } from 'rxjs/operators';
          for why the palette cannot live inside the reader's own styles. -->
     <div
       class="app-shell"
-      [attr.data-tone]="chromeTone.tone()"
+      [class.no-toolbar]="!appChrome.showsToolbar()"
+      [attr.data-tone]="appChrome.tone()"
       *ngIf="authService.isAuthenticated$ | async; else anonymousShell">
       <!-- Phones: fixed overlay above the page, with a backdrop.
            Tablet/desktop: an in-flow column that the page sits beside. -->
       <aside
+        *ngIf="appChrome.showsNav()"
         class="app-nav"
         [class.rail]="!navOpen(isHandset$ | async)"
         [class.overlay]="isHandset$ | async"
@@ -366,9 +376,11 @@ import { switchMap, filter, throttleTime, startWith } from 'rxjs/operators';
         </div>
       </aside>
 
+      <!-- Follows the nav it dims: a scrim over a drawer that is not rendered
+           would be a dark sheet with nothing behind it to close. -->
       <div
         class="nav-backdrop"
-        *ngIf="(isHandset$ | async) && drawerOpen"
+        *ngIf="(isHandset$ | async) && drawerOpen && appChrome.showsNav()"
         (click)="drawerOpen = false"></div>
 
       <main class="app-content">
@@ -423,15 +435,16 @@ export class AppComponent implements OnInit, OnDestroy {
   darkTheme = false;
   private routeSub?: Subscription;
 
-  /** The reading tone the chrome is currently wearing, published by whichever
-   * page owns the choice. Only the reader sets it today. */
-  readonly chromeTone = inject(ChromeToneService);
+  /** How the chrome should present itself — its tone, and whether it should be
+   * there at all — published by whichever page owns the choice. Only the reader
+   * sets either today. */
+  readonly appChrome = inject(AppChromeService);
 
   /** Whether that tone is anything other than "none". The theater palette wins
    * where they meet: those pages are black by design and are not a reading
    * preference to be overridden by one. */
   get tinted(): boolean {
-    return this.chromeTone.tone() !== 'plain' && !this.darkTheme;
+    return this.appChrome.tone() !== 'plain' && !this.darkTheme;
   }
 
   /** Phone-sized: the sidebar becomes a slide-over drawer and the toolbar grows
@@ -498,6 +511,11 @@ export class AppComponent implements OnInit, OnDestroy {
    * phone, or the expanded panel elsewhere. Drives both the ☰/✕ icon and
    * whether the sidebar renders as a rail. */
   navOpen(isHandset: boolean | null): boolean {
+    // The control that would expand it lives in the toolbar, and at this level
+    // there is no toolbar. Locked to the rail rather than left collapsible, so
+    // it cannot be opened by a stale preference and then never closed again.
+    if (this.appChrome.railOnly()) return false;
+
     return isHandset ? this.drawerOpen : !this.navCollapsed;
   }
 

@@ -57,18 +57,18 @@ export class BookCoverLookupService implements OnDestroy {
   }
 
   /** Queues lookups for whichever of `books` is still missing a usable cover. */
-  queueForBooks(books: BookDto[], useLibGen: boolean): void {
+  queueForBooks(books: BookDto[]): void {
     books
-      .filter(book => this.needsExternalCoverLookup(book, useLibGen))
+      .filter(book => this.needsExternalCoverLookup(book))
       .slice(0, AUTO_COVER_FETCH_LIMIT)
-      .forEach(book => this.enqueue(book, useLibGen));
+      .forEach(book => this.enqueue(book));
   }
 
   /** Adds one book to the staggered queue rather than firing immediately. */
-  enqueue(book: BookDto, useLibGen: boolean): void {
+  enqueue(book: BookDto): void {
     if (this.queue.includes(book) || this.inFlight.has(book.md5)) return;
     this.queue.push(book);
-    this.pump(useLibGen);
+    this.pump();
   }
 
   /**
@@ -94,38 +94,49 @@ export class BookCoverLookupService implements OnDestroy {
     });
   }
 
-  needsExternalCoverLookup(book: BookDto, useLibGen: boolean): boolean {
+  /**
+   * The `useLibGen` argument is gone because the question it answered is gone:
+   * there is one catalogue now, and whether a book needs a cover fetched has
+   * always been a property of the book's own candidates rather than of which
+   * source the reader picked. A LibGen cover URL is a placeholder often enough
+   * that a book carrying nothing else still needs a real one looked up.
+   */
+  needsExternalCoverLookup(book: BookDto): boolean {
     if (!book.coverCandidates || book.coverCandidates.length === 0) {
       return true;
-    }
-
-    if (!useLibGen && !book.source?.startsWith('libgen')) {
-      return false;
     }
 
     return !book.coverCandidates.some(url => !this.isLibGenCoverUrl(url));
   }
 
+  /**
+   * Both spellings, and the second one is a bug fix: fiction results carry
+   * `/fictioncovers/` URLs, which does not contain `/covers` — the slash lands
+   * before `fiction`, not before `covers`. So a fiction book whose only
+   * candidate was a LibGen cover looked like a book that already had a real
+   * cover, and no lookup was ever queued for it.
+   */
   private isLibGenCoverUrl(url: string): boolean {
     const normalized = url.toLowerCase();
-    return normalized.includes('libgen.') && normalized.includes('/covers');
+    return normalized.includes('libgen.')
+      && (normalized.includes('/covers') || normalized.includes('/fictioncovers'));
   }
 
-  private pump(useLibGen: boolean): void {
+  private pump(): void {
     if (this.pumping) return;
     const next = this.queue.shift();
     if (!next) return;
 
     this.pumping = true;
-    this.lookup(next, useLibGen);
+    this.lookup(next);
     this.after(COVER_LOOKUP_STAGGER_MS, () => {
       this.pumping = false;
-      this.pump(useLibGen);
+      this.pump();
     });
   }
 
-  private lookup(book: BookDto, useLibGen: boolean): void {
-    if (!this.needsExternalCoverLookup(book, useLibGen)) return;
+  private lookup(book: BookDto): void {
+    if (!this.needsExternalCoverLookup(book)) return;
     if (this.inFlight.has(book.md5)) return;
 
     this.inFlight.add(book.md5);
@@ -137,23 +148,20 @@ export class BookCoverLookupService implements OnDestroy {
       this.inFlight.delete(book.md5);
     };
 
-    const fallbackToTitleSearch = () => {
-      this.api.fetchCover(book.title, author)
-        .pipe(takeUntil(this.destroy$))
-        .subscribe({
-          next: resp => resp.coverUrl ? addCoverAndFinish(resp.coverUrl) : this.inFlight.delete(book.md5),
-          error: () => this.inFlight.delete(book.md5)
-        });
-    };
-
-    // Try MD5-based ISBN lookup first — independent of OpenLibrary's search
-    // API and Google Books' quota, so it works even when those don't. Falls
-    // back to the title/author search only if this doesn't find anything.
-    this.api.fetchCoverByMd5(book.md5)
+    // Straight to the title/author search. There used to be an md5-first rung
+    // in front of this, on the grounds that an ISBN taken from the book's own
+    // detail page beats a title match — true, and it stopped being available:
+    // that page is Anna's Archive HTML, which went behind DDoS-Guard on
+    // 2026-08-13. It could no longer answer, and because it reaches the site
+    // through Playwright it could not even fail quickly, spending up to thirty
+    // seconds per book behind one shared browser lock before the rung below was
+    // reached at all. Covers did not disappear because there was no source —
+    // the working source was second in a queue behind a minute of nothing.
+    this.api.fetchCover(book.title, author)
       .pipe(takeUntil(this.destroy$))
       .subscribe({
-        next: resp => resp.coverUrl ? addCoverAndFinish(resp.coverUrl) : fallbackToTitleSearch(),
-        error: () => fallbackToTitleSearch()
+        next: resp => resp.coverUrl ? addCoverAndFinish(resp.coverUrl) : this.inFlight.delete(book.md5),
+        error: () => this.inFlight.delete(book.md5)
       });
   }
 

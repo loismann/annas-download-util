@@ -10,13 +10,11 @@ public record LibraryDeletionResult(
     bool Found,
     bool BookFileDeleted,
     bool MetaFileDeleted,
-    int CoverFilesDeleted,
-    bool AiCacheDeleted,
-    bool EpubCacheDeleted);
+    int CoverFilesDeleted);
 
 /// <summary>
 /// Deletes a library book and every trace of it across the system: the ebook file itself, its
-/// metadata sidecar, cover image(s), and its per-book AI/epub caches. Shared by the general
+/// metadata sidecar and cover image(s). Shared by the general
 /// single-book delete endpoint and the library-review modal's "delete" decision, so both paths
 /// get the same permanent, complete removal.
 /// </summary>
@@ -45,7 +43,7 @@ public static class LibraryBookDeletionHelper
         var metaFileExists = File.Exists(metaPath);
 
         if (!bookFileExists && !metaFileExists && coverMatches.Length == 0)
-            return new LibraryDeletionResult(false, false, false, 0, false, false);
+            return new LibraryDeletionResult(false, false, false, 0);
 
         var bookFileDeleted = false;
         if (bookFileExists)
@@ -75,16 +73,12 @@ public static class LibraryBookDeletionHelper
             }
         }
 
-        // Purge per-book AI summary caches (chapter/ultra/section summaries, chunk boundaries,
-        // character graph) and the epub chapter-index cache — neither is scoped to the plain
-        // ebook file, so they'd otherwise survive a "delete" untouched.
-        var existingKeys = AiContentCache.GetExistingSummaryKeys();
-        var readerKey = AiSummaryHelpers.ResolveReaderKey(safeFileName, existingKeys);
-        var aiCacheDeleted = AiContentCache.DeleteAllAiCacheForBook(readerKey);
-        var epubCacheDeleted = LibraryEpubCache.DeleteCache(readerKey);
-
+        // The reader keeps nothing keyed to this path: its text is content-addressed
+        // and its artifacts are keyed on the content hash, so a book whose file is gone
+        // is marked unavailable and keeps everything the reader paid for. That is the
+        // reader's own design decision, not an omission here.
         cache.RemoveBook(safeFileName);
 
-        return new LibraryDeletionResult(true, bookFileDeleted, metaFileDeleted, coverFilesDeleted, aiCacheDeleted, epubCacheDeleted);
+        return new LibraryDeletionResult(true, bookFileDeleted, metaFileDeleted, coverFilesDeleted);
     }
 }

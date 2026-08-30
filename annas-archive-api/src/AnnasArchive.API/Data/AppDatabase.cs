@@ -43,7 +43,6 @@ public class AppDatabase
                 series            TEXT,
                 goodreads_rating  REAL,
                 personal_rating   INTEGER,
-                reader_enabled    INTEGER,
                 favorited_by_json TEXT,
                 cull_reviewed_at  TEXT,
                 updated_at        TEXT NOT NULL
@@ -161,7 +160,7 @@ public class AppDatabase
             );
 
             -- ─── Ebook Reader II (DOCS/features/EBOOK_READER_II.md §7.1) ───
-            -- Wholly separate from Reader I, which keeps its state in ai-cache
+            -- Wholly separate from the retired Reader I, which kept its state in ai-cache
             -- files. The r2_ prefix makes retirement of either side a clean drop.
 
             CREATE TABLE IF NOT EXISTS r2_book (
@@ -263,6 +262,11 @@ public class AppDatabase
         // download from their own library view does not hide it from everyone else
         // who asked for the same book.
         EnsureColumn(conn, "audiobook_request_user", "dismissed_at", "TEXT");
+
+        // Reader I is retired. Its per-book "show this in the reader" flag has no
+        // reader left to mean anything to — the reader now keeps its own shelf in
+        // r2_book — so drop it rather than leave a column nothing reads or writes.
+        DropColumn(conn, "book_personalization", "reader_enabled");
     }
 
     /// <summary>
@@ -285,8 +289,24 @@ public class AppDatabase
         return conn;
     }
 
-    private static void EnsureColumn(
-        SqliteConnection connection, string table, string column, string declaration)
+    /// <summary>
+    /// Removes a column if the database still has one. The inverse of
+    /// <see cref="EnsureColumn"/>: taking it out of the CREATE statement above only
+    /// changes what a <i>fresh</i> database gets, because every table there is
+    /// CREATE TABLE IF NOT EXISTS — an existing database would keep the column
+    /// forever without this.
+    /// </summary>
+    private static void DropColumn(SqliteConnection connection, string table, string column)
+    {
+        if (!HasColumn(connection, table, column))
+            return;
+
+        using var alter = connection.CreateCommand();
+        alter.CommandText = $"ALTER TABLE {table} DROP COLUMN {column}";
+        alter.ExecuteNonQuery();
+    }
+
+    private static bool HasColumn(SqliteConnection connection, string table, string column)
     {
         using var inspect = connection.CreateCommand();
         inspect.CommandText = $"PRAGMA table_info({table})";
@@ -294,9 +314,16 @@ public class AppDatabase
         while (reader.Read())
         {
             if (string.Equals(reader.GetString(1), column, StringComparison.OrdinalIgnoreCase))
-                return;
+                return true;
         }
-        reader.Close();
+        return false;
+    }
+
+    private static void EnsureColumn(
+        SqliteConnection connection, string table, string column, string declaration)
+    {
+        if (HasColumn(connection, table, column))
+            return;
 
         using var alter = connection.CreateCommand();
         alter.CommandText = $"ALTER TABLE {table} ADD COLUMN {column} {declaration}";

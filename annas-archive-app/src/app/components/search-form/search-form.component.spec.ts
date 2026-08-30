@@ -110,14 +110,12 @@ describe('SearchFormComponent', () => {
       spyOn(component.search, 'emit');
       component.searchTerm = 'Test Book';
       component.selectedAuthor = 'Test Author';
-      component.useLibGen = false;
 
       component.onSubmit();
 
       expect(component.search.emit).toHaveBeenCalledWith({
         searchTerm: 'Test Book',
         selectedAuthor: 'Test Author',
-        useLibGen: false,
         isAiSearch: false
       } as SearchFormSubmitEvent);
     });

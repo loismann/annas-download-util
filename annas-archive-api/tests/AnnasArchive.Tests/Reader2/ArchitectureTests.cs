@@ -173,8 +173,18 @@ public class ArchitectureTests
     }
 
     /// <summary>
-    /// The forbidden list from the spec. Reader II shares infrastructure with the
-    /// application and nothing at all with the reader it replaces.
+    /// Names that belonged to Reader I and must not reappear anywhere in the API.
+    ///
+    /// <para>While both readers existed, the rule was the narrower one below —
+    /// that Reader II reference none of Reader I's types. Reader I is retired, so
+    /// the stronger claim is available and worth taking: these names are gone from
+    /// the whole project. That keeps the retirement done rather than merely having
+    /// been done once, and fails loudly if a revert, a merge, or a copy-paste out
+    /// of history brings any of it back.</para>
+    ///
+    /// <para><c>reader_enabled</c> is deliberately absent from this list: the
+    /// migration that drops the column has to name it, and will for as long as any
+    /// database might still have one.</para>
     /// </summary>
     [Theory]
     [InlineData("EpubChapterCache")]
@@ -182,12 +192,37 @@ public class ArchitectureTests
     [InlineData("LibraryEpubCache")]
     [InlineData("EpubZipPaths")]
     [InlineData("AiSummaryHelpers")]
+    [InlineData("ChapterLabeler")]
     [InlineData("ChapterLabelingHelper")]
     [InlineData("ReaderPrompts")]
     [InlineData("ChapterSummaryPrompts")]
+    [InlineData("CharacterGraphPrompts")]
+    [InlineData("FlashcardPrompts")]
     [InlineData("VocabularyCache")]
+    [InlineData("AiContentCache")]
+    [InlineData("IFlashcardService")]
+    [InlineData("IEpubCachePathProvider")]
+    [InlineData("ReaderEnabled")]
+    public void No_api_source_mentions_a_deleted_reader_one_type(string forbidden)
+    {
+        ApiSourceText
+            .Where(s => s.Text.Contains(forbidden, StringComparison.Ordinal))
+            .Select(s => s.File)
+            .Should().BeEmpty($"Reader I is retired; {forbidden} must not come back");
+    }
+
+    /// <summary>
+    /// Reader II shares infrastructure with the application and nothing at all
+    /// with the reader it replaced.
+    ///
+    /// <para><c>dropboxPath</c> stays scoped to Reader II rather than moving to the
+    /// list above, because the name is still legitimately in use: send-to-Kindle
+    /// uploads a book to Dropbox. What must never come back is a <i>reader</i> that
+    /// addresses a book by a Dropbox path instead of by content hash.</para>
+    /// </summary>
+    [Theory]
     [InlineData("dropboxPath")]
-    public void No_reader_two_source_mentions_a_reader_one_type(string forbidden)
+    public void No_reader_two_source_mentions_a_reader_one_concept(string forbidden)
     {
         SourceText
             .Where(s => s.Text.Contains(forbidden, StringComparison.Ordinal))

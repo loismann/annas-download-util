@@ -37,7 +37,6 @@ public static class LibraryBrowserEndpoints
         group.MapGet("/books/search", HandleSearchBooks);
 
         // GET /api/library/reader/books - List reader-enabled books
-        group.MapGet("/reader/books", HandleListReaderBooks);
 
         // DELETE /api/library/book/{fileName} - Delete book
         group.MapDelete("/book/{fileName}", HandleDeleteBook);
@@ -179,41 +178,6 @@ public static class LibraryBrowserEndpoints
         });
     }
 
-    private static IResult HandleListReaderBooks(HttpContext context, LibraryIndexCache cache)
-    {
-        var baseUrl = $"{context.Request.Scheme}://{context.Request.Host}";
-        var allBooks = cache.GetBooks(baseUrl);
-
-        var existingKeys = AiContentCache.GetExistingSummaryKeys();
-        var results = new List<ReaderBookDto>();
-
-        foreach (var book in allBooks)
-        {
-            // Only include EPUBs
-            if (!string.Equals(book.Format, "EPUB", StringComparison.OrdinalIgnoreCase))
-                continue;
-
-            var readerKey = ResolveReaderKey(book.FileName, existingKeys);
-            var hasSummaries = AiContentCache.HasAnySummaries(readerKey, existingKeys);
-            var include = book.ReaderEnabled == true || hasSummaries;
-
-            if (!include)
-                continue;
-
-            results.Add(new ReaderBookDto(
-                book.FileName,
-                readerKey,
-                book.Title,
-                book.Authors,
-                book.Format,
-                book.CoverUrl,
-                hasSummaries
-            ));
-        }
-
-        return Results.Json(results.OrderBy(r => r.Title, StringComparer.OrdinalIgnoreCase).ToList());
-    }
-
     private static IResult HandleDeleteBook(
         [FromRoute] string fileName,
         LibraryIndexCache cache,
@@ -257,18 +221,4 @@ public static class LibraryBrowserEndpoints
         return Results.File(fullPath, "application/pdf", enableRangeProcessing: true);
     }
 
-    // Helper function for resolving reader keys
-    private static string ResolveReaderKey(string fileName, ISet<string> existingKeys)
-    {
-        if (existingKeys == null || existingKeys.Count == 0)
-            return fileName;
-
-        var sanitized = AiContentCache.SanitizeKey(fileName);
-        if (existingKeys.Contains(sanitized))
-            return sanitized;
-
-        var match = existingKeys.FirstOrDefault(key =>
-            key.EndsWith(sanitized, StringComparison.OrdinalIgnoreCase));
-        return match ?? fileName;
-    }
 }

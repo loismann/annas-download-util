@@ -29,7 +29,6 @@ describe('BookEditDialogComponent', () => {
     fileName: 'test-book.epub',
     format: 'EPUB',
     canSendToKindle: true,
-    readerEnabled: false
   };
 
   /** Deliberately not 'literary' — nothing here may assume a particular type. */
@@ -51,7 +50,6 @@ describe('BookEditDialogComponent', () => {
     mockLibraryApiService = jasmine.createSpyObj('LibraryApiService', [
       'deleteLibraryBook',
       'sendLibraryToKindle',
-      'updateLibraryBookReaderEnabled',
       'getLibraryBookSummary'
     ]);
     mockLibraryApiService.getLibraryBookSummary.and.returnValue(of({ summary: null, source: null }));
@@ -502,13 +500,6 @@ describe('BookEditDialogComponent', () => {
       component.addToReader2('ideas-key');
 
       expect(mockReader2.enrol).not.toHaveBeenCalled();
-    });
-
-    /** Reader I and Reader II coexist; adding to one must not touch the other. */
-    it('leaves the Reader I control alone', () => {
-      component.addToReader2('ideas-key');
-
-      expect(mockLibraryApiService.updateLibraryBookReaderEnabled).not.toHaveBeenCalled();
     });
   });
 });

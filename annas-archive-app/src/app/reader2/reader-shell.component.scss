@@ -18,7 +18,7 @@
   // This element still carries `data-tone` itself, so it still colours itself
   // straight from its own preference and does not wait on anyone. The shell
   // carries the same attribute for the chrome around it, told by
-  // `ChromeToneService` — one declaration, two elements that need it.
+  // `AppChromeService` — one declaration, two elements that need it.
   background: var(--r2-bg);
   color: var(--r2-fg);
 }

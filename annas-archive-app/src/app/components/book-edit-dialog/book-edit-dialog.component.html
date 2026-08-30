@@ -46,23 +46,12 @@
               <span *ngSwitchDefault>Dropbox</span>
             </ng-container>
           </button>
-          <button mat-stroked-button color="primary" type="button" (click)="readerAction()"
-            *ngIf="!usesReader2"
-            [disabled]="!data.fileName || readerState === 'sending'">
-            <ng-container [ngSwitch]="readerState">
-              <span *ngSwitchCase="'sending'">Adding…</span>
-              <span *ngSwitchCase="'error'"><mat-icon inline>refresh</mat-icon> Retry</span>
-              <span *ngSwitchDefault>{{ data.readerEnabled ? 'View in ereader' : 'Add to ebook reader' }}</span>
-            </ng-container>
-          </button>
-
           <!--
-            Reader II. A separate control while both readers exist: the book type
-            is chosen up front because it decides what every summary will be, and
-            the list comes from the server so a new type costs nothing here.
+            The book type is chosen up front because it decides what every summary
+            will be, and the list comes from the server so a new type costs nothing
+            here.
           -->
           <button mat-stroked-button color="primary" type="button"
-            *ngIf="usesReader2"
             [matMenuTriggerFor]="reader2Menu"
             (menuOpened)="loadReader2Lenses()"
             [disabled]="!data.fileName || reader2State === 'sending'">

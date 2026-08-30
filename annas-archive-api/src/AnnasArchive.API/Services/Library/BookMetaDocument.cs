@@ -74,7 +74,6 @@ public static class BookMetaDocument
             // write in case they were edited during the pass.
             ["tags"] = existing?.Tags ?? Array.Empty<string>(),
             ["personalRating"] = existing?.PersonalRating,
-            ["readerEnabled"] = existing?.ReaderEnabled,
             ["favoritedBy"] = existing?.FavoritedBy ?? Array.Empty<string>(),
             ["cullReviewedAt"] = existing?.CullReviewedAt?.ToString("o")
         };

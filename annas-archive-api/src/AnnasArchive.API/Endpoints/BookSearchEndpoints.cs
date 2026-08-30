@@ -70,9 +70,15 @@ public static class BookSearchEndpoints
         return app;
     }
 
+    /// <summary>
+    /// Still <c>/api/anna/book</c>, and still returns md5s Anna's download API
+    /// accepts — but the md5s now come from LibGen, because Anna's own search
+    /// pages went behind DDoS-Guard. See <see cref="BookSearch"/> for why one
+    /// site's md5 is the other's, and why the order is what it is.
+    /// </summary>
     private static async Task<IResult> HandleBookSearch(
         [FromQuery] string? name,
-        AnnasArchiveService svc,
+        BookSearch svc,
         IValidationService validation,
         IConfiguration cfg,
         [FromQuery] bool exact = false,
@@ -89,7 +95,7 @@ public static class BookSearchEndpoints
             // rather than blocking one response on the full ~50-result
             // budget. Same total results delivered, just progressively.
             var pageBatchSize = cfg.GetValue<int>("Anna:SearchPageBatchSize", 25);
-            var books = (await svc.SearchAsync(name, pageBatchSize, exact, startPage: page)).ToList();
+            var books = (await svc.SearchAsync(name, pageBatchSize, exact, page)).ToList();
 
             if (exact)
                 books = books

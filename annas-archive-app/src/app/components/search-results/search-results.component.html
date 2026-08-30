@@ -48,7 +48,7 @@
             <div class="variant-row" (click)="$event.stopPropagation()">
               <ng-container *ngIf="sameFormatSiblings(dg.group, dg.active).length > 1">
                 <button type="button" class="variant-trigger" [matMenuTriggerFor]="variantMenu">
-                  <span>{{ dg.active.fileSize }}<ng-container *ngIf="dg.active.source">&nbsp;· {{ dg.active.source }}</ng-container></span>
+                  <span>{{ dg.active.fileSize }}</span>
                   <mat-icon class="variant-caret">expand_more</mat-icon>
                 </button>
                 <mat-menu #variantMenu="matMenu">
@@ -56,7 +56,7 @@
                     mat-menu-item
                     *ngFor="let v of sameFormatSiblings(dg.group, dg.active)"
                     (click)="onPickVariant(dg, v.md5)"
-                  >{{ v.fileSize }}<ng-container *ngIf="v.source"> · {{ v.source }}</ng-container></button>
+                  >{{ v.fileSize }}</button>
                 </mat-menu>
               </ng-container>
             </div>

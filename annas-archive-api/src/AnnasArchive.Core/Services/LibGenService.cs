@@ -29,9 +29,19 @@ public class LibGenService
         "https://libgen.vg"
     };
 
-    public async Task<IEnumerable<BookDto>> SearchAsync(string query, int limit = 50, bool exact = false)
+    /// <param name="page">
+    /// 1-based. The caller renders page 1 and then fetches the next in the
+    /// background, so this has to reach the upstream query rather than being
+    /// applied to an already-fetched batch — LibGen returns 25 rows per page and
+    /// has no way to ask for more in one request. Ignoring it would make every
+    /// page an identical copy of the first.
+    /// </param>
+    public async Task<IEnumerable<BookDto>> SearchAsync(
+        string query, int limit = 50, bool exact = false, int page = 1)
     {
-        Log.Information("[LibGen] SearchAsync called with query={Query}, limit={Limit}, exact={Exact}", query, limit, exact);
+        Log.Information(
+            "[LibGen] SearchAsync called with query={Query}, limit={Limit}, exact={Exact}, page={Page}",
+            query, limit, exact, page);
 
         if (limit <= 0)
         {
@@ -48,7 +58,7 @@ public class LibGenService
 
         Log.Information("[LibGen] Trying general search first...");
         // Try general search first (more reliable), then fall back to fiction search
-        var generalResults = await SearchGeneralAsync(trimmedQuery, limit, exact);
+        var generalResults = await SearchGeneralAsync(trimmedQuery, limit, exact, page);
         if (generalResults.Any())
         {
             Log.Information("[LibGen] General search returned {ResultCount} results", generalResults.Count());
@@ -56,17 +66,17 @@ public class LibGenService
         }
 
         Log.Information("[LibGen] General search returned no results, trying fiction search...");
-        var fictionResults = await SearchFictionAsync(trimmedQuery, limit, exact);
+        var fictionResults = await SearchFictionAsync(trimmedQuery, limit, exact, page);
         Log.Information("[LibGen] Fiction search returned {ResultCount} results", fictionResults.Count());
         return fictionResults;
     }
 
-    private async Task<IEnumerable<BookDto>> SearchFictionAsync(string query, int limit, bool exact)
+    private async Task<IEnumerable<BookDto>> SearchFictionAsync(string query, int limit, bool exact, int page)
     {
         try
         {
             var searchQuery = exact ? $"\"{query}\"" : query;
-            var url = $"/fiction/?q={Uri.EscapeDataString(searchQuery)}&criteria=&language=&format=";
+            var url = $"/fiction/?q={Uri.EscapeDataString(searchQuery)}&criteria=&language=&format={PageSuffix(page)}";
             Log.Information("[LibGen Fiction] Fetching: {Url}", url);
 
             var html = await GetStringWithFallbackAsync(url);
@@ -126,6 +136,12 @@ public class LibGenService
             Log.Warning("[LibGen Fiction] Invalid argument: {ParamName}", ex.ParamName);
             return Enumerable.Empty<BookDto>();
         }
+        // See the note on the general search: an unreachable site is not an
+        // empty result set.
+        catch (HttpRequestException)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             Log.Warning(ex, "[LibGen Fiction] ERROR");
@@ -134,12 +150,13 @@ public class LibGenService
         }
     }
 
-    private async Task<IEnumerable<BookDto>> SearchGeneralAsync(string query, int limit, bool exact)
+    private async Task<IEnumerable<BookDto>> SearchGeneralAsync(string query, int limit, bool exact, int page)
     {
         try
         {
             var searchQuery = exact ? $"\"{query}\"" : query;
-            var url = $"/index.php?req={Uri.EscapeDataString(searchQuery)}&lg_topic=libgen&open=0&view=simple&res=25&phrase=1&column=def";
+            var url = $"/index.php?req={Uri.EscapeDataString(searchQuery)}&lg_topic=libgen"
+                    + $"&open=0&view=simple&res=25&phrase=1&column=def{PageSuffix(page)}";
             Log.Information("[LibGen General] Fetching: {Url}", url);
 
             var html = await GetStringWithFallbackAsync(url);
@@ -197,6 +214,15 @@ public class LibGenService
 
             Log.Information("[LibGen General] Returning {BookCount} books", books.Count);
             return books;
+        }
+        // Deliberately not caught. LibGen is the only place book search looks
+        // now, so "every domain refused" and "nothing matched that title" are
+        // completely different answers and the caller has to be able to tell
+        // them apart — reporting an outage as an empty shelf is the exact
+        // failure that hid Anna's Archive going down for six days.
+        catch (HttpRequestException)
+        {
+            throw;
         }
         catch (ArgumentException ex)
         {
@@ -468,6 +494,13 @@ public class LibGenService
             return null;
         }
     }
+
+    /// <summary>
+    /// Omitted entirely for the first page rather than sent as <c>page=1</c>:
+    /// the two are equivalent to LibGen but not to the cache in front of it, and
+    /// the bare URL is the one every other client asks for.
+    /// </summary>
+    private static string PageSuffix(int page) => page > 1 ? $"&page={page}" : string.Empty;
 
     private async Task<string> GetStringWithFallbackAsync(string pathAndQuery)
     {

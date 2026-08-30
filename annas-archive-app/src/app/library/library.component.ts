@@ -545,7 +545,6 @@ export class LibraryComponent implements OnInit, OnDestroy {
       fileName: book.fileName,
       format: book.format,
       canSendToKindle: this.canSendToKindle(book),
-      readerEnabled: book.readerEnabled ?? false,
       favoritedBy: book.favoritedBy ?? []
     };
 

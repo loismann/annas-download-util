@@ -730,13 +730,6 @@ Return JSON with:
                 Pages = root.TryGetProperty("pages", out var pages) ? pages.GetString() : null,
                 GoodreadsRating = LibraryMetadataRules.TryGetDouble(root, "goodreadsRating"),
                 PersonalRating = LibraryMetadataRules.TryGetInt(root, "personalRating"),
-                ReaderEnabled = root.TryGetProperty("readerEnabled", out var readerEnabled)
-                    ? readerEnabled.ValueKind == JsonValueKind.True
-                        ? true
-                        : readerEnabled.ValueKind == JsonValueKind.False
-                            ? false
-                            : null
-                    : null,
                 Description = root.TryGetProperty("description", out var desc) ? desc.GetString() : null,
                 OpenLibraryConfidence = root.TryGetProperty("openLibraryConfidence", out var conf) && conf.ValueKind == JsonValueKind.Number
                     ? conf.GetDouble()

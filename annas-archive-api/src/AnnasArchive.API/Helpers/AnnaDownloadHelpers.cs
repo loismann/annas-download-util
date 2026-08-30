@@ -25,6 +25,19 @@ public enum AnnaDownloadFailure
     /// <summary>Anna's Archive refused on rate-limit grounds. Maps to 429.</summary>
     RateLimited,
 
+    /// <summary>
+    /// Anna's Archive has no record of this md5. Maps to 404 — the book cannot be
+    /// fetched, but nothing is broken and retrying will not help.
+    ///
+    /// <para>Kept apart from <see cref="Unavailable"/> because the two want opposite
+    /// responses: "Anna's is down" is worth retrying and worth alerting on, while
+    /// "Anna's never had this file" is the routine consequence of searching LibGen
+    /// and downloading from Anna's. It is also the condition a LibGen download
+    /// fallback has to trigger on, and it cannot trigger on a bucket that also
+    /// contains a dead mirror.</para>
+    /// </summary>
+    NotOnAnnasArchive,
+
     /// <summary>Upstream gave no download URL, or the transfer failed. Maps to 502.</summary>
     Unavailable
 }
@@ -42,6 +55,7 @@ public static class AnnaDownloadHelpers
     public static int StatusCodeFor(AnnaDownloadFailure failure) => failure switch
     {
         AnnaDownloadFailure.RateLimited => StatusCodes.Status429TooManyRequests,
+        AnnaDownloadFailure.NotOnAnnasArchive => StatusCodes.Status404NotFound,
         AnnaDownloadFailure.Unavailable => StatusCodes.Status502BadGateway,
         _ => StatusCodes.Status200OK
     };
@@ -185,13 +199,30 @@ public static class AnnaDownloadHelpers
         {
             doc = await anna.GetMemberDownloadDocumentAsync(md5, memberKey);
         }
-        catch (InvalidOperationException ex) when (ex.Message.Contains("Rate limit"))
-        {
-            return (null, null, null, "⏱️ Rate limit exceeded. Please wait 30-60 seconds before trying again.", AnnaDownloadFailure.RateLimited);
-        }
         catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
         {
             return (null, null, null, "⏱️ Rate limit exceeded. Please wait 30-60 seconds before trying again.", AnnaDownloadFailure.RateLimited);
+        }
+        catch (HttpRequestException ex) when (
+            ex.StatusCode == System.Net.HttpStatusCode.BadRequest ||
+            ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            // Anna's answers 400 for an md5 it holds no record of. Routine since
+            // search moved to LibGen and downloads stayed here: LibGen indexes files
+            // Anna's has not. Before this it escaped as an unhandled exception and
+            // the reader got a 500, which reads as "the button is broken" rather
+            // than "this book is not on Anna's" — a different problem entirely.
+            return (null, null, null,
+                "This book is not available from Anna's Archive. It was found in another catalogue that Anna's has not indexed.",
+                AnnaDownloadFailure.NotOnAnnasArchive);
+        }
+        catch (HttpRequestException ex)
+        {
+            // Every mirror refused. Distinct from the case above: nothing is known
+            // about whether the book exists, only that Anna's could not be asked.
+            return (null, null, null,
+                $"Anna's Archive could not be reached ({(int?)ex.StatusCode ?? 0}). Please try again shortly.",
+                AnnaDownloadFailure.Unavailable);
         }
 
         // Extract download URL

@@ -98,7 +98,7 @@ EXPOSE 8080
 # break. Only this service's own mounts, and only the entries actually owned by
 # root:
 #
-#   for p in library epub-cache ai-cache youtube logs state; do
+#   for p in library reader2-text youtube logs state; do
 #     sudo find ../data/$p \( -user 0 -o -group 0 \) -exec chown 1000:1000 {} +
 #   done
 #   sudo find ~/Media/PhotoPrints ~/Media/_audiobook_staging \

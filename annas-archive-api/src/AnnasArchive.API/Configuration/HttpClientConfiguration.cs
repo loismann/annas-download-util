@@ -126,6 +126,11 @@ public static class HttpClientConfiguration
         services.AddScoped<AnnasArchiveDownloads>(provider => new AnnasArchiveDownloads(
             provider.GetRequiredService<AnnasArchiveTransport>()));
 
+        // What /api/anna/book actually searches: LibGen for the md5, Anna's only
+        // as a fallback. Registered after both because it holds them; scoped
+        // because they are. See BookSearch for why the md5s are interchangeable.
+        services.AddScoped<BookSearch>();
+
         // LibGen HTTP client (scraping with domain fallback)
         services.AddHttpClient<LibGenService>(c =>
         {

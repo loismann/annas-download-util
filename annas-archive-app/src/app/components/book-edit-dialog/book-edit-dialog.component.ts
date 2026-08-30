@@ -40,7 +40,6 @@ export interface BookEditDialogData {
   fileName?: string | null;
   format?: string | null;
   canSendToKindle?: boolean;
-  readerEnabled?: boolean | null;
   summary?: string | null;
   favoritedBy?: string[];
 }
@@ -104,7 +103,6 @@ export class BookEditDialogComponent implements OnInit, OnDestroy {
   dadsKindleState: 'idle' | 'sending' | 'success' | 'error' = 'idle';
   momsKindleState: 'idle' | 'sending' | 'success' | 'error' = 'idle';
   dropboxState: 'idle' | 'sending' | 'success' | 'error' = 'idle';
-  readerState: 'idle' | 'sending' | 'success' | 'error' = 'idle';
 
   // Reader II. Its own state because the two readers coexist until Reader I is
   // retired, and a shared flag would make "which one am I adding to" ambiguous.
@@ -466,53 +464,6 @@ export class BookEditDialogComponent implements OnInit, OnDestroy {
     });
   }
 
-  enableReader(): void {
-    if (!this.data.fileName || this.readerState === 'sending' || this.data.readerEnabled) {
-      return;
-    }
-
-    this.readerState = 'sending';
-    this.libraryApi.updateLibraryBookReaderEnabled(this.data.fileName, true).pipe(takeUntil(this.destroy$)).subscribe({
-      next: (resp) => {
-        this.data.readerEnabled = resp?.enabled ?? true;
-        this.readerState = this.data.readerEnabled ? 'success' : 'error';
-      },
-      error: () => {
-        this.readerState = 'error';
-      }
-    });
-  }
-
-  /**
-   * Which reader this dialog's buttons point at — Reader II, for everybody.
-   *
-   * <p>This used to be `isAdmin()`, which is what the reader split meant here:
-   * one enrol control each, and nobody offered a reader that was not theirs. The
-   * split is over (`reader-split.guard.ts`), so there is one control and it goes
-   * to the one reader.</p>
-   *
-   * <p>Kept as a named seam rather than inlined, because the Reader I branch
-   * behind it is still live code and retiring it should be one grep rather than
-   * an archaeology exercise.</p>
-   */
-  get usesReader2(): boolean {
-    return true;
-  }
-
-  readerAction(): void {
-    if (this.data.readerEnabled || this.readerState === 'success') {
-      this.viewInReader();
-      return;
-    }
-    this.enableReader();
-  }
-
-  viewInReader(): void {
-    this.dialogRef.close();
-    this.router.navigate(['/reader'], {
-      queryParams: { fileName: this.data.fileName }
-    });
-  }
 
   /**
    * The book types Reader II offers, fetched the first time the menu is opened.

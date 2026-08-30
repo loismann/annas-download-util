@@ -91,7 +91,6 @@ export class BookSearchComponent implements OnInit, OnDestroy {
   searchPerformed = false;
   /* Secondary search options start collapsed on every screen size — see ngOnInit. */
   searchPanelCollapsed = true;
-  useLibGen = false; // Toggle between Anna's Archive and LibGen
   relatedBooksModalOpen = false; // Track if related books modal is open for matching
 
   books: BookDto[] = [];
@@ -325,7 +324,6 @@ export class BookSearchComponent implements OnInit, OnDestroy {
   onSearchFormSubmit(event: SearchFormSubmitEvent): void {
     this.searchTerm = event.searchTerm;
     this.selectedAuthor = event.selectedAuthor;
-    this.useLibGen = event.useLibGen;
     // selectedFormat isn't part of the submit event — the format selector
     // now lives above the results grid (book-search.component.html), driven
     // directly by this.selectedFormat/onFormatChange, independent of search
@@ -411,33 +409,16 @@ export class BookSearchComponent implements OnInit, OnDestroy {
       b.momsKindleState = 'idle';
     };
 
-    if (this.useLibGen) {
-      // LibGen's search doesn't paginate the same way (general vs. fiction
-      // search, not simple page accumulation) — single-shot for now.
-      this.bookSearchApi.searchBooksLibGen(searchQuery, false).pipe(takeUntil(this.destroy$)).subscribe({
-        next: books => {
-          this.books = books;
-          this.books.forEach(initIdleState);
-          this.loading = false;
-          this.coverLookup.queueForBooks(this.books, this.useLibGen);
-          this.descriptionLookup.queueForBooks(this.books);
-          this.regroupBooks();
-        },
-        error: err => this.handleSearchError(err),
-      });
-      return;
-    }
-
     // Page 1 renders as soon as it arrives instead of waiting for the full
     // ~50-result budget — page 2 is fetched in the background afterward and
     // appended when it lands, so the user sees results immediately instead
-    // of staring at a spinner for two sequential Anna's Archive page fetches.
+    // of staring at a spinner for two sequential page fetches.
     this.bookSearchApi.searchBooks(searchQuery, false, 1).pipe(takeUntil(this.destroy$)).subscribe({
       next: books => {
         this.books = books;
         this.books.forEach(initIdleState);
         this.loading = false;
-        this.coverLookup.queueForBooks(this.books, this.useLibGen);
+        this.coverLookup.queueForBooks(this.books);
         this.descriptionLookup.queueForBooks(this.books);
         this.regroupBooks();
 
@@ -452,7 +433,7 @@ export class BookSearchComponent implements OnInit, OnDestroy {
             // which page 1 alone already covers, and calling it again would
             // risk double-firing an in-flight fetch for a page-1 book that
             // hasn't resolved yet (no in-flight guard on that path).
-            this.coverLookup.queueForBooks(this.books, this.useLibGen);
+            this.coverLookup.queueForBooks(this.books);
             // Re-group over the combined set — page 2 may add more
             // duplicates of page-1 books, or entirely new ones. The old
             // groups stay on screen until this response replaces them.
@@ -473,14 +454,23 @@ export class BookSearchComponent implements OnInit, OnDestroy {
 
   private handleSearchError(err: any): void {
     this.logger.error('[Book Search] Error:', err);
+    // Named after what the reader was doing, not after whichever site the
+    // results happen to come from today. Which catalogue is searched has now
+    // changed twice; nobody typing a book title needs to track that, and a
+    // provider name in an error only invites the wrong question.
     if (err.name === 'TimeoutError') {
-      this.error = `Search timed out. ${this.useLibGen ? 'LibGen' : "Anna's Archive"} may be slow or unavailable.`;
+      this.error = 'Search timed out. Book search may be slow or unavailable right now.';
     } else if (err.status === 404) {
       this.error = 'No books found.';
     } else if (err.status === 0) {
       this.error = 'Cannot connect to server. Please check your connection.';
+    } else if (err.status === 503) {
+      // The one case worth distinguishing, and the reason the server stopped
+      // reporting an unreachable catalogue as an empty result: "nothing
+      // matched" and "nothing could be asked" must not read the same.
+      this.error = 'Book search is unavailable right now. Please try again shortly.';
     } else {
-      this.error = `Error fetching books from ${this.useLibGen ? 'LibGen' : "Anna's Archive"}: ${err.message || err.statusText || 'Unknown error'}`;
+      this.error = `Book search failed: ${err.message || err.statusText || 'Unknown error'}`;
     }
     this.logger.error(err);
     this.loading = false;
@@ -493,9 +483,10 @@ export class BookSearchComponent implements OnInit, OnDestroy {
    *  endpoint differs, so the choice is which function to call, not what to
    *  pass it. */
   private libraryRequest(book: BookDto, coverUrl?: string) {
-    const send = this.useLibGen
-      ? this.bookSearchApi.sendToLibraryLibGen.bind(this.bookSearchApi)
-      : this.bookSearchApi.sendToLibrary.bind(this.bookSearchApi);
+    // Always Anna's: the md5 came from LibGen, but an md5 is a hash of the
+    // file's bytes rather than a name either site assigns, so it is the same key
+    // at both — and this is the one the membership pays for.
+    const send = this.bookSearchApi.sendToLibrary.bind(this.bookSearchApi);
 
     return send(
       book.md5,
@@ -624,7 +615,7 @@ export class BookSearchComponent implements OnInit, OnDestroy {
         // no more external covers → fall back
         book.coverCandidates = [];
         img.src = this.placeholderUrl;
-        this.coverLookup.enqueue(book, this.useLibGen);
+        this.coverLookup.enqueue(book);
       }
     }
 

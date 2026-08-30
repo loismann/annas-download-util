@@ -54,7 +54,6 @@ public sealed class ExistingMeta
     public string? Pages { get; init; }
     public double? GoodreadsRating { get; init; }
     public int? PersonalRating { get; init; }
-    public bool? ReaderEnabled { get; init; }
     public string? Description { get; init; }
     public double? OpenLibraryConfidence { get; init; }
     public string? AiEnrichedAt { get; init; }

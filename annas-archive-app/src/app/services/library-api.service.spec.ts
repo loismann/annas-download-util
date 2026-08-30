@@ -229,34 +229,6 @@ describe('LibraryApiService', () => {
     });
   });
 
-  describe('updateLibraryBookReaderEnabled', () => {
-    it('should enable reader for book', () => {
-      const mockResponse = { success: true, enabled: true };
-
-      service.updateLibraryBookReaderEnabled('test.epub', true).subscribe(response => {
-        expect(response.enabled).toBe(true);
-      });
-
-      const req = httpMock.expectOne(req => req.url.includes('/api/library/book/reader'));
-      expect(req.request.method).toBe('POST');
-      expect(req.request.params.get('fileName')).toBe('test.epub');
-      expect(req.request.body).toEqual({ enabled: true });
-      req.flush(mockResponse);
-    });
-
-    it('should disable reader for book', () => {
-      const mockResponse = { success: true, enabled: false };
-
-      service.updateLibraryBookReaderEnabled('test.epub', false).subscribe(response => {
-        expect(response.enabled).toBe(false);
-      });
-
-      const req = httpMock.expectOne(req => req.url.includes('/api/library/book/reader'));
-      expect(req.request.body).toEqual({ enabled: false });
-      req.flush(mockResponse);
-    });
-  });
-
   describe('wipeLibraryGenres', () => {
     it('should wipe all genres', () => {
       const mockResponse = { success: true, updated: 42 };

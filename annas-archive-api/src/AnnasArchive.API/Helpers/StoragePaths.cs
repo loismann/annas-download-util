@@ -72,18 +72,4 @@ public static class StoragePaths
             : Path.Combine(AppContext.BaseDirectory, "state", "audiobook-covers");
     }
 
-    public static string EpubCacheRoot()
-    {
-        var env = Environment.GetEnvironmentVariable("EPUB_CACHE_ROOT");
-        if (!string.IsNullOrWhiteSpace(env))
-        {
-            Directory.CreateDirectory(env);
-            return env;
-        }
-
-        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        var fallback = Path.Combine(home, ".annas-archive", "epub-cache");
-        Directory.CreateDirectory(fallback);
-        return fallback;
-    }
 }

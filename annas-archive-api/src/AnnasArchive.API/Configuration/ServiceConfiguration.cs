@@ -67,15 +67,11 @@ public static class ServiceConfiguration
         var cacheConfig = configuration.GetSection(CacheConfiguration.SectionName).Get<CacheConfiguration>()
             ?? new CacheConfiguration();
 
-        // Configure LibraryEpubCache chapter content cache
-        LibraryEpubCache.ConfigureCache(cacheConfig.ChapterContentCacheSize);
-
         // AuthorSuggestionCacheSize was configured and documented but never
         // actually read, leaving that cache unbounded. Now wired up.
         AiBookSearchEndpoints.ConfigureCache(cacheConfig.AuthorSuggestionCacheSize);
 
-        Log.Information("[Caching] Caches configured - ChapterContent: {ChapterSize} items, AuthorSuggestions: {AuthorSize} items",
-            cacheConfig.ChapterContentCacheSize,
+        Log.Information("[Caching] Caches configured - AuthorSuggestions: {AuthorSize} items",
             cacheConfig.AuthorSuggestionCacheSize);
 
         return services;

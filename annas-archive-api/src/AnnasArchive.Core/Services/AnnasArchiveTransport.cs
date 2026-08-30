@@ -199,9 +199,17 @@ public class AnnasArchiveTransport
 
         if (lastResponse != null)
         {
-            var status = (int)lastResponse.StatusCode;
+            var status = lastResponse.StatusCode;
             lastResponse.Dispose();
-            throw new HttpRequestException($"Request failed with status {status}");
+
+            // The status travels on the exception. Without it every caller sees an
+            // HttpRequestException whose StatusCode is null, so
+            // `when (ex.StatusCode == TooManyRequests)` — which two callers on the
+            // download path were relying on — silently never matches, and a 429, a
+            // 400 and a 503 all become the same unhandled 500. That is what hid
+            // Anna's answering 400 for an md5 it has not indexed.
+            throw new HttpRequestException(
+                $"Request failed with status {(int)status}", inner: null, statusCode: status);
         }
 
         throw new HttpRequestException(

@@ -18,7 +18,7 @@ import { apiBase } from './api-base';
  *
  * There used to be a second, near-identical `LibraryBook` declared in
  * book-card.component.ts. The two had drifted (each carried fields the other
- * lacked, and `readerEnabled` was `boolean` in one and `boolean | null` in the
+ * lacked, and one field was `boolean` in one and `boolean | null` in the
  * other), to the point that library.component.spec.ts imported both at once
  * under an alias. book-card now extends this instead, adding only the transient
  * view state that has no business being in a wire model.
@@ -38,7 +38,6 @@ export interface LibraryBook {
   /** Names of household members who have favorited this book — per-owner, not a shared flag. */
   favoritedBy?: string[];
   /** Null where the backend has no opinion yet, as opposed to a definite false. */
-  readerEnabled?: boolean | null;
   dateAdded?: string;
   source?: string | null;
   savedAt?: string | null;
@@ -352,18 +351,6 @@ export class LibraryApiService {
     return this.http.post<{ success: boolean; favoritedBy: string[] }>(
       `${this.libraryBaseUrl}/book/${encodeURIComponent(fileName)}/favorite`,
       { favorited }
-    );
-  }
-
-  /**
-   * Enable or disable reader for a book.
-   */
-  updateLibraryBookReaderEnabled(fileName: string, enabled: boolean): Observable<{ success: boolean; enabled: boolean }> {
-    const params = new HttpParams().set('fileName', fileName);
-    return this.http.post<{ success: boolean; enabled: boolean }>(
-      `${this.libraryBaseUrl}/book/reader`,
-      { enabled },
-      { params }
     );
   }
 

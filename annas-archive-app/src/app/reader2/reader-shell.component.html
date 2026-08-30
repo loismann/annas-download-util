@@ -38,6 +38,7 @@
       [open]="panel()"
       [sidebarOpen]="sidebarOpen()"
       [exportUrl]="store.exportUrl()"
+      [immersive]="chrome.immersive()"
       (openChange)="panel.set($event)"
       (changeType)="sidebarOpen.set(true)"
       (toggleSidebar)="sidebarOpen.set(!sidebarOpen())"

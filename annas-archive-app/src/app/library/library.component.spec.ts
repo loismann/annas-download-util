@@ -34,7 +34,6 @@ describe('LibraryComponent', () => {
       'deleteLibraryBook',
       'sendLibraryToKindle',
       'wipeLibraryGenres',
-      'updateLibraryBookReaderEnabled'
     ]);
 
     mockDialog = jasmine.createSpyObj('MatDialog', ['open']);
@@ -97,7 +96,6 @@ describe('LibraryComponent', () => {
         personalRating: null,
         dadsKindleState: undefined,
         momsKindleState: undefined,
-        readerEnabled: false
       };
 
       component.books = [testBook];
@@ -171,7 +169,6 @@ describe('LibraryComponent', () => {
         personalRating: null,
         dadsKindleState: undefined,
         momsKindleState: undefined,
-        readerEnabled: false
       };
 
       component.books = [testBook];
@@ -231,7 +228,6 @@ describe('LibraryComponent', () => {
         personalRating: null,
         dadsKindleState: undefined,
         momsKindleState: undefined,
-        readerEnabled: false
       };
 
       component.books = [testBook];
@@ -300,7 +296,6 @@ describe('LibraryComponent', () => {
         personalRating: null,
         dadsKindleState: undefined,
         momsKindleState: undefined,
-        readerEnabled: false
       };
 
       component.books = [testBook];
@@ -372,7 +367,6 @@ describe('LibraryComponent', () => {
           personalRating: null,
           dadsKindleState: undefined,
           momsKindleState: undefined,
-          readerEnabled: false
         },
         {
           title: 'Book 2',
@@ -393,7 +387,6 @@ describe('LibraryComponent', () => {
           personalRating: null,
           dadsKindleState: undefined,
           momsKindleState: undefined,
-          readerEnabled: false
         }
       ];
 
@@ -443,7 +436,6 @@ describe('LibraryComponent', () => {
           personalRating: null,
           dadsKindleState: 'idle' as const,
           momsKindleState: 'idle' as const,
-          readerEnabled: false
         }
       ];
 
@@ -513,7 +505,6 @@ describe('LibraryComponent', () => {
         personalRating: null,
         dadsKindleState: 'idle' as const,
         momsKindleState: 'idle' as const,
-        readerEnabled: false
       }));
     };
 
@@ -775,7 +766,6 @@ describe('LibraryComponent', () => {
       personalRating: null,
       dadsKindleState: 'idle',
       momsKindleState: 'idle',
-      readerEnabled: false,
       ...overrides
     });
 

@@ -854,6 +854,57 @@ describe('BookSearchComponent', () => {
       expect(component.books.length).toBe(40);
     });
   });
+  /**
+   * What the reader is told when a search does not produce books.
+   *
+   * <p>Anna's Archive went behind DDoS-Guard on 2026-08-13 and the failure
+   * presented, for six days, as searches quietly finding nothing. That is why
+   * the server now distinguishes an unreachable catalogue (503) from a search
+   * that ran and matched nothing (404), and why the two must not read the same
+   * here either — one means try again later, the other means try another
+   * title.</p>
+   *
+   * <p>No message names a catalogue. Which one is searched has changed twice
+   * now; nobody typing a book title needs to track that, and a provider name in
+   * an error only invites the wrong question.</p>
+   */
+  describe('Search failure messages', () => {
+    const searchAndFail = (err: unknown): string | null => {
+      mockBookSearchApiService.searchBooks.and.returnValue(throwError(() => err));
+      component.searchTerm = 'anything';
+      component.onSearch();
+      return component.error;
+    };
+
+    it('tells the reader to come back later when the catalogue is unreachable', () => {
+      const message = searchAndFail({ status: 503, statusText: 'Service Unavailable' });
+
+      expect(message).toContain('unavailable');
+      expect(message).toContain('try again');
+    });
+
+    it('says plainly that nothing matched when nothing matched', () => {
+      expect(searchAndFail({ status: 404 })).toBe('No books found.');
+    });
+
+    it('blames the connection when the server cannot be reached at all', () => {
+      expect(searchAndFail({ status: 0 })).toContain('Cannot connect to server');
+    });
+
+    it('never names the catalogue it searched', () => {
+      const messages = [
+        searchAndFail({ status: 503 }),
+        searchAndFail({ status: 500, message: 'boom' }),
+        searchAndFail({ name: 'TimeoutError' })
+      ];
+
+      for (const message of messages) {
+        expect(message?.toLowerCase()).not.toContain('libgen');
+        expect(message?.toLowerCase()).not.toContain("anna");
+      }
+    });
+  });
+
   describe('AI Book Search - Description Source Mapping', () => {
     beforeEach(() => {
       mockAiApiService.aiBookSearch = jasmine.createSpy('aiBookSearch');

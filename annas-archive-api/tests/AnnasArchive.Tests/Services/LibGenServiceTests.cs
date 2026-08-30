@@ -19,6 +19,57 @@ public class LibGenServiceTests
         _service = new LibGenService(_httpClient);
     }
 
+    #region Paging
+
+    /// <summary>
+    /// LibGen serves 25 rows per page and offers no way to ask for more in one
+    /// request, so the page has to reach the upstream URL. Applied to an
+    /// already-fetched batch instead, every page would be a copy of the first —
+    /// and the caller fetches page 2 in the background and appends it, so the
+    /// symptom would have been a result list of duplicates rather than an error.
+    /// </summary>
+    [Fact]
+    public async Task SearchAsync_WhenAskedForALaterPage_ShouldRequestThatPageUpstream()
+    {
+        var requested = new List<string>();
+        RespondWith(CreateGeneralSearchHtml("Test Book", "abc123def456789012345678901234ab"), requested);
+
+        await _service.SearchAsync("test", limit: 10, exact: false, page: 3);
+
+        Assert.Contains(requested, url => url.Contains("page=3"));
+    }
+
+    /// <summary>
+    /// Omitted rather than sent as <c>page=1</c>: the two mean the same thing to
+    /// LibGen but not to the cache in front of it, and the bare URL is the one
+    /// every other client asks for.
+    /// </summary>
+    [Fact]
+    public async Task SearchAsync_OnTheFirstPage_ShouldNotSendAPageParameterAtAll()
+    {
+        var requested = new List<string>();
+        RespondWith(CreateGeneralSearchHtml("Test Book", "abc123def456789012345678901234ab"), requested);
+
+        await _service.SearchAsync("test", limit: 10);
+
+        Assert.All(requested, url => Assert.DoesNotContain("page=", url));
+    }
+
+    private void RespondWith(string html, List<string> requested) =>
+        _mockHandler
+            .Protected()
+            .Setup<Task<HttpResponseMessage>>(
+                "SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(),
+                ItExpr.IsAny<CancellationToken>())
+            .ReturnsAsync((HttpRequestMessage req, CancellationToken ct) =>
+            {
+                requested.Add(req.RequestUri!.ToString());
+                return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(html) };
+            });
+
+    #endregion
+
     #region Mirror Fallback Tests
 
     [Fact]
@@ -156,10 +207,23 @@ public class LibGenServiceTests
         Assert.Equal(2, callCount); // Two domains tried
     }
 
+    /// <summary>
+    /// These two used to assert an empty list, and that was right while LibGen
+    /// was one source among several — an unreachable mirror simply meant asking
+    /// somewhere else. It is wrong now that LibGen is the only place book search
+    /// looks: "every domain refused" and "nothing matched that title" would
+    /// arrive at the caller as the same answer, and the reader would be told
+    /// their book does not exist when the truth is that nothing was asked.
+    ///
+    /// <para>That is not hypothetical. Anna's Archive went behind DDoS-Guard on
+    /// 2026-08-13 and the failure presented as searches quietly finding nothing
+    /// for six days. A silent failure that looks like a successful empty result
+    /// is the most expensive shape a failure can take, and this is the assertion
+    /// that stops book search taking it again.</para>
+    /// </summary>
     [Fact]
-    public async Task SearchAsync_WhenAllDomainsFail_ShouldReturnEmptyResults()
+    public async Task SearchAsync_WhenEveryDomainRefuses_ShouldFailRatherThanLookEmpty()
     {
-        // Arrange
         _mockHandler
             .Protected()
             .Setup<Task<HttpResponseMessage>>(
@@ -168,17 +232,12 @@ public class LibGenServiceTests
                 ItExpr.IsAny<CancellationToken>())
             .ReturnsAsync(new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
 
-        // Act
-        var results = await _service.SearchAsync("test", limit: 10);
-
-        // Assert
-        Assert.Empty(results);
+        await Assert.ThrowsAsync<HttpRequestException>(() => _service.SearchAsync("test", limit: 10));
     }
 
     [Fact]
-    public async Task SearchAsync_WhenAllDomainsThrowExceptions_ShouldReturnEmptyResults()
+    public async Task SearchAsync_WhenEveryDomainIsUnreachable_ShouldFailRatherThanLookEmpty()
     {
-        // Arrange
         _mockHandler
             .Protected()
             .Setup<Task<HttpResponseMessage>>(
@@ -187,11 +246,25 @@ public class LibGenServiceTests
                 ItExpr.IsAny<CancellationToken>())
             .ThrowsAsync(new HttpRequestException("Network error"));
 
-        // Act
-        var results = await _service.SearchAsync("test", limit: 10);
+        await Assert.ThrowsAsync<HttpRequestException>(() => _service.SearchAsync("test", limit: 10));
+    }
 
-        // Assert
-        Assert.Empty(results);
+    /// <summary>The other side of it: reachable, parsed, genuinely nothing there.</summary>
+    [Fact]
+    public async Task SearchAsync_WhenTheSiteAnswersWithNoRows_ShouldReturnEmpty()
+    {
+        _mockHandler
+            .Protected()
+            .Setup<Task<HttpResponseMessage>>(
+                "SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(),
+                ItExpr.IsAny<CancellationToken>())
+            .ReturnsAsync(() => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("<html><body><p>Nothing found</p></body></html>")
+            });
+
+        Assert.Empty(await _service.SearchAsync("a book nobody has", limit: 10));
     }
 
     #endregion

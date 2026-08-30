@@ -23,7 +23,6 @@ public sealed class BookPersonalization
     public string? Series { get; set; }
     public double? GoodreadsRating { get; set; }
     public int? PersonalRating { get; set; }
-    public bool? ReaderEnabled { get; set; }
     public string[]? FavoritedBy { get; set; }
     public DateTime? CullReviewedAt { get; set; }
 }
@@ -150,7 +149,6 @@ public class BookPersonalizationStore
                             (meta.Tags?.Length ?? 0) > 0 ||
                             !string.IsNullOrWhiteSpace(meta.Series) ||
                             meta.PersonalRating.HasValue ||
-                            meta.ReaderEnabled.HasValue ||
                             (meta.FavoritedBy?.Length ?? 0) > 0 ||
                             meta.CullReviewedAt.HasValue;
 
@@ -164,7 +162,6 @@ public class BookPersonalizationStore
                             Tags = (meta.Tags?.Length ?? 0) > 0 ? meta.Tags : null,
                             Series = string.IsNullOrWhiteSpace(meta.Series) ? null : meta.Series,
                             PersonalRating = meta.PersonalRating,
-                            ReaderEnabled = meta.ReaderEnabled,
                             FavoritedBy = (meta.FavoritedBy?.Length ?? 0) > 0 ? meta.FavoritedBy : null,
                             CullReviewedAt = meta.CullReviewedAt
                         });
@@ -189,13 +186,13 @@ public class BookPersonalizationStore
         cmd.CommandText = """
             INSERT INTO book_personalization
                 (file_name, title, authors_json, primary_genre, tags_json, series,
-                 goodreads_rating, personal_rating, reader_enabled, favorited_by_json,
+                 goodreads_rating, personal_rating, favorited_by_json,
                  cull_reviewed_at, updated_at)
-            VALUES ($fn, $title, $authors, $genre, $tags, $series, $gr, $pr, $reader, $fav, $cull, $now)
+            VALUES ($fn, $title, $authors, $genre, $tags, $series, $gr, $pr, $fav, $cull, $now)
             ON CONFLICT(file_name) DO UPDATE SET
                 title = $title, authors_json = $authors, primary_genre = $genre,
                 tags_json = $tags, series = $series, goodreads_rating = $gr,
-                personal_rating = $pr, reader_enabled = $reader,
+                personal_rating = $pr,
                 favorited_by_json = $fav, cull_reviewed_at = $cull, updated_at = $now
             """;
         cmd.Parameters.AddWithValue("$fn", row.FileName);
@@ -206,7 +203,6 @@ public class BookPersonalizationStore
         cmd.Parameters.AddWithValue("$series", (object?)row.Series ?? DBNull.Value);
         cmd.Parameters.AddWithValue("$gr", (object?)row.GoodreadsRating ?? DBNull.Value);
         cmd.Parameters.AddWithValue("$pr", (object?)row.PersonalRating ?? DBNull.Value);
-        cmd.Parameters.AddWithValue("$reader", row.ReaderEnabled.HasValue ? (row.ReaderEnabled.Value ? 1 : 0) : DBNull.Value);
         cmd.Parameters.AddWithValue("$fav", row.FavoritedBy != null ? JsonSerializer.Serialize(row.FavoritedBy) : DBNull.Value);
         cmd.Parameters.AddWithValue("$cull", row.CullReviewedAt.HasValue ? row.CullReviewedAt.Value.ToString("o") : DBNull.Value);
         cmd.Parameters.AddWithValue("$now", DateTime.UtcNow.ToString("o"));
@@ -233,7 +229,6 @@ public class BookPersonalizationStore
             Series = Str("series"),
             GoodreadsRating = reader["goodreads_rating"] is double d ? d : null,
             PersonalRating = reader["personal_rating"] is long l ? (int)l : null,
-            ReaderEnabled = reader["reader_enabled"] is long r ? r != 0 : null,
             FavoritedBy = Arr("favorited_by_json"),
             CullReviewedAt = Str("cull_reviewed_at") is string cull &&
                 DateTime.TryParse(cull, null, System.Globalization.DateTimeStyles.RoundtripKind, out var dt)

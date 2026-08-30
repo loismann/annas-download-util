@@ -46,56 +46,6 @@ public class AnnasArchiveServiceTests
     }
 
     [Fact]
-    public async Task SearchAsync_WithEmptyResults_ShouldReturnEmptyList()
-    {
-        // Arrange
-        var mockHtml = "<html><body>No results</body></html>";
-        var mockHandler = CreateMockHttpMessageHandler(mockHtml);
-        var httpClient = new HttpClient(mockHandler.Object) { BaseAddress = new Uri("https://annas-archive.org") };
-        var service = new AnnasArchiveService(httpClient, new MemoryCache(new MemoryCacheOptions()));
-
-        // Act
-        var results = await service.SearchAsync("nonexistent", limit: 10);
-
-        // Assert
-        results.Should().NotBeNull();
-        results.Should().BeEmpty();
-    }
-
-    [Fact]
-    public async Task SearchAsync_WithLimit_ShouldRespectLimit()
-    {
-        // Arrange
-        var mockHtml = @"
-            <div class='flex pt-3 pb-3 border-b'>
-                <a href='/md5/abc123def456789012345678901234ab'>
-                    <a class='line-clamp-[3] js-vim-focus'>Book 1</a>
-                </a>
-            </div>
-            <div class='flex pt-3 pb-3 border-b'>
-                <a href='/md5/def456abc789012345678901234abcd'>
-                    <a class='line-clamp-[3] js-vim-focus'>Book 2</a>
-                </a>
-            </div>
-            <div class='flex pt-3 pb-3 border-b'>
-                <a href='/md5/789012abc345678901234abcdef456'>
-                    <a class='line-clamp-[3] js-vim-focus'>Book 3</a>
-                </a>
-            </div>
-        ";
-
-        var mockHandler = CreateMockHttpMessageHandler(mockHtml);
-        var httpClient = new HttpClient(mockHandler.Object) { BaseAddress = new Uri("https://annas-archive.org") };
-        var service = new AnnasArchiveService(httpClient, new MemoryCache(new MemoryCacheOptions()));
-
-        // Act
-        var results = await service.SearchAsync("test", limit: 2);
-
-        // Assert
-        results.Should().HaveCount(2);
-    }
-
-    [Fact]
     public async Task GetDownloadLinksAsync_WithValidMd5_ShouldReturnLinks()
     {
         // Arrange

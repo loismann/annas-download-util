@@ -109,12 +109,20 @@ public class EndpointIntegrationTests : IClassFixture<WebApplicationFactory<Prog
                 foreach (var descriptor in hostedServiceDescriptors)
                     services.Remove(descriptor);
 
-                // Replace DropboxClient with null to avoid HTTP calls
-                // Remove existing registration and add null singleton
+                // A real DropboxClient over placeholder credentials, not a null factory.
+                // The constructor performs no I/O — Dropbox.Api authenticates lazily —
+                // so this makes no HTTP call, which was the original concern. What the
+                // null broke was reachability: GetRequiredService reports a
+                // null-resolving service as "No service for type 'DropboxClient' has
+                // been registered", so send-to-boox and send-to-kindle failed at
+                // parameter binding and answered 500 to every test that touched them.
+                // Their bodies had no coverage at all, and one test had to allow that
+                // 500 to stay green.
                 var dropboxDescriptor = services.FirstOrDefault(d => d.ServiceType == typeof(Dropbox.Api.DropboxClient));
                 if (dropboxDescriptor != null)
                     services.Remove(dropboxDescriptor);
-                services.AddSingleton<Dropbox.Api.DropboxClient>(provider => null!);
+                services.AddSingleton(new Dropbox.Api.DropboxClient(
+                    "test-refresh-token", "test-app-key", "test-app-secret"));
 
                 // Mock IEmailService to prevent SMTP connections during tests
                 var emailServiceMock = new Mock<IEmailService>();
@@ -1437,19 +1445,18 @@ public class EndpointIntegrationTests : IClassFixture<WebApplicationFactory<Prog
         // Act
         var response = await _client.PostAsync($"/api/anna/book/{validMd5}/send-to-kindle?target=dad", null);
 
-        // InternalServerError is allowed *here only*, and for a reason that has
-        // nothing to do with the download path: `DropboxClient` is not registered
-        // in the test host, so this endpoint fails at parameter binding before its
-        // body runs. Its sibling tests (send-to-library, download/member) do reach
-        // the download path and are asserted strictly. Registering a fake Dropbox
-        // client would let this one be strict too — see the to-do.
+        // Strict, like its siblings. This used to allow a 500 because the test host
+        // registered DropboxClient as a null factory and the endpoint failed at
+        // parameter binding — so its body was never covered at all. The host now
+        // registers a real client built from placeholder credentials, which reaches
+        // no network but does resolve, so the handler runs and fails honestly on the
+        // download instead.
         response.StatusCode.Should().BeOneOf(
             HttpStatusCode.OK,
             HttpStatusCode.NotFound,
             HttpStatusCode.BadGateway,
             HttpStatusCode.TooManyRequests,
             HttpStatusCode.ServiceUnavailable,
-            HttpStatusCode.InternalServerError,
             HttpStatusCode.Unauthorized
         );
     }

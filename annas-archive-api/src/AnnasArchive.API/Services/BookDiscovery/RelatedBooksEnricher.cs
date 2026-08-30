@@ -43,7 +43,7 @@ public interface IRelatedBooksEnricher
 /// from a test.
 /// </summary>
 public sealed class RelatedBooksEnricher(
-    AnnasArchiveService annaArchive,
+    LibGenService catalogue,
     IWikipediaService wikipedia,
     IAiChatCompletion chat) : IRelatedBooksEnricher
 {
@@ -51,10 +51,9 @@ public sealed class RelatedBooksEnricher(
     /// incomplete and worth cross-checking against the catalogue.</summary>
     public const int ExpansionThreshold = 15;
 
-    /// <summary>25, not 80 — Anna's Archive returns ~25 results per page, so a
-    /// larger ask forced a second sequential page fetch (each one several
-    /// seconds through Playwright) for marginal benefit. This is confirming and
-    /// expanding series titles by author+series substring match, not an
+    /// <summary>25, because that is one page from the catalogue and a larger ask
+    /// forces a second sequential fetch for marginal benefit. This is confirming
+    /// and expanding series titles by author+series substring match, not an
     /// exhaustive search.</summary>
     private const int SearchResultLimit = 25;
 
@@ -69,7 +68,7 @@ public sealed class RelatedBooksEnricher(
 
         try
         {
-            var searchResults = await annaArchive.SearchAsync(query, SearchResultLimit, exact: false);
+            var searchResults = await catalogue.SearchAsync(query, SearchResultLimit, exact: false);
             var normalizedAuthor = Normalize(request.Author);
             var normalizedSeries = Normalize(payload.SeriesName ?? request.BookTitle);
 

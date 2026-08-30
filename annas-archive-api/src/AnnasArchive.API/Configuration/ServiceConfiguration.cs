@@ -270,11 +270,20 @@ public static class ServiceConfiguration
     /// </summary>
     public static IServiceCollection AddDropboxClient(this IServiceCollection services, IConfiguration configuration)
     {
-        // Skip Dropbox client in test environment to avoid HTTP calls
         if (TestEnvironment.IsTest(configuration))
         {
-            // Register a null factory - services using DropboxClient should be mocked in tests
-            services.AddSingleton<DropboxClient>(provider => null!);
+            // A real client built from placeholder credentials, never a null factory.
+            //
+            // The constructor performs no I/O — Dropbox.Api authenticates lazily on
+            // the first call — so this reaches the network exactly as often as the
+            // null did: never. What it fixes is reachability. A factory returning
+            // null leaves GetRequiredService throwing "No service for type
+            // 'DropboxClient' has been registered", so every endpoint taking one as a
+            // parameter failed at binding, before a line of its body ran. That is not
+            // "mocked in tests", which the old comment claimed: send-to-boox and
+            // send-to-kindle were simply uncovered, and answered 500 to every
+            // integration test that touched them.
+            services.AddSingleton(new DropboxClient("test-refresh-token", "test-app-key", "test-app-secret"));
             return services;
         }
 

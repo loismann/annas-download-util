@@ -41,6 +41,7 @@ import { BookSearchGrouping } from './book-search-grouping';
 import { BookCoverLookupService } from './book-cover-lookup.service';
 import { BookDescriptionLookupService } from './book-description-lookup.service';
 import { readDownloadQuota } from '../shared/download-quota';
+import { sendFailureMessage } from '../shared/send-failure-message';
 import {
   SearchResultsComponent,
   DisplayGroup,
@@ -568,15 +569,18 @@ export class BookSearchComponent implements OnInit, OnDestroy {
       next: (resp: SendToTargetResponse) => {
         this.applyDownloadQuota(resp);
         book[stateKey] = resp.success ? 'success' : 'error';
+        if (resp.success) this.error = null;
       },
-      // A failed send is a real error status now (429 rate-limited, 502 when
-      // Anna's Archive could not produce the file) rather than a 200 carrying
-      // success:false — so the counter has to be folded in from here too. A
-      // failed attempt can still have burned a quota slot.
+      // A failed send is a real error status now (429 rate-limited, 404 when the
+      // book is in no catalogue we can download from, 502 when the mirrors are
+      // unreachable) rather than a 200 carrying success:false — so the counter has
+      // to be folded in from here too. A failed attempt can still have burned a
+      // quota slot.
       error: err => {
         this.logger.error(`${label} failed`, err);
         this.applyDownloadQuota(err);
         book[stateKey] = 'error';
+        this.error = sendFailureMessage(err, label);
       }
     });
   }

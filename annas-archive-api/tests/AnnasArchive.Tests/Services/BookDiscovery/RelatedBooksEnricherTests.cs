@@ -203,7 +203,7 @@ public class RelatedBooksEnricherTests
         var handler = new Mock<HttpMessageHandler>();
         handler.Protected()
             .Setup<Task<HttpResponseMessage>>("SendAsync", ItExpr.IsAny<HttpRequestMessage>(), ItExpr.IsAny<CancellationToken>())
-            .ThrowsAsync(new HttpRequestException("Cloudflare said no"));
+            .ThrowsAsync(new HttpRequestException("the catalogue is unreachable"));
 
         var books = new List<SeriesBook> { Book("One") };
 
@@ -242,9 +242,9 @@ public class RelatedBooksEnricherTests
     private RelatedBooksEnricher Enricher(Mock<HttpMessageHandler>? searchHandler = null)
     {
         var handler = searchHandler ?? Handler("<html></html>");
-        var searchClient = new HttpClient(handler.Object) { BaseAddress = new Uri("https://annas-archive.org") };
-        var annaArchive = new AnnasArchiveService(searchClient, new MemoryCache(new MemoryCacheOptions()));
+        var searchClient = new HttpClient(handler.Object) { BaseAddress = new Uri("https://libgen.rs") };
+        var catalogue = new LibGenService(searchClient);
 
-        return new RelatedBooksEnricher(annaArchive, _wikipedia.Object, _chat.Object);
+        return new RelatedBooksEnricher(catalogue, _wikipedia.Object, _chat.Object);
     }
 }

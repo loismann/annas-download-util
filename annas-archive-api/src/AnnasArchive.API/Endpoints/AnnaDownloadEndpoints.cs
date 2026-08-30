@@ -112,6 +112,7 @@ public static class AnnaDownloadEndpoints
         [FromQuery] string? fileSize,
         [FromQuery] string? source,
         AnnasArchiveDownloads anna,
+        LibGenService libgen,
         IValidationService validation,
         IEbookCoverService coverService,
         IDownloadTrackingService downloadTracking,
@@ -132,8 +133,10 @@ public static class AnnaDownloadEndpoints
             ?? context.User?.FindFirst(ClaimTypes.Name)?.Value
             ?? "unknown";
 
-        // Use shared helper to download book from Anna's Archive
-        var (resp, fileName, acctInfo, errorMessage, failure) = await AnnaDownloadHelpers.DownloadBookFromAnnasArchiveAsync(md5, title, anna, memberKey);
+        // Anna's first, LibGen when Anna's has no record of the md5.
+        var download = await AnnaDownloadHelpers.DownloadBookAsync(md5, title, anna, libgen, memberKey);
+        var (resp, fileName, acctInfo, errorMessage, failure) =
+            (download.Response, download.FileName, download.AccountInfo, download.ErrorMessage, download.Failure);
 
         if (errorMessage != null)
         {
@@ -157,9 +160,19 @@ public static class AnnaDownloadEndpoints
                 statusCode: StatusCodes.Status502BadGateway);
         }
 
-        // Record successful download in our tracking system
-        downloadTracking.RecordDownload(md5, userName);
-        Log.Information("[download-member] Recorded download for user {UserName}, MD5: {Md5}", userName, md5);
+        // Only an Anna's download spends one of the reader's slots; the LibGen
+        // fallback is free and must not be charged for.
+        if (download.CountsAgainstAnnasQuota)
+        {
+            downloadTracking.RecordDownload(md5, userName);
+            Log.Information("[download-member] Recorded download for user {UserName}, MD5: {Md5}", userName, md5);
+        }
+        else
+        {
+            Log.Information(
+                "[download-member] Served {Md5} from LibGen for {UserName}; not charged to the Anna's allowance",
+                md5, userName);
+        }
 
         // Get updated download status
         var (currentDownloadsLeft, currentDownloadsPerDay) = downloadTracking.GetDownloadStatus();
@@ -236,17 +249,30 @@ public static class AnnaDownloadEndpoints
 
             try
             {
-                var (resp, fileName, _, errorMessage, _) =
-                    await AnnaDownloadHelpers.DownloadBookFromAnnasArchiveAsync(md5, title, anna, memberKey);
+                var libgen = scope.ServiceProvider.GetRequiredService<LibGenService>();
+                var download = await AnnaDownloadHelpers.DownloadBookAsync(md5, title, anna, libgen, memberKey);
+                var (resp, fileName) = (download.Response, download.FileName);
 
-                if (errorMessage != null || resp == null || fileName == null)
+                // Checked as two null tests rather than through download.Succeeded so
+                // the compiler's flow analysis can see them: `Succeeded` is a property
+                // and tells it nothing about these two locals.
+                if (resp is null || fileName is null)
                 {
-                    jobs.Fail(job.JobId, errorMessage ?? "Failed to download book.");
+                    jobs.Fail(job.JobId, download.ErrorMessage ?? "Failed to download book.");
                     return;
                 }
 
-                downloadTracking.RecordDownload(md5, userName);
-                Log.Information("[library-anna] Recorded download for user {UserName}, MD5: {Md5}", userName, md5);
+                if (download.CountsAgainstAnnasQuota)
+                {
+                    downloadTracking.RecordDownload(md5, userName);
+                    Log.Information("[library-anna] Recorded download for user {UserName}, MD5: {Md5}", userName, md5);
+                }
+                else
+                {
+                    Log.Information(
+                        "[library-anna] Served {Md5} from LibGen for {UserName}; not charged to the Anna's allowance",
+                        md5, userName);
+                }
 
                 var libraryRoot = LibraryHelpers.ResolveLibraryRoot();
                 Directory.CreateDirectory(libraryRoot);
@@ -304,6 +330,7 @@ public static class AnnaDownloadEndpoints
         [FromQuery] string? coverUrl,
         IValidationService validation,
         AnnasArchiveDownloads anna,
+        LibGenService libgen,
         IEbookCoverService coverService,
         DropboxClient dropbox,
         IConfiguration cfg,
@@ -317,7 +344,7 @@ public static class AnnaDownloadEndpoints
         if (validationError != null)
             return ApiResponse.BadRequest(validationError);
 
-        var download = await AnnaDownloadHelpers.DownloadForSendAsync(md5, title, anna, cfg, downloadTracking);
+        var download = await AnnaDownloadHelpers.DownloadForSendAsync(md5, title, anna, libgen, cfg, downloadTracking);
         if (!download.TryGetBook(out var resp, out var fileName, out var acctInfo, out var downloadError))
             return downloadError;
 
@@ -352,7 +379,7 @@ public static class AnnaDownloadEndpoints
                     success         = true,
                     dropboxPath     = uploaded.PathDisplay,
                     dropboxFileId   = uploaded.Id,
-                    accountFastInfo = SendToTargetHelpers.RecordDownload(context, downloadTracking, md5, "send-to-boox")
+                    accountFastInfo = SendToTargetHelpers.RecordDownload(context, downloadTracking, md5, "send-to-boox", download.CountsAgainstAnnasQuota)
                 });
             }
             // One catch, not five. The five it replaced had byte-identical
@@ -382,6 +409,7 @@ public static class AnnaDownloadEndpoints
         [FromQuery] string? target,
         [FromQuery] string? coverUrl,
         AnnasArchiveDownloads anna,
+        LibGenService libgen,
         IEmailService emailService,
         IEbookCoverService coverService,
         DropboxClient dropbox,
@@ -399,7 +427,7 @@ public static class AnnaDownloadEndpoints
         if (kindleTargetError != null)
             return ApiResponse.BadRequest(kindleTargetError);
 
-        var download = await AnnaDownloadHelpers.DownloadForSendAsync(md5, title, anna, cfg, downloadTracking);
+        var download = await AnnaDownloadHelpers.DownloadForSendAsync(md5, title, anna, libgen, cfg, downloadTracking);
         if (!download.TryGetBook(out var resp, out var fileName, out var acctInfo, out var downloadError))
             return downloadError;
 
@@ -473,7 +501,7 @@ public static class AnnaDownloadEndpoints
                         ? $"Book sent to {target}'s Kindle and backed up to Dropbox"
                         : $"Book sent to {target}'s Kindle (Dropbox backup failed, but email succeeded)",
                     dropboxPath     = dropboxPathResult,
-                    accountFastInfo = SendToTargetHelpers.RecordDownload(context, downloadTracking, md5, "send-to-kindle")
+                    accountFastInfo = SendToTargetHelpers.RecordDownload(context, downloadTracking, md5, "send-to-kindle", download.CountsAgainstAnnasQuota)
                 });
             }
             catch (Exception ex) when (ex is not ArgumentException)

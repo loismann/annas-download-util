@@ -50,10 +50,8 @@ describe('BookSearchComponent', () => {
     // BookSearchApiService - search, download, cover, description methods
     mockBookSearchApiService = jasmine.createSpyObj('BookSearchApiService', [
       'searchBooks',
-      'searchBooksLibGen',
       'sendToBoox',
       'sendToLibrary',
-      'sendToLibraryLibGen',
       'sendToKindle',
       'getDownloadStatus',
       'getMirrorHealth',

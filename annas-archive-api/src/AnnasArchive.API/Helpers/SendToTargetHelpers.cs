@@ -44,18 +44,34 @@ public static class SendToTargetHelpers
     /// Records a completed download against the signed-in user and returns the
     /// updated quota counters.
     /// </summary>
+    /// <param name="countsAgainstQuota">
+    /// False when the file came from the LibGen fallback. LibGen has no membership
+    /// and no daily allowance, so charging one of Anna's slots for it would take a
+    /// download away from the reader that Anna's never served. The counters are
+    /// still read and returned either way, because the badge has to stay truthful.
+    /// </param>
     public static AccountFastDownloadInfoDto RecordDownload(
         HttpContext context,
         IDownloadTrackingService downloadTracking,
         string md5,
-        string logPrefix)
+        string logPrefix,
+        bool countsAgainstQuota = true)
     {
         var userName = context.User?.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value
             ?? context.User?.FindFirst(System.Security.Claims.ClaimTypes.Name)?.Value
             ?? "unknown";
 
-        downloadTracking.RecordDownload(md5, userName);
-        Log.Information("[{LogPrefix}] Recorded download for user {UserName}, MD5: {Md5}", logPrefix, userName, md5);
+        if (countsAgainstQuota)
+        {
+            downloadTracking.RecordDownload(md5, userName);
+            Log.Information("[{LogPrefix}] Recorded download for user {UserName}, MD5: {Md5}", logPrefix, userName, md5);
+        }
+        else
+        {
+            Log.Information(
+                "[{LogPrefix}] Served {Md5} from LibGen for user {UserName}; not charged to the Anna's allowance",
+                logPrefix, md5, userName);
+        }
 
         return AnnaDownloadHelpers.CurrentCounters(downloadTracking);
     }

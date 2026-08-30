@@ -65,20 +65,7 @@ public static class LibGenEndpoints
         string md5,
         string? downloadUrl,
         HttpResponseMessage resp)
-    {
-        var rawTitle = !string.IsNullOrWhiteSpace(title) ? title : md5;
-        // Titles come from a third-party index, so they are untrusted input.
-        var safeTitle = SafeFileName.ForUserInput(rawTitle, fallback: md5);
-
-        var ext = !string.IsNullOrEmpty(downloadUrl)
-            ? Path.GetExtension(new Uri(downloadUrl).AbsolutePath)
-            : "";
-
-        if (string.IsNullOrEmpty(ext))
-            ext = GetExtensionFromContentType(resp.Content.Headers.ContentType?.MediaType);
-
-        return (safeTitle, ext, $"{safeTitle}{ext}");
-    }
+        => BookFileNaming.For(title, md5, downloadUrl, resp);
 
     private static async Task<IResult> HandleLibGenSearch(
         [FromQuery] string? name,

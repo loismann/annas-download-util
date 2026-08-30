@@ -4,6 +4,7 @@ using System.Text.RegularExpressions;
 using AnnasArchive.Core.Helpers;
 using AnnasArchive.Core.Models;
 using AnnasArchive.Core.Services;
+using Serilog;
 
 namespace AnnasArchive.API.Helpers;
 
@@ -40,6 +41,46 @@ public enum AnnaDownloadFailure
 
     /// <summary>Upstream gave no download URL, or the transfer failed. Maps to 502.</summary>
     Unavailable
+}
+
+/// <summary>Which catalogue actually produced the file.</summary>
+public enum BookSource
+{
+    /// <summary>Anna's Archive, against the member allowance.</summary>
+    AnnasArchive,
+
+    /// <summary>
+    /// LibGen, after Anna's had no record of the md5. Free: LibGen has no
+    /// membership and no daily quota, so a download from here must not be
+    /// recorded against the Anna's counter.
+    /// </summary>
+    LibGen
+}
+
+/// <summary>
+/// The outcome of trying to fetch a book, from whichever source produced it.
+///
+/// <para>A record rather than the six-part tuple this grew out of, because the
+/// source is not optional detail: it decides whether the download is charged to
+/// the Anna's allowance, and a caller that forgets to read a tuple element
+/// silently mis-bills.</para>
+/// </summary>
+public sealed record BookDownload(
+    HttpResponseMessage? Response,
+    string? FileName,
+    AccountFastDownloadInfoDto? AccountInfo,
+    string? ErrorMessage,
+    AnnaDownloadFailure Failure,
+    BookSource Source)
+{
+    /// <summary>True when a file was produced.</summary>
+    public bool Succeeded => ErrorMessage is null && Response is not null && FileName is not null;
+
+    /// <summary>
+    /// Whether this download consumed an Anna's fast-download slot. Only Anna's
+    /// downloads do; the LibGen fallback is the whole reason this is asked.
+    /// </summary>
+    public bool CountsAgainstAnnasQuota => Succeeded && Source == BookSource.AnnasArchive;
 }
 
 /// <summary>
@@ -95,22 +136,34 @@ public static class AnnaDownloadHelpers
             HttpResponseMessage? response,
             string? fileName,
             AccountFastDownloadInfoDto? accountInfo,
-            IResult? error)
+            IResult? error,
+            BookSource source)
         {
             _response = response;
             _fileName = fileName;
             _accountInfo = accountInfo;
             _error = error;
+            Source = source;
         }
+
+        /// <summary>
+        /// Which catalogue served the file. The send endpoints read this to decide
+        /// whether to charge the Anna's allowance — a LibGen download must not.
+        /// </summary>
+        public BookSource Source { get; }
+
+        /// <summary>True when this download used one of the reader's Anna's slots.</summary>
+        public bool CountsAgainstAnnasQuota => _error is null && Source == BookSource.AnnasArchive;
 
         public static DownloadForSendResult Downloaded(
             HttpResponseMessage response,
             string fileName,
-            AccountFastDownloadInfoDto? accountInfo) =>
-            new(response, fileName, accountInfo, null);
+            AccountFastDownloadInfoDto? accountInfo,
+            BookSource source) =>
+            new(response, fileName, accountInfo, null, source);
 
         public static DownloadForSendResult Failed(IResult error) =>
-            new(null, null, null, error);
+            new(null, null, null, error, BookSource.AnnasArchive);
 
         /// <summary>
         /// True with the book when the download succeeded; false with the finished
@@ -146,31 +199,128 @@ public static class AnnaDownloadHelpers
         string md5,
         string? title,
         AnnasArchiveDownloads anna,
+        LibGenService libgen,
         IConfiguration cfg,
         IDownloadTrackingService downloadTracking)
     {
         var memberKey = cfg["Anna:MemberKey"]
             ?? throw new InvalidOperationException("Missing Anna:MemberKey.");
 
-        var (resp, fileName, acctInfo, errorMessage, failure) =
-            await DownloadBookFromAnnasArchiveAsync(md5, title, anna, memberKey);
+        var download = await DownloadBookAsync(md5, title, anna, libgen, memberKey);
 
-        if (errorMessage != null)
+        if (download.ErrorMessage != null)
         {
             return DownloadForSendResult.Failed(Results.Json(
-                new { success = false, message = errorMessage, accountFastInfo = CurrentCounters(downloadTracking) },
-                statusCode: StatusCodeFor(failure)));
+                new { success = false, message = download.ErrorMessage, accountFastInfo = CurrentCounters(downloadTracking) },
+                statusCode: StatusCodeFor(download.Failure)));
         }
 
-        if (resp == null || fileName == null)
+        if (!download.Succeeded)
         {
             return DownloadForSendResult.Failed(Results.Json(
                 new { success = false, message = "Failed to download book.", accountFastInfo = CurrentCounters(downloadTracking) },
                 statusCode: StatusCodes.Status502BadGateway));
         }
 
-        return DownloadForSendResult.Downloaded(resp, fileName, acctInfo);
+        return DownloadForSendResult.Downloaded(
+            download.Response!, download.FileName!, download.AccountInfo, download.Source);
     }
+
+    /// <summary>
+    /// Fetches a book, trying Anna's Archive first and falling back to LibGen when
+    /// Anna's has no record of the md5.
+    ///
+    /// <para><b>Why the fallback exists.</b> Search moved to LibGen when Anna's went
+    /// behind DDoS-Guard, but downloads stayed on Anna's member API. That works
+    /// because an md5 is a hash of the file's bytes, so both catalogues arrive at
+    /// the same id for the same file — but only for files <i>both</i> hold. LibGen
+    /// indexes books Anna's does not, and for those the send buttons simply failed.
+    /// Searching one catalogue and downloading from another leaves exactly this gap,
+    /// and this closes it.</para>
+    ///
+    /// <para>Only <see cref="AnnaDownloadFailure.NotOnAnnasArchive"/> falls through.
+    /// A rate limit means the reader's own allowance is spent and LibGen would
+    /// quietly launder that into a free download; an unreachable mirror says nothing
+    /// about whether Anna's has the book, so retrying Anna's later is the honest
+    /// answer. Falling back on either would hide a condition worth reporting.</para>
+    ///
+    /// <para>The fallback costs no membership quota: Anna's charges a slot for a
+    /// download it serves, and it served nothing here.</para>
+    /// </summary>
+    public static async Task<BookDownload> DownloadBookAsync(
+        string md5,
+        string? title,
+        AnnasArchiveDownloads anna,
+        LibGenService libgen,
+        string memberKey)
+    {
+        var (resp, fileName, acctInfo, errorMessage, failure) =
+            await DownloadBookFromAnnasArchiveAsync(md5, title, anna, memberKey);
+
+        if (failure != AnnaDownloadFailure.NotOnAnnasArchive)
+            return new BookDownload(resp, fileName, acctInfo, errorMessage, failure, BookSource.AnnasArchive);
+
+        Log.Information(
+            "[download] Anna's has no record of {Md5}; trying LibGen", md5);
+
+        var fromLibGen = await DownloadBookFromLibGenAsync(md5, title, libgen);
+        if (fromLibGen.Succeeded)
+        {
+            Log.Information("[download] LibGen served {Md5} that Anna's did not have", md5);
+            return fromLibGen;
+        }
+
+        // LibGen could not produce it either. Report Anna's answer, not LibGen's:
+        // "not in either catalogue" is what the reader needs to know, and Anna's
+        // message already says the book was found somewhere Anna's has not indexed.
+        Log.Information("[download] LibGen could not serve {Md5} either", md5);
+        return new BookDownload(null, null, acctInfo, errorMessage, failure, BookSource.AnnasArchive);
+    }
+
+    /// <summary>
+    /// Fetches a book directly from LibGen. No credentials and no quota — LibGen
+    /// serves the file to anyone who can find the link.
+    /// </summary>
+    public static async Task<BookDownload> DownloadBookFromLibGenAsync(
+        string md5,
+        string? title,
+        LibGenService libgen)
+    {
+        string? downloadUrl;
+        try
+        {
+            downloadUrl = await libgen.GetDownloadUrlAsync(md5);
+        }
+        catch (Exception ex)
+        {
+            // The url lookup scrapes a page, so it can fail in more ways than an
+            // API call. This is a fallback: a failure here must report the original
+            // problem, never replace it with a scraping error.
+            Log.Warning(ex, "[download] LibGen download-url lookup failed for {Md5}", md5);
+            return NoLibGenFile;
+        }
+
+        if (string.IsNullOrEmpty(downloadUrl))
+            return NoLibGenFile;
+
+        var resp = await libgen.GetDownloadResponseAsync(md5);
+        if (resp is null || !resp.IsSuccessStatusCode)
+        {
+            resp?.Dispose();
+            return NoLibGenFile;
+        }
+
+        var (_, _, fileName) = BookFileNaming.For(title, md5, downloadUrl, resp);
+
+        // AccountInfo stays null: there is no LibGen allowance to report, and
+        // borrowing Anna's counters here would show the reader a number that has
+        // nothing to do with what just happened.
+        return new BookDownload(resp, fileName, null, null, AnnaDownloadFailure.None, BookSource.LibGen);
+    }
+
+    private static BookDownload NoLibGenFile =>
+        new(null, null, null, "LibGen could not serve this book.",
+            AnnaDownloadFailure.NotOnAnnasArchive, BookSource.LibGen);
 
     /// <summary>
     /// Downloads a book from Anna's Archive using member credentials.
@@ -250,22 +400,7 @@ public static class AnnaDownloadHelpers
         if (resp == null || !resp.IsSuccessStatusCode)
             return (null, null, acctInfo, "Download failed.", AnnaDownloadFailure.Unavailable);
 
-        // Sanitize title — untrusted, it comes from the Anna's Archive listing.
-        var rawTitle  = !string.IsNullOrWhiteSpace(title) ? title : md5;
-        var safeTitle = SafeFileName.ForUserInput(rawTitle, fallback: md5);
-
-        // Determine file extension
-        var ext = Path.GetExtension(new Uri(downloadUrl).AbsolutePath);
-        if (string.IsNullOrEmpty(ext))
-            ext = resp.Content.Headers.ContentType?.MediaType switch
-            {
-                "application/pdf"                 => ".pdf",
-                "application/epub+zip"            => ".epub",
-                "application/x-mobipocket-ebook"  => ".mobi",
-                _                                 => ".bin"
-            };
-
-        var fileName = $"{safeTitle}{ext}";
+        var (_, _, fileName) = BookFileNaming.For(title, md5, downloadUrl, resp);
 
         return (resp, fileName, acctInfo, null, AnnaDownloadFailure.None);
     }

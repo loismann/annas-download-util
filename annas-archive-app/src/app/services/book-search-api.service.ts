@@ -59,14 +59,14 @@ export interface DownloadStatusResponse {
 
 /**
  * Service for book search, download, and metadata operations.
- * Handles both Anna's Archive and LibGen sources.
+ * One catalogue is searched and one download path is used; where the file
+ * actually comes from is the server's business, not the client's.
  */
 @Injectable({ providedIn: 'root' })
 export class BookSearchApiService {
   private readonly isLocalDev = window.location.hostname === 'localhost';
   private readonly apiHost = apiBase();
   private readonly baseUrl = `${this.apiHost}/api/anna`;
-  private readonly libgenBaseUrl = `${this.apiHost}/api/libgen`;
   private readonly vpnBaseUrl = `${this.apiHost}/api/vpn`;
 
   constructor(
@@ -162,7 +162,7 @@ export class BookSearchApiService {
 
   /**
    * Poll the status of a "send to library" background download (jobId comes back
-   * from sendToLibrary/sendToLibraryLibGen) — the actual download runs detached
+   * from sendToLibrary) — the actual download runs detached
    * from the request that started it, since large books can take minutes.
    */
   getDownloadProgress(jobId: string): Observable<DownloadProgressResponse> {
@@ -198,94 +198,6 @@ export class BookSearchApiService {
     }
     return this.http.post<SendToTargetResponse>(
       `${this.baseUrl}/book/${md5}/send-to-kindle`,
-      null,
-      { params }
-    );
-  }
-
-  /* ══════════════════════════════════════════════════════════════
-     LIBGEN ENDPOINTS
-     ══════════════════════════════════════════════════════════════ */
-
-  /**
-   * Search for books on LibGen.
-   * Always returns an array, even when the API returns a single object.
-   */
-  searchBooksLibGen(name: string, exact: boolean): Observable<BookDto[]> {
-    const params = new HttpParams()
-      .set('name', name)
-      .set('exact', exact.toString());
-
-    const label = `searchBooksLibGen:${name}:${exact}`;
-    this.logger.debug('timer-start: ' + label);
-    this.logger.log('[searchBooksLibGen] start', { name, exact });
-
-    return this.http
-      .get<BookDto | BookDto[]>(`${this.libgenBaseUrl}/book`, { params })
-      .pipe(
-        timeout(SEARCH_TIMEOUT_MS),
-        map(res => (Array.isArray(res) ? res : [res])),
-        tap(list => {
-          const sample = list.slice(0, LOG_SAMPLE_SIZE).map(b => ({
-            title: b.title,
-            md5: b.md5,
-            format: b.format,
-          }));
-          this.logger.log('[searchBooksLibGen] result', { count: list.length, sample });
-        }),
-        catchError(error => {
-          this.logger.error('[searchBooksLibGen] ERROR:', error);
-          if (error.name === 'TimeoutError') {
-            this.logger.error(`[searchBooksLibGen] Request timed out after ${SEARCH_TIMEOUT_MS / 1000} seconds`);
-          }
-          throw error;
-        }),
-        finalize(() => {
-          this.logger.debug('timer-end: ' + label);
-          this.logger.log('[searchBooksLibGen] done');
-        })
-      );
-  }
-
-  /**
-   * Download a book file from LibGen using member credentials.
-   */
-  downloadMemberLibGen(md5: string, title: string, coverUrl?: string): Observable<Blob> {
-    let params = new HttpParams().set('title', title);
-    if (coverUrl) {
-      params = params.set('coverUrl', coverUrl);
-    }
-    return this.http.post(
-      `${this.libgenBaseUrl}/book/${md5}/download/member`,
-      null,
-      { params, responseType: 'blob' }
-    );
-  }
-
-  /**
-   * Send a book from LibGen to the local library.
-   */
-  sendToLibraryLibGen(
-    md5: string,
-    title: string,
-    coverUrl?: string,
-    authors?: string,
-    format?: string,
-    fileSize?: string,
-    source?: string,
-    description?: string
-  ): Observable<SendToTargetResponse> {
-    let params = new HttpParams().set('title', title);
-    if (coverUrl) params = params.set('coverUrl', coverUrl);
-    if (authors) params = params.set('authors', authors);
-    if (format) params = params.set('format', format);
-    const parsedSize = BookSearchApiService.parseFileSizeBytes(fileSize);
-    if (parsedSize !== undefined) params = params.set('fileSize', String(parsedSize));
-    if (source) params = params.set('source', source);
-    if (description) params = params.set('description', description);
-
-    return this.http.post<SendToTargetResponse>(
-      `${this.libgenBaseUrl}/book/${md5}/send-to-library`,
       null,
       { params }
     );

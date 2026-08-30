@@ -31,11 +31,19 @@ public class LibraryHelpersTests
         Assert.Equal("Dad's Books", result);
     }
 
+    /// <summary>
+    /// This used to assert that <i>anything else</i> is Dad — a fallback, pinned as
+    /// though it were the intent. It was half of a real hazard: the email resolver
+    /// fell through to Mom while this fell through to Dad, so one unrecognised target
+    /// would have sent a book to one person and credited it to the other. An unknown
+    /// target now names nobody. See <c>KindleTargetTests</c>.
+    /// </summary>
     [Fact]
-    public void GetKindleTargetTag_ReturnsDadsBooks_WhenTargetIsAnythingElse()
+    public void GetKindleTargetTag_RefusesATargetThatNamesNobody()
     {
-        var result = LibraryHelpers.GetKindleTargetTag("other");
-        Assert.Equal("Dad's Books", result);
+        var tag = () => LibraryHelpers.GetKindleTargetTag("other");
+
+        Assert.Throws<InvalidOperationException>(tag);
     }
 
     #endregion

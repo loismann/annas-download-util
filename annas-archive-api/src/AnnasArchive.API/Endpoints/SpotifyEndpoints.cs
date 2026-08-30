@@ -13,6 +13,10 @@ public static class SpotifyEndpoints
 {
     public static WebApplication MapSpotifyEndpoints(this WebApplication app)
     {
+        // The one Spotify route that spends money lives apart, with the allowance
+        // check that the rest of these do not need.
+        app.MapSpotifyConversationEndpoints();
+
         // Any signed-in person, not admins only. Every route below resolves its
         // data through GetRequiredOwnerKey(), so a request can only ever reach the
         // caller's own Spotify connection, drafts, plans and audit trail.
@@ -54,7 +58,6 @@ public static class SpotifyEndpoints
         group.MapPut("/playback/shuffle", HandleSetShuffle);
         group.MapPut("/playback/transfer", HandleTransferPlayback);
         group.MapGet("/playback/token", HandleGetPlaybackToken);
-        group.MapPost("/command", HandleCommand);
 
         app.MapGet("/api/spotify/oauth/callback", HandleOAuthCallback)
             .AllowAnonymous()
@@ -301,26 +304,6 @@ public static class SpotifyEndpoints
         catch (Exception ex)
         {
             Log.Warning(ex, "[Spotify] Failed to read items of playlist {PlaylistId}", playlistId);
-            return MapFailure(ex, context);
-        }
-    }
-
-    private static async Task<IResult> HandleCommand(
-        [FromBody] SpotifyConversationRequest request,
-        [FromServices] ISpotifyConversationService conversation,
-        HttpContext context,
-        CancellationToken token)
-    {
-        if (string.IsNullOrWhiteSpace(request?.Message))
-            return ApiResponse.BadRequest("Message is required.");
-
-        try
-        {
-            return Results.Ok(await conversation.HandleAsync(request, token));
-        }
-        catch (Exception ex)
-        {
-            Log.Error(ex, "[Spotify] Command failed");
             return MapFailure(ex, context);
         }
     }
@@ -634,7 +617,7 @@ public static class SpotifyEndpoints
         }
     }
 
-    private static IResult MapFailure(Exception exception, HttpContext? context = null)
+    internal static IResult MapFailure(Exception exception, HttpContext? context = null)
     {
         var (statusCode, state, reason, retryAfter, message) = exception switch
         {

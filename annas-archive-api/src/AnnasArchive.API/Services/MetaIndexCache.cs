@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using Microsoft.Extensions.Hosting;
 using Serilog;
 
@@ -13,22 +12,26 @@ namespace AnnasArchive.API.Services;
 /// </summary>
 public abstract class MetaIndexCache<TDto> : IHostedService, IDisposable where TDto : class
 {
-    private static readonly TimeSpan DebounceDelay = TimeSpan.FromSeconds(2);
-
     private readonly object _lock = new();
     private readonly string _name;
     private readonly string _rootPath;
-    private readonly ConcurrentQueue<string> _pendingChanges = new();
+    private readonly TimeSpan _debounceDelay;
     private List<TDto>? _cached;
     private DateTime _lastBuildTime = DateTime.MinValue;
     private FileSystemWatcher? _watcher;
     private Timer? _debounceTimer;
     private bool _isRebuilding;
 
-    protected MetaIndexCache(string name, string rootPath)
+    /// <param name="debounceDelay">How long the watcher waits for the writes to stop
+    /// before invalidating. An import writes a file per book, and each one raises
+    /// several events, so reacting per event would rebuild the whole index hundreds of
+    /// times. Two seconds in production; tests pass a short one rather than sleeping
+    /// through the real thing.</param>
+    protected MetaIndexCache(string name, string rootPath, TimeSpan? debounceDelay = null)
     {
         _name = name;
         _rootPath = rootPath;
+        _debounceDelay = debounceDelay ?? TimeSpan.FromSeconds(2);
         InitializeWatcher();
     }
 
@@ -54,9 +57,7 @@ public abstract class MetaIndexCache<TDto> : IHostedService, IDisposable where T
     /// <summary>Re-applies the index's canonical sort order after an incremental add.</summary>
     protected abstract List<TDto> SortIndex(IEnumerable<TDto> items);
 
-    /// <summary>
-    /// Warm the cache on application startup (in the background so startup isn't blocked).
-    /// </summary>
+    /// <summary>Warms the cache on startup, in the background so startup isn't blocked.</summary>
     public Task StartAsync(CancellationToken cancellationToken)
     {
         _ = Task.Run(() =>
@@ -64,19 +65,7 @@ public abstract class MetaIndexCache<TDto> : IHostedService, IDisposable where T
             try
             {
                 Log.Information("[{Name}] Warming cache on startup...", _name);
-                var sw = System.Diagnostics.Stopwatch.StartNew();
-
-                var items = BuildIndex();
-
-                lock (_lock)
-                {
-                    _cached = items;
-                    _lastBuildTime = DateTime.UtcNow;
-                }
-
-                sw.Stop();
-                Log.Information("[{Name}] Cache warmed on startup in {ElapsedMs}ms with {Count} items",
-                    _name, sw.ElapsedMilliseconds, items.Count);
+                BuildAndStore();
             }
             catch (Exception ex)
             {
@@ -110,7 +99,9 @@ public abstract class MetaIndexCache<TDto> : IHostedService, IDisposable where T
             _watcher.Created += OnFileChanged;
             _watcher.Changed += OnFileChanged;
             _watcher.Deleted += OnFileChanged;
-            _watcher.Renamed += OnFileRenamed;
+            // Renamed too: RenamedEventArgs is a FileSystemEventArgs, and the only
+            // thing either arm ever read was FullPath.
+            _watcher.Renamed += OnFileChanged;
 
             Log.Information("[{Name}] FileSystemWatcher initialized for {RootPath}", _name, _rootPath);
         }
@@ -122,22 +113,19 @@ public abstract class MetaIndexCache<TDto> : IHostedService, IDisposable where T
 
     private void OnFileChanged(object sender, FileSystemEventArgs e)
     {
-        _pendingChanges.Enqueue(e.FullPath);
         ScheduleRebuild();
     }
 
-    private void OnFileRenamed(object sender, RenamedEventArgs e)
-    {
-        _pendingChanges.Enqueue(e.FullPath);
-        ScheduleRebuild();
-    }
-
-    private void ScheduleRebuild()
+    /// <summary>Restarts the debounce window. Protected so a test can drive the
+    /// debounce directly: the watcher delivers events with OS latency measured in
+    /// tens of milliseconds, which is enough to swamp any timing assertion made
+    /// through a real file write.</summary>
+    protected void ScheduleRebuild()
     {
         lock (_lock)
         {
             _debounceTimer?.Dispose();
-            _debounceTimer = new Timer(_ => InvalidateCache(), null, DebounceDelay, Timeout.InfiniteTimeSpan);
+            _debounceTimer = new Timer(_ => InvalidateCache(), null, _debounceDelay, Timeout.InfiniteTimeSpan);
         }
     }
 
@@ -146,14 +134,11 @@ public abstract class MetaIndexCache<TDto> : IHostedService, IDisposable where T
         lock (_lock)
         {
             _cached = null;
-            while (_pendingChanges.TryDequeue(out _)) { }
             Log.Information("[{Name}] Cache invalidated", _name);
         }
     }
 
-    /// <summary>
-    /// Gets the cached items, rebuilding the cache if necessary.
-    /// </summary>
+    /// <summary>Gets the cached items, rebuilding first if the cache is cold.</summary>
     protected List<TDto> GetItems(string baseUrl)
     {
         lock (_lock)
@@ -189,23 +174,9 @@ public abstract class MetaIndexCache<TDto> : IHostedService, IDisposable where T
             _isRebuilding = true;
         }
 
-        var sw = System.Diagnostics.Stopwatch.StartNew();
-        Log.Information("[{Name}] Starting cache rebuild...", _name);
-
         try
         {
-            var items = BuildIndex();
-
-            lock (_lock)
-            {
-                _cached = items;
-                _lastBuildTime = DateTime.UtcNow;
-                _isRebuilding = false;
-            }
-
-            sw.Stop();
-            Log.Information("[{Name}] Cache rebuilt in {ElapsedMs}ms with {Count} items",
-                _name, sw.ElapsedMilliseconds, items.Count);
+            var items = BuildAndStore();
 
             // The cache is host-agnostic; the host is applied per request.
             return NormalizeUrls(items, baseUrl);
@@ -213,12 +184,37 @@ public abstract class MetaIndexCache<TDto> : IHostedService, IDisposable where T
         catch (Exception ex)
         {
             Log.Error(ex, "[{Name}] Failed to rebuild cache", _name);
+            return new List<TDto>();
+        }
+        finally
+        {
+            // In a finally, not in both arms: a build that throws and leaves this set
+            // wedges the cache into answering every future caller with an empty list,
+            // because RebuildCache would take the "already rebuilding" branch forever.
             lock (_lock)
             {
                 _isRebuilding = false;
             }
-            return new List<TDto>();
         }
+    }
+
+    /// <summary>Builds the index and publishes it, timing the work. Shared by the
+    /// startup warm-up and the on-demand rebuild, which differ only in what they do
+    /// with the result.</summary>
+    private List<TDto> BuildAndStore()
+    {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var items = BuildIndex();
+
+        lock (_lock)
+        {
+            _cached = items;
+            _lastBuildTime = DateTime.UtcNow;
+        }
+
+        Log.Information("[{Name}] Index built in {ElapsedMs}ms with {Count} items",
+            _name, sw.ElapsedMilliseconds, items.Count);
+        return items;
     }
 
     /// <summary>

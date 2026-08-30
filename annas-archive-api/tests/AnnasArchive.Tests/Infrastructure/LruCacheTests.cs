@@ -390,16 +390,30 @@ public class LruCacheTests
         cache.Misses.Should().Be(1);
     }
 
+    /// <summary>
+    /// An overwrite restarts the entry's clock.
+    ///
+    /// <para>This has to <b>straddle</b> the TTL — long enough in total that the entry
+    /// would have expired without the reset, short enough since the overwrite that it
+    /// has not. That leaves a margin on both sides, and at 120ms with two 70ms sleeps
+    /// the margin was 50ms, which a loaded test run eats: <c>Thread.Sleep(70)</c>
+    /// routinely returns at 130ms when 3,000 tests are running. It passed alone and
+    /// failed in the suite.</para>
+    ///
+    /// <para>Same ratios, eight times the scale. Scheduler jitter is then small next
+    /// to a 300ms margin instead of comparable to a 50ms one. A TTL cannot be tested
+    /// without real time; it can be tested without assuming an idle machine.</para>
+    /// </summary>
     [Fact]
     public void Ttl_ResetsExpiry_OnOverwrite()
     {
-        var cache = new LruCache<string, string>(10, TimeSpan.FromMilliseconds(120));
+        var cache = new LruCache<string, string>(10, TimeSpan.FromMilliseconds(1000));
         cache.Set("k", "v1");
-        Thread.Sleep(70);
+        Thread.Sleep(700);
         cache.Set("k", "v2");
-        Thread.Sleep(70);
+        Thread.Sleep(700);
 
-        // Without the reset the entry would be 140ms old and expired.
+        // Without the reset the entry would be 1400ms old and expired.
         cache.TryGetValue("k", out var value).Should().BeTrue();
         value.Should().Be("v2");
     }
@@ -409,12 +423,15 @@ public class LruCacheTests
     {
         // The expired entry must not be the LRU one, or plain LRU eviction would
         // remove it anyway and this would pass without the expiry check.
-        var cache = new LruCache<string, string>(2, TimeSpan.FromMilliseconds(150));
+        // Straddles the TTL from both sides — "stale" must cross it and "live" must
+        // not — so the scale is set for the margin to survive a loaded run rather than
+        // an idle one. See Ttl_ResetsExpiry_OnOverwrite.
+        var cache = new LruCache<string, string>(2, TimeSpan.FromMilliseconds(1000));
         cache.Set("stale", "1");
-        Thread.Sleep(100);
+        Thread.Sleep(700);
         cache.Set("live", "2");
         cache.TryGetValue("stale", out _);   // "stale" is now most-recently-used
-        Thread.Sleep(100);                   // "stale" expires; "live" does not
+        Thread.Sleep(700);                   // "stale" expires; "live" does not
 
         cache.Set("newcomer", "3");          // at capacity: something must go
 

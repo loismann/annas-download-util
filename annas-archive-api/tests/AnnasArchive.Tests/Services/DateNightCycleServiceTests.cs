@@ -133,6 +133,31 @@ public sealed class DateNightCycleServiceTests : IDisposable
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*Mom and Dad*");
     }
 
+    /// <summary>
+    /// Proof that the re-key is wired into <c>LoadCycle</c>, not merely available.
+    ///
+    /// <para>A ballot reaches storage under whatever casing the caller carried — the
+    /// "view as" header used to hand back "mom" verbatim — and a comparer does not
+    /// survive JSON, so a later lookup keyed on "Mom" misses it. The write paths hide
+    /// this, because they rebuild the dictionary case-insensitively before asking
+    /// anything of it; the <i>read</i> paths are where it bites. Here Mom is refused
+    /// scheduling for not having finished a ballot she completed.</para>
+    /// </summary>
+    [Fact]
+    public async Task ABallotStoredUnderAnotherCasingStillUnlocksScheduling()
+    {
+        Seed(Cycle(movies: [1, 2], votes: new()
+        {
+            ["mom"] = new() { [1] = "Up", [2] = "Up" }
+        }));
+
+        var act = async () => await _svc.ProposeScheduleAsync(Mom, [Slot()], isTest: true);
+
+        await act.Should().NotThrowAsync(
+            "she has voted on every movie in the draw; the casing of the key is not her problem");
+        Stored().Schedule!.ProposedBy.Should().Be(Mom);
+    }
+
     [Fact]
     public async Task AnUnrecognisedVoteIsRejected()
     {
@@ -514,46 +539,6 @@ public sealed class DateNightCycleServiceTests : IDisposable
         second.Schedule!.Status.Should().Be("Locked");
         second.Schedule.LockedUtc.Should().Be(first.Schedule!.LockedUtc,
             "a second confirmation of the same slot must change nothing at all");
-    }
-
-    // ------------------------------------------------- the case-sensitivity trap
-
-    /// <summary>
-    /// A ballot stored under a differently-cased name is invisible to resolution.
-    ///
-    /// <para><c>CastVoteAsync</c> rebuilds the vote dictionary with
-    /// <c>OrdinalIgnoreCase</c> on every write, which reads as "the person's name
-    /// is matched case-insensitively". <b>That comparer does not survive
-    /// storage</b> — <c>JsonSerializer.Deserialize</c> returns a plain, case-
-    /// sensitive dictionary — so on the next load the defence is gone.
-    /// <c>EveryoneVoted</c> and <c>Resolve</c> look ballots up by the canonical
-    /// <c>HouseholdOwners.Names</c>, so a ballot filed as "mom" is not found, and
-    /// a fully-voted week reads as incomplete.</para>
-    ///
-    /// <para>The way in is <c>ResolveDateNightContext</c>: it accepts the
-    /// impersonation header case-insensitively and then returns the <i>raw header
-    /// value</i> rather than the canonical name. Today nothing breaks only because
-    /// the frontend happens to send exact case. This test records the trap rather
-    /// than asserting it is desirable — the fix is one line at the endpoint, and
-    /// it is on the to-do.</para>
-    /// </summary>
-    [Fact]
-    public void ABallotStoredUnderADifferentlyCasedNameIsInvisibleAfterALoad()
-    {
-        var cycle = Cycle(movies: [1], votes: Ballots(
-            ("mom", [(1, "Up")]),
-            ("dad", [(1, "Up")])));
-
-        DateNightPolicy.EveryoneVoted(cycle).Should().BeTrue(
-            "in memory the dictionary is still case-insensitive");
-
-        var reloaded = JsonSerializer.Deserialize<WeeklyCycle>(
-            JsonSerializer.Serialize(cycle, Json), Json)!;
-
-        DateNightPolicy.EveryoneVoted(reloaded).Should().BeFalse(
-            "the comparer did not survive the round trip — this is the trap, not the "
-            + "intent. If this ever starts passing, the endpoint was fixed to "
-            + "canonicalize the impersonation header and this test should assert true");
     }
 
     /// <summary>

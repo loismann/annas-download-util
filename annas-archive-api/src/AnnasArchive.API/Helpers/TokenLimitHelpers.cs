@@ -36,20 +36,4 @@ public static class TokenLimitHelpers
 
         return null;
     }
-
-    /// <summary>
-    /// Returns true if the user has exceeded their monthly AI usage allowance.
-    /// </summary>
-    public static bool IsTokenLimitExceeded(IConfiguration cfg, ITokenUsageService tokenUsage, HttpContext context)
-    {
-        var userId = UserHelpers.GetUserIdFromContext(context);
-        if (userId == null)
-            return false;
-
-        var allowanceUsd = cfg.GetValue<double?>("OpenAI:PerUserMonthlyCostAllowanceUsd") ?? 20.0;
-        var (promptTokens, completionTokens, _) = tokenUsage.GetTotals(userId);
-        var costUsd = tokenUsage.CalculateCostUsd(promptTokens, completionTokens);
-
-        return costUsd >= allowanceUsd;
-    }
 }

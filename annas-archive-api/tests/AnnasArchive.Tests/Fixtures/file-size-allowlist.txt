@@ -41,7 +41,7 @@
 332	annas-archive-api/src/AnnasArchive.API/Endpoints/LibraryMetadataEndpoints.cs
 790	annas-archive-api/src/AnnasArchive.API/Endpoints/MediaLibraryEndpoints.cs
 351	annas-archive-api/src/AnnasArchive.API/Endpoints/MediaRequestEndpoints.cs
-680	annas-archive-api/src/AnnasArchive.API/Endpoints/SpotifyEndpoints.cs
+663	annas-archive-api/src/AnnasArchive.API/Endpoints/SpotifyEndpoints.cs
 407	annas-archive-api/src/AnnasArchive.API/Helpers/AnnaDownloadHelpers.cs
 385	annas-archive-api/src/AnnasArchive.API/Helpers/BookTitleExtractionHelpers.cs
 445	annas-archive-api/src/AnnasArchive.API/Models/ListenarrModels.cs

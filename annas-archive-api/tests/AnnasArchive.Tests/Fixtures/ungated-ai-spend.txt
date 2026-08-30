@@ -1,0 +1,21 @@
+# AI call sites that resolve who is paying but do not themselves call
+# TokenLimitHelpers.CheckTokenLimit.
+#
+# Two different things live here, and the difference is the point:
+#
+#   gated-upstream  The entry point named in the third column does the check. The
+#                   gate belongs at the entry point, so a service reached from one
+#                   is fine — but a file-local rule cannot see that, so it is
+#                   declared here and the declaration is what someone reviews.
+#
+#   ungated         A defect. Somebody past their monthly cap can keep spending
+#                   through this route while every other AI feature refuses them.
+#                   This list may shrink and may not grow.
+#
+# Not listed, and not defects: files that only ever bill AiSpend.BackgroundAccount.
+# Background enrichment is household money by design and has no per-user allowance
+# to check — see AiSpend's own documentation.
+#
+# Format: <repo-relative path><TAB><status><TAB><entry point>
+
+annas-archive-api/src/AnnasArchive.API/Services/Spotify/SpotifyDiscoveryService.cs	gated-upstream	POST /api/spotify/command

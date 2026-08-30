@@ -233,40 +233,28 @@ public static class SendToTargetHelpers
         return null;
     }
 
-    /// <summary>
-    /// Validates Kindle target parameter.
-    /// </summary>
-    /// <param name="target">The target to validate ("dad" or "mom")</param>
-    /// <returns>An error message if validation fails, null if valid</returns>
-    public static string? ValidateKindleTarget(string? target)
-    {
-        if (string.IsNullOrWhiteSpace(target) || (target != "dad" && target != "mom"))
-            return "Invalid target. Must be 'dad' or 'mom'.";
+    /// <summary>Validates the Kindle target. Resolution lives in
+    /// <see cref="KindleTarget"/> so validation and dispatch cannot drift apart.</summary>
+    public static string? ValidateKindleTarget(string? target) =>
+        KindleTarget.For(target) is null
+            ? $"Invalid target. Must be {KindleTarget.Names}."
+            : null;
 
-        return null;
-    }
+    /// <summary>The configured Kindle address for a target that has already been validated.</summary>
+    /// <exception cref="InvalidOperationException">If the target is unknown, or its email is not configured.</exception>
+    public static string GetKindleEmailForTarget(string target, IConfiguration cfg) =>
+        Required(target).EmailAddress(cfg);
 
-    /// <summary>
-    /// Gets the Kindle email address for the specified target.
-    /// </summary>
-    /// <param name="target">The target ("dad" or "mom")</param>
-    /// <param name="cfg">The configuration</param>
-    /// <returns>The Kindle email address</returns>
-    /// <exception cref="InvalidOperationException">If the email is not configured</exception>
-    public static string GetKindleEmailForTarget(string target, IConfiguration cfg)
-    {
-        return target.ToLower() == "dad"
-            ? cfg["Email:DadsKindleEmail"] ?? throw new InvalidOperationException("Email:DadsKindleEmail not configured")
-            : cfg["Email:MomsKindleEmail"] ?? throw new InvalidOperationException("Email:MomsKindleEmail not configured");
-    }
+    /// <summary>The Dropbox folder for a target that has already been validated.</summary>
+    public static string GetDropboxFolderForKindleTarget(string target) =>
+        Required(target).DropboxFolder;
 
     /// <summary>
-    /// Gets the Dropbox folder path for the specified Kindle target.
+    /// Throws rather than defaulting. Every one of these used to fall through to one
+    /// household member or the other, so an unrecognised target produced a confident
+    /// send to the wrong person instead of an error.
     /// </summary>
-    /// <param name="target">The target ("dad" or "mom")</param>
-    /// <returns>The Dropbox folder path</returns>
-    public static string GetDropboxFolderForKindleTarget(string target)
-    {
-        return target.ToLower() == "dad" ? "/dad_downloads" : "/mom_downloads";
-    }
+    private static KindleTarget Required(string target) =>
+        KindleTarget.For(target)
+        ?? throw new InvalidOperationException($"'{target}' is not a Kindle target.");
 }

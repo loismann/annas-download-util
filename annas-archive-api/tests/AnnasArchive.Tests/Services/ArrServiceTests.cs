@@ -437,4 +437,192 @@ public class ArrServiceTests
 
         rec.To("/api/v3/command").Should().BeEmpty();
     }
+
+    // ------------------------------------------------- deleting a series or season
+
+    /// <summary>
+    /// A series delete has to clear the download queue first. Deleting the record
+    /// alone leaves whatever was already grabbed running in qBittorrent/SABnzbd,
+    /// orphaned and seeding forever with nothing left in Sonarr that refers to it.
+    /// The order matters: clearing afterwards would need the series to look up.
+    /// </summary>
+    [Fact]
+    public async Task DeletingASeriesClearsItsDownloadQueueFirst()
+    {
+        var (svc, rec) = Sonarr(Defaults(req =>
+            req.RequestUri!.AbsolutePath.Contains("/queue")
+                ? Json("""{"records":[{"id":77,"seriesId":5}]}""")
+                : Json("{}")));
+
+        await svc.DeleteSeriesAsync(5);
+
+        var queueRemoval = rec.Sent.FindIndex(
+            r => r.Method == HttpMethod.Delete && r.Url.Contains("/queue/77"));
+        var seriesDelete = rec.Sent.FindIndex(
+            r => r.Method == HttpMethod.Delete && r.Url.Contains("/series/5"));
+
+        queueRemoval.Should().BeGreaterThanOrEqualTo(0, "the queued grab must be cancelled");
+        seriesDelete.Should().BeGreaterThan(queueRemoval,
+            "the queue is cleared before the series that identifies it is gone");
+    }
+
+    /// <summary>Deleting a series is meant to reclaim the disk, so the files go too —
+    /// without this the record vanishes and the episodes stay, invisible to Sonarr
+    /// and to the library page that lists what is downloaded.</summary>
+    [Fact]
+    public async Task DeletingASeriesAlsoDeletesItsFiles()
+    {
+        var (svc, rec) = Sonarr();
+
+        await svc.DeleteSeriesAsync(5);
+
+        rec.Sent.Should().Contain(r =>
+            r.Method == HttpMethod.Delete && r.Url.Contains("deleteFiles=true"));
+    }
+
+    /// <summary>A Sonarr that refuses the delete must not be reported as success —
+    /// the caller turns this into a 502, and swallowing it would tell someone their
+    /// series was destroyed while it is still there.</summary>
+    [Fact]
+    public async Task ASeriesDeleteSonarrRefusesIsRaisedRatherThanSwallowed()
+    {
+        var (svc, _) = Sonarr(Defaults(req =>
+            req.Method == HttpMethod.Delete
+                ? Json("""{"message":"nope"}""", HttpStatusCode.InternalServerError)
+                : Json("{}")));
+
+        var delete = async () => await svc.DeleteSeriesAsync(5);
+
+        await delete.Should().ThrowAsync<HttpRequestException>();
+    }
+
+    /// <summary>Episode files across three seasons, so a season delete has something
+    /// to pick wrongly from.</summary>
+    private static Func<HttpRequestMessage, HttpResponseMessage> SeriesWithEpisodeFiles() =>
+        Defaults(req =>
+        {
+            if (req.RequestUri!.AbsolutePath.Contains("/episodefile"))
+                return Json("""
+                    [{"id":11,"seasonNumber":1},
+                     {"id":21,"seasonNumber":2},
+                     {"id":22,"seasonNumber":2},
+                     {"id":31,"seasonNumber":3}]
+                    """);
+            if (req.RequestUri.AbsolutePath.Contains("/series/"))
+                return Json("""
+                    {"id":5,"seasons":[
+                        {"seasonNumber":1,"monitored":true},
+                        {"seasonNumber":2,"monitored":true},
+                        {"seasonNumber":3,"monitored":true}]}
+                    """);
+            return Json("{}");
+        });
+
+    /// <summary>
+    /// <b>The season filter is the entire safety mechanism.</b> Sonarr has no
+    /// delete-a-season endpoint, so this deletes episode files one at a time from a
+    /// list covering the whole series. If the filter went, deleting season 2 would
+    /// take every episode of every season with it — and the caller would see the same
+    /// 204 either way.
+    /// </summary>
+    [Fact]
+    public async Task DeletingASeasonDeletesOnlyThatSeasonsEpisodeFiles()
+    {
+        var (svc, rec) = Sonarr(SeriesWithEpisodeFiles());
+
+        await svc.DeleteSeasonAsync(5, 2);
+
+        var deleted = rec.Sent
+            .Where(r => r.Method == HttpMethod.Delete && r.Url.Contains("/episodefile/"))
+            .Select(r => r.Url.Split("/episodefile/")[1])
+            .ToList();
+
+        deleted.Should().BeEquivalentTo(["21", "22"],
+            "only season 2's files, and both of them");
+    }
+
+    /// <summary>
+    /// The season is un-monitored after its files go, or Sonarr immediately
+    /// re-downloads exactly what was just deleted — the delete would appear to do
+    /// nothing at all, some minutes later.
+    /// </summary>
+    [Fact]
+    public async Task DeletingASeasonUnMonitorsItSoSonarrDoesNotFetchItStraightBack()
+    {
+        var (svc, rec) = Sonarr(SeriesWithEpisodeFiles());
+
+        await svc.DeleteSeasonAsync(5, 2);
+
+        var seasons = SentTo(rec, "/series/5", HttpMethod.Put)["seasons"]!.AsArray();
+        seasons.Single(s => (int)s!["seasonNumber"]! == 2)!["monitored"]!
+            .GetValue<bool>().Should().BeFalse();
+    }
+
+    /// <summary>
+    /// And only that season. The whole series object is sent back on the PUT, so a
+    /// careless loop would un-monitor everything — quietly stopping the show from
+    /// ever updating again, which nobody notices until a season is missing.
+    /// </summary>
+    [Fact]
+    public async Task UnMonitoring_a_season_leaves_the_other_seasons_monitored()
+    {
+        var (svc, rec) = Sonarr(SeriesWithEpisodeFiles());
+
+        await svc.DeleteSeasonAsync(5, 2);
+
+        var seasons = SentTo(rec, "/series/5", HttpMethod.Put)["seasons"]!.AsArray();
+        seasons.Where(s => (int)s!["seasonNumber"]! != 2)
+            .Should().OnlyContain(s => s!["monitored"]!.GetValue<bool>());
+    }
+
+    /// <summary>
+    /// One file Sonarr will not delete must not abort the rest. Throwing here would
+    /// leave the season half-deleted <i>and still monitored</i>, so Sonarr would
+    /// re-fetch the episodes that did go — the worst of both outcomes.
+    /// </summary>
+    [Fact]
+    public async Task AnEpisodeFileThatWillNotDeleteDoesNotStrandTheSeasonMonitored()
+    {
+        var (svc, rec) = Sonarr(Defaults(req =>
+        {
+            if (req.RequestUri!.AbsolutePath.Contains("/episodefile/21") && req.Method == HttpMethod.Delete)
+                return Json("""{"message":"locked"}""", HttpStatusCode.Conflict);
+            if (req.RequestUri.AbsolutePath.Contains("/episodefile"))
+                return Json("""[{"id":21,"seasonNumber":2},{"id":22,"seasonNumber":2}]""");
+            if (req.RequestUri.AbsolutePath.Contains("/series/"))
+                return Json("""{"id":5,"seasons":[{"seasonNumber":2,"monitored":true}]}""");
+            return Json("{}");
+        }));
+
+        var delete = async () => await svc.DeleteSeasonAsync(5, 2);
+
+        await delete.Should().NotThrowAsync();
+        rec.Sent.Should().Contain(r =>
+            r.Method == HttpMethod.Delete && r.Url.Contains("/episodefile/22"),
+            "the failure of one file must not stop the next");
+        SentTo(rec, "/series/5", HttpMethod.Put)["seasons"]!.AsArray()
+            .Single()!["monitored"]!.GetValue<bool>().Should().BeFalse(
+                "the un-monitor still has to happen, or Sonarr re-fetches what did delete");
+    }
+
+    /// <summary>A season with nothing downloaded still gets un-monitored — the point
+    /// of the action is "stop bringing me this", not only "remove these files".</summary>
+    [Fact]
+    public async Task DeletingASeasonWithNoFilesStillUnMonitorsIt()
+    {
+        var (svc, rec) = Sonarr(Defaults(req =>
+        {
+            if (req.RequestUri!.AbsolutePath.Contains("/episodefile"))
+                return Json("[]");
+            if (req.RequestUri.AbsolutePath.Contains("/series/"))
+                return Json("""{"id":5,"seasons":[{"seasonNumber":2,"monitored":true}]}""");
+            return Json("{}");
+        }));
+
+        await svc.DeleteSeasonAsync(5, 2);
+
+        rec.Sent.Should().NotContain(r => r.Url.Contains("/episodefile/"));
+        SentTo(rec, "/series/5", HttpMethod.Put)["seasons"]!.AsArray()
+            .Single()!["monitored"]!.GetValue<bool>().Should().BeFalse();
+    }
 }

@@ -99,10 +99,12 @@ public static class LibraryHelpers
     /// <summary>
     /// Gets the library tag for a Kindle target user.
     /// </summary>
-    public static string GetKindleTargetTag(string target)
-    {
-        return Constants.HouseholdOwners.BookTagFor(target.ToLower() == "mom" ? "Mom" : "Dad");
-    }
+    /// <exception cref="InvalidOperationException">If the target names nobody. It used
+    /// to default to Dad while the email defaulted to Mom, so an unrecognised target
+    /// sent a book to one person and tagged it as the other's.</exception>
+    public static string GetKindleTargetTag(string target) =>
+        KindleTarget.For(target)?.BookTag
+        ?? throw new InvalidOperationException($"'{target}' is not a Kindle target.");
 
     /// <summary>
     /// Normalizes a cover URL, converting relative paths to API URLs.

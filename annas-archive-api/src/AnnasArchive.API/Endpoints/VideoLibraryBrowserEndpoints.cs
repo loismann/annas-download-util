@@ -111,37 +111,11 @@ public static class VideoLibraryBrowserEndpoints
         if (!string.Equals(fileName, safeFileName, StringComparison.Ordinal))
             return ApiResponse.BadRequest("Invalid fileName.");
 
-        var videoRoot = VideoHelpers.ResolveVideoRoot();
-        var videoPath = Path.Combine(videoRoot, safeFileName);
-        var metaPath = Path.Combine(videoRoot, safeFileName + ".meta.json");
-
-        // Find associated thumbnail
-        var baseName = Path.GetFileNameWithoutExtension(safeFileName);
-        var thumbnailExtensions = new[] { ".jpg", ".jpeg", ".webp", ".png" };
-        var thumbnailPath = thumbnailExtensions
-            .Select(ext => Path.Combine(videoRoot, baseName + ext))
-            .FirstOrDefault(File.Exists);
-
-        if (!File.Exists(videoPath) && !File.Exists(metaPath) && thumbnailPath == null)
-            return ApiResponse.NotFound("Video not found.");
-
         try
         {
-            if (File.Exists(videoPath))
-                File.Delete(videoPath);
+            if (!VideoDeletionHelper.DeleteVideoCompletely(safeFileName, cache))
+                return ApiResponse.NotFound("Video not found.");
 
-            if (File.Exists(metaPath))
-                File.Delete(metaPath);
-
-            if (thumbnailPath != null && File.Exists(thumbnailPath))
-            {
-                try { File.Delete(thumbnailPath); } catch { /* ignore */ }
-            }
-
-            // Remove from cache immediately
-            cache.RemoveVideo(safeFileName);
-
-            Log.Information("[video-library] Deleted video {FileName}", safeFileName);
             return Results.Ok(new { success = true });
         }
         catch (Exception ex)

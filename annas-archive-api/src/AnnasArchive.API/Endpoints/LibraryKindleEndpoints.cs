@@ -50,8 +50,10 @@ public static class LibraryKindleEndpoints
         if (titleValidation != null)
             return titleValidation;
 
-        if (string.IsNullOrWhiteSpace(target) || (target != "dad" && target != "mom"))
-            return ApiResponse.BadRequest("Invalid target. Must be 'dad' or 'mom'.");
+        // The shared validator, not a fourth copy of the same two string comparisons.
+        if (SendToTargetHelpers.ValidateKindleTarget(target) is { } targetError)
+            return ApiResponse.BadRequest(targetError);
+        var kindleTarget = KindleTarget.For(target)!;
 
         var safeFileName = Path.GetFileName(fileName);
         if (!string.Equals(fileName, safeFileName, StringComparison.Ordinal))
@@ -65,9 +67,7 @@ public static class LibraryKindleEndpoints
         if (!File.Exists(fullPath))
             return ApiResponse.NotFound("File not found.");
 
-        var kindleEmail = target == "dad"
-            ? cfg["Email:DadsKindleEmail"] ?? throw new InvalidOperationException("Email:DadsKindleEmail not configured")
-            : cfg["Email:MomsKindleEmail"] ?? throw new InvalidOperationException("Email:MomsKindleEmail not configured");
+        var kindleEmail = kindleTarget.EmailAddress(cfg);
 
         if (toDropbox)
         {
@@ -94,14 +94,6 @@ public static class LibraryKindleEndpoints
                     statusCode: StatusCodes.Status502BadGateway);
             }
 
-            // Tag the book with its Kindle recipient — NOT with whoever
-            // happens to be logged in and triggered the send. This book may
-            // already have a real owner tag from whoever downloaded it;
-            // adding the acting user's own tag on top would falsely make
-            // them look like a co-owner (see HandleSendToKindle's other
-            // branch below for the same fix).
-            var kindleTargetTag = LibraryHelpers.GetKindleTargetTag(target);
-            await LibraryHelpers.AddTagsToLibraryBookAsync(libraryRoot, safeFileName, kindleTargetTag);
         }
         else
         {
@@ -121,13 +113,13 @@ public static class LibraryKindleEndpoints
                     statusCode: StatusCodes.Status502BadGateway);
             }
 
-            // Tag the book with its Kindle recipient — see the Dropbox
-            // branch above for why the acting user's own tag isn't added
-            // here anymore (it was falsely making them look like a co-owner
-            // of books they didn't actually download).
-            var kindleTargetTag = LibraryHelpers.GetKindleTargetTag(target);
-            await LibraryHelpers.AddTagsToLibraryBookAsync(libraryRoot, safeFileName, kindleTargetTag);
         }
+
+        // Tagged with the *recipient*, never with whoever happened to be signed in and
+        // pressed the button — that falsely made the sender look like a co-owner of a
+        // book they never downloaded. Both branches did this identically, so it sits
+        // after them rather than twice inside.
+        await LibraryHelpers.AddTagsToLibraryBookAsync(libraryRoot, safeFileName, kindleTarget.BookTag);
 
         cache.InvalidateCache();
         return Results.Ok(new { success = true, message = toDropbox ? "Sent to Dropbox." : "Sent to Kindle." });

@@ -450,6 +450,124 @@ public class DateNightPolicyTests
         act.Should().Throw<InvalidOperationException>().WithMessage("*invalid calendar week*");
     }
 
+    // ─── Who is acting ────────────────────────────────────────────────────
+
+    /// <summary>
+    /// The header is matched case-insensitively, so it must not be handed back as
+    /// typed. The returned string becomes the key of this person's ballot, flyer and
+    /// reminder maps, and every other lookup uses the canonical "Mom" — so "mom" here
+    /// stored a real vote at an address nothing ever reads again.
+    /// </summary>
+    [Theory]
+    [InlineData("mom", "Mom")]
+    [InlineData("MOM", "Mom")]
+    [InlineData("dAd", "Dad")]
+    [InlineData("Mom", "Mom")]
+    public void A_view_as_header_is_canonicalized_rather_than_echoed_back(string header, string expected)
+    {
+        DateNightPolicy.ResolveViewer("Paul", header).Should().Be((expected, true));
+    }
+
+    /// <summary>
+    /// The whole safety property: only Paul may view as anyone. Mom sending the
+    /// header must stay Mom, or either audience member could cast the other's ballot
+    /// by adding a header to their own session.
+    /// </summary>
+    [Theory]
+    [InlineData("Mom", "Dad")]
+    [InlineData("Dad", "Mom")]
+    [InlineData("Stranger", "Mom")]
+    public void Only_Paul_may_view_as_someone_else(string real, string header)
+    {
+        DateNightPolicy.ResolveViewer(real, header).Should().Be((real, false));
+    }
+
+    /// <summary>
+    /// A header naming nobody impersonable leaves Paul as Paul — and, just as
+    /// importantly, leaves IsTest false, so an unrecognised header cannot quietly
+    /// route a real action at the dry-run cycle or the reverse.
+    /// </summary>
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("Paul")]
+    [InlineData("Nobody")]
+    public void A_header_naming_nobody_impersonable_leaves_Paul_as_himself(string? header)
+    {
+        DateNightPolicy.ResolveViewer("Paul", header).Should().Be(("Paul", false));
+    }
+
+    // ─── Surviving storage ────────────────────────────────────────────────
+
+    /// <summary>
+    /// The premise, proven rather than asserted: a cycle written with
+    /// case-insensitive maps comes back from JSON with case-<i>sensitive</i> ones.
+    /// The raw round-trip cannot find the ballot; the canonicalized one can. If
+    /// <c>Deserialize</c> ever starts preserving comparers this test says so by
+    /// failing its first half.
+    /// </summary>
+    [Fact]
+    public void A_comparer_does_not_survive_JSON_which_is_why_the_re_key_exists()
+    {
+        var stored = ActiveCycle(votes: new() { ["mom"] = new() { [1] = "Up", [2] = "Up" } });
+
+        var raw = RoundTrip(stored);
+        DateNightPolicy.BallotComplete("Mom", raw).Should().BeFalse(
+            "this is the bug — the vote is present and unreachable");
+
+        DateNightPolicy.BallotComplete("Mom", DateNightPolicy.WithCanonicalPeople(raw)!)
+            .Should().BeTrue("re-keying restores the comparer the write intended");
+    }
+
+    /// <summary>Every person-keyed map on a cycle, not just the ballot — each one is
+    /// read with a canonical name somewhere.</summary>
+    [Fact]
+    public void Every_person_keyed_map_survives_a_round_trip()
+    {
+        var stored = ActiveCycle(
+            votes: new() { ["mom"] = new() { [1] = "Up" } },
+            lastShown: new() { ["mom"] = Now },
+            reminderCounts: new() { ["mom"] = MaxReminders },
+            schedule: DateNightPolicy.NewSchedule() with
+            {
+                Status = "AwaitingApproval",
+                ProposedBy = "Dad",
+                LastReminderShownUtc = new() { ["mom"] = Now }
+            });
+
+        var cycle = DateNightPolicy.WithCanonicalPeople(RoundTrip(stored))!;
+
+        DateNightPolicy.FlyerReminderCount("Mom", cycle).Should().Be(MaxReminders);
+        cycle.LastFlyerShownUtc.Should().ContainKey("Mom");
+        cycle.Schedule!.LastReminderShownUtc.Should().ContainKey("Mom");
+    }
+
+    /// <summary>Nothing to re-key is not an error — a cycle may have no schedule and
+    /// no reminder counts, and loading is the only caller.</summary>
+    [Fact]
+    public void A_cycle_with_nothing_optional_set_re_keys_without_complaint()
+    {
+        DateNightPolicy.WithCanonicalPeople(null).Should().BeNull();
+
+        var bare = ActiveCycle() with { Schedule = null, FlyerReminderCounts = null };
+        var rekeyed = DateNightPolicy.WithCanonicalPeople(bare)!;
+
+        rekeyed.Schedule.Should().BeNull();
+        rekeyed.FlyerReminderCounts.Should().BeNull();
+    }
+
+    private const int MaxReminders = DateNightPolicy.MaxFlyerReminderCount;
+
+    /// <summary>Through storage exactly as <c>DateNightCycleService</c> does it.</summary>
+    private static WeeklyCycle RoundTrip(WeeklyCycle cycle)
+    {
+        var options = new System.Text.Json.JsonSerializerOptions(
+            System.Text.Json.JsonSerializerDefaults.Web);
+        return System.Text.Json.JsonSerializer.Deserialize<WeeklyCycle>(
+            System.Text.Json.JsonSerializer.Serialize(cycle, options), options)!;
+    }
+
     // ─── Fixtures ─────────────────────────────────────────────────────────
 
     /// <summary>Mid-week, so nothing accidentally sits on a boundary unless a test
